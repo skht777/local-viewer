@@ -1,0 +1,22 @@
+{
+  "private": true,
+  "scripts": {
+    "prepare": "husky"
+  },
+  "devDependencies": {
+    "husky": "^9.1.0",
+    "lint-staged": "^16.0.0",
+    "oxlint": "^1.0.0",
+    "oxfmt": "^0.22.0"
+  },
+  "lint-staged": {
+    "frontend/src/**/*.{ts,tsx}": [
+      "oxlint",
+      "oxfmt --write"
+    ],
+    "backend/**/*.py": [
+      "backend/.venv/bin/ruff format",
+      "backend/.venv/bin/ruff check --fix"
+    ]
+  }
+}

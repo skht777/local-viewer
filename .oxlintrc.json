@@ -1,0 +1,14 @@
+{
+  "$schema": "https://raw.githubusercontent.com/nicolo-ribaudo/oxlint-config-schema/refs/heads/main/schema.json",
+  "plugins": ["react", "typescript", "import"],
+  "rules": {
+    "no-unused-vars": "warn",
+    "react/jsx-no-target-blank": "error",
+    "typescript/no-explicit-any": "warn"
+  },
+  "settings": {
+    "react": {
+      "runtime": "automatic"
+    }
+  }
+}

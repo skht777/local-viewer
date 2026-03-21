@@ -1,0 +1,13 @@
+services:
+  viewer:
+    build: .
+    ports:
+      - "${HOST_PORT:-8000}:8000"
+    volumes:
+      - ${DATA_DIR:-./sample}:/data:ro
+    environment:
+      - ROOT_DIR=/data
+      - BIND_HOST=${BIND_HOST:-127.0.0.1}
+    restart: unless-stopped
+    mem_limit: ${MEM_LIMIT:-2g}
+    cpus: ${CPUS:-2.0}
