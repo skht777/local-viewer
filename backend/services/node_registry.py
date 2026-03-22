@@ -26,6 +26,28 @@ VIDEO_EXTENSIONS = frozenset({".mp4", ".webm", ".mkv", ".avi", ".mov"})
 ARCHIVE_EXTENSIONS = frozenset({".zip", ".rar", ".7z", ".cbz", ".cbr"})
 PDF_EXTENSIONS = frozenset({".pdf"})
 
+# 頻出拡張子 → MIME タイプ (辞書参照で高速化、未知は mimetypes にフォールバック)
+MIME_MAP: dict[str, str] = {
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".png": "image/png",
+    ".gif": "image/gif",
+    ".webp": "image/webp",
+    ".bmp": "image/bmp",
+    ".avif": "image/avif",
+    ".mp4": "video/mp4",
+    ".webm": "video/webm",
+    ".mkv": "video/x-matroska",
+    ".avi": "video/x-msvideo",
+    ".mov": "video/quicktime",
+    ".pdf": "application/pdf",
+    ".zip": "application/zip",
+    ".rar": "application/vnd.rar",
+    ".7z": "application/x-7z-compressed",
+    ".cbz": "application/vnd.comicbook+zip",
+    ".cbr": "application/vnd.comicbook-rar",
+}
+
 
 class EntryKind(StrEnum):
     """エントリの種類."""
@@ -86,7 +108,10 @@ class NodeRegistry:
             "NODE_SECRET", "local-viewer-default-secret"
         ).encode()
         self._id_to_path: dict[str, Path] = {}
-        self._path_to_id: dict[Path, str] = {}
+        self._path_to_id: dict[str, str] = {}
+        # 文字列比較用にルートパスをキャッシュ
+        self._root_str = str(path_security.root_dir)
+        self._root_prefix = self._root_str + os.sep
 
     @property
     def path_security(self) -> PathSecurity:
@@ -110,14 +135,38 @@ class NodeRegistry:
         """パスを登録し、node_id を返す.
 
         既に登録済みならキャッシュから返す。
+        外部からの呼び出し用。resolve() で正規化する (fail-closed)。
         """
         resolved = path.resolve()
-        if resolved in self._path_to_id:
-            return self._path_to_id[resolved]
+        key = str(resolved)
+        if key in self._path_to_id:
+            return self._path_to_id[key]
 
         node_id = self._generate_id(resolved)
         self._id_to_path[node_id] = resolved
-        self._path_to_id[resolved] = node_id
+        self._path_to_id[key] = node_id
+        return node_id
+
+    def register_resolved(self, resolved: Path) -> str:
+        """検証済み・正規化済みパスを登録する (内部用 fast-path).
+
+        validate / validate_child 済みのパスのみ渡すこと。
+        resolve() と relative_to() をスキップして高速化。
+        """
+        key = str(resolved)
+        if key in self._path_to_id:
+            return self._path_to_id[key]
+
+        # 文字列スライスで相対パス取得 (root 配下が保証済み)
+        rel = key[len(self._root_prefix) :] if key != self._root_str else ""
+        digest = hmac.new(
+            self._secret,
+            rel.encode(),
+            hashlib.sha256,
+        ).hexdigest()
+        node_id = digest[:16]
+        self._id_to_path[node_id] = resolved
+        self._path_to_id[key] = node_id
         return node_id
 
     def resolve(self, node_id: str) -> Path:
@@ -158,7 +207,7 @@ class NodeRegistry:
             except (PathSecurityError, OSError):
                 continue
 
-            node_id = self.register(resolved)
+            node_id = self.register_resolved(resolved)
             kind = self._classify_entry(de)
 
             if is_dir:
@@ -173,7 +222,10 @@ class NodeRegistry:
                 )
             else:
                 st = de.stat()
-                mime = mimetypes.guess_type(de.name)[0]
+                name = de.name
+                dot_idx = name.rfind(".")
+                ext = name[dot_idx:].lower() if dot_idx > 0 else ""
+                mime = MIME_MAP.get(ext) or mimetypes.guess_type(name)[0]
                 entries.append(
                     EntryMeta(
                         node_id=node_id,
@@ -205,10 +257,16 @@ class NodeRegistry:
 
     @staticmethod
     def _classify_entry(entry: os.DirEntry[str]) -> EntryKind:
-        """DirEntry から種類を判定する (追加 I/O なし)."""
+        """DirEntry から種類を判定する (追加 I/O なし).
+
+        Path 生成を避け、文字列操作のみで拡張子を取得する。
+        dot_idx > 0 で隠しファイル (.bashrc 等) の誤認を防止。
+        """
         if entry.is_dir(follow_symlinks=False):
             return EntryKind.DIRECTORY
-        suffix = Path(entry.name).suffix.lower()
+        name = entry.name
+        dot_idx = name.rfind(".")
+        suffix = name[dot_idx:].lower() if dot_idx > 0 else ""
         if suffix in IMAGE_EXTENSIONS:
             return EntryKind.IMAGE
         if suffix in VIDEO_EXTENSIONS:

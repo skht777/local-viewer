@@ -6,6 +6,7 @@
 - 不正アクセスは PathSecurityError を送出
 """
 
+import os
 from pathlib import Path
 
 from backend.config import Settings
@@ -22,6 +23,10 @@ class PathSecurity:
     def __init__(self, settings: Settings) -> None:
         self.root_dir = settings.root_dir
         self.is_allow_symlinks = settings.is_allow_symlinks
+        # 文字列比較用にキャッシュ
+        # root_prefix に os.sep を含めて /root vs /root2 を区別
+        self._root_str = str(self.root_dir)
+        self._root_prefix = self._root_str + os.sep
 
     def validate(self, path: Path) -> Path:
         """パスを検証し、解決済みの安全なパスを返す.
@@ -81,12 +86,13 @@ class PathSecurity:
         return resolved
 
     def _is_under_root(self, resolved: Path) -> bool:
-        """resolved パスが root_dir 配下にあるか判定する."""
-        try:
-            resolved.relative_to(self.root_dir)
-        except ValueError:
-            return False
-        return True
+        """resolved パスが root_dir 配下にあるか判定する.
+
+        文字列比較で O(1) 判定。root_prefix に os.sep を含めて
+        /data と /data2 のような prefix 一致の誤判定を防止。
+        """
+        s = str(resolved)
+        return s == self._root_str or s.startswith(self._root_prefix)
 
     def _has_symlink(self, path: Path) -> bool:
         """パスのいずれかの要素が symlink かどうかを検出する.
