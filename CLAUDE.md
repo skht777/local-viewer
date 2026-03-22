@@ -55,3 +55,16 @@ cd frontend && npx vitest run
 - **lint-staged uses venv path** — ruff is called as `backend/.venv/bin/ruff` in `package.json`
 - **node_id opaque IDs** — API never exposes raw filesystem paths to client
 - **Default bind 127.0.0.1** — LAN access requires explicit `BIND_HOST=0.0.0.0` in `.env`
+
+## Gotchas (cont.)
+- **`docs/` is gitignored** — 実装計画は `docs/plan-*.md` に保存（gitignored、ローカル保全のみ）
+
+## TDD
+- Red → Green → Refactor を小刻みに回す
+- 失敗するテストを先に書いてから最小限の実装
+- テスト名は日本語で振る舞いを記述
+
+## Git Workflow
+- 1つの論理的な変更単位ごとにコミットする（テストが通る状態で）
+- リファクタリングと機能追加は別コミット（Tidy First）
+- 作業完了時にコミットを忘れずに行う
