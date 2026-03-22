@@ -19,6 +19,7 @@ select = [
 ]
 ignore = [
     "S104",   # allow binding to 0.0.0.0 (intentional in Docker)
+    "B008",   # Depends() in defaults is FastAPI convention
 ]
 
 [tool.ruff.lint.isort]
