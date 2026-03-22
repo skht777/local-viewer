@@ -2,9 +2,13 @@
 
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
+from pathlib import Path as FilePath
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 
 from backend.config import init_settings
 from backend.errors import (
@@ -62,6 +66,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# JSON レスポンス圧縮 (browse API 等)
+# minimum_size=500: 500B 以上で gzip 適用
+# compresslevel=5: 圧縮率と速度のバランス
+app.add_middleware(GZipMiddleware, minimum_size=500, compresslevel=5)
+
 # 例外ハンドラ登録
 app.add_exception_handler(PathSecurityError, path_security_error_handler)  # type: ignore[arg-type]
 app.add_exception_handler(NodeNotFoundError, node_not_found_error_handler)  # type: ignore[arg-type]
@@ -75,3 +84,22 @@ app.include_router(file.router)
 async def health() -> dict[str, str]:
     """Health check endpoint."""
     return {"status": "ok"}
+
+
+# --- 本番用: 静的ファイル配信 + SPA フォールバック ---
+# Vite ビルド出力を配信。開発時は Vite dev server がプロキシで処理するため影響なし
+_static_dir = FilePath(__file__).parent.parent / "static"
+
+if _static_dir.exists():
+    # ハッシュ付きアセット (JS/CSS) — 長期キャッシュ可能
+    app.mount(
+        "/assets",
+        StaticFiles(directory=_static_dir / "assets"),
+        name="assets",
+    )
+
+    # SPA フォールバック — /api 以外の全パスで index.html を返す
+    @app.get("/{full_path:path}")
+    async def spa_fallback(full_path: str) -> FileResponse:
+        """SPA のクライアントサイドルーティング対応."""
+        return FileResponse(_static_dir / "index.html")
