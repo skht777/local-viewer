@@ -204,7 +204,7 @@ class NodeRegistry:
             # 親は validate_existing 済み → 子は軽量チェックのみ
             try:
                 resolved = self._path_security.validate_child(child, is_symlink=is_link)
-            except (PathSecurityError, OSError):
+            except PathSecurityError, OSError:
                 continue
 
             node_id = self.register_resolved(resolved)
@@ -251,7 +251,7 @@ class NodeRegistry:
             return None
         try:
             self._path_security.validate(parent)
-        except (PathSecurityError, OSError):
+        except PathSecurityError, OSError:
             return None
         return self.register(parent)
 
