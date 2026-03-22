@@ -1,19 +1,125 @@
 """テスト共通フィクスチャ."""
 
-from collections.abc import AsyncGenerator
+import os
+from collections.abc import AsyncGenerator, Generator
+from pathlib import Path
 
 import pytest
 from httpx import ASGITransport, AsyncClient
 
+from backend.config import Settings
+from backend.errors import (
+    NodeNotFoundError,
+    PathSecurityError,
+    node_not_found_error_handler,
+    path_security_error_handler,
+)
 from backend.main import app
+from backend.routers import browse, file
+from backend.services.node_registry import NodeRegistry
+from backend.services.path_security import PathSecurity
 
 
 @pytest.fixture
-async def client() -> AsyncGenerator[AsyncClient]:
-    """FastAPI TestClient (httpx AsyncClient).
+def test_root(tmp_path: Path) -> Path:
+    """テスト用ディレクトリ構造を作成する.
 
-    テストごとにインスタンスを生成する。
+    tmp_path/
+    ├── dir_a/
+    │   ├── image.jpg (最小JPEG)
+    │   └── nested/
+    │       └── deep.txt
+    ├── dir_b/
+    │   └── video.mp4 (ダミー)
+    ├── file.txt
+    └── photo.png (ダミー)
     """
+    (tmp_path / "dir_a").mkdir()
+    (tmp_path / "dir_a" / "nested").mkdir()
+    (tmp_path / "dir_b").mkdir()
+
+    (tmp_path / "file.txt").write_text("hello")
+    (tmp_path / "dir_a" / "nested" / "deep.txt").write_text("deep content")
+
+    # 最小 JPEG
+    minimal_jpeg = bytes(
+        [
+            0xFF,
+            0xD8,
+            0xFF,
+            0xE0,
+            0x00,
+            0x10,
+            0x4A,
+            0x46,
+            0x49,
+            0x46,
+            0x00,
+            0x01,
+            0x01,
+            0x00,
+            0x00,
+            0x01,
+            0x00,
+            0x01,
+            0x00,
+            0x00,
+            0xFF,
+            0xD9,
+        ]
+    )
+    (tmp_path / "dir_a" / "image.jpg").write_bytes(minimal_jpeg)
+    (tmp_path / "dir_b" / "video.mp4").write_bytes(b"\x00" * 1024)
+    (tmp_path / "photo.png").write_bytes(b"\x89PNG\r\n\x1a\n" + b"\x00" * 100)
+
+    return tmp_path
+
+
+@pytest.fixture
+def test_settings(test_root: Path) -> Generator[Settings]:
+    """テスト用 Settings."""
+    os.environ["ROOT_DIR"] = str(test_root)
+    os.environ.pop("ALLOW_SYMLINKS", None)
+    s = Settings()
+    yield s
+    os.environ.pop("ROOT_DIR", None)
+
+
+@pytest.fixture
+def test_path_security(test_settings: Settings) -> PathSecurity:
+    """テスト用 PathSecurity."""
+    return PathSecurity(test_settings)
+
+
+@pytest.fixture
+def test_node_registry(test_path_security: PathSecurity) -> NodeRegistry:
+    """テスト用 NodeRegistry."""
+    return NodeRegistry(test_path_security)
+
+
+@pytest.fixture
+async def client(
+    test_node_registry: NodeRegistry,
+) -> AsyncGenerator[AsyncClient]:
+    """DI 差し替え済みの FastAPI TestClient.
+
+    NodeRegistry をテスト用インスタンスに差し替える。
+    """
+    app.dependency_overrides[browse.get_node_registry] = lambda: test_node_registry
+    app.dependency_overrides[file.get_node_registry] = lambda: test_node_registry
+
+    # 例外ハンドラ登録 (lifespan が動かないテスト用)
+    app.add_exception_handler(
+        PathSecurityError,
+        path_security_error_handler,  # type: ignore[arg-type]
+    )
+    app.add_exception_handler(
+        NodeNotFoundError,
+        node_not_found_error_handler,  # type: ignore[arg-type]
+    )
+
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
         yield ac
+
+    app.dependency_overrides.clear()
