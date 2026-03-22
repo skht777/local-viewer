@@ -27,6 +27,12 @@
 - リファクタリングと機能追加は別コミットにする（Tidy First）
 - Phase番号があれば参照する: `feat(viewer): CGモード実装 [Phase 2]`
 
+## コミットタイミング
+- 1つの論理的な変更単位ごとにコミットする
+- リファクタリング完了後、機能追加の前にコミットする（Tidy First）
+- テストが通る状態でコミットする（壊れた状態でコミットしない）
+- 作業完了時にコミットを忘れずに行う
+
 ## Pre-commit
 - Husky + lint-staged が自動実行
 - Frontend: oxlint + oxfmt --write
