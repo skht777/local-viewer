@@ -5,6 +5,7 @@ GET /api/browse/{node_id} — ディレクトリ一覧
 """
 
 from fastapi import APIRouter, Depends, HTTPException
+from starlette.concurrency import run_in_threadpool
 
 from backend.services.node_registry import BrowseResponse, NodeRegistry
 
@@ -29,7 +30,7 @@ async def browse_root(
     ROOT_DIR 直下のエントリをメタ情報付きで返す。
     """
     root = registry.path_security.root_dir
-    entries = registry.list_directory(root)
+    entries = await run_in_threadpool(registry.list_directory, root)
     return BrowseResponse(
         current_node_id=None,
         current_name="root",
@@ -56,7 +57,7 @@ async def browse_directory(
             detail={"error": "ディレクトリではありません", "code": "NOT_A_DIRECTORY"},
         )
 
-    entries = registry.list_directory(path)
+    entries = await run_in_threadpool(registry.list_directory, path)
     parent_node_id = registry.get_parent_node_id(path)
     return BrowseResponse(
         current_node_id=node_id,

@@ -134,43 +134,50 @@ class NodeRegistry:
     def list_directory(self, directory: Path) -> list[EntryMeta]:
         """ディレクトリの内容を一覧し、各エントリを登録して返す.
 
-        - path_security でディレクトリの安全性を検証
-        - 各エントリを登録して node_id を付与
-        - ソート: ディレクトリ優先、名前の自然順
+        os.scandir() で DirEntry を取得し、キャッシュ済みの
+        is_dir/is_symlink/stat を活用して I/O を最小化する。
         """
         validated = self._path_security.validate_existing(directory)
         entries: list[EntryMeta] = []
 
-        children = list(validated.iterdir())
-        children.sort(key=lambda p: (not p.is_dir(), p.name.lower()))
+        # os.scandir() — DirEntry の is_dir/is_symlink は追加 I/O なし
+        with os.scandir(validated) as scanner:
+            dir_entries = sorted(
+                scanner,
+                key=lambda e: (not e.is_dir(follow_symlinks=False), e.name.lower()),
+            )
 
-        for child in children:
-            # 不正なエントリはスキップ
+        for de in dir_entries:
+            child = Path(de.path)
+            is_dir = de.is_dir(follow_symlinks=False)
+            is_link = de.is_symlink()
+
+            # 親は validate_existing 済み → 子は軽量チェックのみ
             try:
-                self._path_security.validate(child)
+                resolved = self._path_security.validate_child(child, is_symlink=is_link)
             except (PathSecurityError, OSError):
                 continue
 
-            node_id = self.register(child)
-            kind = self._classify(child)
+            node_id = self.register(resolved)
+            kind = self._classify_entry(de)
 
-            if child.is_dir():
-                child_count = self._count_children(child)
+            if is_dir:
+                child_count = self._count_children_scandir(de.path)
                 entries.append(
                     EntryMeta(
                         node_id=node_id,
-                        name=child.name,
+                        name=de.name,
                         kind=kind,
                         child_count=child_count,
                     )
                 )
             else:
-                st = child.stat()
-                mime = mimetypes.guess_type(child.name)[0]
+                st = de.stat()
+                mime = mimetypes.guess_type(de.name)[0]
                 entries.append(
                     EntryMeta(
                         node_id=node_id,
-                        name=child.name,
+                        name=de.name,
                         kind=kind,
                         size_bytes=st.st_size,
                         mime_type=mime,
@@ -197,11 +204,11 @@ class NodeRegistry:
         return self.register(parent)
 
     @staticmethod
-    def _classify(path: Path) -> EntryKind:
-        """ファイルの種類を拡張子から判定する."""
-        if path.is_dir():
+    def _classify_entry(entry: os.DirEntry[str]) -> EntryKind:
+        """DirEntry から種類を判定する (追加 I/O なし)."""
+        if entry.is_dir(follow_symlinks=False):
             return EntryKind.DIRECTORY
-        suffix = path.suffix.lower()
+        suffix = Path(entry.name).suffix.lower()
         if suffix in IMAGE_EXTENSIONS:
             return EntryKind.IMAGE
         if suffix in VIDEO_EXTENSIONS:
@@ -213,9 +220,10 @@ class NodeRegistry:
         return EntryKind.OTHER
 
     @staticmethod
-    def _count_children(directory: Path) -> int:
-        """ディレクトリの直接の子エントリ数を返す."""
+    def _count_children_scandir(path: str) -> int:
+        """os.scandir() でディレクトリの子エントリ数を返す."""
         try:
-            return sum(1 for _ in directory.iterdir())
+            with os.scandir(path) as it:
+                return sum(1 for _ in it)
         except PermissionError:
             return 0

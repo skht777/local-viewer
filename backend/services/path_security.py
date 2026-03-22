@@ -66,6 +66,20 @@ class PathSecurity:
         joined = self.root_dir.joinpath(*parts)
         return self.validate(joined)
 
+    def validate_child(self, child: Path, *, is_symlink: bool) -> Path:
+        """validate 済みディレクトリの直接の子を検証する (軽量版).
+
+        親が検証済みなので、子自身の symlink チェックのみ行う。
+        resolve() も symlink でない場合はスキップ。
+        """
+        if not self.is_allow_symlinks and is_symlink:
+            raise PathSecurityError("symlink の追跡は許可されていません")
+
+        resolved = child.resolve() if is_symlink else child
+        if not self._is_under_root(resolved):
+            raise PathSecurityError("ROOT_DIR の外へのアクセスは禁止されています")
+        return resolved
+
     def _is_under_root(self, resolved: Path) -> bool:
         """resolved パスが root_dir 配下にあるか判定する."""
         try:
