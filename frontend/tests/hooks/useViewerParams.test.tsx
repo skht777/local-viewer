@@ -16,7 +16,7 @@ describe("useViewerParams", () => {
     const { result } = renderHook(() => useViewerParams(), {
       wrapper: createWrapper(),
     });
-    expect(result.current.params.tab).toBe("images");
+    expect(result.current.params.tab).toBe("filesets");
     expect(result.current.params.index).toBe(0);
     expect(result.current.params.mode).toBe("cg");
   });

@@ -39,7 +39,9 @@ function TreeNode({ entry, depth, activeNodeId }: TreeNodeProps) {
 
   // ディレクトリ/アーカイブのみ子ノードを表示
   const childDirs =
-    childData?.entries.filter((e) => e.kind === "directory" || e.kind === "archive") ?? [];
+    childData?.entries.filter(
+      (e) => e.kind === "directory" || e.kind === "archive" || e.kind === "pdf",
+    ) ?? [];
 
   return (
     <div>
@@ -69,7 +71,9 @@ function TreeNode({ entry, depth, activeNodeId }: TreeNodeProps) {
 
 export function DirectoryTree({ rootEntries, activeNodeId }: DirectoryTreeProps) {
   // ディレクトリ/アーカイブのみ表示
-  const directories = rootEntries.filter((e) => e.kind === "directory" || e.kind === "archive");
+  const directories = rootEntries.filter(
+    (e) => e.kind === "directory" || e.kind === "archive" || e.kind === "pdf",
+  );
 
   return (
     <aside className="w-64 shrink-0 overflow-y-auto border-r border-gray-700 bg-gray-850">

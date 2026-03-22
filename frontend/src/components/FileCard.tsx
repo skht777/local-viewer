@@ -1,7 +1,8 @@
 // ファイル/フォルダ1件を表示するカード
-// - kind に応じたアイコン表示
-// - サムネイルは Phase 1 ではプレースホルダー
+// - kind === "image" の場合は /api/file/{node_id} で実画像プレビュー
+// - その他の kind はアイコン表示
 
+import { useState } from "react";
 import type { BrowseEntry } from "../types/api";
 
 interface FileCardProps {
@@ -36,6 +37,9 @@ function kindIcon(kind: BrowseEntry["kind"]): string {
 }
 
 export function FileCard({ entry, onClick }: FileCardProps) {
+  const [hasImageError, setHasImageError] = useState(false);
+  const isImagePreview = entry.kind === "image" && !hasImageError;
+
   return (
     <button
       type="button"
@@ -43,7 +47,17 @@ export function FileCard({ entry, onClick }: FileCardProps) {
       className="flex cursor-pointer flex-col overflow-hidden rounded-lg bg-gray-800 transition-colors hover:bg-gray-700"
     >
       <div className="flex aspect-square items-center justify-center bg-gray-750 text-4xl">
-        {kindIcon(entry.kind)}
+        {isImagePreview ? (
+          <img
+            src={`/api/file/${entry.node_id}`}
+            alt={entry.name}
+            className="h-full w-full object-cover"
+            loading="lazy"
+            onError={() => setHasImageError(true)}
+          />
+        ) : (
+          kindIcon(entry.kind)
+        )}
       </div>
       <div className="p-2">
         <p className="truncate text-sm">{entry.name}</p>

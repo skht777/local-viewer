@@ -4,7 +4,7 @@
 
 import { useSearchParams } from "react-router-dom";
 
-export type ViewerTab = "images" | "videos";
+export type ViewerTab = "filesets" | "images" | "videos";
 export type ViewerMode = "cg" | "manga";
 
 interface ViewerParams {
@@ -23,7 +23,7 @@ interface UseViewerParamsReturn {
 export function useViewerParams(): UseViewerParamsReturn {
   const [searchParams, setSearchParams] = useSearchParams();
 
-  const tab = (searchParams.get("tab") ?? "images") as ViewerTab;
+  const tab = (searchParams.get("tab") ?? "filesets") as ViewerTab;
   const index = parseInt(searchParams.get("index") ?? "0", 10);
   const mode = (searchParams.get("mode") ?? "cg") as ViewerMode;
 
