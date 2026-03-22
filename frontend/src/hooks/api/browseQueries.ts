@@ -5,11 +5,11 @@ import type { BrowseResponse } from "../../types/api";
 import { apiFetch } from "./apiClient";
 
 // ルート一覧 (マウントポイント) を取得
+// staleTime / gcTime は App.tsx のグローバル設定を継承
 export function browseRootOptions() {
   return queryOptions({
     queryKey: ["browse"],
     queryFn: () => apiFetch<BrowseResponse>("/api/browse"),
-    staleTime: 30 * 1000,
   });
 }
 
@@ -18,7 +18,6 @@ export function browseNodeOptions(nodeId: string | undefined) {
   return queryOptions({
     queryKey: ["browse", nodeId],
     queryFn: () => apiFetch<BrowseResponse>(`/api/browse/${nodeId}`),
-    staleTime: 30 * 1000,
     enabled: !!nodeId,
   });
 }

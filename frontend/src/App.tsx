@@ -11,6 +11,7 @@ const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
       staleTime: 30 * 1000,
+      gcTime: 10 * 60 * 1000, // キャッシュ保持を10分に延長
       retry: 1,
     },
   },

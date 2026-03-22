@@ -53,6 +53,7 @@ export function FileCard({ entry, onClick }: FileCardProps) {
             alt={entry.name}
             className="h-full w-full object-cover"
             loading="lazy"
+            decoding="async"
             onError={() => setHasImageError(true)}
           />
         ) : (
