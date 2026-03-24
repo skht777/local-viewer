@@ -1,12 +1,14 @@
 """ディレクトリ閲覧 API.
 
 GET /api/browse          — ルート一覧 (ROOT_DIR 直下)
-GET /api/browse/{node_id} — ディレクトリ一覧
+GET /api/browse/{node_id} — ディレクトリ/アーカイブ一覧
 
 ETag + 304 で未変更時の転送を省略する。
 """
 
 import hashlib
+import logging
+import zipfile
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import Response
@@ -14,6 +16,8 @@ from starlette.concurrency import run_in_threadpool
 
 from backend.services.archive_service import ArchiveService
 from backend.services.node_registry import BrowseResponse, EntryMeta, NodeRegistry
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api", tags=["browse"])
 
@@ -95,7 +99,19 @@ async def browse_directory(
 
     # アーカイブファイルの場合: 中身をエントリとして返す
     if path.is_file() and archive_service.is_supported(path):
-        archive_entries = await run_in_threadpool(archive_service.list_entries, path)
+        try:
+            archive_entries = await run_in_threadpool(
+                archive_service.list_entries, path
+            )
+        except (zipfile.BadZipFile, OSError) as exc:
+            logger.warning("アーカイブ読み取り失敗: %s (%s)", path, exc)
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "error": f"アーカイブを読み取れません: {exc}",
+                    "code": "INVALID_ARCHIVE",
+                },
+            ) from exc
         entries = registry.list_archive_entries(path, archive_entries)
 
         etag = _compute_etag(entries)
