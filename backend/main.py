@@ -1,5 +1,6 @@
 """Local Content Viewer -- FastAPI entry point."""
 
+import logging
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from pathlib import Path as FilePath
@@ -14,15 +15,25 @@ from backend.config import init_settings
 from backend.errors import (
     NodeNotFoundError,
     PathSecurityError,
+    archive_password_error_handler,
+    archive_security_error_handler,
     node_not_found_error_handler,
     path_security_error_handler,
 )
 from backend.routers import browse, file
+from backend.services.archive_security import (
+    ArchivePasswordError,
+    ArchiveSecurityError,
+)
+from backend.services.archive_service import ArchiveService
 from backend.services.node_registry import NodeRegistry
 from backend.services.path_security import PathSecurity
 
+logger = logging.getLogger(__name__)
+
 # サービスインスタンス (lifespan で初期化)
 _node_registry: NodeRegistry | None = None
+_archive_service: ArchiveService | None = None
 
 
 def get_node_registry() -> NodeRegistry:
@@ -33,24 +44,54 @@ def get_node_registry() -> NodeRegistry:
     return _node_registry
 
 
+def get_archive_service() -> ArchiveService:
+    """ArchiveService の DI 用依存関数."""
+    if _archive_service is None:
+        msg = "ArchiveService が初期化されていません"
+        raise RuntimeError(msg)
+    return _archive_service
+
+
 @asynccontextmanager
 async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
     """アプリケーションの起動/終了処理.
 
-    起動時: Settings → PathSecurity → NodeRegistry を初期化。
+    起動時: Settings → PathSecurity → NodeRegistry → ArchiveService を初期化。
     """
-    global _node_registry
+    global _node_registry, _archive_service
     settings = init_settings()
     path_security = PathSecurity(settings)
-    _node_registry = NodeRegistry(path_security)
+    _node_registry = NodeRegistry(
+        path_security,
+        archive_registry_max_entries=settings.archive_registry_max_entries,
+    )
+
+    # アーカイブサービス初期化
+    from backend.services.archive_security import ArchiveEntryValidator
+
+    validator = ArchiveEntryValidator(settings)
+    _archive_service = ArchiveService(
+        validator=validator,
+        cache_max_bytes=settings.archive_cache_mb * 1024 * 1024,
+    )
+
+    # 起動時診断: 各アーカイブ形式の利用可否
+    diag = _archive_service.get_diagnostics()
+    for fmt, available in diag.items():
+        level = logging.INFO if available else logging.WARNING
+        status = "available" if available else "not available"
+        logger.log(level, "%s support: %s", fmt, status)
 
     # DI: routers のスタブを実インスタンスに差し替え
     _app.dependency_overrides[browse.get_node_registry] = get_node_registry
     _app.dependency_overrides[file.get_node_registry] = get_node_registry
+    _app.dependency_overrides[browse.get_archive_service] = get_archive_service
+    _app.dependency_overrides[file.get_archive_service] = get_archive_service
 
     yield
 
     _node_registry = None
+    _archive_service = None
 
 
 app = FastAPI(
@@ -74,6 +115,8 @@ app.add_middleware(GZipMiddleware, minimum_size=500, compresslevel=5)
 # 例外ハンドラ登録
 app.add_exception_handler(PathSecurityError, path_security_error_handler)  # type: ignore[arg-type]
 app.add_exception_handler(NodeNotFoundError, node_not_found_error_handler)  # type: ignore[arg-type]
+app.add_exception_handler(ArchiveSecurityError, archive_security_error_handler)
+app.add_exception_handler(ArchivePasswordError, archive_password_error_handler)
 
 # ルーター登録
 app.include_router(browse.router)

@@ -1,6 +1,7 @@
 """テスト共通フィクスチャ."""
 
 import os
+import zipfile
 from collections.abc import AsyncGenerator, Generator
 from pathlib import Path
 
@@ -11,11 +12,19 @@ from backend.config import Settings
 from backend.errors import (
     NodeNotFoundError,
     PathSecurityError,
+    archive_password_error_handler,
+    archive_security_error_handler,
     node_not_found_error_handler,
     path_security_error_handler,
 )
 from backend.main import app
 from backend.routers import browse, file
+from backend.services.archive_security import (
+    ArchiveEntryValidator,
+    ArchivePasswordError,
+    ArchiveSecurityError,
+)
+from backend.services.archive_service import ArchiveService
 from backend.services.node_registry import NodeRegistry
 from backend.services.path_security import PathSecurity
 
@@ -72,6 +81,13 @@ def test_root(tmp_path: Path) -> Path:
     (tmp_path / "dir_b" / "video.mp4").write_bytes(b"\x00" * 1024)
     (tmp_path / "photo.png").write_bytes(b"\x89PNG\r\n\x1a\n" + b"\x00" * 100)
 
+    # テスト用 ZIP アーカイブ
+    zip_path = tmp_path / "dir_a" / "archive.zip"
+    with zipfile.ZipFile(zip_path, "w") as zf:
+        zf.writestr("page01.jpg", minimal_jpeg)
+        zf.writestr("page02.jpg", minimal_jpeg)
+        zf.writestr("readme.txt", "not an image")
+
     return tmp_path
 
 
@@ -98,15 +114,25 @@ def test_node_registry(test_path_security: PathSecurity) -> NodeRegistry:
 
 
 @pytest.fixture
+def test_archive_service(test_settings: Settings) -> ArchiveService:
+    """テスト用 ArchiveService."""
+    validator = ArchiveEntryValidator(test_settings)
+    return ArchiveService(validator=validator)
+
+
+@pytest.fixture
 async def client(
     test_node_registry: NodeRegistry,
+    test_archive_service: ArchiveService,
 ) -> AsyncGenerator[AsyncClient]:
     """DI 差し替え済みの FastAPI TestClient.
 
-    NodeRegistry をテスト用インスタンスに差し替える。
+    NodeRegistry と ArchiveService をテスト用インスタンスに差し替える。
     """
     app.dependency_overrides[browse.get_node_registry] = lambda: test_node_registry
     app.dependency_overrides[file.get_node_registry] = lambda: test_node_registry
+    app.dependency_overrides[browse.get_archive_service] = lambda: test_archive_service
+    app.dependency_overrides[file.get_archive_service] = lambda: test_archive_service
 
     # 例外ハンドラ登録 (lifespan が動かないテスト用)
     app.add_exception_handler(
@@ -116,6 +142,14 @@ async def client(
     app.add_exception_handler(
         NodeNotFoundError,
         node_not_found_error_handler,  # type: ignore[arg-type]
+    )
+    app.add_exception_handler(
+        ArchiveSecurityError,
+        archive_security_error_handler,  # type: ignore[arg-type]
+    )
+    app.add_exception_handler(
+        ArchivePasswordError,
+        archive_password_error_handler,  # type: ignore[arg-type]
     )
 
     transport = ASGITransport(app=app)

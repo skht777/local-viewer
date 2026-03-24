@@ -61,3 +61,29 @@ async def node_not_found_error_handler(
             code="NOT_FOUND",
         ).model_dump(),
     )
+
+
+async def archive_security_error_handler(
+    _request: Request, exc: Exception
+) -> JSONResponse:
+    """ArchiveSecurityError → 422 レスポンス."""
+    return JSONResponse(
+        status_code=422,
+        content=ErrorResponse(
+            error=str(exc),
+            code="ARCHIVE_SECURITY_ERROR",
+        ).model_dump(),
+    )
+
+
+async def archive_password_error_handler(
+    _request: Request, exc: Exception
+) -> JSONResponse:
+    """ArchivePasswordError → 422 レスポンス."""
+    return JSONResponse(
+        status_code=422,
+        content=ErrorResponse(
+            error=str(exc),
+            code="ARCHIVE_PASSWORD_REQUIRED",
+        ).model_dump(),
+    )

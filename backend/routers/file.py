@@ -9,9 +9,16 @@ from pathlib import Path
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import FileResponse, Response
 
+from backend.services.archive_service import ArchiveService
 from backend.services.node_registry import NodeRegistry
 
 router = APIRouter(prefix="/api", tags=["file"])
+
+
+def get_archive_service() -> ArchiveService:
+    """ArchiveService の DI スタブ."""
+    msg = "ArchiveService が DI で設定されていません"
+    raise RuntimeError(msg)
 
 
 def get_node_registry() -> NodeRegistry:
