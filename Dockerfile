@@ -12,9 +12,10 @@ FROM python:3.14-slim AS runtime
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
 
-# curl for HEALTHCHECK (unrar/p7zip added in Phase 4)
+# curl for HEALTHCHECK, unrar-free for RAR archives
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
+    unrar-free \
     && rm -rf /var/lib/apt/lists/*
 
 # Non-root user
