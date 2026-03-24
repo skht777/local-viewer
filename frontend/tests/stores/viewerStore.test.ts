@@ -2,6 +2,8 @@ import { useViewerStore } from "../../src/stores/viewerStore";
 
 describe("viewerStore", () => {
   beforeEach(() => {
+    // localStorage をクリア（persist middleware のケース間汚染防止）
+    localStorage.clear();
     // ストアをリセット
     useViewerStore.setState({
       isSidebarOpen: true,
@@ -69,5 +71,31 @@ describe("viewerStore", () => {
 
     useViewerStore.getState().cycleSpreadMode();
     expect(useViewerStore.getState().spreadMode).toBe("single");
+  });
+
+  // --- Phase 3: persist middleware ---
+
+  test("persist middleware で fitMode が localStorage に保存される", () => {
+    useViewerStore.getState().setFitMode("height");
+    const stored = JSON.parse(localStorage.getItem("viewer-store") ?? "{}");
+    expect(stored.state.fitMode).toBe("height");
+  });
+
+  test("persist middleware で spreadMode が localStorage に保存される", () => {
+    useViewerStore.getState().cycleSpreadMode();
+    const stored = JSON.parse(localStorage.getItem("viewer-store") ?? "{}");
+    expect(stored.state.spreadMode).toBe("spread");
+  });
+
+  test("永続化対象外の isSidebarOpen は localStorage に含まれない", () => {
+    useViewerStore.getState().toggleSidebar();
+    const stored = JSON.parse(localStorage.getItem("viewer-store") ?? "{}");
+    expect(stored.state.isSidebarOpen).toBeUndefined();
+  });
+
+  test("永続化対象外の expandedNodeIds は localStorage に含まれない", () => {
+    useViewerStore.getState().toggleExpanded("node1");
+    const stored = JSON.parse(localStorage.getItem("viewer-store") ?? "{}");
+    expect(stored.state.expandedNodeIds).toBeUndefined();
   });
 });
