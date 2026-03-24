@@ -17,6 +17,13 @@ class Settings:
     root_dir: Path
     is_allow_symlinks: bool
 
+    # アーカイブ安全性設定
+    archive_max_total_size: int  # 展開後合計サイズ上限 (bytes)
+    archive_max_entry_size: int  # 1エントリ展開後サイズ上限 (bytes)
+    archive_max_ratio: float  # 圧縮率上限
+    archive_cache_mb: int  # メモリキャッシュ容量 (MB)
+    archive_registry_max_entries: int  # NodeRegistry アーカイブエントリ上限
+
     def __init__(self) -> None:
         raw = os.environ.get("ROOT_DIR", "")
         if not raw:
@@ -32,6 +39,19 @@ class Settings:
             "true",
             "1",
             "yes",
+        )
+
+        # アーカイブ設定
+        self.archive_max_total_size = int(
+            os.environ.get("ARCHIVE_MAX_TOTAL_SIZE", str(1024 * 1024 * 1024))
+        )
+        self.archive_max_entry_size = int(
+            os.environ.get("ARCHIVE_MAX_ENTRY_SIZE", str(32 * 1024 * 1024))
+        )
+        self.archive_max_ratio = float(os.environ.get("ARCHIVE_MAX_RATIO", "100.0"))
+        self.archive_cache_mb = int(os.environ.get("ARCHIVE_CACHE_MB", "256"))
+        self.archive_registry_max_entries = int(
+            os.environ.get("ARCHIVE_REGISTRY_MAX_ENTRIES", "100000")
         )
 
 
