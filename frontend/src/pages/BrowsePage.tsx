@@ -1,7 +1,8 @@
 // ファイルブラウザーページ
-// - isViewerOpen=false: BrowseHeader + ViewerTabs + DirectoryTree + FileBrowser
+// - isViewerOpen=false: BrowseHeader + ViewerTabs + DirectoryTree + FileBrowser/VideoFeed
 // - isViewerOpen=true && mode=cg: CgViewer
 // - isViewerOpen=true && mode=manga: MangaViewer
+// - tab=videos: VideoFeed (インラインフィード、ビューワー遷移なし)
 // - ディレクトリ内の画像のみがビューワーの表示範囲
 
 import { useMemo } from "react";
@@ -15,6 +16,7 @@ import { CgViewer } from "../components/CgViewer";
 import { DirectoryTree } from "../components/DirectoryTree";
 import { FileBrowser } from "../components/FileBrowser";
 import { MangaViewer } from "../components/MangaViewer";
+import { VideoFeed } from "../components/VideoFeed";
 import { ViewerTabs } from "../components/ViewerTabs";
 
 export default function BrowsePage() {
@@ -33,6 +35,12 @@ export default function BrowsePage() {
   // 現在のディレクトリ内の画像エントリのみ（CgViewer の表示範囲）
   const images = useMemo(
     () => (data?.entries ?? []).filter((e) => e.kind === "image"),
+    [data?.entries],
+  );
+
+  // 動画エントリ（VideoFeed の表示対象）
+  const videos = useMemo(
+    () => (data?.entries ?? []).filter((e) => e.kind === "video"),
     [data?.entries],
   );
 
@@ -80,14 +88,18 @@ export default function BrowsePage() {
         {isSidebarOpen && rootData && (
           <DirectoryTree rootEntries={rootData.entries} activeNodeId={nodeId ?? ""} />
         )}
-        <FileBrowser
-          entries={data?.entries ?? []}
-          isLoading={isLoading}
-          onNavigate={(id) => navigate(`/browse/${id}`)}
-          onImageClick={openViewer}
-          onTabChange={setTab}
-          tab={params.tab}
-        />
+        {params.tab === "videos" ? (
+          <VideoFeed videos={videos} />
+        ) : (
+          <FileBrowser
+            entries={data?.entries ?? []}
+            isLoading={isLoading}
+            onNavigate={(id) => navigate(`/browse/${id}`)}
+            onImageClick={openViewer}
+            onTabChange={setTab}
+            tab={params.tab}
+          />
+        )}
       </div>
     </div>
   );
