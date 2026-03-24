@@ -6,17 +6,24 @@ node_id は HMAC-SHA256(secret, relative_path) の先頭16文字 (hex)。
 - クライアントに実パスを公開しない
 """
 
+from __future__ import annotations
+
 import hashlib
 import hmac
 import mimetypes
 import os
+from collections import OrderedDict
 from enum import StrEnum
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from pydantic import BaseModel
 
 from backend.errors import NodeNotFoundError, PathSecurityError
 from backend.services.path_security import PathSecurity
+
+if TYPE_CHECKING:
+    from backend.services.archive_reader import ArchiveEntry
 
 # 拡張子 → EntryKind のマッピング
 IMAGE_EXTENSIONS = frozenset(
@@ -102,7 +109,11 @@ class NodeRegistry:
     - path_security を経由して安全なパスのみ登録
     """
 
-    def __init__(self, path_security: PathSecurity) -> None:
+    def __init__(
+        self,
+        path_security: PathSecurity,
+        archive_registry_max_entries: int = 100_000,
+    ) -> None:
         self._path_security = path_security
         self._secret = os.environ.get(
             "NODE_SECRET", "local-viewer-default-secret"
@@ -112,6 +123,10 @@ class NodeRegistry:
         # 文字列比較用にルートパスをキャッシュ
         self._root_str = str(path_security.root_dir)
         self._root_prefix = self._root_str + os.sep
+        # アーカイブエントリ用マッピング (LRU, 上限管理)
+        self._id_to_archive_entry: OrderedDict[str, tuple[Path, str]] = OrderedDict()
+        self._archive_entry_to_id: dict[str, str] = {}
+        self._archive_registry_max = archive_registry_max_entries
 
     @property
     def path_security(self) -> PathSecurity:
@@ -254,6 +269,101 @@ class NodeRegistry:
         except PathSecurityError, OSError:
             return None
         return self.register(parent)
+
+    # --- アーカイブエントリ対応 ---
+
+    def register_archive_entry(self, archive_path: Path, entry_name: str) -> str:
+        """アーカイブエントリを登録し node_id を返す.
+
+        HMAC 入力: "arc::{archive_relative_path}::{entry_name}"
+        LRU 方式で上限超過時は最も古い登録を削除。
+        """
+        composite_key = f"arc::{archive_path}::{entry_name}"
+        if composite_key in self._archive_entry_to_id:
+            node_id = self._archive_entry_to_id[composite_key]
+            self._id_to_archive_entry.move_to_end(node_id)
+            return node_id
+
+        # HMAC でアーカイブ相対パスとエントリ名から node_id を生成
+        resolved = archive_path.resolve()
+        rel = str(resolved.relative_to(self._path_security.root_dir))
+        hmac_input = f"arc::{rel}::{entry_name}"
+        digest = hmac.new(
+            self._secret,
+            hmac_input.encode(),
+            hashlib.sha256,
+        ).hexdigest()
+        node_id = digest[:16]
+
+        # LRU 上限管理
+        while len(self._id_to_archive_entry) >= self._archive_registry_max:
+            evicted_id, _ = self._id_to_archive_entry.popitem(last=False)
+            # 逆引きからも削除 (値からキー検索は重いので skip)
+            for k, v in list(self._archive_entry_to_id.items()):
+                if v == evicted_id:
+                    del self._archive_entry_to_id[k]
+                    break
+
+        self._id_to_archive_entry[node_id] = (resolved, entry_name)
+        self._archive_entry_to_id[composite_key] = node_id
+        return node_id
+
+    def resolve_archive_entry(self, node_id: str) -> tuple[Path, str] | None:
+        """node_id がアーカイブエントリなら (archive_path, entry_name) を返す.
+
+        通常のファイル/ディレクトリの場合は None。
+        """
+        result = self._id_to_archive_entry.get(node_id)
+        if result is not None:
+            self._id_to_archive_entry.move_to_end(node_id)
+        return result
+
+    def is_archive_entry(self, node_id: str) -> bool:
+        """node_id がアーカイブエントリかどうか."""
+        return node_id in self._id_to_archive_entry
+
+    def list_archive_entries(
+        self,
+        archive_path: Path,
+        archive_entries: list[ArchiveEntry],
+    ) -> list[EntryMeta]:
+        """ArchiveEntry リストを EntryMeta リストに変換する.
+
+        各エントリに node_id を付与し、kind を判定する。
+        ソートはアーカイブリーダー側で済んでいることを前提とする。
+        """
+        result: list[EntryMeta] = []
+        for entry in archive_entries:
+            node_id = self.register_archive_entry(archive_path, entry.name)
+
+            # 拡張子から kind 判定
+            name = entry.name
+            dot_idx = name.rfind(".")
+            ext = name[dot_idx:].lower() if dot_idx > 0 else ""
+            if ext in IMAGE_EXTENSIONS:
+                kind = EntryKind.IMAGE
+            elif ext in VIDEO_EXTENSIONS:
+                kind = EntryKind.VIDEO
+            elif ext in PDF_EXTENSIONS:
+                kind = EntryKind.PDF
+            else:
+                kind = EntryKind.OTHER
+
+            # 表示名 (パスの最後の要素)
+            display_name = name.rsplit("/", 1)[-1] if "/" in name else name
+
+            mime = MIME_MAP.get(ext) or mimetypes.guess_type(name)[0]
+
+            result.append(
+                EntryMeta(
+                    node_id=node_id,
+                    name=display_name,
+                    kind=kind,
+                    size_bytes=entry.size_uncompressed,
+                    mime_type=mime,
+                )
+            )
+        return result
 
     @staticmethod
     def _classify_entry(entry: os.DirEntry[str]) -> EntryKind:

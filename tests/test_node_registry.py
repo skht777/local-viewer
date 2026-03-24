@@ -193,3 +193,100 @@ def test_親のnode_idが取得できる(registry: NodeRegistry, root_dir: Path)
 def test_ROOT_DIRの親はNone(registry: NodeRegistry, root_dir: Path) -> None:
     parent_id = registry.get_parent_node_id(root_dir)
     assert parent_id is None
+
+
+# --- アーカイブエントリ ---
+
+
+def test_アーカイブエントリを登録してnode_idを返す(
+    registry: NodeRegistry, root_dir: Path
+) -> None:
+    archive = root_dir / "test.zip"
+    archive.touch()
+    node_id = registry.register_archive_entry(archive, "image01.jpg")
+    assert isinstance(node_id, str)
+    assert len(node_id) == 16
+
+
+def test_同じアーカイブエントリに対して同じnode_idを返す(
+    registry: NodeRegistry, root_dir: Path
+) -> None:
+    archive = root_dir / "test.zip"
+    archive.touch()
+    id1 = registry.register_archive_entry(archive, "image01.jpg")
+    id2 = registry.register_archive_entry(archive, "image01.jpg")
+    assert id1 == id2
+
+
+def test_アーカイブエントリのnode_idを解決できる(
+    registry: NodeRegistry, root_dir: Path
+) -> None:
+    archive = root_dir / "test.zip"
+    archive.touch()
+    node_id = registry.register_archive_entry(archive, "page01.jpg")
+    result = registry.resolve_archive_entry(node_id)
+    assert result is not None
+    assert result[0] == archive.resolve()
+    assert result[1] == "page01.jpg"
+
+
+def test_is_archive_entryが正しく判定する(
+    registry: NodeRegistry, root_dir: Path
+) -> None:
+    archive = root_dir / "test.zip"
+    archive.touch()
+    arc_id = registry.register_archive_entry(archive, "img.jpg")
+    file_id = registry.register(root_dir / "dir_a" / "image.jpg")
+
+    assert registry.is_archive_entry(arc_id) is True
+    assert registry.is_archive_entry(file_id) is False
+
+
+def test_list_archive_entriesでEntryMetaリストを返す(
+    registry: NodeRegistry, root_dir: Path
+) -> None:
+    from backend.services.archive_reader import ArchiveEntry
+
+    archive = root_dir / "test.zip"
+    archive.touch()
+    entries = [
+        ArchiveEntry(
+            name="img01.jpg",
+            size_compressed=100,
+            size_uncompressed=200,
+            is_dir=False,
+        ),
+        ArchiveEntry(
+            name="img02.png",
+            size_compressed=150,
+            size_uncompressed=300,
+            is_dir=False,
+        ),
+    ]
+    result = registry.list_archive_entries(archive, entries)
+    assert len(result) == 2
+    assert result[0].name == "img01.jpg"
+    assert result[0].kind == "image"
+    assert result[0].node_id
+    assert result[1].name == "img02.png"
+    assert result[1].kind == "image"
+
+
+def test_list_archive_entriesで画像のみがkind_imageになる(
+    registry: NodeRegistry, root_dir: Path
+) -> None:
+    from backend.services.archive_reader import ArchiveEntry
+
+    archive = root_dir / "test.zip"
+    archive.touch()
+    entries = [
+        ArchiveEntry(
+            name="video.mp4",
+            size_compressed=100,
+            size_uncompressed=200,
+            is_dir=False,
+        ),
+    ]
+    result = registry.list_archive_entries(archive, entries)
+    assert len(result) == 1
+    assert result[0].kind == "video"
