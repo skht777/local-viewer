@@ -21,7 +21,9 @@ class Settings:
     archive_max_total_size: int  # 展開後合計サイズ上限 (bytes)
     archive_max_entry_size: int  # 1エントリ展開後サイズ上限 (bytes)
     archive_max_ratio: float  # 圧縮率上限
+    archive_max_video_entry_size: int  # 動画1エントリ展開後サイズ上限 (bytes)
     archive_cache_mb: int  # メモリキャッシュ容量 (MB)
+    archive_disk_cache_mb: int  # ディスクキャッシュ容量 (MB)
     archive_registry_max_entries: int  # NodeRegistry アーカイブエントリ上限
 
     def __init__(self) -> None:
@@ -48,8 +50,14 @@ class Settings:
         self.archive_max_entry_size = int(
             os.environ.get("ARCHIVE_MAX_ENTRY_SIZE", str(32 * 1024 * 1024))
         )
+        self.archive_max_video_entry_size = int(
+            os.environ.get("ARCHIVE_MAX_VIDEO_ENTRY_SIZE", str(500 * 1024 * 1024))
+        )
         self.archive_max_ratio = float(os.environ.get("ARCHIVE_MAX_RATIO", "100.0"))
         self.archive_cache_mb = int(os.environ.get("ARCHIVE_CACHE_MB", "256"))
+        self.archive_disk_cache_mb = int(
+            os.environ.get("ARCHIVE_DISK_CACHE_MB", "1024")
+        )
         self.archive_registry_max_entries = int(
             os.environ.get("ARCHIVE_REGISTRY_MAX_ENTRIES", "100000")
         )

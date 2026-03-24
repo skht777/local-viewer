@@ -98,6 +98,7 @@ class ZipArchiveReader(ArchiveReader):
                     self._validator.validate_entry_size(
                         compressed=info.compress_size,
                         uncompressed=info.file_size,
+                        name=name,
                     )
                 except ArchiveSecurityError:
                     continue
@@ -121,7 +122,7 @@ class ZipArchiveReader(ArchiveReader):
 
     def extract_entry(self, archive_path: Path, entry_name: str) -> bytes:
         """エントリをチャンク読みで抽出する (サイズ上限付き)."""
-        max_size = self._validator.max_entry_size
+        max_size = self._validator.max_entry_size_for(entry_name)
         with zipfile.ZipFile(archive_path, "r") as zf:
             with zf.open(entry_name) as f:
                 chunks: list[bytes] = []
@@ -196,6 +197,7 @@ class RarArchiveReader(ArchiveReader):
                     self._validator.validate_entry_size(
                         compressed=info.compress_size,
                         uncompressed=info.file_size,
+                        name=name,
                     )
                 except ArchiveSecurityError:
                     continue
@@ -219,7 +221,7 @@ class RarArchiveReader(ArchiveReader):
         """エントリをチャンク読みで抽出する (サイズ上限付き)."""
         import rarfile
 
-        max_size = self._validator.max_entry_size
+        max_size = self._validator.max_entry_size_for(entry_name)
         with rarfile.RarFile(archive_path, "r") as rf:
             with rf.open(entry_name) as f:
                 chunks: list[bytes] = []
@@ -282,6 +284,7 @@ class SevenZipArchiveReader(ArchiveReader):
                         self._validator.validate_entry_size(
                             compressed=compressed,
                             uncompressed=uncompressed,
+                            name=name,
                         )
                     except ArchiveSecurityError:
                         continue
@@ -313,7 +316,7 @@ class SevenZipArchiveReader(ArchiveReader):
         import py7zr.io
 
         factory = py7zr.io.BytesIOFactory(
-            limit=self._validator.max_entry_size,
+            limit=self._validator.max_entry_size_for(entry_name),
         )
         with py7zr.SevenZipFile(archive_path, "r") as sz:
             sz.extract(targets=[entry_name], factory=factory)

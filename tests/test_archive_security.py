@@ -76,9 +76,16 @@ def test_許可拡張子のファイルを通す(validator: ArchiveEntryValidato
 def test_許可外拡張子のファイルを拒否する(validator: ArchiveEntryValidator) -> None:
     assert validator.is_allowed_extension("readme.txt") is False
     assert validator.is_allowed_extension("script.py") is False
-    assert validator.is_allowed_extension("video.mp4") is False
     assert validator.is_allowed_extension("document.pdf") is False
     assert validator.is_allowed_extension("noextension") is False
+
+
+def test_動画拡張子のファイルを許可する(validator: ArchiveEntryValidator) -> None:
+    assert validator.is_allowed_extension("video.mp4") is True
+    assert validator.is_allowed_extension("clip.webm") is True
+    assert validator.is_allowed_extension("movie.MKV") is True
+    assert validator.is_allowed_extension("file.avi") is True
+    assert validator.is_allowed_extension("rec.mov") is True
 
 
 # --- サイズ・圧縮率検証 ---
@@ -101,7 +108,37 @@ def test_展開後合計サイズが上限を超えると拒否する(
 def test_1エントリの展開後サイズが上限を超えると拒否する(
     validator: ArchiveEntryValidator,
 ) -> None:
-    # デフォルト上限は 32MB
+    # デフォルト画像上限は 32MB
     large_size = 64 * 1024 * 1024
     with pytest.raises(ArchiveSecurityError, match="エントリサイズ"):
         validator.validate_entry_size(compressed=large_size, uncompressed=large_size)
+
+
+def test_動画エントリのサイズ上限が画像より大きい(
+    validator: ArchiveEntryValidator,
+) -> None:
+    # 100MB は画像上限 (32MB) を超えるが、動画上限 (500MB) 以内
+    size = 100 * 1024 * 1024
+    # 画像名なら拒否
+    with pytest.raises(ArchiveSecurityError):
+        validator.validate_entry_size(
+            compressed=size, uncompressed=size, name="big.jpg"
+        )
+    # 動画名なら許可
+    validator.validate_entry_size(compressed=size, uncompressed=size, name="big.mp4")
+
+
+def test_画像エントリのサイズ上限は従来通り(
+    validator: ArchiveEntryValidator,
+) -> None:
+    # 32MB ちょうどは OK
+    ok_size = 32 * 1024 * 1024
+    validator.validate_entry_size(
+        compressed=ok_size, uncompressed=ok_size, name="ok.jpg"
+    )
+    # 32MB + 1 は NG
+    over_size = 32 * 1024 * 1024 + 1
+    with pytest.raises(ArchiveSecurityError):
+        validator.validate_entry_size(
+            compressed=over_size, uncompressed=over_size, name="over.png"
+        )

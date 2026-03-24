@@ -18,6 +18,7 @@ from backend.services.archive_reader import (
     ZipArchiveReader,
 )
 from backend.services.archive_security import ArchiveEntryValidator
+from backend.services.node_registry import VIDEO_EXTENSIONS
 
 
 class ByteLRUCache:
@@ -100,7 +101,12 @@ class ArchiveService:
         """エントリを抽出する (キャッシュ付き).
 
         キャッシュキー: "{archive_path}:{mtime_ns}:{entry_name}"
+        動画エントリはメモリキャッシュをバイパスする (OOM 防止)。
         """
+        # 動画エントリはメモリキャッシュをスキップ
+        if self._is_video_entry(entry_name):
+            return self._extract_raw(archive_path, entry_name)
+
         # キャッシュキー生成 (mtime_ns でアーカイブ更新時に自動無効化)
         stat = archive_path.stat()
         cache_key = f"{archive_path}:{stat.st_mtime_ns}:{entry_name}"
@@ -111,15 +117,27 @@ class ArchiveService:
             return cached
 
         # キャッシュミス: リーダーで抽出
-        reader = self.get_reader(archive_path)
-        if reader is None:
-            msg = f"サポートされていないアーカイブ形式です: {archive_path.suffix}"
-            raise ValueError(msg)
-        data = reader.extract_entry(archive_path, entry_name)
+        data = self._extract_raw(archive_path, entry_name)
 
         # キャッシュに格納
         self._cache.put(cache_key, data)
         return data
+
+    def _extract_raw(self, archive_path: Path, entry_name: str) -> bytes:
+        """リーダーで直接抽出する (キャッシュなし)."""
+        reader = self.get_reader(archive_path)
+        if reader is None:
+            msg = f"サポートされていないアーカイブ形式です: {archive_path.suffix}"
+            raise ValueError(msg)
+        return reader.extract_entry(archive_path, entry_name)
+
+    @staticmethod
+    def _is_video_entry(entry_name: str) -> bool:
+        """動画拡張子かどうかを判定する."""
+        dot_idx = entry_name.rfind(".")
+        if dot_idx <= 0:
+            return False
+        return entry_name[dot_idx:].lower() in VIDEO_EXTENSIONS
 
     def is_supported(self, path: Path) -> bool:
         """アーカイブとしてサポートされるか."""
