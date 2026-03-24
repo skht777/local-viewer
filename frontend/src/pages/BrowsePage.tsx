@@ -1,7 +1,8 @@
 // ファイルブラウザーページ
 // - isViewerOpen=false: BrowseHeader + ViewerTabs + DirectoryTree + FileBrowser
-// - isViewerOpen=true: CgViewer（フルスクリーンオーバーレイ）
-// - ディレクトリ内の画像のみが CgViewer の表示範囲
+// - isViewerOpen=true && mode=cg: CgViewer
+// - isViewerOpen=true && mode=manga: MangaViewer
+// - ディレクトリ内の画像のみがビューワーの表示範囲
 
 import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -13,6 +14,7 @@ import { BrowseHeader } from "../components/BrowseHeader";
 import { CgViewer } from "../components/CgViewer";
 import { DirectoryTree } from "../components/DirectoryTree";
 import { FileBrowser } from "../components/FileBrowser";
+import { MangaViewer } from "../components/MangaViewer";
 import { ViewerTabs } from "../components/ViewerTabs";
 
 export default function BrowsePage() {
@@ -38,21 +40,20 @@ export default function BrowsePage() {
   if (isViewerOpen && images.length > 0) {
     const safeIndex = Math.max(0, Math.min(params.index, images.length - 1));
 
-    // マンガモードは Phase 3 で実装
+    // マンガモード: 縦スクロールビューワー
     if (params.mode === "manga") {
       return (
-        <div className="flex min-h-screen items-center justify-center bg-black text-gray-400">
-          <div className="text-center">
-            <p className="mb-4 text-lg">マンガモード（Phase 3 で実装予定）</p>
-            <button
-              type="button"
-              onClick={closeViewer}
-              className="rounded bg-gray-700 px-4 py-2 text-white hover:bg-gray-600"
-            >
-              戻る
-            </button>
-          </div>
-        </div>
+        <MangaViewer
+          images={images}
+          currentIndex={safeIndex}
+          setName={data?.current_name ?? ""}
+          parentNodeId={data?.parent_node_id ?? null}
+          currentNodeId={data?.current_node_id ?? null}
+          mode={params.mode}
+          onIndexChange={setIndex}
+          onModeChange={setMode}
+          onClose={closeViewer}
+        />
       );
     }
 
