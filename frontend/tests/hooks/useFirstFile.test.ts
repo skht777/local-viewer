@@ -16,17 +16,25 @@ describe("selectFirstViewable", () => {
     expect(selectFirstViewable(entries)?.node_id).toBe("d1");
   });
 
-  test("archive/PDF はスキップされる", () => {
-    const entries = [entry("archive", "a1"), entry("pdf", "p1"), entry("image", "i1")];
+  test("archive が最優先で選択される", () => {
+    const entries = [entry("image", "i1"), entry("archive", "a1"), entry("directory", "d1")];
+    expect(selectFirstViewable(entries)?.node_id).toBe("a1");
+  });
+
+  test("archive > image > directory の優先順位", () => {
+    const entries = [entry("directory", "d1"), entry("image", "i1")];
     expect(selectFirstViewable(entries)?.node_id).toBe("i1");
+
+    const entries2 = [entry("directory", "d1"), entry("archive", "a1")];
+    expect(selectFirstViewable(entries2)?.node_id).toBe("a1");
   });
 
   test("空の配列で null を返す", () => {
     expect(selectFirstViewable([])).toBeNull();
   });
 
-  test("archive/PDF のみの場合は null を返す", () => {
-    const entries = [entry("archive", "a1"), entry("pdf", "p1")];
+  test("PDF のみの場合は null を返す (Phase 6 で対応)", () => {
+    const entries = [entry("pdf", "p1")];
     expect(selectFirstViewable(entries)).toBeNull();
   });
 

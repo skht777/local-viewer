@@ -85,6 +85,7 @@ export default function BrowsePage() {
           isLoading={isLoading}
           onNavigate={(id) => navigate(`/browse/${id}`)}
           onImageClick={openViewer}
+          onTabChange={setTab}
           tab={params.tab}
         />
       </div>

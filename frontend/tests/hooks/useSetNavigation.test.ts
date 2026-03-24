@@ -30,15 +30,25 @@ describe("findNextSet", () => {
     expect(result).toBeNull();
   });
 
-  test("archive/PDF はスキップされる", () => {
+  test("archive がセット候補に含まれる", () => {
     const siblings = [
       entry("directory", "d1"),
       entry("archive", "a1"),
       entry("pdf", "p1"),
       entry("directory", "d2"),
     ];
+    // d1 の次はアーカイブ a1 (PDF はまだ Phase 6 なので候補外)
     const result = findNextSet(siblings, "d1");
-    expect(result?.node_id).toBe("d2");
+    expect(result?.node_id).toBe("a1");
+  });
+
+  test("アーカイブの次のセットにディレクトリが返る", () => {
+    const siblings = [
+      entry("archive", "a1"),
+      entry("directory", "d1"),
+    ];
+    const result = findNextSet(siblings, "a1");
+    expect(result?.node_id).toBe("d1");
   });
 
   test("画像のみの場合は null（セット候補なし）", () => {

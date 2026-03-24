@@ -13,6 +13,7 @@ interface FileBrowserProps {
   isLoading: boolean;
   onNavigate: (nodeId: string) => void;
   onImageClick?: (imageIndex: number) => void;
+  onTabChange?: (tab: ViewerTab) => void;
   tab: ViewerTab;
 }
 
@@ -42,12 +43,18 @@ export function FileBrowser({
   isLoading,
   onNavigate,
   onImageClick,
+  onTabChange,
   tab,
 }: FileBrowserProps) {
   const filtered = filterByTab(entries, tab);
 
   const handleClick = (entry: BrowseEntry) => {
-    if (entry.kind === "directory" || entry.kind === "archive") {
+    if (entry.kind === "archive") {
+      // アーカイブ遷移時は画像タブに自動切替
+      // (アーカイブ内は画像のみなので filesets タブでは空表示になる)
+      onTabChange?.("images");
+      onNavigate(entry.node_id);
+    } else if (entry.kind === "directory") {
       onNavigate(entry.node_id);
     } else if (entry.kind === "image" && onImageClick) {
       // フィルタ済み画像配列内でのインデックスを算出
