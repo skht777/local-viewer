@@ -18,6 +18,9 @@ from backend.services.archive_security import (
     ArchiveSecurityError,
 )
 
+# extract_entry のチャンク読みサイズ (64KiB)
+_EXTRACT_CHUNK_SIZE = 64 * 1024
+
 
 @dataclass(frozen=True)
 class ArchiveEntry:
@@ -117,8 +120,22 @@ class ZipArchiveReader(ArchiveReader):
         return entries
 
     def extract_entry(self, archive_path: Path, entry_name: str) -> bytes:
+        """エントリをチャンク読みで抽出する (サイズ上限付き)."""
+        max_size = self._validator.max_entry_size
         with zipfile.ZipFile(archive_path, "r") as zf:
-            return zf.read(entry_name)
+            with zf.open(entry_name) as f:
+                chunks: list[bytes] = []
+                total = 0
+                while True:
+                    chunk = f.read(_EXTRACT_CHUNK_SIZE)
+                    if not chunk:
+                        break
+                    total += len(chunk)
+                    if total > max_size:
+                        msg = f"抽出時にサイズ上限を超えました: {entry_name}"
+                        raise ArchiveSecurityError(msg)
+                    chunks.append(chunk)
+                return b"".join(chunks)
 
 
 class RarArchiveReader(ArchiveReader):
@@ -199,11 +216,24 @@ class RarArchiveReader(ArchiveReader):
         return entries
 
     def extract_entry(self, archive_path: Path, entry_name: str) -> bytes:
+        """エントリをチャンク読みで抽出する (サイズ上限付き)."""
         import rarfile
 
+        max_size = self._validator.max_entry_size
         with rarfile.RarFile(archive_path, "r") as rf:
-            data: bytes = rf.read(entry_name)
-            return data
+            with rf.open(entry_name) as f:
+                chunks: list[bytes] = []
+                total = 0
+                while True:
+                    chunk = f.read(_EXTRACT_CHUNK_SIZE)
+                    if not chunk:
+                        break
+                    total += len(chunk)
+                    if total > max_size:
+                        msg = f"抽出時にサイズ上限を超えました: {entry_name}"
+                        raise ArchiveSecurityError(msg)
+                    chunks.append(chunk)
+                return b"".join(chunks)
 
 
 class SevenZipArchiveReader(ArchiveReader):

@@ -1,10 +1,32 @@
 """ファイル配信 API のテスト."""
 
+import os
+import zipfile
+from collections.abc import AsyncGenerator
 from pathlib import Path
 
-from httpx import AsyncClient
+import pytest
+from httpx import ASGITransport, AsyncClient
 
+from backend.config import Settings
+from backend.errors import (
+    NodeNotFoundError,
+    PathSecurityError,
+    archive_password_error_handler,
+    archive_security_error_handler,
+    node_not_found_error_handler,
+    path_security_error_handler,
+)
+from backend.main import app
+from backend.routers import browse, file
+from backend.services.archive_security import (
+    ArchiveEntryValidator,
+    ArchivePasswordError,
+    ArchiveSecurityError,
+)
+from backend.services.archive_service import ArchiveService
 from backend.services.node_registry import NodeRegistry
+from backend.services.path_security import PathSecurity
 
 
 async def test_ファイル配信が200を返す(
@@ -253,3 +275,67 @@ async def test_既存のファイル配信が引き続き動作する(
     response = await client.get(f"/api/file/{node_id}")
     assert response.status_code == 200
     assert response.text == "hello"
+
+
+# --- 抽出時サイズ上限超過のAPIテスト ---
+
+
+@pytest.fixture
+async def client_with_small_limit(
+    tmp_path: Path,
+) -> AsyncGenerator[tuple[AsyncClient, NodeRegistry]]:
+    """抽出サイズ上限を小さく設定した TestClient."""
+    # テスト用ディレクトリ構造
+    (tmp_path / "dir_a").mkdir()
+    (tmp_path / "file.txt").write_text("hello")
+
+    # 1KB のダミー画像を含む ZIP
+    zip_path = tmp_path / "dir_a" / "big.zip"
+    with zipfile.ZipFile(zip_path, "w") as zf:
+        zf.writestr("large.jpg", b"\xff\xd8" + b"\x00" * 1024)
+
+    os.environ["ROOT_DIR"] = str(tmp_path)
+    # 抽出上限を 512 バイトに設定
+    os.environ["ARCHIVE_MAX_ENTRY_SIZE"] = "512"
+    settings = Settings()
+    os.environ.pop("ARCHIVE_MAX_ENTRY_SIZE")
+
+    ps = PathSecurity(settings)
+    registry = NodeRegistry(ps)
+    validator = ArchiveEntryValidator(settings)
+    archive_svc = ArchiveService(validator=validator)
+
+    app.dependency_overrides[browse.get_node_registry] = lambda: registry
+    app.dependency_overrides[file.get_node_registry] = lambda: registry
+    app.dependency_overrides[browse.get_archive_service] = lambda: archive_svc
+    app.dependency_overrides[file.get_archive_service] = lambda: archive_svc
+
+    app.add_exception_handler(PathSecurityError, path_security_error_handler)  # type: ignore[arg-type]
+    app.add_exception_handler(NodeNotFoundError, node_not_found_error_handler)  # type: ignore[arg-type]
+    app.add_exception_handler(ArchiveSecurityError, archive_security_error_handler)  # type: ignore[arg-type]
+    app.add_exception_handler(ArchivePasswordError, archive_password_error_handler)  # type: ignore[arg-type]
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as ac:
+        yield ac, registry
+
+    app.dependency_overrides.clear()
+    os.environ.pop("ROOT_DIR", None)
+
+
+async def test_抽出上限超過でAPIが422を返す(
+    client_with_small_limit: tuple[AsyncClient, NodeRegistry],
+) -> None:
+    """アーカイブエントリの抽出がサイズ上限を超えた場合、422 を返す.
+
+    list_entries のメタデータ検証はパスするが、実データ抽出時に上限を超えるケース:
+    NodeRegistry に直接エントリを登録してテスト。
+    """
+    ac, registry = client_with_small_limit
+    root = registry.path_security.root_dir
+
+    archive = root / "dir_a" / "big.zip"
+    entry_node_id = registry.register_archive_entry(archive, "large.jpg")
+
+    response = await ac.get(f"/api/file/{entry_node_id}")
+    assert response.status_code == 422

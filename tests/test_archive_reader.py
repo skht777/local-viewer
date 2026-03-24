@@ -14,6 +14,7 @@ from backend.services.archive_reader import (
 from backend.services.archive_security import (
     ArchiveEntryValidator,
     ArchivePasswordError,
+    ArchiveSecurityError,
 )
 
 # 最小 JPEG (テスト用)
@@ -218,6 +219,27 @@ def test_7z_supportsが正しい拡張子で真を返す(
     assert sevenz_reader.supports(tmp_path / "test.7z") is True
     assert sevenz_reader.supports(tmp_path / "test.zip") is False
     assert sevenz_reader.supports(tmp_path / "test.rar") is False
+
+
+# --- extract_entry サイズガード ---
+
+
+def test_ZIP抽出時にサイズ上限を超えるとエラー(tmp_path: Path, test_settings) -> None:
+    """抽出時のチャンク読みでサイズ上限を検出する."""
+    # メタデータでは通過するが、実データが上限を超えるケースをシミュレート
+    # → 小さい上限の validator で構築
+    archive = tmp_path / "big_entry.zip"
+    big_data = b"\x00" * 1024  # 1KB
+    with zipfile.ZipFile(archive, "w") as zf:
+        zf.writestr("large.jpg", big_data)
+
+    # 上限を 512 バイトに設定
+    test_settings.archive_max_entry_size = 512
+    validator = ArchiveEntryValidator(test_settings)
+    reader = ZipArchiveReader(validator)
+
+    with pytest.raises(ArchiveSecurityError, match="抽出時にサイズ上限を超えました"):
+        reader.extract_entry(archive, "large.jpg")
 
 
 # ===== RAR テスト =====
