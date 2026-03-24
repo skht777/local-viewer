@@ -6,6 +6,8 @@ describe("viewerStore", () => {
     useViewerStore.setState({
       isSidebarOpen: true,
       expandedNodeIds: new Set(),
+      fitMode: "width",
+      spreadMode: "single",
     });
   });
 
@@ -34,5 +36,38 @@ describe("viewerStore", () => {
     useViewerStore.getState().toggleExpanded("node1");
     useViewerStore.getState().toggleExpanded("node1");
     expect(useViewerStore.getState().expandedNodeIds.has("node1")).toBe(false);
+  });
+
+  // --- Phase 2: fitMode / spreadMode ---
+
+  test("初期状態で fitMode が width", () => {
+    const state = useViewerStore.getState();
+    expect(state.fitMode).toBe("width");
+  });
+
+  test("setFitMode で fitMode が変更される", () => {
+    useViewerStore.getState().setFitMode("height");
+    expect(useViewerStore.getState().fitMode).toBe("height");
+  });
+
+  test("setFitMode で original に変更できる", () => {
+    useViewerStore.getState().setFitMode("original");
+    expect(useViewerStore.getState().fitMode).toBe("original");
+  });
+
+  test("初期状態で spreadMode が single", () => {
+    const state = useViewerStore.getState();
+    expect(state.spreadMode).toBe("single");
+  });
+
+  test("cycleSpreadMode で single → spread → spread-offset → single とサイクルする", () => {
+    useViewerStore.getState().cycleSpreadMode();
+    expect(useViewerStore.getState().spreadMode).toBe("spread");
+
+    useViewerStore.getState().cycleSpreadMode();
+    expect(useViewerStore.getState().spreadMode).toBe("spread-offset");
+
+    useViewerStore.getState().cycleSpreadMode();
+    expect(useViewerStore.getState().spreadMode).toBe("single");
   });
 });
