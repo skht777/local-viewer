@@ -4,18 +4,11 @@
 
 import { useState } from "react";
 import type { BrowseEntry } from "../types/api";
+import { formatFileSize } from "../utils/format";
 
 interface FileCardProps {
   entry: BrowseEntry;
   onClick: (entry: BrowseEntry) => void;
-}
-
-// ファイルサイズを人間可読な形式にフォーマット
-function formatFileSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-  return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
 }
 
 // kind に応じたアイコン
