@@ -3,6 +3,7 @@
 import zipfile
 from pathlib import Path
 
+import py7zr
 import pytest
 
 from backend.services.archive_reader import (
@@ -14,14 +15,6 @@ from backend.services.archive_security import (
     ArchiveEntryValidator,
     ArchivePasswordError,
 )
-
-# py7zr は Python 3.14 + _zstd 未ビルド環境で import 失敗する場合がある
-try:
-    import py7zr
-
-    HAS_PY7ZR = True
-except ImportError:
-    HAS_PY7ZR = False
 
 # 最小 JPEG (テスト用)
 MINIMAL_JPEG = bytes(
@@ -180,16 +173,10 @@ def test_ZIP_supportsが正しい拡張子で真を返す(
 
 # ===== 7z テスト =====
 
-skip_no_py7zr = pytest.mark.skipif(
-    not HAS_PY7ZR, reason="py7zr unavailable (_zstd not built)"
-)
-
 
 @pytest.fixture
 def sevenz_archive(tmp_path: Path) -> Path:
     """テスト用 7z を動的生成する."""
-    if not HAS_PY7ZR:
-        pytest.skip("py7zr unavailable")
     archive = tmp_path / "test.7z"
     with py7zr.SevenZipFile(archive, "w") as sz:
         sz.writestr(MINIMAL_JPEG, "image01.jpg")
@@ -204,7 +191,6 @@ def sevenz_reader(test_settings) -> SevenZipArchiveReader:
     return SevenZipArchiveReader(validator)
 
 
-@skip_no_py7zr
 def test_7zのエントリ一覧を返す(
     sevenz_reader: SevenZipArchiveReader,
     sevenz_archive: Path,
@@ -217,7 +203,6 @@ def test_7zのエントリ一覧を返す(
     assert "image02.png" in names
 
 
-@skip_no_py7zr
 def test_7zエントリのバイナリデータを取得する(
     sevenz_reader: SevenZipArchiveReader,
     sevenz_archive: Path,
@@ -226,7 +211,6 @@ def test_7zエントリのバイナリデータを取得する(
     assert data == MINIMAL_JPEG
 
 
-@skip_no_py7zr
 def test_7z_supportsが正しい拡張子で真を返す(
     sevenz_reader: SevenZipArchiveReader,
     tmp_path: Path,
