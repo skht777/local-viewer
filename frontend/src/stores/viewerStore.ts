@@ -28,6 +28,16 @@ interface ViewerState {
   // 見開きモード（永続化）
   spreadMode: SpreadMode;
   cycleSpreadMode: () => void;
+
+  // マンガモード: ズーム倍率 %（永続化）
+  zoomLevel: number;
+  setZoomLevel: (level: number) => void;
+  zoomIn: () => void;
+  zoomOut: () => void;
+
+  // マンガモード: スクロール速度倍率（永続化）
+  scrollSpeed: number;
+  setScrollSpeed: (speed: number) => void;
 }
 
 export const useViewerStore = create<ViewerState>()(
@@ -63,10 +73,27 @@ export const useViewerStore = create<ViewerState>()(
           const idx = SPREAD_CYCLE.indexOf(state.spreadMode);
           return { spreadMode: SPREAD_CYCLE[(idx + 1) % SPREAD_CYCLE.length] };
         }),
+
+      zoomLevel: 100,
+
+      setZoomLevel: (level) => set({ zoomLevel: Math.max(25, Math.min(300, level)) }),
+
+      zoomIn: () => set((state) => ({ zoomLevel: Math.min(300, state.zoomLevel + 25) })),
+
+      zoomOut: () => set((state) => ({ zoomLevel: Math.max(25, state.zoomLevel - 25) })),
+
+      scrollSpeed: 1.0,
+
+      setScrollSpeed: (speed) => set({ scrollSpeed: Math.max(0.5, Math.min(3.0, speed)) }),
     }),
     {
       name: "viewer-store",
-      partialize: (state) => ({ fitMode: state.fitMode, spreadMode: state.spreadMode }),
+      partialize: (state) => ({
+        fitMode: state.fitMode,
+        spreadMode: state.spreadMode,
+        zoomLevel: state.zoomLevel,
+        scrollSpeed: state.scrollSpeed,
+      }),
     },
   ),
 );
