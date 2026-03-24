@@ -258,18 +258,24 @@ class SevenZipArchiveReader(ArchiveReader):
         return entries
 
     def extract_entry(self, archive_path: Path, entry_name: str) -> bytes:
-        import os
-        import tempfile
+        """メモリ上に単一エントリを展開する.
 
+        BytesIOFactory でディスク I/O を回避し、
+        limit で max_entry_size を強制する。
+        """
         import py7zr
+        import py7zr.io
 
+        factory = py7zr.io.BytesIOFactory(
+            limit=self._validator.max_entry_size,
+        )
         with py7zr.SevenZipFile(archive_path, "r") as sz:
-            with tempfile.TemporaryDirectory() as td:
-                sz.extract(path=td, targets=[entry_name])
-                extracted = Path(td) / entry_name
-                if not extracted.exists():
-                    msg = entry_name
-                    raise KeyError(msg)
-                # py7zr が restrictive な権限で展開する場合があるため修正
-                os.chmod(extracted, 0o644)
-                return extracted.read_bytes()
+            sz.extract(targets=[entry_name], factory=factory)
+
+        if entry_name not in factory.products:
+            msg = entry_name
+            raise KeyError(msg)
+
+        bio = factory.products[entry_name]
+        bio.seek(0)
+        return bio.read()

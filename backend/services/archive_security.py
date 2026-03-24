@@ -42,6 +42,11 @@ class ArchiveEntryValidator:
         self._max_entry_size = settings.archive_max_entry_size
         self._max_ratio = settings.archive_max_ratio
 
+    @property
+    def max_entry_size(self) -> int:
+        """1エントリの展開後サイズ上限 (bytes)."""
+        return self._max_entry_size
+
     def validate_entry_name(self, name: str) -> None:
         """エントリ名を検証する。不正なら ArchiveSecurityError."""
         # NUL バイト拒否
