@@ -12,6 +12,7 @@ interface FileBrowserProps {
   entries: BrowseEntry[];
   isLoading: boolean;
   onNavigate: (nodeId: string) => void;
+  onImageClick?: (imageIndex: number) => void;
   tab: ViewerTab;
 }
 
@@ -29,14 +30,23 @@ function filterByTab(entries: BrowseEntry[], tab: ViewerTab): BrowseEntry[] {
   }
 }
 
-export function FileBrowser({ entries, isLoading, onNavigate, tab }: FileBrowserProps) {
+export function FileBrowser({
+  entries,
+  isLoading,
+  onNavigate,
+  onImageClick,
+  tab,
+}: FileBrowserProps) {
   const filtered = filterByTab(entries, tab);
 
   const handleClick = (entry: BrowseEntry) => {
     if (entry.kind === "directory" || entry.kind === "archive") {
       onNavigate(entry.node_id);
+    } else if (entry.kind === "image" && onImageClick) {
+      // フィルタ済み画像配列内でのインデックスを算出
+      const imageIndex = filtered.findIndex((e) => e.node_id === entry.node_id);
+      if (imageIndex >= 0) onImageClick(imageIndex);
     }
-    // 画像/動画/PDF のクリックは Phase 2 以降で実装
   };
 
   return (

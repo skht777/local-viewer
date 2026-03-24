@@ -1,4 +1,5 @@
 import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { FileBrowser } from "../../src/components/FileBrowser";
 import type { BrowseEntry } from "../../src/types/api";
 
@@ -84,5 +85,22 @@ describe("FileBrowser", () => {
     );
     expect(screen.getAllByText("ファイルがありません").length).toBeGreaterThan(0);
     unmount();
+  });
+
+  // --- Phase 2: 画像クリック ---
+
+  test("画像クリック時に onImageClick がフィルタ済みインデックスで呼ばれる", async () => {
+    const entries: BrowseEntry[] = [
+      { node_id: "d1", name: "dir", kind: "directory", size_bytes: null, mime_type: null, child_count: 5 },
+      { node_id: "i1", name: "a.jpg", kind: "image", size_bytes: 100, mime_type: "image/jpeg", child_count: null },
+      { node_id: "i2", name: "b.jpg", kind: "image", size_bytes: 200, mime_type: "image/jpeg", child_count: null },
+    ];
+    const onImageClick = vi.fn();
+    render(
+      <FileBrowser entries={entries} isLoading={false} onNavigate={() => {}} onImageClick={onImageClick} tab="images" />,
+    );
+    // 2番目の画像 (b.jpg) をクリック → フィルタ済み画像配列での index=1
+    await userEvent.click(screen.getByText("b.jpg"));
+    expect(onImageClick).toHaveBeenCalledWith(1);
   });
 });

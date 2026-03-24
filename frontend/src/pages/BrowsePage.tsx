@@ -1,14 +1,16 @@
 // ファイルブラウザーページ
-// - 上: BrowseHeader (ナビゲーション) + ViewerTabs (タブバー)
-// - 左: DirectoryTree (サイドバー)
-// - 右: FileBrowser (メインエリア、タブでフィルタ)
+// - isViewerOpen=false: BrowseHeader + ViewerTabs + DirectoryTree + FileBrowser
+// - isViewerOpen=true: CgViewer（フルスクリーンオーバーレイ）
+// - ディレクトリ内の画像のみが CgViewer の表示範囲
 
+import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate, useParams } from "react-router-dom";
 import { browseNodeOptions, browseRootOptions } from "../hooks/api/browseQueries";
 import { useViewerParams } from "../hooks/useViewerParams";
 import { useViewerStore } from "../stores/viewerStore";
 import { BrowseHeader } from "../components/BrowseHeader";
+import { CgViewer } from "../components/CgViewer";
 import { DirectoryTree } from "../components/DirectoryTree";
 import { FileBrowser } from "../components/FileBrowser";
 import { ViewerTabs } from "../components/ViewerTabs";
@@ -17,13 +19,34 @@ export default function BrowsePage() {
   const { nodeId } = useParams<{ nodeId: string }>();
   const navigate = useNavigate();
   const isSidebarOpen = useViewerStore((s) => s.isSidebarOpen);
-  const { params, setTab } = useViewerParams();
+  const { params, setTab, isViewerOpen, openViewer, closeViewer, setIndex } = useViewerParams();
 
   // 現在のディレクトリのデータ
   const { data, isLoading } = useQuery(browseNodeOptions(nodeId));
 
   // ルート一覧 (ツリー用)
   const { data: rootData } = useQuery(browseRootOptions());
+
+  // 現在のディレクトリ内の画像エントリのみ（CgViewer の表示範囲）
+  const images = useMemo(
+    () => (data?.entries ?? []).filter((e) => e.kind === "image"),
+    [data?.entries],
+  );
+
+  // CgViewer 表示中
+  if (isViewerOpen && images.length > 0) {
+    const safeIndex = Math.max(0, Math.min(params.index, images.length - 1));
+    return (
+      <CgViewer
+        images={images}
+        currentIndex={safeIndex}
+        setName={data?.current_name ?? ""}
+        parentNodeId={data?.parent_node_id ?? null}
+        onIndexChange={setIndex}
+        onClose={closeViewer}
+      />
+    );
+  }
 
   return (
     <div className="flex min-h-screen flex-col">
@@ -37,6 +60,7 @@ export default function BrowsePage() {
           entries={data?.entries ?? []}
           isLoading={isLoading}
           onNavigate={(id) => navigate(`/browse/${id}`)}
+          onImageClick={openViewer}
           tab={params.tab}
         />
       </div>
