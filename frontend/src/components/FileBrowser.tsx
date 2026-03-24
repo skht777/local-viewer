@@ -17,12 +17,19 @@ interface FileBrowserProps {
 }
 
 // タブに応じて表示する kind をフィルタ
+// filesets: archive/PDF を先、directory を後にソート
 function filterByTab(entries: BrowseEntry[], tab: ViewerTab): BrowseEntry[] {
   switch (tab) {
-    case "filesets":
-      return entries.filter(
+    case "filesets": {
+      const filesets = entries.filter(
         (e) => e.kind === "directory" || e.kind === "archive" || e.kind === "pdf",
       );
+      return filesets.sort((a, b) => {
+        const aIsDir = a.kind === "directory" ? 1 : 0;
+        const bIsDir = b.kind === "directory" ? 1 : 0;
+        return aIsDir - bIsDir;
+      });
+    }
     case "images":
       return entries.filter((e) => e.kind === "image");
     case "videos":

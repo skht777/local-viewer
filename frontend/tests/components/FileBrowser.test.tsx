@@ -89,6 +89,25 @@ describe("FileBrowser", () => {
 
   // --- Phase 2: 画像クリック ---
 
+  test("filesetsタブでarchive/PDFがディレクトリより先に表示される", () => {
+    const entries: BrowseEntry[] = [
+      { node_id: "d1", name: "aaa_dir", kind: "directory", size_bytes: null, mime_type: null, child_count: 5 },
+      { node_id: "a1", name: "bbb.zip", kind: "archive", size_bytes: 500, mime_type: "application/zip", child_count: null },
+      { node_id: "p1", name: "ccc.pdf", kind: "pdf", size_bytes: 300, mime_type: "application/pdf", child_count: null },
+    ];
+    render(
+      <FileBrowser entries={entries} isLoading={false} onNavigate={() => {}} tab="filesets" />,
+    );
+    // DOM 上の順序: archive/PDF が先、directory が後
+    const buttons = screen.getAllByRole("button");
+    const names = buttons.map((b) => b.textContent);
+    const zipIdx = names.findIndex((n) => n?.includes("bbb.zip"));
+    const pdfIdx = names.findIndex((n) => n?.includes("ccc.pdf"));
+    const dirIdx = names.findIndex((n) => n?.includes("aaa_dir"));
+    expect(zipIdx).toBeLessThan(dirIdx);
+    expect(pdfIdx).toBeLessThan(dirIdx);
+  });
+
   test("画像クリック時に onImageClick がフィルタ済みインデックスで呼ばれる", async () => {
     const entries: BrowseEntry[] = [
       { node_id: "d1", name: "dir", kind: "directory", size_bytes: null, mime_type: null, child_count: 5 },
