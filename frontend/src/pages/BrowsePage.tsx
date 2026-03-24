@@ -19,7 +19,8 @@ export default function BrowsePage() {
   const { nodeId } = useParams<{ nodeId: string }>();
   const navigate = useNavigate();
   const isSidebarOpen = useViewerStore((s) => s.isSidebarOpen);
-  const { params, setTab, isViewerOpen, openViewer, closeViewer, setIndex } = useViewerParams();
+  const { params, setTab, setMode, isViewerOpen, openViewer, closeViewer, setIndex } =
+    useViewerParams();
 
   // 現在のディレクトリのデータ
   const { data, isLoading } = useQuery(browseNodeOptions(nodeId));
@@ -61,7 +62,10 @@ export default function BrowsePage() {
         currentIndex={safeIndex}
         setName={data?.current_name ?? ""}
         parentNodeId={data?.parent_node_id ?? null}
+        currentNodeId={data?.current_node_id ?? null}
+        mode={params.mode}
         onIndexChange={setIndex}
+        onModeChange={setMode}
         onClose={closeViewer}
       />
     );

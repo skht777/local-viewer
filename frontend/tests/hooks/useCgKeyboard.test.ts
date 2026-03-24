@@ -13,15 +13,19 @@ const KEY_CODE_MAP: Record<string, string> = {
   Home: "Home",
   End: "End",
   Escape: "Escape",
+  PageDown: "PageDown",
+  PageUp: "PageUp",
   a: "KeyA",
   d: "KeyD",
   f: "KeyF",
   h: "KeyH",
+  m: "KeyM",
   q: "KeyQ",
   s: "KeyS",
   v: "KeyV",
   w: "KeyW",
-  m: "KeyM",
+  x: "KeyX",
+  z: "KeyZ",
 };
 
 function pressKey(key: string, options: KeyboardEventInit = {}) {
@@ -37,13 +41,17 @@ describe("useCgKeyboard", () => {
     goPrev: vi.fn(),
     goFirst: vi.fn(),
     goLast: vi.fn(),
-    onClose: vi.fn(),
+    onEscape: vi.fn(),
     toggleFullscreen: vi.fn(),
     setFitWidth: vi.fn(),
     setFitHeight: vi.fn(),
     cycleSpread: vi.fn(),
     scrollUp: vi.fn(),
     scrollDown: vi.fn(),
+    goNextSet: vi.fn(),
+    goPrevSet: vi.fn(),
+    goNextSetParent: vi.fn(),
+    goPrevSetParent: vi.fn(),
   };
 
   beforeEach(() => {
@@ -92,10 +100,10 @@ describe("useCgKeyboard", () => {
     expect(defaultCallbacks.toggleFullscreen).toHaveBeenCalledOnce();
   });
 
-  test("Escape キーで onClose が呼ばれる", () => {
+  test("Escape キーで onEscape が呼ばれる", () => {
     renderHook(() => useCgKeyboard(defaultCallbacks));
     pressKey("Escape");
-    expect(defaultCallbacks.onClose).toHaveBeenCalledOnce();
+    expect(defaultCallbacks.onEscape).toHaveBeenCalledOnce();
   });
 
   test("V キーで setFitWidth が呼ばれる", () => {
@@ -133,5 +141,43 @@ describe("useCgKeyboard", () => {
     renderHook(() => useCgKeyboard(callbacks));
     pressKey("m");
     expect(callbacks.toggleMode).toHaveBeenCalledOnce();
+  });
+
+  // --- Phase 3: セット間ジャンプ ---
+
+  test("PageDown キーで goNextSet が呼ばれる", () => {
+    renderHook(() => useCgKeyboard(defaultCallbacks));
+    pressKey("PageDown");
+    expect(defaultCallbacks.goNextSet).toHaveBeenCalledOnce();
+  });
+
+  test("X キーで goNextSet が呼ばれる", () => {
+    renderHook(() => useCgKeyboard(defaultCallbacks));
+    pressKey("x");
+    expect(defaultCallbacks.goNextSet).toHaveBeenCalledOnce();
+  });
+
+  test("PageUp キーで goPrevSet が呼ばれる", () => {
+    renderHook(() => useCgKeyboard(defaultCallbacks));
+    pressKey("PageUp");
+    expect(defaultCallbacks.goPrevSet).toHaveBeenCalledOnce();
+  });
+
+  test("Z キーで goPrevSet が呼ばれる", () => {
+    renderHook(() => useCgKeyboard(defaultCallbacks));
+    pressKey("z");
+    expect(defaultCallbacks.goPrevSet).toHaveBeenCalledOnce();
+  });
+
+  test("Shift+X で goNextSetParent が呼ばれる", () => {
+    renderHook(() => useCgKeyboard(defaultCallbacks));
+    pressKey("x", { shiftKey: true });
+    expect(defaultCallbacks.goNextSetParent).toHaveBeenCalledOnce();
+  });
+
+  test("Shift+Z で goPrevSetParent が呼ばれる", () => {
+    renderHook(() => useCgKeyboard(defaultCallbacks));
+    pressKey("z", { shiftKey: true });
+    expect(defaultCallbacks.goPrevSetParent).toHaveBeenCalledOnce();
   });
 });

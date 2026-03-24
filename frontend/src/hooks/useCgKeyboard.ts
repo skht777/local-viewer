@@ -9,7 +9,7 @@ interface CgKeyboardCallbacks {
   goPrev: () => void;
   goFirst: () => void;
   goLast: () => void;
-  onClose: () => void;
+  onEscape: () => void;
   toggleFullscreen: () => void;
   setFitWidth: () => void;
   setFitHeight: () => void;
@@ -17,6 +17,10 @@ interface CgKeyboardCallbacks {
   scrollUp: () => void;
   scrollDown: () => void;
   toggleMode?: () => void;
+  goNextSet?: () => void;
+  goPrevSet?: () => void;
+  goNextSetParent?: () => void;
+  goPrevSetParent?: () => void;
 }
 
 export function useCgKeyboard(callbacks: CgKeyboardCallbacks): void {
@@ -45,6 +49,12 @@ export function useCgKeyboard(callbacks: CgKeyboardCallbacks): void {
   // CG↔マンガモード切替
   useHotkeys("m", () => callbacks.toggleMode?.());
 
-  // ビューワーを閉じる
-  useHotkeys("escape", () => callbacks.onClose());
+  // Escape（優先順位は呼び出し元で階層化済み）
+  useHotkeys("escape", () => callbacks.onEscape());
+
+  // セット間ジャンプ
+  useHotkeys("pagedown, x", () => callbacks.goNextSet?.(), { preventDefault: true });
+  useHotkeys("pageup, z", () => callbacks.goPrevSet?.(), { preventDefault: true });
+  useHotkeys("shift+x", () => callbacks.goNextSetParent?.(), { preventDefault: true });
+  useHotkeys("shift+z", () => callbacks.goPrevSetParent?.(), { preventDefault: true });
 }
