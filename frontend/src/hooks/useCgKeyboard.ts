@@ -16,6 +16,7 @@ interface CgKeyboardCallbacks {
   cycleSpread: () => void;
   scrollUp: () => void;
   scrollDown: () => void;
+  toggleMode?: () => void;
 }
 
 export function useCgKeyboard(callbacks: CgKeyboardCallbacks): void {
@@ -40,6 +41,9 @@ export function useCgKeyboard(callbacks: CgKeyboardCallbacks): void {
 
   // フルスクリーン
   useHotkeys("f", () => callbacks.toggleFullscreen());
+
+  // CG↔マンガモード切替
+  useHotkeys("m", () => callbacks.toggleMode?.());
 
   // ビューワーを閉じる
   useHotkeys("escape", () => callbacks.onClose());

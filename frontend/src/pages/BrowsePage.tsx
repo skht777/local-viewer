@@ -33,9 +33,28 @@ export default function BrowsePage() {
     [data?.entries],
   );
 
-  // CgViewer 表示中
+  // ビューワー表示中
   if (isViewerOpen && images.length > 0) {
     const safeIndex = Math.max(0, Math.min(params.index, images.length - 1));
+
+    // マンガモードは Phase 3 で実装
+    if (params.mode === "manga") {
+      return (
+        <div className="flex min-h-screen items-center justify-center bg-black text-gray-400">
+          <div className="text-center">
+            <p className="mb-4 text-lg">マンガモード（Phase 3 で実装予定）</p>
+            <button
+              type="button"
+              onClick={closeViewer}
+              className="rounded bg-gray-700 px-4 py-2 text-white hover:bg-gray-600"
+            >
+              戻る
+            </button>
+          </div>
+        </div>
+      );
+    }
+
     return (
       <CgViewer
         images={images}

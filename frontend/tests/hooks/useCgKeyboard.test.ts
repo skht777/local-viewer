@@ -21,6 +21,7 @@ const KEY_CODE_MAP: Record<string, string> = {
   s: "KeyS",
   v: "KeyV",
   w: "KeyW",
+  m: "KeyM",
 };
 
 function pressKey(key: string, options: KeyboardEventInit = {}) {
@@ -125,5 +126,12 @@ describe("useCgKeyboard", () => {
     renderHook(() => useCgKeyboard(defaultCallbacks));
     pressKey("s");
     expect(defaultCallbacks.scrollDown).toHaveBeenCalledOnce();
+  });
+
+  test("M キーで toggleMode が呼ばれる", () => {
+    const callbacks = { ...defaultCallbacks, toggleMode: vi.fn() };
+    renderHook(() => useCgKeyboard(callbacks));
+    pressKey("m");
+    expect(callbacks.toggleMode).toHaveBeenCalledOnce();
   });
 });
