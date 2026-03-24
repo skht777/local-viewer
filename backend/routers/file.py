@@ -4,13 +4,15 @@ GET /api/file/{node_id} — ファイル配信 (Range 対応, ETag/Cache-Control
 """
 
 import hashlib
+import mimetypes
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import FileResponse, Response
+from starlette.concurrency import run_in_threadpool
 
 from backend.services.archive_service import ArchiveService
-from backend.services.node_registry import NodeRegistry
+from backend.services.node_registry import MIME_MAP, NodeRegistry
 
 router = APIRouter(prefix="/api", tags=["file"])
 
@@ -46,15 +48,18 @@ async def serve_file(
     node_id: str,
     request: Request,
     registry: NodeRegistry = Depends(get_node_registry),
+    archive_service: ArchiveService = Depends(get_archive_service),
 ) -> Response:
-    """ファイルを配信する.
+    """ファイルまたはアーカイブエントリを配信する.
 
-    - node_id からパスを解決
-    - ディレクトリの場合は 422
-    - ETag による条件付きリクエスト (If-None-Match → 304)
-    - FileResponse で配信 (Range は Starlette が自動処理)
-    - Cache-Control: private, max-age=3600
+    - アーカイブエントリの場合: キャッシュから取得 or 展開して配信
+    - 通常ファイルの場合: FileResponse で配信 (Range は Starlette が自動処理)
     """
+    # アーカイブエントリかチェック
+    archive_entry = registry.resolve_archive_entry(node_id)
+    if archive_entry is not None:
+        return await _serve_archive_entry(archive_entry, request, archive_service)
+
     path = registry.resolve(node_id)
 
     if path.is_dir():
@@ -81,5 +86,53 @@ async def serve_file(
         headers={
             "ETag": f'"{etag}"',
             "Cache-Control": "private, max-age=3600",
+        },
+    )
+
+
+async def _serve_archive_entry(
+    archive_entry: tuple[Path, str],
+    request: Request,
+    archive_service: ArchiveService,
+) -> Response:
+    """アーカイブエントリを配信する.
+
+    - run_in_threadpool で抽出 (キャッシュ付き)
+    - ETag: md5(archive_mtime_ns + ":" + entry_name)
+    - Cache-Control: private, max-age=3600
+    """
+    archive_path, entry_name = archive_entry
+
+    # ETag 生成 (抽出前に計算可能)
+    st = archive_path.stat()
+    raw = f"{st.st_mtime_ns}:{entry_name}"
+    etag = hashlib.md5(raw.encode()).hexdigest()  # noqa: S324
+
+    # 条件付きリクエスト: If-None-Match → 304
+    if_none_match = request.headers.get("if-none-match")
+    if if_none_match and if_none_match.strip('"') == etag:
+        return Response(status_code=304, headers={"ETag": f'"{etag}"'})
+
+    # エントリ抽出 (CPU-bound → threadpool)
+    data = await run_in_threadpool(
+        archive_service.extract_entry, archive_path, entry_name
+    )
+
+    # MIME タイプ推定
+    dot_idx = entry_name.rfind(".")
+    ext = entry_name[dot_idx:].lower() if dot_idx > 0 else ""
+    mime = (
+        MIME_MAP.get(ext)
+        or mimetypes.guess_type(entry_name)[0]
+        or "application/octet-stream"
+    )
+
+    return Response(
+        content=data,
+        media_type=mime,
+        headers={
+            "ETag": f'"{etag}"',
+            "Cache-Control": "private, max-age=3600",
+            "Content-Length": str(len(data)),
         },
     )

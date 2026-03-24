@@ -1,5 +1,7 @@
 """ファイル配信 API のテスト."""
 
+from pathlib import Path
+
 from httpx import AsyncClient
 
 from backend.services.node_registry import NodeRegistry
@@ -122,3 +124,132 @@ async def test_Rangeリクエストで206を返す(
     )
     assert response.status_code == 206
     assert response.text == "hel"
+
+
+# --- アーカイブエントリ配信テスト ---
+
+# 最小 JPEG (conftest.py と同一)
+_MINIMAL_JPEG = bytes(
+    [
+        0xFF,
+        0xD8,
+        0xFF,
+        0xE0,
+        0x00,
+        0x10,
+        0x4A,
+        0x46,
+        0x49,
+        0x46,
+        0x00,
+        0x01,
+        0x01,
+        0x00,
+        0x00,
+        0x01,
+        0x00,
+        0x01,
+        0x00,
+        0x00,
+        0xFF,
+        0xD9,
+    ]
+)
+
+
+async def test_アーカイブエントリのnode_idでファイル配信される(
+    client: AsyncClient,
+    test_node_registry: NodeRegistry,
+    test_root: Path,
+) -> None:
+    # archive.zip 内の page01.jpg にアクセス
+    archive = test_root / "dir_a" / "archive.zip"
+    # まず browse でエントリの node_id を取得
+    archive_node_id = test_node_registry.register(archive)
+    browse_resp = await client.get(f"/api/browse/{archive_node_id}")
+    entries = browse_resp.json()["entries"]
+    entry_node_id = entries[0]["node_id"]
+
+    response = await client.get(f"/api/file/{entry_node_id}")
+    assert response.status_code == 200
+
+
+async def test_アーカイブエントリの内容が正しい(
+    client: AsyncClient,
+    test_node_registry: NodeRegistry,
+    test_root: Path,
+) -> None:
+    archive = test_root / "dir_a" / "archive.zip"
+    archive_node_id = test_node_registry.register(archive)
+    browse_resp = await client.get(f"/api/browse/{archive_node_id}")
+    entries = browse_resp.json()["entries"]
+    entry_node_id = entries[0]["node_id"]
+
+    response = await client.get(f"/api/file/{entry_node_id}")
+    assert response.content == _MINIMAL_JPEG
+
+
+async def test_アーカイブエントリのMIMEタイプが正しい(
+    client: AsyncClient,
+    test_node_registry: NodeRegistry,
+    test_root: Path,
+) -> None:
+    archive = test_root / "dir_a" / "archive.zip"
+    archive_node_id = test_node_registry.register(archive)
+    browse_resp = await client.get(f"/api/browse/{archive_node_id}")
+    entries = browse_resp.json()["entries"]
+    entry_node_id = entries[0]["node_id"]
+
+    response = await client.get(f"/api/file/{entry_node_id}")
+    assert "image/jpeg" in response.headers.get("content-type", "")
+
+
+async def test_アーカイブエントリのETagが返る(
+    client: AsyncClient,
+    test_node_registry: NodeRegistry,
+    test_root: Path,
+) -> None:
+    archive = test_root / "dir_a" / "archive.zip"
+    archive_node_id = test_node_registry.register(archive)
+    browse_resp = await client.get(f"/api/browse/{archive_node_id}")
+    entries = browse_resp.json()["entries"]
+    entry_node_id = entries[0]["node_id"]
+
+    response = await client.get(f"/api/file/{entry_node_id}")
+    assert "etag" in response.headers
+
+
+async def test_アーカイブエントリのIfNoneMatchで304を返す(
+    client: AsyncClient,
+    test_node_registry: NodeRegistry,
+    test_root: Path,
+) -> None:
+    archive = test_root / "dir_a" / "archive.zip"
+    archive_node_id = test_node_registry.register(archive)
+    browse_resp = await client.get(f"/api/browse/{archive_node_id}")
+    entries = browse_resp.json()["entries"]
+    entry_node_id = entries[0]["node_id"]
+
+    # 1回目: ETag を取得
+    resp1 = await client.get(f"/api/file/{entry_node_id}")
+    etag = resp1.headers["etag"]
+
+    # 2回目: If-None-Match で 304
+    resp2 = await client.get(
+        f"/api/file/{entry_node_id}",
+        headers={"If-None-Match": etag},
+    )
+    assert resp2.status_code == 304
+
+
+async def test_既存のファイル配信が引き続き動作する(
+    client: AsyncClient,
+    test_node_registry: NodeRegistry,
+    test_root: Path,
+) -> None:
+    # 通常ファイルの配信が壊れていないことを確認
+    file_path = test_root / "file.txt"
+    node_id = test_node_registry.register(file_path)
+    response = await client.get(f"/api/file/{node_id}")
+    assert response.status_code == 200
+    assert response.text == "hello"
