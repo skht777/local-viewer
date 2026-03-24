@@ -2,4 +2,4 @@ fastapi>=0.135,<1
 uvicorn[standard]>=0.42,<1
 pillow>=12,<13
 rarfile>=4.2,<5
-py7zr>=0.22,<1
+py7zr>=1.0,<2

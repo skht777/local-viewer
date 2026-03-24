@@ -104,7 +104,7 @@ export function CgViewer({
   });
 
   // カーソルオートハイド
-  const cursorTimerRef = useRef<ReturnType<typeof setTimeout>>();
+  const cursorTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
   const imageAreaRef = useRef<HTMLDivElement>(null);
 
   const handleMouseMove = useCallback(() => {

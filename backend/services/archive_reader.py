@@ -7,7 +7,6 @@
 - エントリのフィルタ/ソート/セキュリティ検証を内包
 """
 
-import io
 import logging
 import zipfile
 from abc import ABC, abstractmethod
@@ -259,12 +258,18 @@ class SevenZipArchiveReader(ArchiveReader):
         return entries
 
     def extract_entry(self, archive_path: Path, entry_name: str) -> bytes:
+        import os
+        import tempfile
+
         import py7zr
 
         with py7zr.SevenZipFile(archive_path, "r") as sz:
-            result = sz.read(targets=[entry_name])
-            if result is None or entry_name not in result:
-                msg = entry_name
-                raise KeyError(msg)
-            buf: io.BytesIO = result[entry_name]
-            return buf.read()
+            with tempfile.TemporaryDirectory() as td:
+                sz.extract(path=td, targets=[entry_name])
+                extracted = Path(td) / entry_name
+                if not extracted.exists():
+                    msg = entry_name
+                    raise KeyError(msg)
+                # py7zr が restrictive な権限で展開する場合があるため修正
+                os.chmod(extracted, 0o644)
+                return extracted.read_bytes()
