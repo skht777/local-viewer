@@ -124,6 +124,7 @@ def test_archive_service(test_settings: Settings) -> ArchiveService:
 async def client(
     test_node_registry: NodeRegistry,
     test_archive_service: ArchiveService,
+    test_root: Path,
 ) -> AsyncGenerator[AsyncClient]:
     """DI 差し替え済みの FastAPI TestClient.
 
@@ -133,6 +134,15 @@ async def client(
     app.dependency_overrides[file.get_node_registry] = lambda: test_node_registry
     app.dependency_overrides[browse.get_archive_service] = lambda: test_archive_service
     app.dependency_overrides[file.get_archive_service] = lambda: test_archive_service
+
+    # TempFileCache (テスト用)
+    from backend.services.temp_file_cache import TempFileCache
+
+    test_temp_cache = TempFileCache(
+        cache_dir=test_root / ".disk-cache",
+        max_size_bytes=100 * 1024 * 1024,
+    )
+    app.dependency_overrides[file.get_temp_file_cache] = lambda: test_temp_cache
 
     # 例外ハンドラ登録 (lifespan が動かないテスト用)
     app.add_exception_handler(

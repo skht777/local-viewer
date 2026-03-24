@@ -5,14 +5,15 @@ GET /api/file/{node_id} — ファイル配信 (Range 対応, ETag/Cache-Control
 
 import hashlib
 import mimetypes
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import FileResponse, Response
 from starlette.concurrency import run_in_threadpool
 
 from backend.services.archive_service import ArchiveService
-from backend.services.node_registry import MIME_MAP, NodeRegistry
+from backend.services.node_registry import MIME_MAP, VIDEO_EXTENSIONS, NodeRegistry
+from backend.services.temp_file_cache import TempFileCache
 
 router = APIRouter(prefix="/api", tags=["file"])
 
@@ -20,6 +21,12 @@ router = APIRouter(prefix="/api", tags=["file"])
 def get_archive_service() -> ArchiveService:
     """ArchiveService の DI スタブ."""
     msg = "ArchiveService が DI で設定されていません"
+    raise RuntimeError(msg)
+
+
+def get_temp_file_cache() -> TempFileCache:
+    """TempFileCache の DI スタブ."""
+    msg = "TempFileCache が DI で設定されていません"
     raise RuntimeError(msg)
 
 
@@ -49,6 +56,7 @@ async def serve_file(
     request: Request,
     registry: NodeRegistry = Depends(get_node_registry),
     archive_service: ArchiveService = Depends(get_archive_service),
+    temp_cache: TempFileCache = Depends(get_temp_file_cache),
 ) -> Response:
     """ファイルまたはアーカイブエントリを配信する.
 
@@ -58,7 +66,9 @@ async def serve_file(
     # アーカイブエントリかチェック
     archive_entry = registry.resolve_archive_entry(node_id)
     if archive_entry is not None:
-        return await _serve_archive_entry(archive_entry, request, archive_service)
+        return await _serve_archive_entry(
+            archive_entry, request, archive_service, temp_cache
+        )
 
     path = registry.resolve(node_id)
 
@@ -90,49 +100,109 @@ async def serve_file(
     )
 
 
+def _entry_ext(entry_name: str) -> str:
+    """エントリ名から拡張子を取得する."""
+    dot_idx = entry_name.rfind(".")
+    return entry_name[dot_idx:].lower() if dot_idx > 0 else ""
+
+
+def _entry_mime(entry_name: str) -> str:
+    """エントリ名から MIME タイプを推定する."""
+    ext = _entry_ext(entry_name)
+    return (
+        MIME_MAP.get(ext)
+        or mimetypes.guess_type(entry_name)[0]
+        or "application/octet-stream"
+    )
+
+
+def _archive_etag(st_mtime_ns: int, entry_name: str) -> str:
+    """アーカイブエントリの ETag を生成する."""
+    raw = f"{st_mtime_ns}:{entry_name}"
+    return hashlib.md5(raw.encode()).hexdigest()  # noqa: S324
+
+
 async def _serve_archive_entry(
     archive_entry: tuple[Path, str],
     request: Request,
     archive_service: ArchiveService,
+    temp_cache: TempFileCache,
 ) -> Response:
     """アーカイブエントリを配信する.
 
-    - run_in_threadpool で抽出 (キャッシュ付き)
-    - ETag: md5(archive_mtime_ns + ":" + entry_name)
-    - Cache-Control: private, max-age=3600
+    - 動画エントリ: tmpfile 経由で FileResponse (Range 対応)
+    - 画像エントリ: Response(content=bytes)
     """
     archive_path, entry_name = archive_entry
-
-    # ETag 生成 (抽出前に計算可能)
     st = archive_path.stat()
-    raw = f"{st.st_mtime_ns}:{entry_name}"
-    etag = hashlib.md5(raw.encode()).hexdigest()  # noqa: S324
+    etag = _archive_etag(st.st_mtime_ns, entry_name)
 
     # 条件付きリクエスト: If-None-Match → 304
     if_none_match = request.headers.get("if-none-match")
     if if_none_match and if_none_match.strip('"') == etag:
         return Response(status_code=304, headers={"ETag": f'"{etag}"'})
 
-    # エントリ抽出 (CPU-bound → threadpool)
+    # 動画エントリは tmpfile 経由で FileResponse (Range 対応)
+    ext = _entry_ext(entry_name)
+    if ext in VIDEO_EXTENSIONS:
+        return await _serve_archive_video_entry(
+            archive_path,
+            entry_name,
+            st.st_mtime_ns,
+            etag,
+            archive_service,
+            temp_cache,
+        )
+
+    # 画像エントリ: メモリから Response
     data = await run_in_threadpool(
         archive_service.extract_entry, archive_path, entry_name
     )
-
-    # MIME タイプ推定
-    dot_idx = entry_name.rfind(".")
-    ext = entry_name[dot_idx:].lower() if dot_idx > 0 else ""
-    mime = (
-        MIME_MAP.get(ext)
-        or mimetypes.guess_type(entry_name)[0]
-        or "application/octet-stream"
-    )
-
     return Response(
         content=data,
-        media_type=mime,
+        media_type=_entry_mime(entry_name),
         headers={
             "ETag": f'"{etag}"',
             "Cache-Control": "private, max-age=3600",
             "Content-Length": str(len(data)),
         },
+    )
+
+
+async def _serve_archive_video_entry(
+    archive_path: Path,
+    entry_name: str,
+    mtime_ns: int,
+    etag: str,
+    archive_service: ArchiveService,
+    temp_cache: TempFileCache,
+) -> Response:
+    """動画エントリを tmpfile 経由で配信する (Range 対応)."""
+    key = temp_cache.make_key(archive_path, mtime_ns, entry_name)
+    headers = {
+        "ETag": f'"{etag}"',
+        "Cache-Control": "private, max-age=3600",
+    }
+
+    # キャッシュヒット
+    cached = temp_cache.get(key)
+    if cached is not None:
+        return FileResponse(
+            path=cached,
+            media_type=_entry_mime(entry_name),
+            headers=headers,
+        )
+
+    # キャッシュミス: 展開してディスクに保存
+    data = await run_in_threadpool(
+        archive_service.extract_entry, archive_path, entry_name
+    )
+    suffix = PurePosixPath(entry_name).suffix
+    path = temp_cache.put(key, data, suffix=suffix)
+    del data  # メモリを早期解放
+
+    return FileResponse(
+        path=path,
+        media_type=_entry_mime(entry_name),
+        headers=headers,
     )

@@ -305,10 +305,18 @@ async def client_with_small_limit(
     validator = ArchiveEntryValidator(settings)
     archive_svc = ArchiveService(validator=validator)
 
+    from backend.services.temp_file_cache import TempFileCache
+
+    temp_cache = TempFileCache(
+        cache_dir=tmp_path / ".disk-cache",
+        max_size_bytes=100 * 1024 * 1024,
+    )
+
     app.dependency_overrides[browse.get_node_registry] = lambda: registry
     app.dependency_overrides[file.get_node_registry] = lambda: registry
     app.dependency_overrides[browse.get_archive_service] = lambda: archive_svc
     app.dependency_overrides[file.get_archive_service] = lambda: archive_svc
+    app.dependency_overrides[file.get_temp_file_cache] = lambda: temp_cache
 
     app.add_exception_handler(PathSecurityError, path_security_error_handler)  # type: ignore[arg-type]
     app.add_exception_handler(NodeNotFoundError, node_not_found_error_handler)  # type: ignore[arg-type]

@@ -5,6 +5,8 @@ services:
       - "${HOST_PORT:-8000}:8000"
     volumes:
       - ${DATA_DIR:-./sample}:/data:ro
+    tmpfs:
+      - /tmp/viewer-disk-cache:size=${DISK_CACHE_SIZE:-2g}
     environment:
       - ROOT_DIR=/data
       - BIND_HOST=${BIND_HOST:-127.0.0.1}
