@@ -1,10 +1,14 @@
-"""アーカイブ読み取りの抽象インターフェースと ZIP 実装.
+"""アーカイブ読み取りの抽象インターフェースと ZIP/RAR/7z 実装.
 
 - ArchiveReader ABC: list_entries, extract_entry, supports
 - ZipArchiveReader: zipfile.ZipFile でダイレクト読み取り
+- RarArchiveReader: rarfile.RarFile + unrar-free
+- SevenZipArchiveReader: py7zr.SevenZipFile (Pure Python)
 - エントリのフィルタ/ソート/セキュリティ検証を内包
 """
 
+import io
+import logging
 import zipfile
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
@@ -14,6 +18,8 @@ from backend.services.archive_security import (
     ArchiveEntryValidator,
     ArchivePasswordError,
 )
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -110,3 +116,155 @@ class ZipArchiveReader(ArchiveReader):
     def extract_entry(self, archive_path: Path, entry_name: str) -> bytes:
         with zipfile.ZipFile(archive_path, "r") as zf:
             return zf.read(entry_name)
+
+
+class RarArchiveReader(ArchiveReader):
+    """RAR/CBR アーカイブリーダー.
+
+    rarfile + unrar-free が必要。未インストール時は supports() が False を返す。
+    """
+
+    _EXTENSIONS = frozenset({".rar", ".cbr"})
+
+    def __init__(self, validator: ArchiveEntryValidator) -> None:
+        self._validator = validator
+        self._is_available = self._check_availability()
+
+    @staticmethod
+    def _check_availability() -> bool:
+        try:
+            import rarfile as _rf
+
+            # unrar コマンドの存在確認
+            _rf.UNRAR_TOOL  # noqa: B018
+            return True
+        except ImportError, Exception:
+            return False
+
+    @property
+    def is_available(self) -> bool:
+        return self._is_available
+
+    def supports(self, path: Path) -> bool:
+        return self._is_available and path.suffix.lower() in self._EXTENSIONS
+
+    def list_entries(self, archive_path: Path) -> list[ArchiveEntry]:
+        import rarfile
+
+        with rarfile.RarFile(archive_path, "r") as rf:
+            # パスワード付き検出
+            if rf.needs_password():
+                raise ArchivePasswordError()
+
+            entries: list[ArchiveEntry] = []
+            total_uncompressed = 0
+
+            for info in rf.infolist():
+                if info.is_dir():
+                    continue
+
+                name = info.filename.replace("\\", "/")
+                self._validator.validate_entry_name(name)
+
+                if not self._validator.is_allowed_extension(name):
+                    continue
+
+                self._validator.validate_entry_size(
+                    compressed=info.compress_size,
+                    uncompressed=info.file_size,
+                )
+                total_uncompressed += info.file_size
+
+                entries.append(
+                    ArchiveEntry(
+                        name=name,
+                        size_compressed=info.compress_size,
+                        size_uncompressed=info.file_size,
+                        is_dir=False,
+                    )
+                )
+
+            self._validator.validate_total_size(total_uncompressed)
+
+        entries.sort(key=lambda e: e.name.lower())
+        return entries
+
+    def extract_entry(self, archive_path: Path, entry_name: str) -> bytes:
+        import rarfile
+
+        with rarfile.RarFile(archive_path, "r") as rf:
+            data: bytes = rf.read(entry_name)
+            return data
+
+
+class SevenZipArchiveReader(ArchiveReader):
+    """7z アーカイブリーダー.
+
+    py7zr (Pure Python) を使用。システムパッケージ不要。
+    """
+
+    _EXTENSIONS = frozenset({".7z"})
+
+    def __init__(self, validator: ArchiveEntryValidator) -> None:
+        self._validator = validator
+
+    def supports(self, path: Path) -> bool:
+        return path.suffix.lower() in self._EXTENSIONS
+
+    def list_entries(self, archive_path: Path) -> list[ArchiveEntry]:
+        import py7zr
+
+        try:
+            with py7zr.SevenZipFile(archive_path, "r") as sz:
+                # パスワード付き検出
+                if sz.needs_password():
+                    raise ArchivePasswordError()
+
+                entries: list[ArchiveEntry] = []
+                total_uncompressed = 0
+
+                for entry in sz.list():
+                    if entry.is_directory:
+                        continue
+
+                    name = entry.filename.replace("\\", "/")
+                    self._validator.validate_entry_name(name)
+
+                    if not self._validator.is_allowed_extension(name):
+                        continue
+
+                    compressed = entry.compressed or 0
+                    uncompressed = entry.uncompressed or 0
+
+                    self._validator.validate_entry_size(
+                        compressed=compressed,
+                        uncompressed=uncompressed,
+                    )
+                    total_uncompressed += uncompressed
+
+                    entries.append(
+                        ArchiveEntry(
+                            name=name,
+                            size_compressed=compressed,
+                            size_uncompressed=uncompressed,
+                            is_dir=False,
+                        )
+                    )
+
+                self._validator.validate_total_size(total_uncompressed)
+        except py7zr.PasswordRequired:
+            raise ArchivePasswordError() from None
+
+        entries.sort(key=lambda e: e.name.lower())
+        return entries
+
+    def extract_entry(self, archive_path: Path, entry_name: str) -> bytes:
+        import py7zr
+
+        with py7zr.SevenZipFile(archive_path, "r") as sz:
+            result = sz.read(targets=[entry_name])
+            if result is None or entry_name not in result:
+                msg = entry_name
+                raise KeyError(msg)
+            buf: io.BytesIO = result[entry_name]
+            return buf.read()

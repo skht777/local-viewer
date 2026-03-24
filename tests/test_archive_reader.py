@@ -1,15 +1,27 @@
-"""ArchiveReader (ZIP) のテスト."""
+"""ArchiveReader (ZIP/7z) のテスト."""
 
 import zipfile
 from pathlib import Path
 
 import pytest
 
-from backend.services.archive_reader import ZipArchiveReader
+from backend.services.archive_reader import (
+    RarArchiveReader,
+    SevenZipArchiveReader,
+    ZipArchiveReader,
+)
 from backend.services.archive_security import (
     ArchiveEntryValidator,
     ArchivePasswordError,
 )
+
+# py7zr は Python 3.14 + _zstd 未ビルド環境で import 失敗する場合がある
+try:
+    import py7zr
+
+    HAS_PY7ZR = True
+except ImportError:
+    HAS_PY7ZR = False
 
 # 最小 JPEG (テスト用)
 MINIMAL_JPEG = bytes(
@@ -164,3 +176,74 @@ def test_ZIP_supportsが正しい拡張子で真を返す(
     assert zip_reader.supports(tmp_path / "test.rar") is False
     assert zip_reader.supports(tmp_path / "test.7z") is False
     assert zip_reader.supports(tmp_path / "test.txt") is False
+
+
+# ===== 7z テスト =====
+
+skip_no_py7zr = pytest.mark.skipif(
+    not HAS_PY7ZR, reason="py7zr unavailable (_zstd not built)"
+)
+
+
+@pytest.fixture
+def sevenz_archive(tmp_path: Path) -> Path:
+    """テスト用 7z を動的生成する."""
+    if not HAS_PY7ZR:
+        pytest.skip("py7zr unavailable")
+    archive = tmp_path / "test.7z"
+    with py7zr.SevenZipFile(archive, "w") as sz:
+        sz.writestr(MINIMAL_JPEG, "image01.jpg")
+        sz.writestr(MINIMAL_PNG, "image02.png")
+        sz.writestr(b"text content", "readme.txt")
+    return archive
+
+
+@pytest.fixture
+def sevenz_reader(test_settings) -> SevenZipArchiveReader:
+    validator = ArchiveEntryValidator(test_settings)
+    return SevenZipArchiveReader(validator)
+
+
+@skip_no_py7zr
+def test_7zのエントリ一覧を返す(
+    sevenz_reader: SevenZipArchiveReader,
+    sevenz_archive: Path,
+) -> None:
+    entries = sevenz_reader.list_entries(sevenz_archive)
+    # readme.txt は画像ではないので除外
+    assert len(entries) == 2
+    names = [e.name for e in entries]
+    assert "image01.jpg" in names
+    assert "image02.png" in names
+
+
+@skip_no_py7zr
+def test_7zエントリのバイナリデータを取得する(
+    sevenz_reader: SevenZipArchiveReader,
+    sevenz_archive: Path,
+) -> None:
+    data = sevenz_reader.extract_entry(sevenz_archive, "image01.jpg")
+    assert data == MINIMAL_JPEG
+
+
+@skip_no_py7zr
+def test_7z_supportsが正しい拡張子で真を返す(
+    sevenz_reader: SevenZipArchiveReader,
+    tmp_path: Path,
+) -> None:
+    assert sevenz_reader.supports(tmp_path / "test.7z") is True
+    assert sevenz_reader.supports(tmp_path / "test.zip") is False
+    assert sevenz_reader.supports(tmp_path / "test.rar") is False
+
+
+# ===== RAR テスト =====
+
+
+def test_RAR_unrar未インストール時の動作(test_settings) -> None:
+    """RarArchiveReader のロジックテスト (unrar 有無に関わらず実行可能)."""
+    validator = ArchiveEntryValidator(test_settings)
+    reader = RarArchiveReader(validator)
+    # is_available はシステム依存
+    # supports は is_available が False なら常に False
+    if not reader.is_available:
+        assert reader.supports(Path("test.rar")) is False
