@@ -7,7 +7,6 @@
 - エントリのフィルタ/ソート/セキュリティ検証を内包
 """
 
-import logging
 import zipfile
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
@@ -16,9 +15,8 @@ from pathlib import Path
 from backend.services.archive_security import (
     ArchiveEntryValidator,
     ArchivePasswordError,
+    ArchiveSecurityError,
 )
-
-logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -82,18 +80,24 @@ class ZipArchiveReader(ArchiveReader):
                 # バックスラッシュを正規化
                 name = info.filename.replace("\\", "/")
 
-                # エントリ名セキュリティ検証
-                self._validator.validate_entry_name(name)
+                # エントリ名セキュリティ検証 (不正エントリは個別スキップ)
+                try:
+                    self._validator.validate_entry_name(name)
+                except ArchiveSecurityError:
+                    continue
 
                 # 許可拡張子チェック
                 if not self._validator.is_allowed_extension(name):
                     continue
 
-                # サイズ検証
-                self._validator.validate_entry_size(
-                    compressed=info.compress_size,
-                    uncompressed=info.file_size,
-                )
+                # サイズ検証 (超過エントリは個別スキップ)
+                try:
+                    self._validator.validate_entry_size(
+                        compressed=info.compress_size,
+                        uncompressed=info.file_size,
+                    )
+                except ArchiveSecurityError:
+                    continue
                 total_uncompressed += info.file_size
 
                 entries.append(
@@ -163,15 +167,21 @@ class RarArchiveReader(ArchiveReader):
                     continue
 
                 name = info.filename.replace("\\", "/")
-                self._validator.validate_entry_name(name)
+                try:
+                    self._validator.validate_entry_name(name)
+                except ArchiveSecurityError:
+                    continue
 
                 if not self._validator.is_allowed_extension(name):
                     continue
 
-                self._validator.validate_entry_size(
-                    compressed=info.compress_size,
-                    uncompressed=info.file_size,
-                )
+                try:
+                    self._validator.validate_entry_size(
+                        compressed=info.compress_size,
+                        uncompressed=info.file_size,
+                    )
+                except ArchiveSecurityError:
+                    continue
                 total_uncompressed += info.file_size
 
                 entries.append(
@@ -227,7 +237,10 @@ class SevenZipArchiveReader(ArchiveReader):
                         continue
 
                     name = entry.filename.replace("\\", "/")
-                    self._validator.validate_entry_name(name)
+                    try:
+                        self._validator.validate_entry_name(name)
+                    except ArchiveSecurityError:
+                        continue
 
                     if not self._validator.is_allowed_extension(name):
                         continue
@@ -235,10 +248,13 @@ class SevenZipArchiveReader(ArchiveReader):
                     compressed = entry.compressed or 0
                     uncompressed = entry.uncompressed or 0
 
-                    self._validator.validate_entry_size(
-                        compressed=compressed,
-                        uncompressed=uncompressed,
-                    )
+                    try:
+                        self._validator.validate_entry_size(
+                            compressed=compressed,
+                            uncompressed=uncompressed,
+                        )
+                    except ArchiveSecurityError:
+                        continue
                     total_uncompressed += uncompressed
 
                     entries.append(

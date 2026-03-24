@@ -76,11 +76,11 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
     )
 
     # 起動時診断: 各アーカイブ形式の利用可否
+    # uvicorn デフォルトログレベルが WARNING のため、全て WARNING で出力
     diag = _archive_service.get_diagnostics()
     for fmt, available in diag.items():
-        level = logging.INFO if available else logging.WARNING
-        status = "available" if available else "not available"
-        logger.log(level, "%s support: %s", fmt, status)
+        status = "available" if available else "NOT available"
+        logger.warning("Archive: %s support: %s", fmt, status)
 
     # DI: routers のスタブを実インスタンスに差し替え
     _app.dependency_overrides[browse.get_node_registry] = get_node_registry
