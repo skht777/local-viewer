@@ -30,6 +30,33 @@ describe("VideoCard", () => {
     expect(screen.getByText("10.0 MB")).toBeTruthy();
   });
 
+  test("initialTimeが設定されるとloadedmetadata時にcurrentTimeが設定される", () => {
+    const { container } = render(
+      <VideoCard entry={videoEntry} initialTime={42.5} />,
+    );
+    const video = container.querySelector("video") as HTMLVideoElement;
+    expect(video).not.toBeNull();
+
+    // loadedmetadata を発火
+    fireEvent.loadedMetadata(video);
+
+    expect(video.currentTime).toBe(42.5);
+  });
+
+  test("onTimeUpdateがスロットリング付きで呼ばれる", () => {
+    const handleTimeUpdate = vi.fn();
+    const { container } = render(
+      <VideoCard entry={videoEntry} onTimeUpdate={handleTimeUpdate} />,
+    );
+    const video = container.querySelector("video") as HTMLVideoElement;
+
+    // currentTime を設定してから timeupdate を発火
+    Object.defineProperty(video, "currentTime", { value: 10, writable: true });
+    fireEvent.timeUpdate(video);
+
+    expect(handleTimeUpdate).toHaveBeenCalledWith("vid001", 10);
+  });
+
   test("エラー時にフォールバックメッセージが表示される", () => {
     const { container } = render(<VideoCard entry={videoEntry} />);
     const video = container.querySelector("video");

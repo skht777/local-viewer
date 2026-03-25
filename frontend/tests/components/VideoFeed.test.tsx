@@ -26,4 +26,16 @@ describe("VideoFeed", () => {
     // 空メッセージは表示されない
     expect(screen.queryByText("動画がありません")).toBeNull();
   });
+
+  test("スクロールコンテナに仮想スクロール用の高さが設定される", () => {
+    const videos = [makeVideo("v1", "clip1.mp4")];
+    const { container } = render(<VideoFeed videos={videos} />);
+
+    // 仮想スクロールの外側コンテナ (相対位置)
+    const inner = container.querySelector(".relative.mx-auto.max-w-4xl");
+    expect(inner).not.toBeNull();
+    // getTotalSize() による高さが設定されている
+    const style = (inner as HTMLElement).style;
+    expect(style.height).toBeTruthy();
+  });
 });
