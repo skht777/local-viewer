@@ -194,13 +194,13 @@ async def _serve_archive_video_entry(
             headers=headers,
         )
 
-    # キャッシュミス: 展開してディスクに保存
-    data = await run_in_threadpool(
-        archive_service.extract_entry, archive_path, entry_name
-    )
+    # キャッシュミス: ストリーミング展開でディスクに保存 (メモリ節約)
     suffix = PurePosixPath(entry_name).suffix
-    path = temp_cache.put(key, data, suffix=suffix)
-    del data  # メモリを早期解放
+
+    def writer(dest: Path) -> None:
+        archive_service.extract_entry_to_file(archive_path, entry_name, dest)
+
+    path = await run_in_threadpool(temp_cache.put_with_writer, key, writer, 0, suffix)
 
     return FileResponse(
         path=path,

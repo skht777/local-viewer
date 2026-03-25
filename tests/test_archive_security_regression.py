@@ -174,6 +174,48 @@ async def test_アーカイブ内動画がファイル配信される(
     assert "video" in response.headers["content-type"]
 
 
+async def test_アーカイブ内動画のRangeリクエストで206を返す(
+    client: AsyncClient,
+    test_node_registry: NodeRegistry,
+    test_root: Path,
+) -> None:
+    """アーカイブ内動画で Range ヘッダ付きリクエストが 206 を返す."""
+    archive = test_root / "dir_a" / "mixed.zip"
+    arc_node_id = test_node_registry.register(archive)
+    browse_resp = await client.get(f"/api/browse/{arc_node_id}")
+    entries = browse_resp.json()["entries"]
+    video_entry = next(e for e in entries if e["name"] == "clip.mp4")
+
+    response = await client.get(
+        f"/api/file/{video_entry['node_id']}",
+        headers={"Range": "bytes=0-3"},
+    )
+    assert response.status_code == 206
+
+
+async def test_アーカイブ内動画の2回目リクエストがキャッシュヒットする(
+    client: AsyncClient,
+    test_node_registry: NodeRegistry,
+    test_root: Path,
+) -> None:
+    """1回目で tmpfile キャッシュが作られ、2回目はキャッシュヒットする."""
+    archive = test_root / "dir_a" / "mixed.zip"
+    arc_node_id = test_node_registry.register(archive)
+    browse_resp = await client.get(f"/api/browse/{arc_node_id}")
+    entries = browse_resp.json()["entries"]
+    video_entry = next(e for e in entries if e["name"] == "clip.mp4")
+
+    url = f"/api/file/{video_entry['node_id']}"
+    # 1回目
+    resp1 = await client.get(url)
+    assert resp1.status_code == 200
+    # 2回目 (キャッシュヒット)
+    resp2 = await client.get(url)
+    assert resp2.status_code == 200
+    # 同じ内容
+    assert resp1.content == resp2.content
+
+
 async def test_アーカイブ内の許可外拡張子が引き続き除外される(
     client: AsyncClient,
     test_node_registry: NodeRegistry,
