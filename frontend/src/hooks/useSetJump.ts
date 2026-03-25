@@ -2,7 +2,8 @@
 // - findNextSet/findPrevSet（純粋関数）で同階層の次/前を探索
 // - 候補がなければ親ディレクトリの browse API を呼んで兄弟を走査
 // - NavigationPrompt の状態管理を内包
-// - CgViewer / MangaViewer 両方から共通利用
+// - CgViewer / MangaViewer / PdfCgViewer / PdfMangaViewer から共通利用
+// - PDF の場合は ?pdf= 付き URL で遷移 (browse 422 回避)
 
 import { useCallback, useState } from "react";
 import { useNavigate } from "react-router-dom";
@@ -10,6 +11,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { browseNodeOptions } from "./api/browseQueries";
 import { findNextSet, findPrevSet } from "./useSetNavigation";
 import type { ViewerMode } from "./useViewerParams";
+import type { BrowseEntry } from "../types/api";
 
 interface UseSetJumpProps {
   currentNodeId: string | null;
@@ -43,12 +45,18 @@ export function useSetJump({
 
   const dismissPrompt = useCallback(() => setPrompt(null), []);
 
-  // 指定ノードへ遷移（mode を維持）
-  const navigateToSet = useCallback(
-    (nodeId: string) => {
-      navigate(`/browse/${nodeId}?tab=images&index=0&mode=${mode}`);
+  // 遷移先の kind に応じた URL で遷移
+  // - PDF: 親ディレクトリに留まり ?pdf= 付きで PDF ビューワーを開く
+  // - ディレクトリ/アーカイブ: 従来通り browse
+  const navigateToTarget = useCallback(
+    (target: BrowseEntry) => {
+      if (target.kind === "pdf") {
+        navigate(`/browse/${parentNodeId}?pdf=${target.node_id}&page=1&mode=${mode}`);
+      } else {
+        navigate(`/browse/${target.node_id}?tab=images&index=0&mode=${mode}`);
+      }
     },
-    [navigate, mode],
+    [navigate, parentNodeId, mode],
   );
 
   // 親の browse データから兄弟を検索
@@ -70,11 +78,11 @@ export function useSetJump({
       message: "次のディレクトリに移動しますか？",
       onConfirm: () => {
         setPrompt(null);
-        navigateToSet(sibling.node_id);
+        navigateToTarget(sibling);
       },
       onCancel: () => setPrompt(null),
     });
-  }, [findSibling, navigateToSet]);
+  }, [findSibling, navigateToTarget]);
 
   // PageUp/Z: 確認ダイアログ付きで前のセットへ
   const goPrevSet = useCallback(async () => {
@@ -84,23 +92,23 @@ export function useSetJump({
       message: "前のディレクトリに移動しますか？",
       onConfirm: () => {
         setPrompt(null);
-        navigateToSet(sibling.node_id);
+        navigateToTarget(sibling);
       },
       onCancel: () => setPrompt(null),
     });
-  }, [findSibling, navigateToSet]);
+  }, [findSibling, navigateToTarget]);
 
   // Shift+X: 確認なしで次のセットへ
   const goNextSetParent = useCallback(async () => {
     const sibling = await findSibling("next");
-    if (sibling) navigateToSet(sibling.node_id);
-  }, [findSibling, navigateToSet]);
+    if (sibling) navigateToTarget(sibling);
+  }, [findSibling, navigateToTarget]);
 
   // Shift+Z: 確認なしで前のセットへ
   const goPrevSetParent = useCallback(async () => {
     const sibling = await findSibling("prev");
-    if (sibling) navigateToSet(sibling.node_id);
-  }, [findSibling, navigateToSet]);
+    if (sibling) navigateToTarget(sibling);
+  }, [findSibling, navigateToTarget]);
 
   return { goNextSet, goPrevSet, goNextSetParent, goPrevSetParent, prompt, dismissPrompt };
 }

@@ -33,9 +33,17 @@ describe("selectFirstViewable", () => {
     expect(selectFirstViewable([])).toBeNull();
   });
 
-  test("PDF のみの場合は null を返す (Phase 6 で対応)", () => {
+  test("PDF がある場合は PDF を返す", () => {
     const entries = [entry("pdf", "p1")];
-    expect(selectFirstViewable(entries)).toBeNull();
+    expect(selectFirstViewable(entries)?.node_id).toBe("p1");
+  });
+
+  test("archive > pdf > image > directory の優先順位", () => {
+    const entries = [entry("pdf", "p1"), entry("image", "i1")];
+    expect(selectFirstViewable(entries)?.node_id).toBe("p1");
+
+    const entries2 = [entry("archive", "a1"), entry("pdf", "p1")];
+    expect(selectFirstViewable(entries2)?.node_id).toBe("a1");
   });
 
   test("video/other はスキップされる", () => {

@@ -1,13 +1,13 @@
 // セット間ジャンプのツリー走査ロジック
-// - ディレクトリ + アーカイブがセット候補 (PDF は Phase 6 で追加)
+// - ディレクトリ + アーカイブ + PDF がセット候補
 // - 同ディレクトリ内の次/前のセット候補を探す純粋関数
 // - 再帰的なツリー走査はフック側で API を呼んで実行
 
 import type { BrowseEntry } from "../types/api";
 
-// セット候補かどうかを判定する
+// セット候補かどうかを判定する (PDF は Phase 6 で追加)
 function isSetCandidate(e: BrowseEntry): boolean {
-  return e.kind === "directory" || e.kind === "archive";
+  return e.kind === "directory" || e.kind === "archive" || e.kind === "pdf";
 }
 
 // 同階層のエントリから、currentNodeId の次のセット候補を探す

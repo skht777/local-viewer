@@ -34,11 +34,29 @@ describe("findNextSet", () => {
     const siblings = [
       entry("directory", "d1"),
       entry("archive", "a1"),
+      entry("directory", "d2"),
+    ];
+    const result = findNextSet(siblings, "d1");
+    expect(result?.node_id).toBe("a1");
+  });
+
+  test("PDF がセット候補に含まれる", () => {
+    const siblings = [
+      entry("directory", "d1"),
       entry("pdf", "p1"),
       entry("directory", "d2"),
     ];
-    // d1 の次はアーカイブ a1 (PDF はまだ Phase 6 なので候補外)
     const result = findNextSet(siblings, "d1");
+    expect(result?.node_id).toBe("p1");
+  });
+
+  test("PDF→次のセット候補を返す", () => {
+    const siblings = [
+      entry("pdf", "p1"),
+      entry("archive", "a1"),
+      entry("directory", "d1"),
+    ];
+    const result = findNextSet(siblings, "p1");
     expect(result?.node_id).toBe("a1");
   });
 

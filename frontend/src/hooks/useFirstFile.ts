@@ -1,6 +1,5 @@
 // ディレクトリ内の最初の表示対象を選択するユーティリティ
-// 優先順位: archive > image > directory (再帰降下用)
-// PDF は Phase 6 で追加
+// 優先順位: archive > pdf > image > directory (再帰降下用)
 
 import type { BrowseEntry } from "../types/api";
 
@@ -11,11 +10,15 @@ export function selectFirstViewable(entries: BrowseEntry[]): BrowseEntry | null 
   const firstArchive = entries.find((e) => e.kind === "archive");
   if (firstArchive) return firstArchive;
 
-  // 優先順位2: 画像
+  // 優先順位2: PDF (ページ単位で閲覧)
+  const firstPdf = entries.find((e) => e.kind === "pdf");
+  if (firstPdf) return firstPdf;
+
+  // 優先順位3: 画像
   const firstImage = entries.find((e) => e.kind === "image");
   if (firstImage) return firstImage;
 
-  // 優先順位3: ディレクトリ (再帰降下の候補)
+  // 優先順位4: ディレクトリ (再帰降下の候補)
   const firstDir = entries.find((e) => e.kind === "directory");
   if (firstDir) return firstDir;
 
