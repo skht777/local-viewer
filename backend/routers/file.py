@@ -12,7 +12,7 @@ from fastapi.responses import FileResponse, Response
 from starlette.concurrency import run_in_threadpool
 
 from backend.services.archive_service import ArchiveService
-from backend.services.extensions import MIME_MAP, VIDEO_EXTENSIONS
+from backend.services.extensions import MIME_MAP, PDF_EXTENSIONS, VIDEO_EXTENSIONS
 from backend.services.node_registry import NodeRegistry
 from backend.services.temp_file_cache import TempFileCache
 
@@ -131,7 +131,7 @@ async def _serve_archive_entry(
 ) -> Response:
     """アーカイブエントリを配信する.
 
-    - 動画エントリ: tmpfile 経由で FileResponse (Range 対応)
+    - 動画/PDF エントリ: tmpfile 経由で FileResponse (Range 対応)
     - 画像エントリ: Response(content=bytes)
     """
     archive_path, entry_name = archive_entry
@@ -143,9 +143,9 @@ async def _serve_archive_entry(
     if if_none_match and if_none_match.strip('"') == etag:
         return Response(status_code=304, headers={"ETag": f'"{etag}"'})
 
-    # 動画エントリは tmpfile 経由で FileResponse (Range 対応)
+    # 動画/PDF エントリは tmpfile 経由で FileResponse (Range 対応)
     ext = _entry_ext(entry_name)
-    if ext in VIDEO_EXTENSIONS:
+    if ext in VIDEO_EXTENSIONS or ext in PDF_EXTENSIONS:
         return await _serve_archive_video_entry(
             archive_path,
             entry_name,
