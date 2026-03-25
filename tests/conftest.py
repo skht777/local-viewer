@@ -81,12 +81,26 @@ def test_root(tmp_path: Path) -> Path:
     (tmp_path / "dir_b" / "video.mp4").write_bytes(b"\x00" * 1024)
     (tmp_path / "photo.png").write_bytes(b"\x89PNG\r\n\x1a\n" + b"\x00" * 100)
 
-    # テスト用 ZIP アーカイブ
+    # テスト用 ZIP アーカイブ (画像のみ)
     zip_path = tmp_path / "dir_a" / "archive.zip"
     with zipfile.ZipFile(zip_path, "w") as zf:
         zf.writestr("page01.jpg", minimal_jpeg)
         zf.writestr("page02.jpg", minimal_jpeg)
         zf.writestr("readme.txt", "not an image")
+
+    # テスト用 ZIP アーカイブ (画像 + 動画)
+    # 最小 MP4: ftyp ボックスのみ (ブラウザでは再生不可だがバイナリとして有効)
+    minimal_mp4 = (
+        b"\x00\x00\x00\x14"  # size=20
+        b"ftypisom"  # type=ftyp, brand=isom
+        b"\x00\x00\x00\x00"  # minor_version
+        b"isom"  # compatible_brand
+    )
+    video_zip_path = tmp_path / "dir_a" / "mixed.zip"
+    with zipfile.ZipFile(video_zip_path, "w") as zf:
+        zf.writestr("clip.mp4", minimal_mp4 + b"\x00" * 100)
+        zf.writestr("thumb.jpg", minimal_jpeg)
+        zf.writestr("notes.txt", "not allowed")
 
     return tmp_path
 
