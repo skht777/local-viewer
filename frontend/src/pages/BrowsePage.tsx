@@ -1,9 +1,8 @@
 // ファイルブラウザーページ
-// - isViewerOpen=false: BrowseHeader + ViewerTabs + DirectoryTree + FileBrowser/VideoFeed
-// - isViewerOpen=true && mode=cg: CgViewer
-// - isViewerOpen=true && mode=manga: MangaViewer
-// - tab=videos: VideoFeed (インラインフィード、ビューワー遷移なし)
-// - ディレクトリ内の画像のみがビューワーの表示範囲
+// - isPdfViewerOpen: PdfCgViewer / PdfMangaViewer
+// - isViewerOpen: CgViewer / MangaViewer (画像)
+// - ブラウズモード: BrowseHeader + ViewerTabs + DirectoryTree + FileBrowser/VideoFeed
+// - PDF クリック → openPdfViewer で PDF ビューワーを開く
 
 import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -16,6 +15,8 @@ import { CgViewer } from "../components/CgViewer";
 import { DirectoryTree } from "../components/DirectoryTree";
 import { FileBrowser } from "../components/FileBrowser";
 import { MangaViewer } from "../components/MangaViewer";
+import { PdfCgViewer } from "../components/PdfCgViewer";
+import { PdfMangaViewer } from "../components/PdfMangaViewer";
 import { VideoFeed } from "../components/VideoFeed";
 import { ViewerTabs } from "../components/ViewerTabs";
 
@@ -23,8 +24,19 @@ export default function BrowsePage() {
   const { nodeId } = useParams<{ nodeId: string }>();
   const navigate = useNavigate();
   const isSidebarOpen = useViewerStore((s) => s.isSidebarOpen);
-  const { params, setTab, setMode, isViewerOpen, openViewer, closeViewer, setIndex } =
-    useViewerParams();
+  const {
+    params,
+    setTab,
+    setMode,
+    isViewerOpen,
+    isPdfViewerOpen,
+    openViewer,
+    closeViewer,
+    openPdfViewer,
+    closePdfViewer,
+    setIndex,
+    setPdfPage,
+  } = useViewerParams();
 
   // 現在のディレクトリのデータ
   const { data, isLoading } = useQuery(browseNodeOptions(nodeId));
@@ -44,11 +56,35 @@ export default function BrowsePage() {
     [data?.entries],
   );
 
-  // ビューワー表示中
+  // PDF ファイル名を entries から取得
+  const pdfEntry = useMemo(
+    () => (data?.entries ?? []).find((e) => e.node_id === params.pdfNodeId),
+    [data?.entries, params.pdfNodeId],
+  );
+
+  // PDF ビューワー表示中 (画像ビューワーより先に判定)
+  if (isPdfViewerOpen && params.pdfNodeId) {
+    const pdfName = pdfEntry?.name ?? "";
+    const commonProps = {
+      pdfNodeId: params.pdfNodeId,
+      pdfName,
+      parentNodeId: data?.current_node_id ?? nodeId ?? null,
+      initialPage: params.pdfPage,
+      mode: params.mode,
+      onPageChange: setPdfPage,
+      onModeChange: setMode,
+      onClose: closePdfViewer,
+    };
+    if (params.mode === "manga") {
+      return <PdfMangaViewer {...commonProps} />;
+    }
+    return <PdfCgViewer {...commonProps} />;
+  }
+
+  // 画像ビューワー表示中
   if (isViewerOpen && images.length > 0) {
     const safeIndex = Math.max(0, Math.min(params.index, images.length - 1));
 
-    // マンガモード: 縦スクロールビューワー
     if (params.mode === "manga") {
       return (
         <MangaViewer
@@ -96,6 +132,7 @@ export default function BrowsePage() {
             isLoading={isLoading}
             onNavigate={(id) => navigate(`/browse/${id}`)}
             onImageClick={openViewer}
+            onPdfClick={openPdfViewer}
             onTabChange={setTab}
             tab={params.tab}
           />

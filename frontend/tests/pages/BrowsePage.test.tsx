@@ -3,6 +3,11 @@
 // - fetch をモックして固定データを返す
 // - タブ切り替えで正しいコンポーネントが表示されるか検証
 
+// pdfjs-dist は jsdom で DOMMatrix 未定義のためモック
+vi.mock("../../src/lib/pdfjs", () => ({
+  getDocument: vi.fn(() => ({ promise: new Promise(() => {}), destroy: vi.fn() })),
+}));
+
 import { screen, waitFor } from "@testing-library/react";
 import { Route, Routes } from "react-router-dom";
 import BrowsePage from "../../src/pages/BrowsePage";

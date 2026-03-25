@@ -1,3 +1,8 @@
+// pdfjs-dist は jsdom で DOMMatrix 未定義のためモック
+vi.mock("../src/lib/pdfjs", () => ({
+  getDocument: vi.fn(() => ({ promise: new Promise(() => {}), destroy: vi.fn() })),
+}));
+
 import { screen } from "@testing-library/react";
 import App from "../src/App";
 import { renderWithProviders } from "./helpers/renderWithProviders";

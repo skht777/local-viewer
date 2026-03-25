@@ -13,6 +13,7 @@ interface FileBrowserProps {
   isLoading: boolean;
   onNavigate: (nodeId: string) => void;
   onImageClick?: (imageIndex: number) => void;
+  onPdfClick?: (nodeId: string) => void;
   onTabChange?: (tab: ViewerTab) => void;
   tab: ViewerTab;
 }
@@ -43,6 +44,7 @@ export function FileBrowser({
   isLoading,
   onNavigate,
   onImageClick,
+  onPdfClick,
   onTabChange,
   tab,
 }: FileBrowserProps) {
@@ -56,6 +58,8 @@ export function FileBrowser({
       onNavigate(entry.node_id);
     } else if (entry.kind === "directory") {
       onNavigate(entry.node_id);
+    } else if (entry.kind === "pdf") {
+      onPdfClick?.(entry.node_id);
     } else if (entry.kind === "image" && onImageClick) {
       // フィルタ済み画像配列内でのインデックスを算出
       const imageIndex = filtered.findIndex((e) => e.node_id === entry.node_id);
