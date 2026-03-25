@@ -89,4 +89,81 @@ describe("useViewerParams", () => {
     // index パラメータが削除されていること
     expect(result.current.params.index).toBe(-1);
   });
+
+  // --- Phase 6: PDF ビューワー状態 ---
+
+  test("pdfパラメータがない場合isPdfViewerOpenはfalse", () => {
+    const { result } = renderHook(() => useViewerParams(), {
+      wrapper: createWrapper(["/?tab=filesets"]),
+    });
+    expect(result.current.isPdfViewerOpen).toBe(false);
+    expect(result.current.params.pdfNodeId).toBeNull();
+    expect(result.current.params.pdfPage).toBe(1);
+  });
+
+  test("openPdfViewerでpdfとpageとmodeがURLに設定される", () => {
+    const { result } = renderHook(() => useViewerParams(), {
+      wrapper: createWrapper(["/?tab=filesets"]),
+    });
+    act(() => {
+      result.current.openPdfViewer("pdf123");
+    });
+    expect(result.current.isPdfViewerOpen).toBe(true);
+    expect(result.current.params.pdfNodeId).toBe("pdf123");
+    expect(result.current.params.pdfPage).toBe(1);
+    expect(result.current.params.mode).toBe("cg");
+  });
+
+  test("openPdfViewerでindex/tabが削除される", () => {
+    const { result } = renderHook(() => useViewerParams(), {
+      wrapper: createWrapper(["/?tab=images&index=5&mode=cg"]),
+    });
+    act(() => {
+      result.current.openPdfViewer("pdf123");
+    });
+    expect(result.current.isPdfViewerOpen).toBe(true);
+    expect(result.current.isViewerOpen).toBe(false);
+    expect(result.current.params.index).toBe(-1);
+  });
+
+  test("openViewerでpdf/pageが削除される", () => {
+    const { result } = renderHook(() => useViewerParams(), {
+      wrapper: createWrapper(["/?pdf=pdf123&page=5&mode=cg"]),
+    });
+    act(() => {
+      result.current.openViewer(3);
+    });
+    expect(result.current.isViewerOpen).toBe(true);
+    expect(result.current.isPdfViewerOpen).toBe(false);
+    expect(result.current.params.pdfNodeId).toBeNull();
+  });
+
+  test("closePdfViewerでpdfとpageが削除される", () => {
+    const { result } = renderHook(() => useViewerParams(), {
+      wrapper: createWrapper(["/?pdf=pdf123&page=3&mode=cg"]),
+    });
+    act(() => {
+      result.current.closePdfViewer();
+    });
+    expect(result.current.isPdfViewerOpen).toBe(false);
+    expect(result.current.params.pdfNodeId).toBeNull();
+  });
+
+  test("setPdfPageでpageが更新される", () => {
+    const { result } = renderHook(() => useViewerParams(), {
+      wrapper: createWrapper(["/?pdf=pdf123&page=1&mode=cg"]),
+    });
+    act(() => {
+      result.current.setPdfPage(5);
+    });
+    expect(result.current.params.pdfPage).toBe(5);
+  });
+
+  test("pdfとindexが同時に存在する場合pdfが優先される", () => {
+    const { result } = renderHook(() => useViewerParams(), {
+      wrapper: createWrapper(["/?pdf=pdf123&index=3&page=2&mode=cg&tab=images"]),
+    });
+    expect(result.current.isPdfViewerOpen).toBe(true);
+    expect(result.current.isViewerOpen).toBe(false);
+  });
 });
