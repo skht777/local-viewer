@@ -12,6 +12,7 @@ import os
 import tempfile
 import threading
 from collections import OrderedDict
+from collections.abc import Callable
 from pathlib import Path
 
 
@@ -87,6 +88,54 @@ class TempFileCache:
 
             self._entries[key] = (final_path, size)
             self._current_bytes += size
+
+        return final_path
+
+    def put_with_writer(
+        self,
+        key: str,
+        writer: Callable[[Path], None],
+        size_hint: int,
+        suffix: str = "",
+    ) -> Path:
+        """コールバックでファイルに書き込み、キャッシュに登録する.
+
+        - size_hint で事前に LRU 追い出しを実行 (近似値で良い)
+        - writer(tmp_path) を呼び、一時ファイルに書き込ませる
+        - 書き込み完了後に stat で実サイズを取得し、LRU に登録
+        - アトミック os.replace() → 最終パスに配置
+        - writer 例外時は一時ファイルを確実に削除
+        """
+        final_name = f"{key}{suffix}"
+        final_path = self._cache_dir / final_name
+
+        # 一時ファイルを作成 (writer が Path を受け取って書き込む)
+        fd, tmp_path_str = tempfile.mkstemp(dir=self._cache_dir, prefix=f".tmp_{key}_")
+        os.close(fd)
+        tmp_path = Path(tmp_path_str)
+
+        try:
+            writer(tmp_path)
+            actual_size = tmp_path.stat().st_size
+            os.replace(tmp_path_str, final_path)
+        except BaseException:
+            tmp_path.unlink(missing_ok=True)
+            raise
+
+        with self._lock:
+            # 既存エントリがあれば先に削除
+            if key in self._entries:
+                old_path, old_size = self._entries[key]
+                self._current_bytes -= old_size
+                del self._entries[key]
+                if old_path != final_path:
+                    old_path.unlink(missing_ok=True)
+
+            # LRU 追い出し
+            self._evict_if_needed(actual_size)
+
+            self._entries[key] = (final_path, actual_size)
+            self._current_bytes += actual_size
 
         return final_path
 
