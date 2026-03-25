@@ -7,6 +7,8 @@
 - エントリのフィルタ/ソート/セキュリティ検証を内包
 """
 
+import os
+import tempfile
 import zipfile
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
@@ -42,6 +44,13 @@ class ArchiveReader(ABC):
     @abstractmethod
     def extract_entry(self, archive_path: Path, entry_name: str) -> bytes:
         """エントリのバイナリデータを読み取る."""
+
+    def extract_entry_to_file(
+        self, archive_path: Path, entry_name: str, dest: Path
+    ) -> None:
+        """エントリをファイルに直接展開する (デフォルトは bytes 経由フォールバック)."""
+        data = self.extract_entry(archive_path, entry_name)
+        dest.write_bytes(data)
 
     @abstractmethod
     def supports(self, path: Path) -> bool:
@@ -137,6 +146,24 @@ class ZipArchiveReader(ArchiveReader):
                         raise ArchiveSecurityError(msg)
                     chunks.append(chunk)
                 return b"".join(chunks)
+
+    def extract_entry_to_file(
+        self, archive_path: Path, entry_name: str, dest: Path
+    ) -> None:
+        """ZIP エントリをチャンク読みでファイルに書き出す (メモリ節約)."""
+        max_size = self._validator.max_entry_size_for(entry_name)
+        with zipfile.ZipFile(archive_path, "r") as zf:
+            with zf.open(entry_name) as src, open(dest, "wb") as dst:
+                total = 0
+                while True:
+                    chunk = src.read(_EXTRACT_CHUNK_SIZE)
+                    if not chunk:
+                        break
+                    total += len(chunk)
+                    if total > max_size:
+                        msg = f"抽出時にサイズ上限を超えました: {entry_name}"
+                        raise ArchiveSecurityError(msg)
+                    dst.write(chunk)
 
 
 class RarArchiveReader(ArchiveReader):
@@ -237,6 +264,26 @@ class RarArchiveReader(ArchiveReader):
                     chunks.append(chunk)
                 return b"".join(chunks)
 
+    def extract_entry_to_file(
+        self, archive_path: Path, entry_name: str, dest: Path
+    ) -> None:
+        """RAR エントリをチャンク読みでファイルに書き出す (メモリ節約)."""
+        import rarfile
+
+        max_size = self._validator.max_entry_size_for(entry_name)
+        with rarfile.RarFile(archive_path, "r") as rf:
+            with rf.open(entry_name) as src, open(dest, "wb") as dst:
+                total = 0
+                while True:
+                    chunk = src.read(_EXTRACT_CHUNK_SIZE)
+                    if not chunk:
+                        break
+                    total += len(chunk)
+                    if total > max_size:
+                        msg = f"抽出時にサイズ上限を超えました: {entry_name}"
+                        raise ArchiveSecurityError(msg)
+                    dst.write(chunk)
+
 
 class SevenZipArchiveReader(ArchiveReader):
     """7z アーカイブリーダー.
@@ -328,3 +375,41 @@ class SevenZipArchiveReader(ArchiveReader):
         bio = factory.products[entry_name]
         bio.seek(0)
         return bio.read()
+
+    def extract_entry_to_file(
+        self, archive_path: Path, entry_name: str, dest: Path
+    ) -> None:
+        """7z エントリをディレクトリに展開し dest に移動する (メモリ節約).
+
+        - dest.parent 配下に一時ディレクトリを作成し同一 filesystem を保証
+        - os.replace() でアトミックに配置
+        """
+        import py7zr
+
+        max_size = self._validator.max_entry_size_for(entry_name)
+
+        # dest.parent 配下に一時ディレクトリを作成
+        tmp_dir = Path(tempfile.mkdtemp(dir=dest.parent, prefix=".tmp_7z_"))
+        try:
+            with py7zr.SevenZipFile(archive_path, "r") as sz:
+                sz.extract(targets=[entry_name], path=tmp_dir)
+
+            extracted = tmp_dir / entry_name
+            if not extracted.exists():
+                msg = entry_name
+                raise KeyError(msg)
+
+            # サイズ検証
+            actual_size = extracted.stat().st_size
+            if actual_size > max_size:
+                msg = f"抽出時にサイズ上限を超えました: {entry_name}"
+                raise ArchiveSecurityError(msg)
+
+            os.replace(str(extracted), str(dest))
+            # py7zr は元のファイル権限を復元するため、読み取り権限を保証
+            dest.chmod(0o644)
+        finally:
+            # 一時ディレクトリを掃除 (残ったファイルがあれば削除)
+            import shutil
+
+            shutil.rmtree(tmp_dir, ignore_errors=True)

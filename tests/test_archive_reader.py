@@ -245,6 +245,49 @@ def test_ZIP抽出時にサイズ上限を超えるとエラー(tmp_path: Path, 
 # ===== RAR テスト =====
 
 
+# --- extract_entry_to_file ---
+
+
+def test_ZIP_extract_entry_to_fileでファイルに書き出される(
+    zip_reader: ZipArchiveReader, zip_archive: Path, tmp_path: Path
+) -> None:
+    dest = tmp_path / "output.jpg"
+    zip_reader.extract_entry_to_file(zip_archive, "image01.jpg", dest)
+    assert dest.exists()
+    assert dest.read_bytes() == MINIMAL_JPEG
+
+
+def test_ZIP_extract_entry_to_fileでサイズ上限超過時にエラー(
+    tmp_path: Path, test_settings
+) -> None:
+    archive = tmp_path / "big_entry.zip"
+    big_data = b"\x00" * 1024
+    with zipfile.ZipFile(archive, "w") as zf:
+        zf.writestr("large.jpg", big_data)
+
+    test_settings.archive_max_entry_size = 512
+    validator = ArchiveEntryValidator(test_settings)
+    reader = ZipArchiveReader(validator)
+
+    dest = tmp_path / "output.jpg"
+    with pytest.raises(ArchiveSecurityError, match="抽出時にサイズ上限を超えました"):
+        reader.extract_entry_to_file(archive, "large.jpg", dest)
+
+
+def test_7z_extract_entry_to_fileでファイルに書き出される(
+    sevenz_reader: SevenZipArchiveReader,
+    sevenz_archive: Path,
+    tmp_path: Path,
+) -> None:
+    dest = tmp_path / "output.jpg"
+    sevenz_reader.extract_entry_to_file(sevenz_archive, "image01.jpg", dest)
+    assert dest.exists()
+    assert dest.read_bytes() == MINIMAL_JPEG
+
+
+# ===== RAR テスト =====
+
+
 def test_RAR_unrar未インストール時の動作(test_settings) -> None:
     """RarArchiveReader のロジックテスト (unrar 有無に関わらず実行可能)."""
     validator = ArchiveEntryValidator(test_settings)

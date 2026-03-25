@@ -123,6 +123,16 @@ class ArchiveService:
         self._cache.put(cache_key, data)
         return data
 
+    def extract_entry_to_file(
+        self, archive_path: Path, entry_name: str, dest: Path
+    ) -> None:
+        """エントリをファイルに直接展開する (メモリキャッシュなし)."""
+        reader = self.get_reader(archive_path)
+        if reader is None:
+            msg = f"サポートされていないアーカイブ形式です: {archive_path.suffix}"
+            raise ValueError(msg)
+        reader.extract_entry_to_file(archive_path, entry_name, dest)
+
     def _extract_raw(self, archive_path: Path, entry_name: str) -> bytes:
         """リーダーで直接抽出する (キャッシュなし)."""
         reader = self.get_reader(archive_path)
