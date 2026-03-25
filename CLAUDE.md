@@ -5,7 +5,7 @@ from local directories. FastAPI backend + React frontend, distributed
 via Docker.
 
 ## Tech Stack
-- Backend: FastAPI + uvicorn (Python 3.13)
+- Backend: FastAPI + uvicorn (Python 3.14)
 - Frontend: React + Vite + TypeScript
 - Styling: Tailwind CSS v4 (Vite plugin, no PostCSS config)
 - State: TanStack Query (server) + zustand (UI only)
@@ -13,7 +13,7 @@ via Docker.
 - Container: Docker multi-stage build
 
 ## Environment Setup
-- Python 3.13 via pyenv (`pyenv install 3.13`)
+- Python 3.14 via pyenv (`pyenv install 3.14`)
 - Node.js 24 via nodenv (`nodenv install 24.11.1`)
 - Both version files (`.python-version`, `.node-version`) are in repo root
 

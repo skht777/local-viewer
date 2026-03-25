@@ -86,7 +86,7 @@ export function PdfCanvas({
         return;
       }
 
-      renderTask = page.render({ canvasContext: context, viewport });
+      renderTask = page.render({ canvas, canvasContext: context, viewport });
       renderTask.promise
         .then(() => {
           if (!cancelled) onRenderComplete?.();

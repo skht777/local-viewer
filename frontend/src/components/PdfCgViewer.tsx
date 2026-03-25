@@ -75,11 +75,11 @@ export function PdfCgViewer({
       return;
     }
     if (isFullscreen) {
-      document?.defaultView?.document.exitFullscreen?.();
+      window.document.exitFullscreen?.();
       return;
     }
     onClose();
-  }, [setJump, isFullscreen, onClose, document]);
+  }, [setJump, isFullscreen, onClose]);
 
   // キーボードショートカット (spread は no-op)
   useCgKeyboard({
