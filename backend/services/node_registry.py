@@ -13,58 +13,34 @@ import hmac
 import mimetypes
 import os
 from collections import OrderedDict
-from enum import StrEnum
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 from pydantic import BaseModel
 
 from backend.errors import NodeNotFoundError, PathSecurityError
+from backend.services.extensions import (
+    ARCHIVE_EXTENSIONS,
+    IMAGE_EXTENSIONS,
+    MIME_MAP,
+    PDF_EXTENSIONS,
+    VIDEO_EXTENSIONS,
+    EntryKind,
+)
 from backend.services.path_security import PathSecurity
 
 if TYPE_CHECKING:
     from backend.services.archive_reader import ArchiveEntry
 
-# 拡張子 → EntryKind のマッピング
-IMAGE_EXTENSIONS = frozenset(
-    {".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp", ".avif"}
-)
-VIDEO_EXTENSIONS = frozenset({".mp4", ".webm", ".mkv", ".avi", ".mov"})
-ARCHIVE_EXTENSIONS = frozenset({".zip", ".rar", ".7z", ".cbz", ".cbr"})
-PDF_EXTENSIONS = frozenset({".pdf"})
-
-# 頻出拡張子 → MIME タイプ (辞書参照で高速化、未知は mimetypes にフォールバック)
-MIME_MAP: dict[str, str] = {
-    ".jpg": "image/jpeg",
-    ".jpeg": "image/jpeg",
-    ".png": "image/png",
-    ".gif": "image/gif",
-    ".webp": "image/webp",
-    ".bmp": "image/bmp",
-    ".avif": "image/avif",
-    ".mp4": "video/mp4",
-    ".webm": "video/webm",
-    ".mkv": "video/x-matroska",
-    ".avi": "video/x-msvideo",
-    ".mov": "video/quicktime",
-    ".pdf": "application/pdf",
-    ".zip": "application/zip",
-    ".rar": "application/vnd.rar",
-    ".7z": "application/x-7z-compressed",
-    ".cbz": "application/vnd.comicbook+zip",
-    ".cbr": "application/vnd.comicbook-rar",
-}
-
-
-class EntryKind(StrEnum):
-    """エントリの種類."""
-
-    DIRECTORY = "directory"
-    IMAGE = "image"
-    VIDEO = "video"
-    PDF = "pdf"
-    ARCHIVE = "archive"
-    OTHER = "other"
+# 再エクスポート (既存の外部 import を壊さないため)
+__all__ = [
+    "ARCHIVE_EXTENSIONS",
+    "IMAGE_EXTENSIONS",
+    "MIME_MAP",
+    "PDF_EXTENSIONS",
+    "VIDEO_EXTENSIONS",
+    "EntryKind",
+]
 
 
 class EntryMeta(BaseModel):

@@ -12,7 +12,8 @@ from fastapi.responses import FileResponse, Response
 from starlette.concurrency import run_in_threadpool
 
 from backend.services.archive_service import ArchiveService
-from backend.services.node_registry import MIME_MAP, VIDEO_EXTENSIONS, NodeRegistry
+from backend.services.extensions import MIME_MAP, VIDEO_EXTENSIONS
+from backend.services.node_registry import NodeRegistry
 from backend.services.temp_file_cache import TempFileCache
 
 router = APIRouter(prefix="/api", tags=["file"])

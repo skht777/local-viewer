@@ -18,7 +18,7 @@ from backend.services.archive_reader import (
     ZipArchiveReader,
 )
 from backend.services.archive_security import ArchiveEntryValidator
-from backend.services.node_registry import VIDEO_EXTENSIONS
+from backend.services.extensions import VIDEO_EXTENSIONS
 
 
 class ByteLRUCache:
