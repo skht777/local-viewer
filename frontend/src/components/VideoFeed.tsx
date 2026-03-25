@@ -18,10 +18,18 @@ export function VideoFeed({ videos }: VideoFeedProps) {
   // 再生位置マップ (node_id → currentTime)
   // useRef でリレンダーを回避
   const playbackTimeRef = useRef(new Map<string, number>());
+  const parentRef = useRef<HTMLDivElement>(null);
 
   const handleTimeUpdate = (nodeId: string, time: number) => {
     playbackTimeRef.current.set(nodeId, time);
   };
+
+  const virtualizer = useVirtualizer({
+    count: videos.length,
+    getScrollElement: () => parentRef.current,
+    estimateSize: () => 400,
+    overscan: 2,
+  });
 
   if (videos.length === 0) {
     return (
@@ -30,14 +38,6 @@ export function VideoFeed({ videos }: VideoFeedProps) {
       </div>
     );
   }
-
-  const parentRef = useRef<HTMLDivElement>(null);
-  const virtualizer = useVirtualizer({
-    count: videos.length,
-    getScrollElement: () => parentRef.current,
-    estimateSize: () => 400,
-    overscan: 2,
-  });
 
   return (
     <div ref={parentRef} className="flex-1 overflow-y-auto">
