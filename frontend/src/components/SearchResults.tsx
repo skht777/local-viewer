@@ -64,7 +64,7 @@ export function SearchResults({
         {results.map((result, i) => (
           <li
             key={result.node_id}
-            className={`cursor-pointer px-4 py-2 hover:bg-gray-700 ${i === activeIndex ? "bg-gray-700" : ""}`}
+            className={`cursor-pointer px-4 py-2 ${i === activeIndex ? "bg-blue-600/20 hover:bg-blue-600/30" : "hover:bg-gray-700"}`}
             onClick={() => onSelect(result)}
             data-testid={`search-result-${i}`}
           >

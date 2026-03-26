@@ -51,7 +51,7 @@ describe("SearchResults", () => {
       />,
     );
     const firstItem = screen.getByTestId("search-result-0");
-    expect(firstItem.className).toContain("bg-gray-700");
+    expect(firstItem.className).toContain("bg-blue-600/20");
   });
 
   test("クリックでonSelectが呼ばれる", async () => {
