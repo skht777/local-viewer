@@ -26,6 +26,14 @@ class Settings:
     archive_disk_cache_mb: int  # ディスクキャッシュ容量 (MB)
     archive_registry_max_entries: int  # NodeRegistry アーカイブエントリ上限
 
+    # 検索/インデックス設定
+    index_db_path: str  # SQLite FTS5 インデックス DB パス
+    watch_mode: str  # ファイル監視モード (auto, native, polling)
+    watch_poll_interval: int  # polling モードの間隔 (秒)
+    rebuild_rate_limit_seconds: int  # rebuild API のレート制限 (秒)
+    search_max_results: int  # 検索結果の最大件数
+    search_query_timeout: int  # 検索クエリのタイムアウト (秒)
+
     def __init__(self) -> None:
         raw = os.environ.get("ROOT_DIR", "")
         if not raw:
@@ -61,6 +69,19 @@ class Settings:
         self.archive_registry_max_entries = int(
             os.environ.get("ARCHIVE_REGISTRY_MAX_ENTRIES", "100000")
         )
+
+        # 検索/インデックス設定
+        self.index_db_path = os.environ.get(
+            "INDEX_DB_PATH",
+            "/tmp/viewer-index.db",  # noqa: S108  # エフェメラル DB、Docker では tmpfs 上
+        )
+        self.watch_mode = os.environ.get("WATCH_MODE", "auto")
+        self.watch_poll_interval = int(os.environ.get("WATCH_POLL_INTERVAL", "30"))
+        self.rebuild_rate_limit_seconds = int(
+            os.environ.get("REBUILD_RATE_LIMIT_SECONDS", "60")
+        )
+        self.search_max_results = int(os.environ.get("SEARCH_MAX_RESULTS", "200"))
+        self.search_query_timeout = int(os.environ.get("SEARCH_QUERY_TIMEOUT", "5"))
 
 
 _settings: Settings | None = None

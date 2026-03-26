@@ -1,0 +1,514 @@
+"""SQLite FTS5 trigram によるファイルインデックス.
+
+- ファイル名と相対パスの部分一致検索を提供
+- trigram トークナイザで日本語・英語混在の部分一致に対応
+- WAL モードで読み取り/書き込みの並行アクセスをサポート
+- 操作ごとに新しい connection を作成 (スレッドセーフ)
+"""
+
+from __future__ import annotations
+
+import logging
+import os
+import re
+import sqlite3
+from dataclasses import dataclass
+from pathlib import Path
+from typing import TYPE_CHECKING
+
+from backend.services.extensions import (
+    ARCHIVE_EXTENSIONS,
+    IMAGE_EXTENSIONS,
+    PDF_EXTENSIONS,
+    VIDEO_EXTENSIONS,
+)
+
+if TYPE_CHECKING:
+    from backend.services.path_security import PathSecurity
+
+logger = logging.getLogger(__name__)
+
+# FTS5 の特殊文字パターン (エスケープ対象)
+_FTS5_SPECIAL = re.compile(r'["\*]')
+
+# バッチ INSERT のサイズ
+_BATCH_SIZE = 1000
+
+# FTS5 trigram の最小トークン長
+_TRIGRAM_MIN_CHARS = 3
+
+_SCHEMA_SQL = """
+PRAGMA journal_mode=WAL;
+PRAGMA busy_timeout=5000;
+
+CREATE TABLE IF NOT EXISTS entries (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    relative_path TEXT NOT NULL UNIQUE,
+    name TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    size_bytes INTEGER,
+    mtime_ns INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_entries_kind ON entries(kind);
+CREATE INDEX IF NOT EXISTS idx_entries_relative_path ON entries(relative_path);
+
+CREATE VIRTUAL TABLE IF NOT EXISTS entries_fts USING fts5(
+    name,
+    relative_path,
+    content=entries,
+    content_rowid=id,
+    tokenize='trigram'
+);
+
+CREATE TRIGGER IF NOT EXISTS entries_ai AFTER INSERT ON entries BEGIN
+    INSERT INTO entries_fts(rowid, name, relative_path)
+        VALUES (new.id, new.name, new.relative_path);
+END;
+
+CREATE TRIGGER IF NOT EXISTS entries_ad AFTER DELETE ON entries BEGIN
+    INSERT INTO entries_fts(entries_fts, rowid, name, relative_path)
+        VALUES('delete', old.id, old.name, old.relative_path);
+END;
+
+CREATE TRIGGER IF NOT EXISTS entries_au AFTER UPDATE ON entries BEGIN
+    INSERT INTO entries_fts(entries_fts, rowid, name, relative_path)
+        VALUES('delete', old.id, old.name, old.relative_path);
+    INSERT INTO entries_fts(rowid, name, relative_path)
+        VALUES (new.id, new.name, new.relative_path);
+END;
+"""
+
+
+@dataclass
+class IndexEntry:
+    """インデックスの 1 エントリ."""
+
+    relative_path: str
+    name: str
+    kind: str
+    size_bytes: int | None
+    mtime_ns: int
+
+
+@dataclass
+class SearchHit:
+    """検索結果の 1 件."""
+
+    relative_path: str
+    name: str
+    kind: str
+    size_bytes: int | None
+
+
+def _classify_by_extension(name: str) -> str:
+    """拡張子から EntryKind 相当の文字列を返す."""
+    dot_idx = name.rfind(".")
+    if dot_idx <= 0:
+        return "other"
+    ext = name[dot_idx:].lower()
+    if ext in IMAGE_EXTENSIONS:
+        return "image"
+    if ext in VIDEO_EXTENSIONS:
+        return "video"
+    if ext in PDF_EXTENSIONS:
+        return "pdf"
+    if ext in ARCHIVE_EXTENSIONS:
+        return "archive"
+    return "other"
+
+
+class Indexer:
+    """SQLite FTS5 trigram によるファイルインデックス.
+
+    スレッドセーフティ:
+    - 操作ごとに新しい sqlite3.Connection を作成
+    - WAL モードで読み取りは並行、書き込みは SQLite 内部で直列化
+    - busy_timeout=5000 で書き込み競合時にリトライ
+    """
+
+    def __init__(self, db_path: str) -> None:
+        self._db_path = db_path
+        self._is_ready = False
+        self._is_rebuilding = False
+
+    def _connect(self) -> sqlite3.Connection:
+        """新しい接続を作成する (スレッドセーフ)."""
+        conn = sqlite3.connect(self._db_path)
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA busy_timeout=5000")
+        return conn
+
+    def init_db(self) -> None:
+        """DB スキーマを作成する."""
+        conn = self._connect()
+        try:
+            conn.executescript(_SCHEMA_SQL)
+        finally:
+            conn.close()
+
+    # --- 検索 ---
+
+    def search(
+        self,
+        query: str,
+        kind: str | None = None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> tuple[list[SearchHit], bool]:
+        """FTS5 trigram 検索を実行する.
+
+        - 3 文字以上: FTS5 MATCH (trigram インデックス活用)
+        - 2 文字: entries テーブルの LIKE フォールバック
+        - 戻り値: (結果リスト, has_more)
+        """
+        query = query.strip()
+        if not query:
+            return [], False
+
+        conn = self._connect()
+        try:
+            # limit+1 で取得し、超過分で has_more を判定
+            fetch_limit = limit + 1
+
+            tokens = query.split()
+            min_len = min(len(t) for t in tokens) if tokens else 0
+
+            if min_len >= _TRIGRAM_MIN_CHARS:
+                rows = self._search_fts(conn, tokens, kind, fetch_limit, offset)
+            else:
+                rows = self._search_like(conn, query, kind, fetch_limit, offset)
+
+            has_more = len(rows) > limit
+            results = [
+                SearchHit(
+                    relative_path=r[0],
+                    name=r[1],
+                    kind=r[2],
+                    size_bytes=r[3],
+                )
+                for r in rows[:limit]
+            ]
+            return results, has_more
+        finally:
+            conn.close()
+
+    def _search_fts(
+        self,
+        conn: sqlite3.Connection,
+        tokens: list[str],
+        kind: str | None,
+        limit: int,
+        offset: int,
+    ) -> list[tuple[str, str, str, int | None]]:
+        """FTS5 trigram MATCH で検索する (3 文字以上)."""
+        fts_query = self._build_fts_query(tokens)
+
+        if kind:
+            rows = conn.execute(
+                """
+                SELECT e.relative_path, e.name, e.kind, e.size_bytes
+                FROM entries_fts f
+                JOIN entries e ON f.rowid = e.id
+                WHERE entries_fts MATCH ?
+                AND e.kind = ?
+                ORDER BY e.name
+                LIMIT ? OFFSET ?
+                """,
+                (fts_query, kind, limit, offset),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                """
+                SELECT e.relative_path, e.name, e.kind, e.size_bytes
+                FROM entries_fts f
+                JOIN entries e ON f.rowid = e.id
+                WHERE entries_fts MATCH ?
+                ORDER BY e.name
+                LIMIT ? OFFSET ?
+                """,
+                (fts_query, limit, offset),
+            ).fetchall()
+        return rows
+
+    def _search_like(
+        self,
+        conn: sqlite3.Connection,
+        query: str,
+        kind: str | None,
+        limit: int,
+        offset: int,
+    ) -> list[tuple[str, str, str, int | None]]:
+        """LIKE フォールバックで検索する (2 文字クエリ等)."""
+        # LIKE 用パターン (%keyword%)
+        like_pattern = f"%{query}%"
+
+        if kind:
+            rows = conn.execute(
+                """
+                SELECT relative_path, name, kind, size_bytes
+                FROM entries
+                WHERE (name LIKE ? OR relative_path LIKE ?)
+                AND kind = ?
+                ORDER BY name
+                LIMIT ? OFFSET ?
+                """,
+                (like_pattern, like_pattern, kind, limit, offset),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                """
+                SELECT relative_path, name, kind, size_bytes
+                FROM entries
+                WHERE name LIKE ? OR relative_path LIKE ?
+                ORDER BY name
+                LIMIT ? OFFSET ?
+                """,
+                (like_pattern, like_pattern, limit, offset),
+            ).fetchall()
+        return rows
+
+    @staticmethod
+    def _build_fts_query(tokens: list[str]) -> str:
+        """検索トークンを FTS5 trigram 用クエリに変換する.
+
+        各トークンをダブルクォートでエスケープし、暗黙 AND で結合。
+        """
+        escaped = []
+        for token in tokens:
+            # ダブルクォート内のダブルクォートは "" でエスケープ
+            safe = token.replace('"', '""')
+            escaped.append(f'"{safe}"')
+        return " ".join(escaped)
+
+    # --- CRUD ---
+
+    def add_entry(self, entry: IndexEntry) -> None:
+        """1 エントリを追加/更新する (UPSERT)."""
+        conn = self._connect()
+        try:
+            conn.execute(
+                """
+                INSERT OR REPLACE INTO entries
+                    (relative_path, name, kind, size_bytes, mtime_ns)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (
+                    entry.relative_path,
+                    entry.name,
+                    entry.kind,
+                    entry.size_bytes,
+                    entry.mtime_ns,
+                ),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+    def remove_entry(self, relative_path: str) -> None:
+        """1 エントリを削除する."""
+        conn = self._connect()
+        try:
+            conn.execute(
+                "DELETE FROM entries WHERE relative_path = ?",
+                (relative_path,),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+    # --- スキャン ---
+
+    def scan_directory(
+        self,
+        root_dir: Path,
+        path_security: PathSecurity,
+    ) -> int:
+        """ROOT_DIR 以下を再帰走査してインデックスに追加する.
+
+        - PathSecurity チェックを通過したエントリのみ登録
+        - 1000 エントリごとにバッチ INSERT
+        - スキャン完了後 _is_ready = True
+        - 戻り値: 登録エントリ数
+        """
+        conn = self._connect()
+        count = 0
+        batch: list[tuple[str, str, str, int | None, int]] = []
+
+        try:
+            for dirpath, dirnames, filenames in os.walk(root_dir):
+                dp = Path(dirpath)
+
+                # ディレクトリ自体を登録 (ルートは除く)
+                if dp != root_dir:
+                    try:
+                        path_security.validate(dp)
+                    except Exception:
+                        dirnames.clear()
+                        continue
+                    rel = str(dp.relative_to(root_dir))
+                    mtime = dp.stat().st_mtime_ns
+                    batch.append((rel, dp.name, "directory", None, mtime))
+                    count += 1
+
+                # 隠しディレクトリをスキップ
+                dirnames[:] = [d for d in dirnames if not d.startswith(".")]
+
+                for fname in filenames:
+                    if fname.startswith("."):
+                        continue
+                    fp = dp / fname
+                    try:
+                        path_security.validate(fp)
+                    except Exception:  # noqa: S112
+                        continue
+                    kind = _classify_by_extension(fname)
+                    if kind == "other":
+                        continue
+                    try:
+                        st = fp.stat()
+                    except OSError:
+                        continue
+                    rel = str(fp.relative_to(root_dir))
+                    batch.append((rel, fname, kind, st.st_size, st.st_mtime_ns))
+                    count += 1
+
+                    if len(batch) >= _BATCH_SIZE:
+                        self._batch_insert(conn, batch)
+                        batch.clear()
+
+            if batch:
+                self._batch_insert(conn, batch)
+
+            self._is_ready = True
+            return count
+        finally:
+            conn.close()
+
+    def incremental_scan(
+        self,
+        root_dir: Path,
+        path_security: PathSecurity,
+    ) -> tuple[int, int, int]:
+        """差分スキャン (追加, 更新, 削除) の件数を返す.
+
+        - mtime_ns で変更を検出
+        - 既存パスが見つからなければ削除
+        """
+        conn = self._connect()
+        added = 0
+        updated = 0
+        deleted = 0
+
+        try:
+            # 既存エントリのパスと mtime を取得
+            existing = dict(
+                conn.execute("SELECT relative_path, mtime_ns FROM entries").fetchall()
+            )
+            seen: set[str] = set()
+
+            for dirpath, dirnames, filenames in os.walk(root_dir):
+                dp = Path(dirpath)
+                if dp != root_dir:
+                    try:
+                        path_security.validate(dp)
+                    except Exception:
+                        dirnames.clear()
+                        continue
+                    rel = str(dp.relative_to(root_dir))
+                    seen.add(rel)
+                    mtime = dp.stat().st_mtime_ns
+                    if rel not in existing:
+                        self.add_entry(
+                            IndexEntry(rel, dp.name, "directory", None, mtime)
+                        )
+                        added += 1
+                    elif existing[rel] != mtime:
+                        self.add_entry(
+                            IndexEntry(rel, dp.name, "directory", None, mtime)
+                        )
+                        updated += 1
+
+                dirnames[:] = [d for d in dirnames if not d.startswith(".")]
+
+                for fname in filenames:
+                    if fname.startswith("."):
+                        continue
+                    fp = dp / fname
+                    try:
+                        path_security.validate(fp)
+                    except Exception:  # noqa: S112
+                        continue
+                    kind = _classify_by_extension(fname)
+                    if kind == "other":
+                        continue
+                    try:
+                        st = fp.stat()
+                    except OSError:
+                        continue
+                    rel = str(fp.relative_to(root_dir))
+                    seen.add(rel)
+                    if rel not in existing:
+                        self.add_entry(
+                            IndexEntry(rel, fname, kind, st.st_size, st.st_mtime_ns)
+                        )
+                        added += 1
+                    elif existing[rel] != st.st_mtime_ns:
+                        self.add_entry(
+                            IndexEntry(rel, fname, kind, st.st_size, st.st_mtime_ns)
+                        )
+                        updated += 1
+
+            # 削除検出
+            for rel_path in existing:
+                if rel_path not in seen:
+                    self.remove_entry(rel_path)
+                    deleted += 1
+
+            return added, updated, deleted
+        finally:
+            conn.close()
+
+    def rebuild(
+        self,
+        root_dir: Path,
+        path_security: PathSecurity,
+    ) -> int:
+        """全エントリを削除して再スキャンする."""
+        self._is_rebuilding = True
+        try:
+            conn = self._connect()
+            try:
+                conn.execute("DELETE FROM entries")
+                conn.commit()
+            finally:
+                conn.close()
+            return self.scan_directory(root_dir, path_security)
+        finally:
+            self._is_rebuilding = False
+
+    @property
+    def is_ready(self) -> bool:
+        """インデックスが利用可能か."""
+        return self._is_ready
+
+    @property
+    def is_rebuilding(self) -> bool:
+        """再構築中か."""
+        return self._is_rebuilding
+
+    @staticmethod
+    def _batch_insert(
+        conn: sqlite3.Connection,
+        batch: list[tuple[str, str, str, int | None, int]],
+    ) -> None:
+        """バッチ INSERT (UPSERT)."""
+        conn.executemany(
+            """
+            INSERT OR REPLACE INTO entries
+                (relative_path, name, kind, size_bytes, mtime_ns)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            batch,
+        )
+        conn.commit()
