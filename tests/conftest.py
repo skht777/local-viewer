@@ -209,8 +209,8 @@ async def search_client(
     app.dependency_overrides[file.get_node_registry] = lambda: test_node_registry
     app.dependency_overrides[browse.get_archive_service] = lambda: test_archive_service
     app.dependency_overrides[file.get_archive_service] = lambda: test_archive_service
-    # rebuild レート制限をリセット
-    search._last_rebuild_time = 0.0
+    # rebuild レート制限をリセット (monotonic 起点未定のため十分過去に設定)
+    search._last_rebuild_time = -99999.0
 
     app.dependency_overrides[search.get_indexer] = lambda: test_indexer
     app.dependency_overrides[search.get_node_registry] = lambda: test_node_registry
