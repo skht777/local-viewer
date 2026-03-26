@@ -146,7 +146,7 @@ async def _serve_archive_entry(
     # 動画/PDF エントリは tmpfile 経由で FileResponse (Range 対応)
     ext = _entry_ext(entry_name)
     if ext in VIDEO_EXTENSIONS or ext in PDF_EXTENSIONS:
-        return await _serve_archive_video_entry(
+        return await _serve_archive_large_entry(
             archive_path,
             entry_name,
             st.st_mtime_ns,
@@ -170,7 +170,7 @@ async def _serve_archive_entry(
     )
 
 
-async def _serve_archive_video_entry(
+async def _serve_archive_large_entry(
     archive_path: Path,
     entry_name: str,
     mtime_ns: int,
@@ -178,7 +178,7 @@ async def _serve_archive_video_entry(
     archive_service: ArchiveService,
     temp_cache: TempFileCache,
 ) -> Response:
-    """動画エントリを tmpfile 経由で配信する (Range 対応)."""
+    """動画/PDF エントリを tmpfile 経由で配信する (Range 対応)."""
     key = temp_cache.make_key(archive_path, mtime_ns, entry_name)
     headers = {
         "ETag": f'"{etag}"',
