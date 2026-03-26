@@ -1,9 +1,13 @@
 """Local Content Viewer -- FastAPI entry point."""
 
+from __future__ import annotations
+
+import asyncio
 import logging
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from pathlib import Path as FilePath
+from typing import TYPE_CHECKING
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -30,12 +34,18 @@ from backend.services.node_registry import NodeRegistry
 from backend.services.path_security import PathSecurity
 from backend.services.temp_file_cache import TempFileCache
 
+if TYPE_CHECKING:
+    from backend.services.file_watcher import FileWatcher
+    from backend.services.indexer import Indexer
+
 logger = logging.getLogger(__name__)
 
 # サービスインスタンス (lifespan で初期化)
 _node_registry: NodeRegistry | None = None
 _archive_service: ArchiveService | None = None
 _temp_file_cache: TempFileCache | None = None
+_indexer: Indexer | None = None
+_file_watcher: FileWatcher | None = None
 
 
 def get_node_registry() -> NodeRegistry:
@@ -62,13 +72,29 @@ def get_temp_file_cache() -> TempFileCache:
     return _temp_file_cache
 
 
+def get_indexer() -> Indexer:
+    """Indexer の DI 用依存関数."""
+    if _indexer is None:
+        msg = "Indexer が初期化されていません"
+        raise RuntimeError(msg)
+    return _indexer
+
+
+def _get_path_security() -> PathSecurity:
+    """PathSecurity の DI 用依存関数."""
+    if _node_registry is None:
+        msg = "NodeRegistry が初期化されていません"
+        raise RuntimeError(msg)
+    return _node_registry.path_security
+
+
 @asynccontextmanager
 async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
     """アプリケーションの起動/終了処理.
 
     起動時: Settings → PathSecurity → NodeRegistry → ArchiveService を初期化。
     """
-    global _node_registry, _archive_service, _temp_file_cache
+    global _node_registry, _archive_service, _temp_file_cache, _indexer, _file_watcher
 
     # アプリケーションロガーを uvicorn のハンドラに接続
     # uvicorn はルートロガーを設定しないため、backend.* の出力先がない
@@ -105,18 +131,65 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
         status = "available" if available else "NOT available"
         logger.log(level, "Archive: %s support: %s", fmt, status)
 
+    # Indexer 初期化 + バックグラウンドスキャン
+    from backend.services.file_watcher import FileWatcher
+    from backend.services.indexer import Indexer
+
+    _indexer = Indexer(settings.index_db_path)
+    _indexer.init_db()
+
+    # バックグラウンドで初回フルスキャン (イベントループ非ブロック)
+    scan_task = asyncio.create_task(
+        _background_scan(_indexer, settings.root_dir, path_security)
+    )
+    scan_task.add_done_callback(lambda _: None)  # 参照保持で GC 防止
+
+    # FileWatcher 開始 (スキャン完了を待たない、UPSERT で競合安全)
+    _file_watcher = FileWatcher(
+        indexer=_indexer,
+        root_dir=settings.root_dir,
+        path_security=path_security,
+        mode=settings.watch_mode,
+        poll_interval=settings.watch_poll_interval,
+    )
+    _file_watcher.start()
+
     # DI: routers のスタブを実インスタンスに差し替え
     _app.dependency_overrides[browse.get_node_registry] = get_node_registry
     _app.dependency_overrides[file.get_node_registry] = get_node_registry
     _app.dependency_overrides[browse.get_archive_service] = get_archive_service
     _app.dependency_overrides[file.get_archive_service] = get_archive_service
     _app.dependency_overrides[file.get_temp_file_cache] = get_temp_file_cache
+    _app.dependency_overrides[search.get_indexer] = get_indexer
+    _app.dependency_overrides[search.get_node_registry] = get_node_registry
+    _app.dependency_overrides[search.get_path_security] = _get_path_security
+    # get_settings は config モジュール関数を直接使用。override 不要
 
     yield
 
+    # シャットダウン
+    if _file_watcher:
+        _file_watcher.stop()
+        _file_watcher = None
+    _indexer = None
     _node_registry = None
     _archive_service = None
     _temp_file_cache = None
+
+
+async def _background_scan(
+    indexer: Indexer,
+    root_dir: FilePath,
+    path_security: PathSecurity,
+) -> None:
+    """バックグラウンドで初回インデックススキャンを実行する."""
+    try:
+        from starlette.concurrency import run_in_threadpool
+
+        count = await run_in_threadpool(indexer.scan_directory, root_dir, path_security)
+        logger.info("初回インデックス完了: %d エントリ", count)
+    except Exception:
+        logger.exception("初回インデックススキャンに失敗しました")
 
 
 app = FastAPI(

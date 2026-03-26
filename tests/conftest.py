@@ -217,7 +217,11 @@ async def search_client(
     app.dependency_overrides[search.get_path_security] = lambda: (
         test_node_registry.path_security
     )
-    app.dependency_overrides[search.get_settings] = lambda: Settings()
+    # get_settings は config モジュール関数。test_settings フィクスチャが
+    # init 済みだが、run_in_threadpool 内から呼ばれるため明示的に override
+    from backend.config import get_settings as _get_settings
+
+    app.dependency_overrides[_get_settings] = lambda: Settings()
 
     from backend.services.temp_file_cache import TempFileCache
 
