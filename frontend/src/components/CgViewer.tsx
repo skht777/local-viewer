@@ -1,6 +1,7 @@
-// CGモード本体: 画像1枚表示 + ツールバー + ページカウンター + サムネイルサイドバー
+// CGモード本体: 画像1枚 or 見開き表示 + ツールバー + ページカウンター + サムネイルサイドバー
+// - spreadMode に応じた 1 枚 / 2 枚横並び表示
 // - fitMode に応じた画像サイズ制御（小さい画像も拡大表示）
-// - 画像クリックでページ送り（右半分→次、左半分→前）
+// - 画像クリックでページ送り（画面中央分割: 右半分→次、左半分→前）
 // - カーソルオートハイド（1秒 idle → cursor: none）
 // - セット間ジャンプ（PageDown/X, Shift+X 等）
 // - Escape 優先順位: プロンプト → フルスクリーン → ビューワー閉じ
@@ -31,17 +32,18 @@ interface CgViewerProps {
   onClose: () => void;
 }
 
-// fitMode に応じた画像 CSS クラス
-function fitClass(fitMode: string): string {
+// fitMode + 見開きページ数に応じた画像 CSS クラス
+function fitClass(fitMode: string, pageCount: number): string {
+  const isSpread = pageCount > 1;
   switch (fitMode) {
     case "width":
-      return "w-full h-auto object-contain";
+      return isSpread ? "h-auto max-w-full object-contain" : "w-full h-auto object-contain";
     case "height":
-      return "h-full w-auto object-contain";
+      return isSpread ? "h-full w-auto object-contain" : "h-full w-auto object-contain";
     case "original":
       return "max-w-none max-h-none";
     default:
-      return "w-full h-auto object-contain";
+      return isSpread ? "h-auto max-w-full object-contain" : "w-full h-auto object-contain";
   }
 }
 
@@ -62,10 +64,11 @@ export function CgViewer({
   const cycleSpreadMode = useViewerStore((s) => s.cycleSpreadMode);
   const isSidebarOpen = useViewerStore((s) => s.isSidebarOpen);
   const { isFullscreen, toggleFullscreen } = useFullscreen();
-  const nav = useCgNavigation(images.length, currentIndex, onIndexChange);
+  const nav = useCgNavigation(images.length, currentIndex, onIndexChange, spreadMode);
 
-  // 隣接画像プリフェッチ
-  useImagePreload(images, currentIndex);
+  // 隣接画像プリフェッチ (見開き時は range を拡大)
+  const preloadRange = spreadMode === "single" ? 2 : 4;
+  useImagePreload(images, currentIndex, preloadRange);
 
   // セット間ジャンプ
   const setJump = useSetJump({ currentNodeId, parentNodeId, mode });
@@ -119,7 +122,7 @@ export function CgViewer({
     }, 1000);
   }, []);
 
-  // 画像クリックでページ送り（右半分→次、左半分→前）
+  // 画像クリックでページ送り（画面中央分割: 右半分→次、左半分→前）
   const handleImageClick = useCallback(
     (e: React.MouseEvent<HTMLDivElement>) => {
       const rect = e.currentTarget.getBoundingClientRect();
@@ -133,8 +136,13 @@ export function CgViewer({
     [nav],
   );
 
-  const currentImage = images[currentIndex];
-  if (!currentImage) return null;
+  const { displayIndices } = nav;
+  if (displayIndices.length === 0) return null;
+
+  // ページカウンター: 見開き時は "3-4 / 12" 形式
+  const firstDisplay = displayIndices[0] + 1;
+  const lastDisplay = displayIndices[displayIndices.length - 1] + 1;
+  const currentEnd = displayIndices.length > 1 ? lastDisplay : undefined;
 
   return (
     <div className="fixed inset-0 z-50 flex bg-black">
@@ -163,20 +171,40 @@ export function CgViewer({
         <div
           ref={imageAreaRef}
           data-testid="cg-image-area"
-          className={`flex flex-1 items-center justify-center overflow-auto ${fitMode === "original" ? "overflow-auto" : "overflow-hidden"}`}
+          className={`flex flex-1 items-center justify-center ${fitMode === "original" ? "overflow-auto" : "overflow-hidden"}`}
           onClick={handleImageClick}
           onMouseMove={handleMouseMove}
         >
-          <img
-            src={`/api/file/${currentImage.node_id}`}
-            alt={currentImage.name}
-            className={fitClass(fitMode)}
-            draggable={false}
-          />
+          {displayIndices.map((idx) => {
+            const img = images[idx];
+            if (!img) return null;
+            return (
+              <div
+                key={img.node_id}
+                className={
+                  displayIndices.length > 1
+                    ? "flex min-w-0 flex-1 items-center justify-center"
+                    : "flex items-center justify-center"
+                }
+              >
+                <img
+                  src={`/api/file/${img.node_id}`}
+                  alt={img.name}
+                  className={fitClass(fitMode, displayIndices.length)}
+                  draggable={false}
+                />
+              </div>
+            );
+          })}
         </div>
 
         {/* ページカウンター */}
-        <PageCounter setName={setName} current={currentIndex + 1} total={images.length} />
+        <PageCounter
+          setName={setName}
+          current={firstDisplay}
+          currentEnd={currentEnd}
+          total={images.length}
+        />
 
         {/* セット間ジャンプの確認プロンプト */}
         {setJump.prompt && (
