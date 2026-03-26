@@ -18,13 +18,14 @@ from backend.errors import (
     path_security_error_handler,
 )
 from backend.main import app
-from backend.routers import browse, file
+from backend.routers import browse, file, search
 from backend.services.archive_security import (
     ArchiveEntryValidator,
     ArchivePasswordError,
     ArchiveSecurityError,
 )
 from backend.services.archive_service import ArchiveService
+from backend.services.indexer import Indexer
 from backend.services.node_registry import NodeRegistry
 from backend.services.path_security import PathSecurity
 
@@ -175,6 +176,56 @@ async def client(
         ArchivePasswordError,
         archive_password_error_handler,  # type: ignore[arg-type]
     )
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as ac:
+        yield ac
+
+    app.dependency_overrides.clear()
+
+
+@pytest.fixture
+def test_indexer(tmp_path: Path) -> Indexer:
+    """テスト用 Indexer (初期化済み、is_ready=True)."""
+    db_path = str(tmp_path / "test-index.db")
+    idx = Indexer(db_path)
+    idx.init_db()
+    idx._is_ready = True
+    return idx
+
+
+@pytest.fixture
+async def search_client(
+    test_node_registry: NodeRegistry,
+    test_archive_service: ArchiveService,
+    test_indexer: Indexer,
+    test_root: Path,
+) -> AsyncGenerator[AsyncClient]:
+    """検索 API 用の DI 差し替え済み TestClient.
+
+    Indexer + NodeRegistry を差し替え。
+    """
+    app.dependency_overrides[browse.get_node_registry] = lambda: test_node_registry
+    app.dependency_overrides[file.get_node_registry] = lambda: test_node_registry
+    app.dependency_overrides[browse.get_archive_service] = lambda: test_archive_service
+    app.dependency_overrides[file.get_archive_service] = lambda: test_archive_service
+    # rebuild レート制限をリセット
+    search._last_rebuild_time = 0.0
+
+    app.dependency_overrides[search.get_indexer] = lambda: test_indexer
+    app.dependency_overrides[search.get_node_registry] = lambda: test_node_registry
+    app.dependency_overrides[search.get_path_security] = lambda: (
+        test_node_registry.path_security
+    )
+    app.dependency_overrides[search.get_settings] = lambda: Settings()
+
+    from backend.services.temp_file_cache import TempFileCache
+
+    test_temp_cache = TempFileCache(
+        cache_dir=test_root / ".disk-cache",
+        max_size_bytes=100 * 1024 * 1024,
+    )
+    app.dependency_overrides[file.get_temp_file_cache] = lambda: test_temp_cache
 
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as ac:

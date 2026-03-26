@@ -20,7 +20,7 @@ from backend.errors import (
     node_not_found_error_handler,
     path_security_error_handler,
 )
-from backend.routers import browse, file
+from backend.routers import browse, file, search
 from backend.services.archive_security import (
     ArchivePasswordError,
     ArchiveSecurityError,
@@ -146,6 +146,7 @@ app.add_exception_handler(ArchivePasswordError, archive_password_error_handler)
 # ルーター登録
 app.include_router(browse.router)
 app.include_router(file.router)
+app.include_router(search.router)
 
 
 @app.get("/api/health")
