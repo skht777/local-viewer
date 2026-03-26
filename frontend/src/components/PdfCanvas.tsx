@@ -3,12 +3,14 @@
 // - devicePixelRatio 考慮 (retina 対応)
 // - RenderTask の cancel + page.cleanup で安全なライフサイクル管理
 // - 最大 scale を 4.0 に制限 (メモリ保護)
+// - 描画タイムアウト (15秒) でフリーズ防止
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { PDFDocumentProxy, RenderTask } from "../lib/pdfjs";
 import type { FitMode } from "../stores/viewerStore";
 
 const MAX_SCALE = 4.0;
+const RENDER_TIMEOUT_MS = 15_000;
 
 interface PdfCanvasProps {
   document: PDFDocumentProxy;
@@ -30,10 +32,17 @@ export function PdfCanvas({
   onRenderComplete,
 }: PdfCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const [renderError, setRenderError] = useState(false);
+
+  // ページ変更時に renderError をリセット
+  useEffect(() => {
+    setRenderError(false);
+  }, [pageNumber]);
 
   useEffect(() => {
     let cancelled = false;
     let renderTask: RenderTask | null = null;
+    let timeoutId: ReturnType<typeof setTimeout> | undefined;
 
     document.getPage(pageNumber).then((page) => {
       if (cancelled) {
@@ -87,12 +96,21 @@ export function PdfCanvas({
       }
 
       renderTask = page.render({ canvas, canvasContext: context, viewport });
+
+      // 描画タイムアウト
+      timeoutId = setTimeout(() => {
+        renderTask?.cancel();
+        if (!cancelled) setRenderError(true);
+      }, RENDER_TIMEOUT_MS);
+
       renderTask.promise
         .then(() => {
+          clearTimeout(timeoutId);
           if (!cancelled) onRenderComplete?.();
         })
         .catch((err: { name?: string }) => {
-          // cancel() による中断は正常動作
+          clearTimeout(timeoutId);
+          // cancel() による中断は正常動作 (タイムアウトによるキャンセルを除く)
           if (err?.name !== "RenderingCancelledException") {
             // eslint-disable-next-line no-console
             console.error("PDF render error:", err);
@@ -105,9 +123,22 @@ export function PdfCanvas({
 
     return () => {
       cancelled = true;
+      clearTimeout(timeoutId);
       renderTask?.cancel();
     };
   }, [document, pageNumber, fitMode, containerWidth, containerHeight, onRenderComplete]);
+
+  // タイムアウトエラー表示
+  if (renderError) {
+    return (
+      <div
+        className={`flex items-center justify-center ${className ?? ""}`}
+        data-testid="pdf-render-error"
+      >
+        <p className="text-sm text-red-400">描画がタイムアウトしました</p>
+      </div>
+    );
+  }
 
   return <canvas ref={canvasRef} className={className} />;
 }
