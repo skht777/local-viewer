@@ -15,3 +15,19 @@ export interface BrowseResponse {
   parent_node_id: string | null;
   entries: BrowseEntry[];
 }
+
+// 検索 API
+export interface SearchResult {
+  node_id: string;
+  parent_node_id: string | null;
+  name: string;
+  kind: BrowseEntry["kind"];
+  relative_path: string;
+  size_bytes: number | null;
+}
+
+export interface SearchResponse {
+  results: SearchResult[];
+  has_more: boolean;
+  query: string;
+}
