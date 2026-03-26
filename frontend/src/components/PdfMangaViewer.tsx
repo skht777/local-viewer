@@ -254,12 +254,16 @@ export function PdfMangaViewer({
                 className="absolute left-0 w-full"
                 style={{ top: `${virtualRow.start}px` }}
               >
+                {/* 描画キャッシュ (renderCache) は PdfCgViewer のみ適用
+                    マンガモードは zoomLevel 変動でキャッシュヒット率が低く、
+                    メモリ圧迫のリスクがあるため見送り (Phase 6.5 設計判断) */}
                 <PdfCanvas
                   document={document}
                   pageNumber={virtualRow.index + 1}
                   fitMode="width"
                   containerWidth={scrollRef.current?.clientWidth ?? 800}
                   containerHeight={scrollRef.current?.clientHeight ?? 600}
+                  enableTextLayer={true}
                 />
               </div>
             ))}

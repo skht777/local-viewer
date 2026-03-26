@@ -10,6 +10,34 @@ vi.mock("../../src/lib/pdfjs", () => ({
   getDocument: vi.fn(),
 }));
 
+// PdfCanvas をモックして enableTextLayer の受け渡しを検証
+const mockPdfCanvasProps: Record<string, unknown>[] = [];
+vi.mock("../../src/components/PdfCanvas", () => ({
+  PdfCanvas: (props: Record<string, unknown>) => {
+    mockPdfCanvasProps.push({ ...props });
+    return null;
+  },
+}));
+
+// jsdom では要素の高さが 0 のため virtualizer がアイテムを生成しない
+// useVirtualizer をモックして仮想アイテムを強制的に返す
+vi.mock("@tanstack/react-virtual", () => ({
+  useVirtualizer: ({ count }: { count: number }) => ({
+    getTotalSize: () => count * 800,
+    getVirtualItems: () =>
+      Array.from({ length: Math.min(count, 5) }, (_, i) => ({
+        index: i,
+        start: i * 800,
+        size: 800,
+        end: (i + 1) * 800,
+        key: i,
+      })),
+    measureElement: () => {},
+    measure: () => {},
+    scrollToIndex: () => {},
+  }),
+}));
+
 import { getDocument } from "../../src/lib/pdfjs";
 import { PdfMangaViewer } from "../../src/components/PdfMangaViewer";
 
@@ -72,6 +100,7 @@ function defaultProps(overrides: Partial<React.ComponentProps<typeof PdfMangaVie
 describe("PdfMangaViewer", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockPdfCanvasProps.length = 0;
     HTMLCanvasElement.prototype.getContext = vi.fn(() => ({
       clearRect: vi.fn(),
       drawImage: vi.fn(),
@@ -109,6 +138,24 @@ describe("PdfMangaViewer", () => {
       expect(screen.getByTestId("pdf-error")).toBeTruthy();
     });
     expect(screen.getByText(/Broken PDF/)).toBeTruthy();
+  });
+
+  test("読み込み完了後にテキストレイヤーが有効化されている", async () => {
+    const { loadingTask } = createMockLoadingTask(3);
+    mockGetDocument.mockReturnValue(loadingTask as ReturnType<typeof getDocument>);
+
+    renderWithProviders(<PdfMangaViewer {...defaultProps()} />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("pdf-manga-scroll-area")).toBeTruthy();
+    });
+
+    // PdfCanvas が enableTextLayer={true} で呼び出されていること
+    await waitFor(() => {
+      expect(mockPdfCanvasProps.length).toBeGreaterThan(0);
+    });
+    const lastProps = mockPdfCanvasProps.at(-1);
+    expect(lastProps?.enableTextLayer).toBe(true);
   });
 
   test("閉じるボタンでonCloseが呼ばれる", async () => {
