@@ -40,7 +40,7 @@ export function FileCard({ entry, onClick }: FileCardProps) {
       onClick={() => onClick(entry)}
       className="flex cursor-pointer flex-col overflow-hidden rounded-lg bg-gray-800 transition-colors hover:bg-gray-700"
     >
-      <div className="flex aspect-square items-center justify-center bg-gray-750 text-4xl">
+      <div className="flex aspect-square items-center justify-center bg-gray-700 text-4xl">
         {isImagePreview ? (
           <img
             src={`/api/file/${entry.node_id}`}

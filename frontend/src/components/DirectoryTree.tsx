@@ -77,7 +77,7 @@ export function DirectoryTree({ rootEntries, activeNodeId }: DirectoryTreeProps)
   );
 
   return (
-    <aside className="w-64 shrink-0 overflow-y-auto border-r border-gray-700 bg-gray-850">
+    <aside className="w-64 shrink-0 overflow-y-auto border-r border-gray-700 bg-gray-800">
       <div className="p-2 text-xs font-medium uppercase tracking-wider text-gray-500">
         ディレクトリ
       </div>
