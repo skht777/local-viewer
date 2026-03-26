@@ -19,7 +19,10 @@ export function NavigationPrompt({ message, onConfirm, onCancel }: NavigationPro
   }, [onCancel]);
 
   return (
-    <div className="fixed bottom-8 left-1/2 z-50 -translate-x-1/2 rounded-lg bg-gray-800 px-6 py-3 shadow-lg">
+    <div
+      data-testid="navigation-prompt"
+      className="fixed bottom-8 left-1/2 z-50 -translate-x-1/2 rounded-lg bg-gray-800 px-6 py-3 shadow-lg"
+    >
       <p className="mb-2 text-sm text-white">{message}</p>
       <div className="flex items-center gap-3 text-xs text-gray-400">
         <button

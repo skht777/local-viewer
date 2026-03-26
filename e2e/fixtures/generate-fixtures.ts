@@ -192,8 +192,9 @@ function main(): void {
   // docs/ — PDFテスト用
   writeFile(path.join(OUT_DIR, "docs", "sample.pdf"), generateMinimalPdf());
 
-  // nested/sub/ — ネストナビゲーション用
-  writeFile(path.join(OUT_DIR, "nested", "sub", "deep.jpg"), MINIMAL_JPEG);
+  // nested/sub1/ + nested/sub2/ — ネストナビゲーション + セット間ジャンプ用
+  writeFile(path.join(OUT_DIR, "nested", "sub1", "deep.jpg"), MINIMAL_JPEG);
+  writeFile(path.join(OUT_DIR, "nested", "sub2", "wide.jpg"), MINIMAL_JPEG);
 
   // empty/ — エッジケース
   ensureDir(path.join(OUT_DIR, "empty"));
