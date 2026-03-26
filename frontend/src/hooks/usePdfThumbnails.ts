@@ -105,7 +105,7 @@ export function usePdfThumbnails(
         if (cancelledRef.current) return;
 
         try {
-          const page = await document.getPage(pageIdx + 1);
+          const page = await document!.getPage(pageIdx + 1);
           if (cancelledRef.current) {
             page.cleanup();
             return;
@@ -122,12 +122,12 @@ export function usePdfThumbnails(
             continue;
           }
 
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any -- OffscreenCanvas 互換
           const renderTask = page.render({
-            canvasContext: context,
+            canvasContext: context as CanvasRenderingContext2D,
             viewport,
-            // @ts-expect-error -- OffscreenCanvas の 2d context も互換
             canvas,
-          });
+          } as any);
           await renderTask.promise;
 
           if (cancelledRef.current) {
