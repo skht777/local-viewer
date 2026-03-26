@@ -72,3 +72,52 @@ describe("useCgNavigation", () => {
     expect(setIndex).toHaveBeenCalledWith(0);
   });
 });
+
+describe("useCgNavigation — spread 対応", () => {
+  const total = 10;
+
+  test("spreadモードでdisplayIndicesが2要素を返す", () => {
+    const { result } = renderHook(() => useCgNavigation(total, 0, vi.fn(), "spread"));
+    expect(result.current.displayIndices).toEqual([0, 1]);
+  });
+
+  test("spreadモードでgoNextが2ページ分進む", () => {
+    const setIndex = vi.fn();
+    const { result } = renderHook(() => useCgNavigation(total, 0, setIndex, "spread"));
+    act(() => result.current.goNext());
+    expect(setIndex).toHaveBeenCalledWith(2);
+  });
+
+  test("spreadモードでgoPrevが2ページ分戻る", () => {
+    const setIndex = vi.fn();
+    const { result } = renderHook(() => useCgNavigation(total, 4, setIndex, "spread"));
+    act(() => result.current.goPrev());
+    expect(setIndex).toHaveBeenCalledWith(2);
+  });
+
+  test("spreadモードでgoToがグループ先頭に正規化される", () => {
+    const setIndex = vi.fn();
+    const { result } = renderHook(() => useCgNavigation(total, 0, setIndex, "spread"));
+    act(() => result.current.goTo(3));
+    // index=3 → グループ [2,3] の先頭 = 2
+    expect(setIndex).toHaveBeenCalledWith(2);
+  });
+
+  test("spread-offsetモードでindex0は単独", () => {
+    const { result } = renderHook(() => useCgNavigation(total, 0, vi.fn(), "spread-offset"));
+    expect(result.current.displayIndices).toEqual([0]);
+  });
+
+  test("spread-offsetモードでindex1はペア", () => {
+    const { result } = renderHook(() => useCgNavigation(total, 1, vi.fn(), "spread-offset"));
+    expect(result.current.displayIndices).toEqual([1, 2]);
+  });
+
+  test("singleモードのデフォルト動作は変わらない", () => {
+    const setIndex = vi.fn();
+    const { result } = renderHook(() => useCgNavigation(total, 2, setIndex));
+    expect(result.current.displayIndices).toEqual([2]);
+    act(() => result.current.goNext());
+    expect(setIndex).toHaveBeenCalledWith(3);
+  });
+});
