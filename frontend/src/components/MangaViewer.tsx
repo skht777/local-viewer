@@ -160,7 +160,7 @@ export function MangaViewer({
   const imageWidth = `${zoomLevel}%`;
 
   return (
-    <div className="fixed inset-0 z-50 flex bg-black">
+    <div data-testid="manga-viewer" className="fixed inset-0 z-50 flex bg-black">
       {/* サムネイルサイドバー（instant 追従で jank 防止） */}
       {isSidebarOpen && (
         <ThumbnailSidebar

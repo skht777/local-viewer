@@ -47,6 +47,7 @@ function TreeNode({ entry, depth, activeNodeId }: TreeNodeProps) {
     <div>
       <button
         type="button"
+        data-testid={`tree-node-${entry.node_id}`}
         onClick={handleClick}
         className={`flex w-full items-center gap-1 px-2 py-1 text-left text-sm transition-colors hover:bg-gray-700 ${
           isActive ? "bg-gray-700 text-white" : "text-gray-300"

@@ -203,7 +203,7 @@ export function PdfMangaViewer({
   if (!document) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex bg-black">
+    <div data-testid="pdf-manga-viewer" className="fixed inset-0 z-50 flex bg-black">
       {/* サムネイルサイドバー (instant 追従) */}
       {isSidebarOpen && (
         <PdfPageSidebar

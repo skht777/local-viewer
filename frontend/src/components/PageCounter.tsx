@@ -14,7 +14,10 @@ export function PageCounter({ setName, current, currentEnd, total }: PageCounter
   const label = setName ? `${setName} ${pageRange} / ${total}` : `${pageRange} / ${total}`;
 
   return (
-    <div className="pointer-events-none absolute bottom-4 left-1/2 -translate-x-1/2 rounded bg-black/60 px-3 py-1 text-sm text-white">
+    <div
+      data-testid="page-counter"
+      className="pointer-events-none absolute bottom-4 left-1/2 -translate-x-1/2 rounded bg-black/60 px-3 py-1 text-sm text-white"
+    >
       {label}
     </div>
   );

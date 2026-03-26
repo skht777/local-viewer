@@ -36,7 +36,10 @@ export function VideoCard({ entry, initialTime, onTimeUpdate }: VideoCardProps) 
   };
 
   return (
-    <div className="overflow-hidden rounded-lg bg-gray-800">
+    <div
+      data-testid={`video-card-${entry.node_id}`}
+      className="overflow-hidden rounded-lg bg-gray-800"
+    >
       {/* ファイル名ラベルを動画の上に配置 */}
       <div className="px-3 pt-3">
         <p className="truncate text-sm font-medium">{entry.name}</p>

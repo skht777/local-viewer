@@ -13,6 +13,7 @@ export function MountPointCard({ entry, onSelect }: MountPointCardProps) {
   return (
     <button
       type="button"
+      data-testid={`mount-${entry.node_id}`}
       onClick={() => onSelect(entry.node_id)}
       className="flex cursor-pointer flex-col items-center gap-2 rounded-xl bg-gray-800 p-6 transition-colors hover:bg-gray-700"
     >

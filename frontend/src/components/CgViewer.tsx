@@ -145,7 +145,7 @@ export function CgViewer({
   const currentEnd = displayIndices.length > 1 ? lastDisplay : undefined;
 
   return (
-    <div className="fixed inset-0 z-50 flex bg-black">
+    <div data-testid="cg-viewer" className="fixed inset-0 z-50 flex bg-black">
       {/* サムネイルサイドバー */}
       {isSidebarOpen && (
         <ThumbnailSidebar images={images} currentIndex={currentIndex} onSelect={nav.goTo} />

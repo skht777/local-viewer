@@ -36,6 +36,7 @@ export function FileCard({ entry, onClick }: FileCardProps) {
   return (
     <button
       type="button"
+      data-testid={`file-card-${entry.node_id}`}
       onClick={() => onClick(entry)}
       className="flex cursor-pointer flex-col overflow-hidden rounded-lg bg-gray-800 transition-colors hover:bg-gray-700"
     >

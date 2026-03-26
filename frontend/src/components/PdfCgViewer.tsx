@@ -207,7 +207,7 @@ export function PdfCgViewer({
   if (!document) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex bg-black">
+    <div data-testid="pdf-cg-viewer" className="fixed inset-0 z-50 flex bg-black">
       {/* サムネイルサイドバー */}
       {isSidebarOpen && (
         <PdfPageSidebar
