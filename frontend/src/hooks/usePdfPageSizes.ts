@@ -1,8 +1,9 @@
 // PDF 全ページの viewport サイズを事前取得
 // - PdfMangaViewer の estimateSize に正確な高さを提供
-// - ドキュメント読み込み完了後に全ページ分の getPage + getViewport を呼び出し
+// - バッチ処理で getPage burst を抑制 (大規模 PDF でのメモリスパイク防止)
+// - 全バッチ完了後に一括で状態更新
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { PDFDocumentProxy } from "../lib/pdfjs";
 
 export interface PageSize {
@@ -15,9 +16,13 @@ interface UsePdfPageSizesReturn {
   isReady: boolean;
 }
 
+// バッチあたりの同時 getPage 呼び出し数
+const BATCH_SIZE = 10;
+
 export function usePdfPageSizes(document: PDFDocumentProxy | null): UsePdfPageSizesReturn {
   const [pageSizes, setPageSizes] = useState<PageSize[]>([]);
   const [isReady, setIsReady] = useState(false);
+  const cancelledRef = useRef(false);
 
   useEffect(() => {
     if (!document) {
@@ -26,26 +31,42 @@ export function usePdfPageSizes(document: PDFDocumentProxy | null): UsePdfPageSi
       return;
     }
 
-    let cancelled = false;
+    cancelledRef.current = false;
     const { numPages } = document;
 
-    // 全ページの viewport サイズを取得
-    const promises = Array.from({ length: numPages }, (_, i) =>
-      document.getPage(i + 1).then((page) => {
-        const viewport = page.getViewport({ scale: 1 });
-        page.cleanup();
-        return { width: viewport.width, height: viewport.height };
-      }),
-    );
+    // バッチ処理で getPage burst を抑制
+    // - BATCH_SIZE ページずつ getPage + getViewport
+    // - バッチ間で setTimeout(_, 0) により UI スレッドに譲る
+    async function loadInBatches() {
+      const sizes: PageSize[] = [];
+      for (let i = 0; i < numPages; i += BATCH_SIZE) {
+        const end = Math.min(i + BATCH_SIZE, numPages);
+        const batch = await Promise.all(
+          Array.from({ length: end - i }, (_, j) =>
+            document!.getPage(i + j + 1).then((page) => {
+              const vp = page.getViewport({ scale: 1 });
+              page.cleanup();
+              return { width: vp.width, height: vp.height };
+            }),
+          ),
+        );
+        if (cancelledRef.current) return;
+        sizes.push(...batch);
+        // UI スレッドに譲る (最終バッチ以外)
+        if (end < numPages) {
+          await new Promise<void>((r) => setTimeout(r, 0));
+        }
+      }
+      if (!cancelledRef.current) {
+        setPageSizes(sizes);
+        setIsReady(true);
+      }
+    }
 
-    Promise.all(promises).then((sizes) => {
-      if (cancelled) return;
-      setPageSizes(sizes);
-      setIsReady(true);
-    });
+    loadInBatches();
 
     return () => {
-      cancelled = true;
+      cancelledRef.current = true;
     };
   }, [document]);
 

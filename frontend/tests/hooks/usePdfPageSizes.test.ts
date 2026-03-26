@@ -1,7 +1,8 @@
 // usePdfPageSizes フックのテスト
 // - 全ページの viewport サイズを事前取得し estimateSize に提供
+// - バッチ処理で getPage burst を抑制
 
-import { renderHook, waitFor } from "@testing-library/react";
+import { renderHook, waitFor, act } from "@testing-library/react";
 import { vi, describe, test, expect, beforeEach } from "vitest";
 
 vi.mock("../../src/lib/pdfjs", () => ({
@@ -54,5 +55,70 @@ describe("usePdfPageSizes", () => {
 
     expect(result.current.isReady).toBe(false);
     expect(result.current.pageSizes).toHaveLength(0);
+  });
+
+  test("バッチ処理で同時getPage呼び出しがBATCH_SIZE以下に制限される", async () => {
+    // 25 ページのドキュメント (BATCH_SIZE=10 で 3 バッチ)
+    const pages = Array.from({ length: 25 }, () => ({ width: 612, height: 792 }));
+    let concurrentCalls = 0;
+    let maxConcurrentCalls = 0;
+
+    const mockDoc = {
+      numPages: 25,
+      getPage: vi.fn((_num: number) => {
+        concurrentCalls++;
+        maxConcurrentCalls = Math.max(maxConcurrentCalls, concurrentCalls);
+        return Promise.resolve({
+          getViewport: ({ scale }: { scale: number }) => ({
+            width: pages[0].width * scale,
+            height: pages[0].height * scale,
+          }),
+          cleanup: vi.fn(),
+        }).then((result) => {
+          concurrentCalls--;
+          return result;
+        });
+      }),
+      destroy: vi.fn(),
+    };
+
+    const { result } = renderHook(() => usePdfPageSizes(mockDoc as never));
+
+    await waitFor(() => {
+      expect(result.current.isReady).toBe(true);
+    });
+
+    // 同時呼び出し数が BATCH_SIZE (10) 以下であること
+    expect(maxConcurrentCalls).toBeLessThanOrEqual(10);
+    expect(result.current.pageSizes).toHaveLength(25);
+  });
+
+  test("アンマウント時にバッチ処理が中断される", async () => {
+    // getPage をバッチ間のタイミングで resolve する遅延付きモック
+    const pages = Array.from({ length: 25 }, () => ({ width: 612, height: 792 }));
+
+    const mockDoc = {
+      numPages: 25,
+      getPage: vi.fn((_num: number) => {
+        return Promise.resolve({
+          getViewport: ({ scale }: { scale: number }) => ({
+            width: pages[0].width * scale,
+            height: pages[0].height * scale,
+          }),
+          cleanup: vi.fn(),
+        });
+      }),
+      destroy: vi.fn(),
+    };
+
+    const { result, unmount } = renderHook(() => usePdfPageSizes(mockDoc as never));
+
+    // 最初のバッチが開始される前にアンマウント
+    await act(async () => {
+      unmount();
+    });
+
+    // アンマウント後は isReady が true にならない
+    expect(result.current.isReady).toBe(false);
   });
 });
