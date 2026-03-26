@@ -1,11 +1,14 @@
-// PDF ページ番号サイドバー
-// - ThumbnailSidebar の簡易版 (canvas サムネイルは Phase 6.5)
-// - ページ番号ボタンのリストでクリックジャンプ
+// PDF ページサムネイルサイドバー
+// - usePdfThumbnails で canvas サムネイルを順次生成
+// - サムネイル取得済み → <img> 表示、未取得 → ページ番号フォールバック
 // - アクティブページをハイライト + scrollIntoView
 
 import { useEffect, useRef } from "react";
+import type { PDFDocumentProxy } from "../lib/pdfjs";
+import { usePdfThumbnails } from "../hooks/usePdfThumbnails";
 
 interface PdfPageSidebarProps {
+  document: PDFDocumentProxy | null;
   pageCount: number;
   currentIndex: number;
   onSelect: (index: number) => void;
@@ -13,12 +16,14 @@ interface PdfPageSidebarProps {
 }
 
 export function PdfPageSidebar({
+  document,
   pageCount,
   currentIndex,
   onSelect,
   scrollBehavior = "smooth",
 }: PdfPageSidebarProps) {
   const activeRef = useRef<HTMLButtonElement>(null);
+  const { thumbnails } = usePdfThumbnails(document, currentIndex);
 
   // アクティブページを自動スクロール
   useEffect(() => {
@@ -26,18 +31,31 @@ export function PdfPageSidebar({
   }, [currentIndex, scrollBehavior]);
 
   return (
-    <aside className="flex w-16 flex-shrink-0 flex-col gap-1 overflow-y-auto bg-gray-900/80 p-1">
+    <aside className="flex w-24 flex-shrink-0 flex-col gap-1 overflow-y-auto bg-gray-900/80 p-1">
       {Array.from({ length: pageCount }, (_, i) => {
         const isActive = i === currentIndex;
+        const thumbUrl = thumbnails[i];
         return (
           <button
             key={i}
             ref={isActive ? activeRef : undefined}
             type="button"
             onClick={() => onSelect(i)}
-            className={`rounded px-2 py-1 text-center text-xs ${isActive ? "bg-blue-600 text-white" : "text-gray-400 hover:bg-gray-700 hover:text-white"}`}
+            className={`overflow-hidden rounded ${isActive ? "ring-2 ring-blue-500" : "opacity-60 hover:opacity-100"}`}
           >
-            {i + 1}
+            {thumbUrl ? (
+              <img
+                src={thumbUrl}
+                alt={`Page ${i + 1}`}
+                className="h-auto w-full"
+                loading="lazy"
+                decoding="async"
+              />
+            ) : (
+              <div className="flex h-12 items-center justify-center text-xs text-gray-400">
+                {i + 1}
+              </div>
+            )}
           </button>
         );
       })}

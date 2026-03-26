@@ -204,9 +204,10 @@ export function PdfMangaViewer({
 
   return (
     <div className="fixed inset-0 z-50 flex bg-black">
-      {/* ページ番号サイドバー (instant 追従) */}
+      {/* サムネイルサイドバー (instant 追従) */}
       {isSidebarOpen && (
         <PdfPageSidebar
+          document={document}
           pageCount={pageCount}
           currentIndex={mangaScroll.currentIndex}
           onSelect={mangaScroll.scrollToImage}
