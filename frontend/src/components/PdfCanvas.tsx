@@ -8,6 +8,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { PDFDocumentProxy, RenderTask } from "../lib/pdfjs";
 import type { FitMode } from "../stores/viewerStore";
+import type { PdfRenderCache } from "../hooks/usePdfRenderCache";
 
 const MAX_SCALE = 4.0;
 const RENDER_TIMEOUT_MS = 15_000;
@@ -19,6 +20,7 @@ interface PdfCanvasProps {
   containerWidth: number;
   containerHeight: number;
   className?: string;
+  renderCache?: PdfRenderCache;
   onRenderComplete?: () => void;
 }
 
@@ -29,6 +31,7 @@ export function PdfCanvas({
   containerWidth,
   containerHeight,
   className,
+  renderCache,
   onRenderComplete,
 }: PdfCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -95,6 +98,20 @@ export function PdfCanvas({
         return;
       }
 
+      // キャッシュキー: "pageNumber:effectiveScale"
+      const cacheKey = `${pageNumber}:${scale * dpr}`;
+
+      // キャッシュヒット: ImageBitmap から即座に描画
+      if (renderCache) {
+        const cached = renderCache.get(cacheKey);
+        if (cached) {
+          context.drawImage(cached, 0, 0);
+          page.cleanup();
+          onRenderComplete?.();
+          return;
+        }
+      }
+
       renderTask = page.render({ canvas, canvasContext: context, viewport });
 
       // 描画タイムアウト
@@ -104,8 +121,17 @@ export function PdfCanvas({
       }, RENDER_TIMEOUT_MS);
 
       renderTask.promise
-        .then(() => {
+        .then(async () => {
           clearTimeout(timeoutId);
+          // キャッシュに格納
+          if (!cancelled && renderCache && typeof createImageBitmap !== "undefined") {
+            try {
+              const bitmap = await createImageBitmap(canvas);
+              renderCache.put(cacheKey, bitmap);
+            } catch {
+              // createImageBitmap 失敗は無視
+            }
+          }
           if (!cancelled) onRenderComplete?.();
         })
         .catch((err: { name?: string }) => {

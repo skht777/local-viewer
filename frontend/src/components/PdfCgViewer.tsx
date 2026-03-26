@@ -14,6 +14,7 @@ import { useCgNavigation } from "../hooks/useCgNavigation";
 import { useCgKeyboard } from "../hooks/useCgKeyboard";
 import { useSetJump } from "../hooks/useSetJump";
 import { usePdfDocument } from "../hooks/usePdfDocument";
+import { usePdfRenderCache } from "../hooks/usePdfRenderCache";
 import { PdfCanvas } from "./PdfCanvas";
 import { CgToolbar } from "./CgToolbar";
 import { PdfPageSidebar } from "./PdfPageSidebar";
@@ -50,6 +51,9 @@ export function PdfCgViewer({
 
   // PDF ドキュメント読み込み
   const { document, pageCount, isLoading, error } = usePdfDocument(`/api/file/${pdfNodeId}`);
+
+  // 描画キャッシュ (PdfCgViewer のみ適用)
+  const renderCache = usePdfRenderCache();
 
   // 現在ページ (0-based index で管理、表示は 1-based)
   const [currentPage, setCurrentPage] = useState(initialPage - 1);
@@ -253,6 +257,7 @@ export function PdfCgViewer({
                 pageNumber={pageIdx + 1}
                 fitMode={fitMode}
                 containerWidth={pageContainerWidth}
+                renderCache={renderCache}
                 containerHeight={containerSize.height}
               />
             </div>
