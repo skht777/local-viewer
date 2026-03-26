@@ -79,6 +79,12 @@ describe("PdfCgViewer", () => {
     })) as unknown as typeof HTMLCanvasElement.prototype.getContext;
     // jsdom には scrollIntoView がない
     Element.prototype.scrollIntoView = vi.fn();
+    // jsdom には ResizeObserver がない
+    globalThis.ResizeObserver = class {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    } as unknown as typeof ResizeObserver;
   });
 
   test("PDF読み込み中にローディング表示", () => {
@@ -132,7 +138,7 @@ describe("PdfCgViewer", () => {
     expect(onClose).toHaveBeenCalledOnce();
   });
 
-  test("見開きボタンが表示されない", async () => {
+  test("見開きボタンが表示される", async () => {
     const { loadingTask } = createMockLoadingTask();
     mockGetDocument.mockReturnValue(loadingTask as ReturnType<typeof getDocument>);
 
@@ -142,7 +148,7 @@ describe("PdfCgViewer", () => {
       expect(screen.getByTestId("pdf-cg-page-area")).toBeTruthy();
     });
 
-    // CgToolbar の showSpread=false により見開きボタンは非表示
-    expect(screen.queryByLabelText("見開き切替")).toBeNull();
+    // CgToolbar の showSpread=true により見開きボタンが表示される
+    expect(screen.getByLabelText("見開き切替")).toBeTruthy();
   });
 });

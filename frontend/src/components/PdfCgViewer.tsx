@@ -1,10 +1,12 @@
-// PDF CG モードビューワー: 1ページずつ表示
+// PDF CG モードビューワー: 1ページ or 見開き表示
 // - usePdfDocument で PDF 読み込み
 // - PdfCanvas で canvas 描画
-// - CgToolbar (showSpread=false), PageCounter, キーボード等を再利用
+// - CgToolbar (showSpread=true), PageCounter, キーボード等を再利用
+// - spreadMode に応じた 1 ページ / 2 ページ横並び表示
+// - ResizeObserver でコンテナサイズを動的計測
 // - useSetJump: currentNodeId = pdfNodeId (PDF 自身)
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { ViewerMode } from "../hooks/useViewerParams";
 import { useViewerStore } from "../stores/viewerStore";
 import { useFullscreen } from "../hooks/useFullscreen";
@@ -40,7 +42,9 @@ export function PdfCgViewer({
   onClose,
 }: PdfCgViewerProps) {
   const fitMode = useViewerStore((s) => s.fitMode);
+  const spreadMode = useViewerStore((s) => s.spreadMode);
   const setFitMode = useViewerStore((s) => s.setFitMode);
+  const cycleSpreadMode = useViewerStore((s) => s.cycleSpreadMode);
   const isSidebarOpen = useViewerStore((s) => s.isSidebarOpen);
   const { isFullscreen, toggleFullscreen } = useFullscreen();
 
@@ -58,8 +62,8 @@ export function PdfCgViewer({
     [onPageChange],
   );
 
-  // ページナビゲーション
-  const nav = useCgNavigation(pageCount, currentPage, handlePageChange);
+  // ページナビゲーション (spread 対応)
+  const nav = useCgNavigation(pageCount, currentPage, handlePageChange, spreadMode);
 
   // セット間ジャンプ: currentNodeId = PDF 自身、parentNodeId = 親ディレクトリ
   const setJump = useSetJump({
@@ -81,7 +85,7 @@ export function PdfCgViewer({
     onClose();
   }, [setJump, isFullscreen, onClose]);
 
-  // キーボードショートカット (spread は no-op)
+  // キーボードショートカット (spread 有効)
   useCgKeyboard({
     goNext: nav.goNext,
     goPrev: nav.goPrev,
@@ -91,7 +95,7 @@ export function PdfCgViewer({
     toggleFullscreen,
     setFitWidth: () => setFitMode("width"),
     setFitHeight: () => setFitMode("height"),
-    cycleSpread: () => {},
+    cycleSpread: cycleSpreadMode,
     scrollUp: () => {},
     scrollDown: () => {},
     toggleMode: () => onModeChange(mode === "cg" ? "manga" : "cg"),
@@ -112,7 +116,7 @@ export function PdfCgViewer({
     }, 1000);
   }, []);
 
-  // 画像クリックでページ送り (右半分→次、左半分→前)
+  // 画像クリックでページ送り (画面中央分割: 右半分→次、左半分→前)
   const handleClick = useCallback(
     (e: React.MouseEvent<HTMLDivElement>) => {
       const rect = e.currentTarget.getBoundingClientRect();
@@ -123,19 +127,49 @@ export function PdfCgViewer({
     [nav],
   );
 
-  // コンテナサイズ (fitMode 計算用)
+  // コンテナサイズ (fitMode 計算用) — ResizeObserver で動的計測
   const [containerSize, setContainerSize] = useState({ width: 800, height: 600 });
+  const resizeObserverRef = useRef<ResizeObserver | null>(null);
+
   const combinedRef = useCallback((node: HTMLDivElement | null) => {
+    // 既存の Observer をクリーンアップ
+    resizeObserverRef.current?.disconnect();
+
     (imageAreaRef as React.MutableRefObject<HTMLDivElement | null>).current = node;
-    if (node) {
-      const w = node.clientWidth || 800;
-      const h = node.clientHeight || 600;
+    if (!node) return;
+
+    // 初期サイズ
+    const w = node.clientWidth || 800;
+    const h = node.clientHeight || 600;
+    setContainerSize({ width: w, height: h });
+
+    // ResizeObserver で動的追従
+    resizeObserverRef.current = new ResizeObserver((entries) => {
+      const entry = entries[0];
+      if (!entry) return;
+      const { width, height } = entry.contentRect;
       setContainerSize((prev) => {
-        if (prev.width === w && prev.height === h) return prev;
-        return { width: w, height: h };
+        if (prev.width === width && prev.height === height) return prev;
+        return { width, height };
       });
-    }
+    });
+    resizeObserverRef.current.observe(node);
   }, []);
+
+  // ResizeObserver クリーンアップ
+  useEffect(() => {
+    return () => resizeObserverRef.current?.disconnect();
+  }, []);
+
+  // 見開き時の各ページに渡す containerWidth
+  const { displayIndices } = nav;
+  const pageContainerWidth =
+    displayIndices.length > 1 ? containerSize.width / 2 : containerSize.width;
+
+  // ページカウンター: 見開き時は "3-4 / 12" 形式
+  const firstDisplay = displayIndices.length > 0 ? displayIndices[0] + 1 : 1;
+  const lastDisplay = displayIndices.length > 0 ? displayIndices[displayIndices.length - 1] + 1 : 1;
+  const currentEnd = displayIndices.length > 1 ? lastDisplay : undefined;
 
   // ローディング表示
   if (isLoading) {
@@ -177,14 +211,16 @@ export function PdfCgViewer({
 
       {/* メインエリア */}
       <div className="relative flex flex-1 flex-col overflow-hidden">
-        {/* ツールバー (showSpread=false: 見開きボタン非表示) */}
+        {/* ツールバー (showSpread=true: 見開きボタン表示) */}
         <CgToolbar
           fitMode={fitMode}
+          spreadMode={spreadMode}
           currentIndex={currentPage}
           totalCount={pageCount}
-          showSpread={false}
+          showSpread={true}
           onFitWidth={() => setFitMode("width")}
           onFitHeight={() => setFitMode("height")}
+          onCycleSpread={cycleSpreadMode}
           onToggleFullscreen={toggleFullscreen}
           onGoTo={nav.goTo}
           onClose={onClose}
@@ -198,17 +234,33 @@ export function PdfCgViewer({
           onClick={handleClick}
           onMouseMove={handleMouseMove}
         >
-          <PdfCanvas
-            document={document}
-            pageNumber={currentPage + 1}
-            fitMode={fitMode}
-            containerWidth={containerSize.width}
-            containerHeight={containerSize.height}
-          />
+          {displayIndices.map((pageIdx) => (
+            <div
+              key={pageIdx}
+              className={
+                displayIndices.length > 1
+                  ? "flex min-w-0 flex-1 items-center justify-center"
+                  : "flex items-center justify-center"
+              }
+            >
+              <PdfCanvas
+                document={document}
+                pageNumber={pageIdx + 1}
+                fitMode={fitMode}
+                containerWidth={pageContainerWidth}
+                containerHeight={containerSize.height}
+              />
+            </div>
+          ))}
         </div>
 
         {/* ページカウンター */}
-        <PageCounter setName={pdfName} current={currentPage + 1} total={pageCount} />
+        <PageCounter
+          setName={pdfName}
+          current={firstDisplay}
+          currentEnd={currentEnd}
+          total={pageCount}
+        />
 
         {/* セット間ジャンプの確認プロンプト */}
         {setJump.prompt && (
