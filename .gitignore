@@ -32,7 +32,7 @@ Thumbs.db
 # Claude Code
 .claude/settings.local.json
 .claude/plans/
-docs/
+/docs/
 
 # E2E
 e2e/node_modules/
