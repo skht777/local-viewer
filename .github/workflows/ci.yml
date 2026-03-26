@@ -123,7 +123,7 @@ jobs:
       - run: docker build -t local-viewer:ci .
 
       # スモークテスト: E2E フィクスチャを DATA_DIR に使用
-      - run: DATA_DIR=e2e/fixtures/test-data docker compose up -d
+      - run: DATA_DIR=./e2e/fixtures/test-data docker compose up -d
       - run: sleep 5
       - run: curl -f http://localhost:8000/api/health
       - run: docker compose down
