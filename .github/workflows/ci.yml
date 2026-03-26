@@ -1,0 +1,129 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  HUSKY: "0"
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version-file: ".python-version"
+          cache: "pip"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: ".node-version"
+          cache: "npm"
+          cache-dependency-path: |
+            package-lock.json
+            frontend/package-lock.json
+
+      # Python: 全依存インストール (mypy に型スタブが必要)
+      - run: pip install -r backend/requirements.txt -r backend/requirements-dev.txt
+
+      # Node: ルート (oxlint/oxfmt) + フロントエンド
+      - run: npm ci
+      - run: cd frontend && npm ci
+
+      # Python lint
+      - run: ruff check backend/
+      - run: ruff format --check backend/
+      - run: mypy backend/
+
+      # Frontend lint
+      - run: npx oxlint frontend/src/
+      - run: npx oxfmt --check frontend/src/
+
+  test-backend:
+    needs: lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version-file: ".python-version"
+          cache: "pip"
+
+      - run: pip install -r backend/requirements.txt -r backend/requirements-dev.txt
+      - run: pytest --cov
+
+  test-frontend:
+    needs: lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: ".node-version"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+
+      - run: cd frontend && npm ci
+      - run: cd frontend && npx vitest run
+
+  e2e:
+    needs: [test-backend, test-frontend]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version-file: ".python-version"
+          cache: "pip"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: ".node-version"
+          cache: "npm"
+          cache-dependency-path: |
+            package-lock.json
+            frontend/package-lock.json
+            e2e/package-lock.json
+
+      # バックエンド依存 + venv 作成 (playwright.config.ts が venv を参照)
+      - run: python -m venv backend/.venv
+      - run: backend/.venv/bin/pip install -r backend/requirements.txt
+
+      # フロントエンド依存
+      - run: cd frontend && npm ci
+
+      # E2E 依存 + Playwright ブラウザ
+      - run: cd e2e && npm ci
+      - run: cd e2e && npx playwright install --with-deps chromium
+
+      # テスト実行 (webServer が backend + frontend を自動起動)
+      - run: cd e2e && npx playwright test
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: e2e/test-results/
+
+  docker:
+    needs: e2e
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - run: docker build -t local-viewer:ci .
+
+      # スモークテスト: E2E フィクスチャを DATA_DIR に使用
+      - run: DATA_DIR=e2e/fixtures/test-data docker compose up -d
+      - run: sleep 5
+      - run: curl -f http://localhost:8000/api/health
+      - run: docker compose down
