@@ -8,6 +8,7 @@ import workerUrl from "pdfjs-dist/build/pdf.worker.mjs?url";
 GlobalWorkerOptions.workerSrc = workerUrl;
 
 export { getDocument };
+export { TextLayer } from "pdfjs-dist";
 export type {
   PDFDocumentProxy,
   PDFDocumentLoadingTask,

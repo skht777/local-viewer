@@ -4,9 +4,11 @@
 // - RenderTask の cancel + page.cleanup で安全なライフサイクル管理
 // - 最大 scale を 4.0 に制限 (メモリ保護)
 // - 描画タイムアウト (15秒) でフリーズ防止
+// - enableTextLayer: テキスト選択用の透明テキストレイヤーオーバーレイ
 
 import { useEffect, useRef, useState } from "react";
 import type { PDFDocumentProxy, RenderTask } from "../lib/pdfjs";
+import { TextLayer } from "../lib/pdfjs";
 import type { FitMode } from "../stores/viewerStore";
 import type { PdfRenderCache } from "../hooks/usePdfRenderCache";
 
@@ -21,7 +23,15 @@ interface PdfCanvasProps {
   containerHeight: number;
   className?: string;
   renderCache?: PdfRenderCache;
+  enableTextLayer?: boolean;
   onRenderComplete?: () => void;
+}
+
+// テキストレイヤーコンテナの子要素を安全にクリアする
+function clearChildren(container: HTMLElement): void {
+  while (container.firstChild) {
+    container.removeChild(container.firstChild);
+  }
 }
 
 export function PdfCanvas({
@@ -32,9 +42,11 @@ export function PdfCanvas({
   containerHeight,
   className,
   renderCache,
+  enableTextLayer = false,
   onRenderComplete,
 }: PdfCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const textLayerRef = useRef<HTMLDivElement>(null);
   const [renderError, setRenderError] = useState(false);
 
   // ページ変更時に renderError をリセット
@@ -47,7 +59,7 @@ export function PdfCanvas({
     let renderTask: RenderTask | null = null;
     let timeoutId: ReturnType<typeof setTimeout> | undefined;
 
-    document.getPage(pageNumber).then((page) => {
+    document.getPage(pageNumber).then(async (page) => {
       if (cancelled) {
         page.cleanup();
         return;
@@ -89,8 +101,10 @@ export function PdfCanvas({
       canvas.height = viewport.height;
 
       // CSS サイズ (論理ピクセル)
-      canvas.style.width = `${viewport.width / dpr}px`;
-      canvas.style.height = `${viewport.height / dpr}px`;
+      const cssWidth = viewport.width / dpr;
+      const cssHeight = viewport.height / dpr;
+      canvas.style.width = `${cssWidth}px`;
+      canvas.style.height = `${cssHeight}px`;
 
       const context = canvas.getContext("2d");
       if (!context) {
@@ -106,6 +120,10 @@ export function PdfCanvas({
         const cached = renderCache.get(cacheKey);
         if (cached) {
           context.drawImage(cached, 0, 0);
+          // テキストレイヤーも描画 (キャッシュヒット時)
+          if (enableTextLayer && textLayerRef.current) {
+            await renderTextLayerOverlay(page, textLayerRef.current, scale, cssWidth, cssHeight);
+          }
           page.cleanup();
           onRenderComplete?.();
           return;
@@ -132,11 +150,14 @@ export function PdfCanvas({
               // createImageBitmap 失敗は無視
             }
           }
+          // テキストレイヤー描画
+          if (!cancelled && enableTextLayer && textLayerRef.current) {
+            await renderTextLayerOverlay(page, textLayerRef.current, scale, cssWidth, cssHeight);
+          }
           if (!cancelled) onRenderComplete?.();
         })
         .catch((err: { name?: string }) => {
           clearTimeout(timeoutId);
-          // cancel() による中断は正常動作 (タイムアウトによるキャンセルを除く)
           if (err?.name !== "RenderingCancelledException") {
             // eslint-disable-next-line no-console
             console.error("PDF render error:", err);
@@ -151,8 +172,21 @@ export function PdfCanvas({
       cancelled = true;
       clearTimeout(timeoutId);
       renderTask?.cancel();
+      // テキストレイヤーをクリア (DOM 安全操作)
+      if (textLayerRef.current) {
+        clearChildren(textLayerRef.current);
+      }
     };
-  }, [document, pageNumber, fitMode, containerWidth, containerHeight, onRenderComplete]);
+  }, [
+    document,
+    pageNumber,
+    fitMode,
+    containerWidth,
+    containerHeight,
+    renderCache,
+    enableTextLayer,
+    onRenderComplete,
+  ]);
 
   // タイムアウトエラー表示
   if (renderError) {
@@ -166,5 +200,45 @@ export function PdfCanvas({
     );
   }
 
-  return <canvas ref={canvasRef} className={className} />;
+  return (
+    <div className={`relative ${className ?? ""}`}>
+      <canvas ref={canvasRef} />
+      {enableTextLayer && (
+        <div
+          ref={textLayerRef}
+          className="textLayer"
+          // テキスト選択中のクリックがページ送りに伝播しないよう stopPropagation
+          onPointerDown={(e) => e.stopPropagation()}
+        />
+      )}
+    </div>
+  );
+}
+
+// テキストレイヤーを描画する
+// - page.getTextContent() + TextLayer で透明テキスト div を重畳
+async function renderTextLayerOverlay(
+  page: Awaited<ReturnType<PDFDocumentProxy["getPage"]>>,
+  container: HTMLDivElement,
+  scale: number,
+  cssWidth: number,
+  cssHeight: number,
+): Promise<void> {
+  // 既存のテキストレイヤーを安全にクリア
+  clearChildren(container);
+  container.style.width = `${cssWidth}px`;
+  container.style.height = `${cssHeight}px`;
+
+  try {
+    const textContent = await page.getTextContent();
+    const viewport = page.getViewport({ scale });
+    const textLayer = new TextLayer({
+      textContentSource: textContent,
+      container,
+      viewport,
+    });
+    await textLayer.render();
+  } catch {
+    // テキストレイヤー描画失敗は無視
+  }
 }

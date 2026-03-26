@@ -1,1 +1,28 @@
 @import "tailwindcss";
+
+/* pdfjs-dist テキストレイヤー CSS (テキスト選択用) */
+/* pdfjs-dist/web/pdf_viewer.css から必要最小限を抽出 */
+.textLayer {
+  position: absolute;
+  text-align: initial;
+  inset: 0;
+  overflow: clip;
+  opacity: 1;
+  line-height: 1;
+  text-size-adjust: none;
+  forced-color-adjust: none;
+  transform-origin: 0 0;
+  z-index: 0;
+}
+
+.textLayer :is(span, br) {
+  color: transparent;
+  position: absolute;
+  white-space: pre;
+  cursor: text;
+  transform-origin: 0% 0%;
+}
+
+.textLayer span::selection {
+  background: rgba(0, 0, 255, 0.3);
+}

@@ -258,6 +258,7 @@ export function PdfCgViewer({
                 fitMode={fitMode}
                 containerWidth={pageContainerWidth}
                 renderCache={renderCache}
+                enableTextLayer={true}
                 containerHeight={containerSize.height}
               />
             </div>
