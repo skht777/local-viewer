@@ -10,6 +10,9 @@ services:
     environment:
       - ROOT_DIR=/data
       - BIND_HOST=${BIND_HOST:-127.0.0.1}
+      - INDEX_DB_PATH=/tmp/viewer-disk-cache/index.db
+      - WATCH_MODE=${WATCH_MODE:-auto}
+      - WATCH_POLL_INTERVAL=${WATCH_POLL_INTERVAL:-30}
     restart: unless-stopped
     mem_limit: ${MEM_LIMIT:-2g}
     cpus: ${CPUS:-2.0}
