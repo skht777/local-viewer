@@ -6,12 +6,13 @@ import type { FitMode, SpreadMode } from "../stores/viewerStore";
 
 interface CgToolbarProps {
   fitMode: FitMode;
-  spreadMode: SpreadMode;
+  spreadMode?: SpreadMode;
   currentIndex: number;
   totalCount: number;
+  showSpread?: boolean;
   onFitWidth: () => void;
   onFitHeight: () => void;
-  onCycleSpread: () => void;
+  onCycleSpread?: () => void;
   onToggleFullscreen: () => void;
   onGoTo: (index: number) => void;
   onClose: () => void;
@@ -31,9 +32,10 @@ function spreadLabel(mode: SpreadMode): string {
 
 export function CgToolbar({
   fitMode,
-  spreadMode,
+  spreadMode = "single",
   currentIndex,
   totalCount,
+  showSpread = true,
   onFitWidth,
   onFitHeight,
   onCycleSpread,
@@ -62,14 +64,16 @@ export function CgToolbar({
       </button>
 
       {/* 見開き切替 */}
-      <button
-        type="button"
-        onClick={onCycleSpread}
-        className="rounded px-2 py-1 text-xs text-gray-300 hover:bg-gray-700"
-        aria-label="見開き切替"
-      >
-        {spreadLabel(spreadMode)}
-      </button>
+      {showSpread && (
+        <button
+          type="button"
+          onClick={onCycleSpread}
+          className="rounded px-2 py-1 text-xs text-gray-300 hover:bg-gray-700"
+          aria-label="見開き切替"
+        >
+          {spreadLabel(spreadMode)}
+        </button>
+      )}
 
       {/* ページセレクト */}
       <select

@@ -1,7 +1,7 @@
 // PDF CG モードビューワー: 1ページずつ表示
 // - usePdfDocument で PDF 読み込み
 // - PdfCanvas で canvas 描画
-// - CgToolbar (spread 除外版), PageCounter, キーボード等を再利用
+// - CgToolbar (showSpread=false), PageCounter, キーボード等を再利用
 // - useSetJump: currentNodeId = pdfNodeId (PDF 自身)
 
 import { useCallback, useRef, useState } from "react";
@@ -13,7 +13,7 @@ import { useCgKeyboard } from "../hooks/useCgKeyboard";
 import { useSetJump } from "../hooks/useSetJump";
 import { usePdfDocument } from "../hooks/usePdfDocument";
 import { PdfCanvas } from "./PdfCanvas";
-import { PdfCgToolbar } from "./PdfCgToolbar";
+import { CgToolbar } from "./CgToolbar";
 import { PdfPageSidebar } from "./PdfPageSidebar";
 import { NavigationPrompt } from "./NavigationPrompt";
 import { PageCounter } from "./PageCounter";
@@ -177,11 +177,12 @@ export function PdfCgViewer({
 
       {/* メインエリア */}
       <div className="relative flex flex-1 flex-col overflow-hidden">
-        {/* ツールバー (spread 除外) */}
-        <PdfCgToolbar
+        {/* ツールバー (showSpread=false: 見開きボタン非表示) */}
+        <CgToolbar
           fitMode={fitMode}
           currentIndex={currentPage}
           totalCount={pageCount}
+          showSpread={false}
           onFitWidth={() => setFitMode("width")}
           onFitHeight={() => setFitMode("height")}
           onToggleFullscreen={toggleFullscreen}

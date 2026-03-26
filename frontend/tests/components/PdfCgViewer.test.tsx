@@ -142,8 +142,7 @@ describe("PdfCgViewer", () => {
       expect(screen.getByTestId("pdf-cg-page-area")).toBeTruthy();
     });
 
-    // CgToolbar には見開きボタン (aria-label="見開き切替") があるが、
-    // PdfCgToolbar にはない
+    // CgToolbar の showSpread=false により見開きボタンは非表示
     expect(screen.queryByLabelText("見開き切替")).toBeNull();
   });
 });
