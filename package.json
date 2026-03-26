@@ -1,7 +1,10 @@
 {
   "private": true,
   "scripts": {
-    "prepare": "husky"
+    "prepare": "husky",
+    "test:e2e": "cd e2e && npx playwright test",
+    "test:e2e:lightpanda": "cd e2e && npx playwright test --project=lightpanda",
+    "test:e2e:chromium": "cd e2e && npx playwright test --project=chromium"
   },
   "devDependencies": {
     "husky": "^9.1.0",
