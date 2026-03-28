@@ -13,11 +13,11 @@ test.describe("CG モード — 水平ページスライダー", () => {
     // 初期状態: 非表示（opacity: 0）
     await expect(slider).toHaveCSS("opacity", "0");
 
-    // マウスを画面下部に移動
+    // マウスを画面下部に移動（steps で pointermove の確実な配信を保証）
     const viewer = page.getByTestId("cg-viewer");
     const box = await viewer.boundingBox();
     if (!box) throw new Error("viewer not found");
-    await page.mouse.move(box.x + box.width / 2, box.y + box.height - 20);
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height - 20, { steps: 5 });
 
     // フェードイン
     await expect(slider).toHaveCSS("opacity", "1", { timeout: 3000 });
@@ -31,11 +31,11 @@ test.describe("CG モード — 水平ページスライダー", () => {
     const viewer = page.getByTestId("cg-viewer");
     const box = await viewer.boundingBox();
     if (!box) throw new Error("viewer not found");
-    await page.mouse.move(box.x + box.width / 2, box.y + box.height - 20);
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height - 20, { steps: 5 });
     await expect(slider).toHaveCSS("opacity", "1", { timeout: 3000 });
 
     // マウスを画面中央（上部寄り）に移動
-    await page.mouse.move(box.x + box.width / 2, box.y + 50);
+    await page.mouse.move(box.x + box.width / 2, box.y + 50, { steps: 5 });
 
     // フェードアウト
     await expect(slider).toHaveCSS("opacity", "0", { timeout: 3000 });
@@ -48,7 +48,7 @@ test.describe("CG モード — 水平ページスライダー", () => {
     const viewer = page.getByTestId("cg-viewer");
     const box = await viewer.boundingBox();
     if (!box) throw new Error("viewer not found");
-    await page.mouse.move(box.x + box.width / 2, box.y + box.height - 20);
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height - 20, { steps: 5 });
 
     const rangeInput = page.getByTestId("page-slider").locator("input[type='range']");
     await expect(rangeInput).toBeVisible({ timeout: 3000 });
@@ -116,7 +116,7 @@ test.describe("CG モード — PDF ページスライダー", () => {
     const viewer = page.getByTestId("pdf-cg-viewer");
     const box = await viewer.boundingBox();
     if (!box) throw new Error("viewer not found");
-    await page.mouse.move(box.x + box.width / 2, box.y + box.height - 20);
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height - 20, { steps: 5 });
 
     const rangeInput = page.getByTestId("page-slider").locator("input[type='range']");
     await expect(rangeInput).toBeVisible({ timeout: 3000 });
@@ -138,7 +138,7 @@ test.describe("マンガモード — 縦ページスライダー", () => {
     const viewer = page.getByTestId("manga-viewer");
     const box = await viewer.boundingBox();
     if (!box) throw new Error("viewer not found");
-    await page.mouse.move(box.x + box.width - 20, box.y + box.height / 2);
+    await page.mouse.move(box.x + box.width - 20, box.y + box.height / 2, { steps: 5 });
 
     // フェードイン
     await expect(slider).toHaveCSS("opacity", "1", { timeout: 3000 });
@@ -152,11 +152,11 @@ test.describe("マンガモード — 縦ページスライダー", () => {
     const viewer = page.getByTestId("manga-viewer");
     const box = await viewer.boundingBox();
     if (!box) throw new Error("viewer not found");
-    await page.mouse.move(box.x + box.width - 20, box.y + box.height / 2);
+    await page.mouse.move(box.x + box.width - 20, box.y + box.height / 2, { steps: 5 });
     await expect(slider).toHaveCSS("opacity", "1", { timeout: 3000 });
 
     // マウスを左側に移動
-    await page.mouse.move(box.x + 100, box.y + box.height / 2);
+    await page.mouse.move(box.x + 100, box.y + box.height / 2, { steps: 5 });
 
     // フェードアウト
     await expect(slider).toHaveCSS("opacity", "0", { timeout: 3000 });
@@ -169,7 +169,7 @@ test.describe("マンガモード — 縦ページスライダー", () => {
     const viewer = page.getByTestId("manga-viewer");
     const box = await viewer.boundingBox();
     if (!box) throw new Error("viewer not found");
-    await page.mouse.move(box.x + box.width - 20, box.y + box.height / 2);
+    await page.mouse.move(box.x + box.width - 20, box.y + box.height / 2, { steps: 5 });
 
     const rangeInput = page.getByTestId("page-slider").locator("input[type='range']");
     await expect(rangeInput).toBeVisible({ timeout: 3000 });
