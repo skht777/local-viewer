@@ -72,7 +72,7 @@ export function MangaToolbar({
           aria-label="ズーム"
         />
         <span
-          className="min-w-[3rem] text-center text-xs text-gray-300"
+          className="min-w-[3rem] text-center text-xs font-mono tabular-nums text-gray-300"
           data-testid="manga-zoom-level"
         >
           {zoomLevel}%
@@ -97,7 +97,10 @@ export function MangaToolbar({
           className="w-16"
           aria-label="スクロール速度"
         />
-        <span className="text-xs text-gray-300" data-testid="manga-scroll-speed-label">
+        <span
+          className="text-xs font-mono tabular-nums text-gray-300"
+          data-testid="manga-scroll-speed-label"
+        >
           {scrollSpeed}x
         </span>
       </div>
@@ -105,7 +108,7 @@ export function MangaToolbar({
       {/* 中央: ページカウンター */}
       <span
         data-testid="page-counter"
-        className="flex-1 truncate text-center text-xs text-gray-300"
+        className="flex-1 truncate text-center text-xs font-mono tabular-nums text-gray-300"
       >
         {formatPageLabel(setName, currentIndex + 1, totalCount)}
       </span>

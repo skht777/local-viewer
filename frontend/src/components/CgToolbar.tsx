@@ -105,7 +105,7 @@ export function CgToolbar({
       {/* 中央: ページカウンター */}
       <span
         data-testid="page-counter"
-        className="flex-1 truncate text-center text-xs text-gray-300"
+        className="flex-1 truncate text-center text-xs font-mono tabular-nums text-gray-300"
       >
         {formatPageLabel(setName, currentPage, totalCount, currentPageEnd)}
       </span>

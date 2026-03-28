@@ -59,10 +59,14 @@ export function FileCard({ entry, onClick, isSelected }: FileCardProps) {
       <div className="p-2">
         <p className="truncate text-sm">{entry.name}</p>
         {entry.size_bytes != null && (
-          <span className="text-xs text-gray-400">{formatFileSize(entry.size_bytes)}</span>
+          <span className="text-xs font-mono tabular-nums text-gray-400">
+            {formatFileSize(entry.size_bytes)}
+          </span>
         )}
         {entry.child_count != null && (
-          <span className="text-xs text-gray-400">{entry.child_count} items</span>
+          <span className="text-xs font-mono tabular-nums text-gray-400">
+            {entry.child_count} items
+          </span>
         )}
       </div>
     </button>

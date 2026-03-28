@@ -44,7 +44,9 @@ export function VideoCard({ entry, initialTime, onTimeUpdate }: VideoCardProps) 
       <div className="px-3 pt-3">
         <p className="truncate text-sm font-medium">{entry.name}</p>
         {entry.size_bytes != null && (
-          <span className="text-xs text-gray-400">{formatFileSize(entry.size_bytes)}</span>
+          <span className="text-xs font-mono tabular-nums text-gray-400">
+            {formatFileSize(entry.size_bytes)}
+          </span>
         )}
       </div>
       <div className="p-3">
