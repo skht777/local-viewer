@@ -49,7 +49,10 @@ export function VideoCard({ entry, initialTime, onTimeUpdate }: VideoCardProps) 
       </div>
       <div className="p-3">
         {hasError ? (
-          <div className="flex aspect-video items-center justify-center rounded bg-gray-700 text-sm text-gray-400">
+          <div
+            data-testid="video-error-fallback"
+            className="flex aspect-video items-center justify-center rounded bg-gray-700 text-sm text-gray-400"
+          >
             この形式はブラウザで再生できません
           </div>
         ) : (
