@@ -12,6 +12,7 @@ interface MangaKeyboardCallbacks {
   scrollToBottom: () => void;
   onEscape: () => void;
   toggleFullscreen: () => void;
+  toggleSidebar?: () => void;
   toggleMode?: () => void;
   goNextSet?: () => void;
   goPrevSet?: () => void;
@@ -30,6 +31,9 @@ export function useMangaKeyboard(callbacks: MangaKeyboardCallbacks): void {
   // 先頭/末尾
   useHotkeys("home", () => callbacks.scrollToTop(), { preventDefault: true });
   useHotkeys("end", () => callbacks.scrollToBottom(), { preventDefault: true });
+
+  // サイドバートグル
+  useHotkeys("tab", () => callbacks.toggleSidebar?.(), { preventDefault: true });
 
   // フルスクリーン
   useHotkeys("f", () => callbacks.toggleFullscreen());

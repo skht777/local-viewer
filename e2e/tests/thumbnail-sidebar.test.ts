@@ -8,7 +8,7 @@ import { openCgViewer } from "./helpers/navigation";
 
 test.describe("サムネイルサイドバー", () => {
   // Tab キーによるサイドバートグルが useCgKeyboard に未実装
-  test.fixme("TS-1: Tab キーでサイドバーが表示/非表示になる", async ({ page }) => {
+  test("TS-1: Tab キーでサイドバーが表示/非表示になる", async ({ page }) => {
     await openCgViewer(page);
 
     // デフォルトでサイドバー表示

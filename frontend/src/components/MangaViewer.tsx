@@ -132,6 +132,7 @@ export function MangaViewer({
     scrollToBottom: mangaScroll.scrollToBottom,
     onEscape: handleEscape,
     toggleFullscreen,
+    toggleSidebar: useViewerStore((s) => s.toggleSidebar),
     toggleMode: () => onModeChange(mode === "manga" ? "cg" : "manga"),
     goNextSet: setJump.goNextSet,
     goPrevSet: setJump.goPrevSet,

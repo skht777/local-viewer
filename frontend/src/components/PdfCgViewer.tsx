@@ -102,6 +102,7 @@ export function PdfCgViewer({
     cycleSpread: cycleSpreadMode,
     scrollUp: () => {},
     scrollDown: () => {},
+    toggleSidebar: useViewerStore((s) => s.toggleSidebar),
     toggleMode: () => onModeChange(mode === "cg" ? "manga" : "cg"),
     goNextSet: setJump.goNextSet,
     goPrevSet: setJump.goPrevSet,
