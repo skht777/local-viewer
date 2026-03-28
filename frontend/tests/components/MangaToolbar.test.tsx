@@ -61,4 +61,14 @@ describe("MangaToolbar", () => {
     render(<MangaToolbar {...defaultProps} scrollSpeed={2.0} />);
     expect(screen.getByText("2x")).toBeInTheDocument();
   });
+
+  test("ズーム倍率に data-testid=manga-zoom-level がある", () => {
+    render(<MangaToolbar {...defaultProps} zoomLevel={100} />);
+    expect(screen.getByTestId("manga-zoom-level")).toHaveTextContent("100%");
+  });
+
+  test("スクロール速度に data-testid=manga-scroll-speed-label がある", () => {
+    render(<MangaToolbar {...defaultProps} scrollSpeed={1.5} />);
+    expect(screen.getByTestId("manga-scroll-speed-label")).toHaveTextContent("1.5x");
+  });
 });

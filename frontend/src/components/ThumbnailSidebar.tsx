@@ -38,6 +38,7 @@ export function ThumbnailSidebar({
             type="button"
             onClick={() => onSelect(idx)}
             className={`overflow-hidden rounded ${isActive ? "ring-2 ring-blue-500" : "opacity-60 hover:opacity-100"}`}
+            aria-current={isActive ? "true" : undefined}
           >
             <img
               src={`/api/file/${entry.node_id}`}

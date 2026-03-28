@@ -52,4 +52,27 @@ describe("CgToolbar", () => {
     await userEvent.selectOptions(select, "5");
     expect(onGoTo).toHaveBeenCalledWith(5);
   });
+
+  test("幅フィット選択時に W ボタンが aria-pressed=true になる", () => {
+    render(<CgToolbar {...defaultProps} fitMode="width" />);
+    const wBtn = screen.getByRole("button", { name: "幅フィット" });
+    expect(wBtn).toHaveAttribute("aria-pressed", "true");
+  });
+
+  test("高さフィット選択時に H ボタンが aria-pressed=true になる", () => {
+    render(<CgToolbar {...defaultProps} fitMode="height" />);
+    const hBtn = screen.getByRole("button", { name: "高さフィット" });
+    expect(hBtn).toHaveAttribute("aria-pressed", "true");
+  });
+
+  test("非選択のフィットボタンは aria-pressed=false になる", () => {
+    render(<CgToolbar {...defaultProps} fitMode="width" />);
+    const hBtn = screen.getByRole("button", { name: "高さフィット" });
+    expect(hBtn).toHaveAttribute("aria-pressed", "false");
+  });
+
+  test("見開きボタンに data-testid=cg-spread-btn がある", () => {
+    render(<CgToolbar {...defaultProps} />);
+    expect(screen.getByTestId("cg-spread-btn")).toBeInTheDocument();
+  });
 });

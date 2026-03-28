@@ -125,4 +125,34 @@ describe("SearchResults", () => {
     );
     expect(screen.getByText("さらに結果があります...")).toBeInTheDocument();
   });
+
+  test("activeIndexの項目に aria-selected=true が設定される", () => {
+    render(
+      <SearchResults
+        results={MOCK_RESULTS}
+        hasMore={false}
+        isLoading={false}
+        isIndexing={false}
+        activeIndex={0}
+        onSelect={() => {}}
+      />,
+    );
+    const firstItem = screen.getByTestId("search-result-0");
+    expect(firstItem).toHaveAttribute("aria-selected", "true");
+  });
+
+  test("非activeの項目に aria-selected がない", () => {
+    render(
+      <SearchResults
+        results={MOCK_RESULTS}
+        hasMore={false}
+        isLoading={false}
+        isIndexing={false}
+        activeIndex={0}
+        onSelect={() => {}}
+      />,
+    );
+    const secondItem = screen.getByTestId("search-result-1");
+    expect(secondItem).not.toHaveAttribute("aria-selected", "true");
+  });
 });

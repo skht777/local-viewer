@@ -51,6 +51,7 @@ export function CgToolbar({
         onClick={onFitWidth}
         className={`rounded px-2 py-1 text-xs ${fitMode === "width" ? "bg-blue-600 text-white" : "text-gray-300 hover:bg-gray-700"}`}
         aria-label="幅フィット"
+        aria-pressed={fitMode === "width"}
       >
         W
       </button>
@@ -59,6 +60,7 @@ export function CgToolbar({
         onClick={onFitHeight}
         className={`rounded px-2 py-1 text-xs ${fitMode === "height" ? "bg-blue-600 text-white" : "text-gray-300 hover:bg-gray-700"}`}
         aria-label="高さフィット"
+        aria-pressed={fitMode === "height"}
       >
         H
       </button>
@@ -70,6 +72,7 @@ export function CgToolbar({
           onClick={onCycleSpread}
           className="rounded px-2 py-1 text-xs text-gray-300 hover:bg-gray-700"
           aria-label="見開き切替"
+          data-testid="cg-spread-btn"
         >
           {spreadLabel(spreadMode)}
         </button>

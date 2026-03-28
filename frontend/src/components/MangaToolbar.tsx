@@ -66,7 +66,12 @@ export function MangaToolbar({
         className="w-24"
         aria-label="ズーム"
       />
-      <span className="min-w-[3rem] text-center text-xs text-gray-300">{zoomLevel}%</span>
+      <span
+        className="min-w-[3rem] text-center text-xs text-gray-300"
+        data-testid="manga-zoom-level"
+      >
+        {zoomLevel}%
+      </span>
       <button
         type="button"
         onClick={onZoomIn}
@@ -87,7 +92,9 @@ export function MangaToolbar({
         className="w-16"
         aria-label="スクロール速度"
       />
-      <span className="text-xs text-gray-300">{scrollSpeed}x</span>
+      <span className="text-xs text-gray-300" data-testid="manga-scroll-speed-label">
+        {scrollSpeed}x
+      </span>
 
       <div className="flex-1" />
 

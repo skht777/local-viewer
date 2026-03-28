@@ -67,6 +67,7 @@ export function SearchResults({
             className={`cursor-pointer px-4 py-2 ${i === activeIndex ? "bg-blue-600/20 hover:bg-blue-600/30" : "hover:bg-gray-700"}`}
             onClick={() => onSelect(result)}
             data-testid={`search-result-${i}`}
+            aria-selected={i === activeIndex ? "true" : undefined}
           >
             <div className="flex items-center gap-2">
               <span>{KIND_ICONS[result.kind] ?? KIND_ICONS.other}</span>
