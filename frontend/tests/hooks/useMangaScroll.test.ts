@@ -61,14 +61,14 @@ describe("useMangaScroll", () => {
     expect(scrollElement.scrollBy).toHaveBeenCalledWith(0, 400);
   });
 
-  test("scrollToTop で先頭にスクロールする", () => {
+  test("scrollToTop で scrollTop が 0 に設定される", () => {
     const virtualizer = createMockVirtualizer();
-    const scrollElement = createMockScrollElement();
+    const scrollElement = createMockScrollElement(500);
     const { result } = renderHook(() =>
       useMangaScroll({ virtualizer: virtualizer as any, scrollElement, totalCount: 10, scrollSpeed: 1.0 }),
     );
     act(() => result.current.scrollToTop());
-    expect(virtualizer.scrollToIndex).toHaveBeenCalledWith(0, expect.objectContaining({ align: "start" }));
+    expect(scrollElement.scrollTop).toBe(0);
   });
 
   test("scrollToBottom で末尾にスクロールする", () => {

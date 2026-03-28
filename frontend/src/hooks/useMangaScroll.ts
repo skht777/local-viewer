@@ -66,37 +66,43 @@ export function useMangaScroll({
     };
   }, [scrollElement, virtualizer]);
 
-  // プログラムスクロール: scrollToIndex + URL 同期停止
+  // プログラムスクロール共通: scroll + index 設定 + フラグ管理
+  // isProgrammaticScroll は setCurrentIndex の React 再レンダー後に解除して
+  // handleScroll による上書きを防ぐ
+  const programmaticScrollTo = useCallback((index: number, scrollFn: () => void) => {
+    isProgrammaticScroll.current = true;
+    scrollFn();
+    requestAnimationFrame(() => {
+      setCurrentIndex(index);
+      requestAnimationFrame(() => {
+        isProgrammaticScroll.current = false;
+      });
+    });
+  }, []);
+
+  // ページセレクト/サムネイルクリック: virtualizer で指定ページにスクロール
   const scrollToImage = useCallback(
     (index: number) => {
-      isProgrammaticScroll.current = true;
-      virtualizer.scrollToIndex(index, { align: "start", behavior: "smooth" });
-      // スクロール完了後に URL 同期を再開
-      setTimeout(() => {
-        isProgrammaticScroll.current = false;
-        setCurrentIndex(index);
-      }, 0);
+      programmaticScrollTo(index, () => {
+        virtualizer.scrollToIndex(index, { align: "start", behavior: "smooth" });
+      });
     },
-    [virtualizer],
+    [virtualizer, programmaticScrollTo],
   );
 
+  // Home: DOM scrollTop=0 で即座にジャンプ
   const scrollToTop = useCallback(() => {
-    isProgrammaticScroll.current = true;
-    virtualizer.scrollToIndex(0, { align: "start", behavior: "smooth" });
-    setTimeout(() => {
-      isProgrammaticScroll.current = false;
-      setCurrentIndex(0);
-    }, 0);
-  }, [virtualizer]);
+    programmaticScrollTo(0, () => {
+      if (scrollElement) scrollElement.scrollTop = 0;
+    });
+  }, [scrollElement, programmaticScrollTo]);
 
+  // End: virtualizer.scrollToIndex で末尾にジャンプ
   const scrollToBottom = useCallback(() => {
-    isProgrammaticScroll.current = true;
-    virtualizer.scrollToIndex(totalCount - 1, { align: "end", behavior: "smooth" });
-    setTimeout(() => {
-      isProgrammaticScroll.current = false;
-      setCurrentIndex(totalCount - 1);
-    }, 0);
-  }, [virtualizer, totalCount]);
+    programmaticScrollTo(totalCount - 1, () => {
+      virtualizer.scrollToIndex(totalCount - 1, { align: "end", behavior: "instant" });
+    });
+  }, [virtualizer, totalCount, programmaticScrollTo]);
 
   // キーボードスクロール（scrollSpeed 適用）
   const scrollDown = useCallback(
