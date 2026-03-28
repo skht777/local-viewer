@@ -104,6 +104,9 @@ jobs:
       - run: cd e2e && npm ci
       - run: cd e2e && npx playwright install --with-deps chromium
 
+      # Git は空ディレクトリを追跡できないため手動作成
+      - run: mkdir -p e2e/fixtures/test-data/empty
+
       # テスト実行 (webServer が backend + frontend を自動起動)
       - run: cd e2e && npx playwright test
 
@@ -123,6 +126,7 @@ jobs:
       - run: docker build -t local-viewer:ci .
 
       # スモークテスト: E2E フィクスチャを DATA_DIR に使用
+      - run: mkdir -p e2e/fixtures/test-data/empty
       - run: DATA_DIR=./e2e/fixtures/test-data docker compose up -d
       - run: sleep 5
       - run: curl -f http://localhost:8000/api/health
