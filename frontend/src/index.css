@@ -13,7 +13,7 @@
   --font-mono: "SF Mono", "Cascadia Code", "Consolas", ui-monospace, monospace;
 
   /* トップページ用スタガードアニメーション */
-  --animate-fade-in-up: fade-in-up 0.4s ease-out both;
+  --animate-fade-in-up: fade-in-up 0.4s ease-out var(--stagger-delay, 0s) both;
 
   @keyframes fade-in-up {
     from { opacity: 0; transform: translateY(8px); }

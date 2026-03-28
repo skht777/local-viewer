@@ -22,10 +22,11 @@ export default function TopPage() {
 
       {data && (
         <div className="mb-12 grid w-full max-w-4xl grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
-          {data.entries.map((entry) => (
+          {data.entries.map((entry, index) => (
             <MountPointCard
               key={entry.node_id}
               entry={entry}
+              index={index}
               onSelect={(nodeId) => navigate(`/browse/${nodeId}`)}
             />
           ))}
