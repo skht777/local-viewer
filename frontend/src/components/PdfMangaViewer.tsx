@@ -16,6 +16,7 @@ import { usePdfPageSizes } from "../hooks/usePdfPageSizes";
 import { PdfCanvas } from "./PdfCanvas";
 import { MangaToolbar } from "./MangaToolbar";
 import { NavigationPrompt } from "./NavigationPrompt";
+import { VerticalPageSlider } from "./VerticalPageSlider";
 
 interface PdfMangaViewerProps {
   pdfNodeId: string;
@@ -157,7 +158,8 @@ export function PdfMangaViewer({
 
   // カーソルオートハイド
   const cursorTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
-  const handleMouseMove = useCallback(() => {
+  // カーソルオートハイドをリセット（スライダー操作時にも呼ばれる）
+  const resetCursorTimer = useCallback(() => {
     if (scrollRef.current) scrollRef.current.style.cursor = "";
     clearTimeout(cursorTimerRef.current);
     cursorTimerRef.current = setTimeout(() => {
@@ -224,7 +226,7 @@ export function PdfMangaViewer({
           ref={scrollRef}
           data-testid="pdf-manga-scroll-area"
           className="flex-1 overflow-auto"
-          onMouseMove={handleMouseMove}
+          onMouseMove={resetCursorTimer}
         >
           <div
             className="relative mx-auto"
@@ -256,6 +258,15 @@ export function PdfMangaViewer({
             ))}
           </div>
         </div>
+
+        {/* ページスライダー（右端フェードイン） */}
+        <VerticalPageSlider
+          currentIndex={mangaScroll.currentIndex}
+          totalCount={pageCount}
+          onGoTo={mangaScroll.scrollToImage}
+          containerRef={scrollRef}
+          onSliderActivity={resetCursorTimer}
+        />
 
         {/* セット間ジャンプの確認プロンプト */}
         {setJump.prompt && (

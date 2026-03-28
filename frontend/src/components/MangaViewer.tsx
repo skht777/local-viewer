@@ -17,6 +17,7 @@ import { useSetJump } from "../hooks/useSetJump";
 import type { ViewerMode } from "../hooks/useViewerParams";
 import { MangaToolbar } from "./MangaToolbar";
 import { NavigationPrompt } from "./NavigationPrompt";
+import { VerticalPageSlider } from "./VerticalPageSlider";
 
 interface MangaViewerProps {
   images: BrowseEntry[];
@@ -141,7 +142,8 @@ export function MangaViewer({
 
   // カーソルオートハイド
   const cursorTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
-  const handleMouseMove = useCallback(() => {
+  // カーソルオートハイドをリセット（スライダー操作時にも呼ばれる）
+  const resetCursorTimer = useCallback(() => {
     if (scrollRef.current) {
       scrollRef.current.style.cursor = "";
     }
@@ -181,7 +183,7 @@ export function MangaViewer({
           ref={scrollRef}
           data-testid="manga-scroll-area"
           className="flex-1 overflow-auto"
-          onMouseMove={handleMouseMove}
+          onMouseMove={resetCursorTimer}
         >
           <div
             className="relative mx-auto"
@@ -212,6 +214,15 @@ export function MangaViewer({
             })}
           </div>
         </div>
+
+        {/* ページスライダー（右端フェードイン） */}
+        <VerticalPageSlider
+          currentIndex={mangaScroll.currentIndex}
+          totalCount={images.length}
+          onGoTo={mangaScroll.scrollToImage}
+          containerRef={scrollRef}
+          onSliderActivity={resetCursorTimer}
+        />
 
         {/* セット間ジャンプの確認プロンプト */}
         {setJump.prompt && (
