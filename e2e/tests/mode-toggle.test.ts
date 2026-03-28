@@ -82,7 +82,8 @@ test.describe("モード切替トグル", () => {
   });
 
   test("MT-5: ディレクトリ遷移で mode が保持される", async ({ page }) => {
-    await navigateToMount(page, "pictures");
+    // nested マウントにはサブディレクトリ (sub1, sub2) がある
+    await navigateToMount(page, "nested");
 
     // マンガモードを選択
     await page.getByTestId("mode-toggle-manga").click();
