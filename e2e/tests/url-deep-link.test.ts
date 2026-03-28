@@ -63,10 +63,9 @@ test.describe("URL 直接遷移", () => {
 });
 
 test.describe("URL 履歴・排他制御", () => {
-  // useSearchParams が replace で履歴を上書きするため goBack で query params が復元されない
-  test.fixme("UD-4: ブラウザ戻るボタンで前の URL 状態に復帰する", async ({ page }) => {
+  test("UD-4: ブラウザ戻るボタンで前の URL 状態に復帰する", async ({ page }) => {
     await openCgViewer(page);
-    await expect(page).toHaveURL(/mode=cg/);
+    await expect(page).toHaveURL(/index=/);
     const cgUrl = page.url();
 
     // Escape でビューワーを閉じる
