@@ -147,19 +147,7 @@ test.describe("PDF ナビゲーション — P2", () => {
     await expect(prompt).toBeVisible({ timeout: 5000 });
   });
 
-  test("PN-13: PdfPageSidebar クリックでページにジャンプする", async ({ page }) => {
-    await openPdfViewer(page);
-    await expect(page).toHaveURL(/page=1/);
 
-    // サイドバーの2番目のボタンをクリック
-    const sidebar = page.getByTestId("pdf-cg-viewer").locator("aside");
-    await expect(sidebar).toBeVisible();
-
-    const secondPage = sidebar.locator("button").nth(1);
-    await secondPage.click();
-
-    await expect(page).toHaveURL(/page=2/);
-  });
 });
 
 test.describe("PDF ナビゲーション — P3", () => {

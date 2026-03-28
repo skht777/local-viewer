@@ -16,7 +16,6 @@ interface CgKeyboardCallbacks {
   cycleSpread: () => void;
   scrollUp: () => void;
   scrollDown: () => void;
-  toggleSidebar?: () => void;
   toggleMode?: () => void;
   goNextSet?: () => void;
   goPrevSet?: () => void;
@@ -43,9 +42,6 @@ export function useCgKeyboard(callbacks: CgKeyboardCallbacks): void {
 
   // 見開き切替
   useHotkeys("q", () => callbacks.cycleSpread());
-
-  // サイドバートグル
-  useHotkeys("tab", () => callbacks.toggleSidebar?.(), { preventDefault: true });
 
   // フルスクリーン
   useHotkeys("f", () => callbacks.toggleFullscreen());

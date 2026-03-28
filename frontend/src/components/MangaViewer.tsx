@@ -18,7 +18,6 @@ import type { ViewerMode } from "../hooks/useViewerParams";
 import { MangaToolbar } from "./MangaToolbar";
 import { NavigationPrompt } from "./NavigationPrompt";
 import { PageCounter } from "./PageCounter";
-import { ThumbnailSidebar } from "./ThumbnailSidebar";
 
 interface MangaViewerProps {
   images: BrowseEntry[];
@@ -49,7 +48,6 @@ export function MangaViewer({
   const zoomOut = useViewerStore((s) => s.zoomOut);
   const scrollSpeed = useViewerStore((s) => s.scrollSpeed);
   const setScrollSpeed = useViewerStore((s) => s.setScrollSpeed);
-  const isSidebarOpen = useViewerStore((s) => s.isSidebarOpen);
   const { isFullscreen, toggleFullscreen } = useFullscreen();
 
   // スクロールコンテナ
@@ -132,7 +130,6 @@ export function MangaViewer({
     scrollToBottom: mangaScroll.scrollToBottom,
     onEscape: handleEscape,
     toggleFullscreen,
-    toggleSidebar: useViewerStore((s) => s.toggleSidebar),
     toggleMode: () => onModeChange(mode === "manga" ? "cg" : "manga"),
     goNextSet: setJump.goNextSet,
     goPrevSet: setJump.goPrevSet,
@@ -162,16 +159,6 @@ export function MangaViewer({
 
   return (
     <div data-testid="manga-viewer" className="fixed inset-0 z-50 flex bg-black">
-      {/* サムネイルサイドバー（instant 追従で jank 防止） */}
-      {isSidebarOpen && (
-        <ThumbnailSidebar
-          images={images}
-          currentIndex={mangaScroll.currentIndex}
-          onSelect={mangaScroll.scrollToImage}
-          scrollBehavior="instant"
-        />
-      )}
-
       {/* メインエリア */}
       <div className="relative flex flex-1 flex-col overflow-hidden">
         {/* ツールバー */}

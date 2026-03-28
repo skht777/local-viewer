@@ -14,7 +14,6 @@ import { useSetJump } from "../hooks/useSetJump";
 import { usePdfDocument } from "../hooks/usePdfDocument";
 import { usePdfPageSizes } from "../hooks/usePdfPageSizes";
 import { PdfCanvas } from "./PdfCanvas";
-import { PdfPageSidebar } from "./PdfPageSidebar";
 import { MangaToolbar } from "./MangaToolbar";
 import { NavigationPrompt } from "./NavigationPrompt";
 import { PageCounter } from "./PageCounter";
@@ -46,7 +45,6 @@ export function PdfMangaViewer({
   const zoomOut = useViewerStore((s) => s.zoomOut);
   const scrollSpeed = useViewerStore((s) => s.scrollSpeed);
   const setScrollSpeed = useViewerStore((s) => s.setScrollSpeed);
-  const isSidebarOpen = useViewerStore((s) => s.isSidebarOpen);
   const { isFullscreen, toggleFullscreen } = useFullscreen();
 
   // PDF ドキュメント読み込み
@@ -148,7 +146,6 @@ export function PdfMangaViewer({
     scrollToBottom: mangaScroll.scrollToBottom,
     onEscape: handleEscape,
     toggleFullscreen,
-    toggleSidebar: useViewerStore((s) => s.toggleSidebar),
     toggleMode: () => onModeChange(mode === "manga" ? "cg" : "manga"),
     goNextSet: setJump.goNextSet,
     goPrevSet: setJump.goPrevSet,
@@ -205,17 +202,6 @@ export function PdfMangaViewer({
 
   return (
     <div data-testid="pdf-manga-viewer" className="fixed inset-0 z-50 flex bg-black">
-      {/* サムネイルサイドバー (instant 追従) */}
-      {isSidebarOpen && (
-        <PdfPageSidebar
-          document={document}
-          pageCount={pageCount}
-          currentIndex={mangaScroll.currentIndex}
-          onSelect={mangaScroll.scrollToImage}
-          scrollBehavior="instant"
-        />
-      )}
-
       {/* メインエリア */}
       <div className="relative flex flex-1 flex-col overflow-hidden">
         {/* ツールバー */}

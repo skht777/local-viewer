@@ -18,7 +18,6 @@ import type { ViewerMode } from "../hooks/useViewerParams";
 import { CgToolbar } from "./CgToolbar";
 import { NavigationPrompt } from "./NavigationPrompt";
 import { PageCounter } from "./PageCounter";
-import { ThumbnailSidebar } from "./ThumbnailSidebar";
 
 interface CgViewerProps {
   images: BrowseEntry[];
@@ -62,7 +61,6 @@ export function CgViewer({
   const spreadMode = useViewerStore((s) => s.spreadMode);
   const setFitMode = useViewerStore((s) => s.setFitMode);
   const cycleSpreadMode = useViewerStore((s) => s.cycleSpreadMode);
-  const isSidebarOpen = useViewerStore((s) => s.isSidebarOpen);
   const { isFullscreen, toggleFullscreen } = useFullscreen();
   const nav = useCgNavigation(images.length, currentIndex, onIndexChange, spreadMode);
 
@@ -99,7 +97,6 @@ export function CgViewer({
     cycleSpread: cycleSpreadMode,
     scrollUp: () => imageAreaRef.current?.scrollBy({ top: -100, behavior: "instant" }),
     scrollDown: () => imageAreaRef.current?.scrollBy({ top: 100, behavior: "instant" }),
-    toggleSidebar: useViewerStore((s) => s.toggleSidebar),
     toggleMode: () => onModeChange(mode === "cg" ? "manga" : "cg"),
     goNextSet: setJump.goNextSet,
     goPrevSet: setJump.goPrevSet,
@@ -147,11 +144,6 @@ export function CgViewer({
 
   return (
     <div data-testid="cg-viewer" className="fixed inset-0 z-50 flex bg-black">
-      {/* サムネイルサイドバー */}
-      {isSidebarOpen && (
-        <ThumbnailSidebar images={images} currentIndex={currentIndex} onSelect={nav.goTo} />
-      )}
-
       {/* メインエリア */}
       <div className="relative flex flex-1 flex-col overflow-hidden">
         {/* ツールバー */}

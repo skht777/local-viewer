@@ -17,7 +17,6 @@ import { usePdfDocument } from "../hooks/usePdfDocument";
 import { usePdfRenderCache } from "../hooks/usePdfRenderCache";
 import { PdfCanvas } from "./PdfCanvas";
 import { CgToolbar } from "./CgToolbar";
-import { PdfPageSidebar } from "./PdfPageSidebar";
 import { NavigationPrompt } from "./NavigationPrompt";
 import { PageCounter } from "./PageCounter";
 
@@ -46,7 +45,6 @@ export function PdfCgViewer({
   const spreadMode = useViewerStore((s) => s.spreadMode);
   const setFitMode = useViewerStore((s) => s.setFitMode);
   const cycleSpreadMode = useViewerStore((s) => s.cycleSpreadMode);
-  const isSidebarOpen = useViewerStore((s) => s.isSidebarOpen);
   const { isFullscreen, toggleFullscreen } = useFullscreen();
 
   // PDF ドキュメント読み込み
@@ -102,7 +100,6 @@ export function PdfCgViewer({
     cycleSpread: cycleSpreadMode,
     scrollUp: () => imageAreaRef.current?.scrollBy({ top: -100, behavior: "instant" }),
     scrollDown: () => imageAreaRef.current?.scrollBy({ top: 100, behavior: "instant" }),
-    toggleSidebar: useViewerStore((s) => s.toggleSidebar),
     toggleMode: () => onModeChange(mode === "cg" ? "manga" : "cg"),
     goNextSet: setJump.goNextSet,
     goPrevSet: setJump.goPrevSet,
@@ -209,16 +206,6 @@ export function PdfCgViewer({
 
   return (
     <div data-testid="pdf-cg-viewer" className="fixed inset-0 z-50 flex bg-black">
-      {/* サムネイルサイドバー */}
-      {isSidebarOpen && (
-        <PdfPageSidebar
-          document={document}
-          pageCount={pageCount}
-          currentIndex={currentPage}
-          onSelect={nav.goTo}
-        />
-      )}
-
       {/* メインエリア */}
       <div className="relative flex flex-1 flex-col overflow-hidden">
         {/* ツールバー (showSpread=true: 見開きボタン表示) */}
