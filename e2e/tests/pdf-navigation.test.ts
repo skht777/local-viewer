@@ -3,9 +3,10 @@
 // P2: PN-6(Escapeマンガ閉じ), PN-7(ページセレクト), PN-8(Home/End),
 //     PN-9(V幅フィット), PN-10(H高さフィット), PN-11(Q無効),
 //     PN-12(PageDown セット間), PN-13(PdfPageSidebar クリック)
+// P3: PN-14(破損PDF エラー表示)
 
 import { test, expect } from "@playwright/test";
-import { openPdfViewer } from "./helpers/navigation";
+import { navigateToMount, openPdfViewer } from "./helpers/navigation";
 
 test.describe("PDF ナビゲーション — 基本", () => {
   test("PN-1: D キーで次ページに進む", async ({ page }) => {
@@ -158,5 +159,24 @@ test.describe("PDF ナビゲーション — P2", () => {
     await secondPage.click();
 
     await expect(page).toHaveURL(/page=2/);
+  });
+});
+
+test.describe("PDF ナビゲーション — P3", () => {
+  // 破損 PDF が pdf kind として認識されない可能性、または pdf-render-error 未表示
+  test.fixme("PN-14: 破損 PDF でエラー表示される", async ({ page }) => {
+    await navigateToMount(page, "docs");
+
+    // corrupted.pdf をクリック
+    const corruptedCard = page.locator("[data-testid^='file-card-']", {
+      hasText: "corrupted.pdf",
+    });
+    await expect(corruptedCard).toBeVisible();
+    await corruptedCard.click();
+
+    // PDF レンダリングエラーが表示される
+    await expect(page.getByTestId("pdf-render-error")).toBeVisible({
+      timeout: 10_000,
+    });
   });
 });

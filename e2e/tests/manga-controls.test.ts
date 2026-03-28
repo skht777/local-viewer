@@ -2,6 +2,7 @@
 // P1: MC-1(+ズーム), MC-2(-ズーム), MC-3(0リセット), MC-6(Sスクロール)
 // P2: MC-4(ズームスライダー), MC-5(+/-ボタン), MC-7(Home先頭),
 //     MC-8(End末尾), MC-10(ページセレクト), MC-11(速度効果), MC-12(ズーム位置保持)
+// P3: MC-9(スクロール速度スライダー)
 
 import { test, expect } from "@playwright/test";
 import { openMangaViewer } from "./helpers/navigation";
@@ -135,6 +136,21 @@ test.describe("マンガモード — ナビゲーション", () => {
       () => scrollArea.evaluate((el) => el.scrollTop),
       { message: "ページセレクトでスクロール位置が変化するはず" },
     ).not.toBe(initialScroll);
+  });
+});
+
+test.describe("マンガモード — 速度スライダー", () => {
+  test("MC-9: スクロール速度スライダー操作で manga-scroll-speed-label が更新される", async ({ page }) => {
+    await openMangaViewer(page);
+
+    const speedSlider = page.getByRole("slider", { name: "スクロール速度" });
+    await expect(speedSlider).toBeVisible();
+
+    // スライダーを 2.0 に変更
+    await speedSlider.fill("2");
+
+    const speedLabel = page.getByTestId("manga-scroll-speed-label");
+    await expect(speedLabel).toHaveText("2x");
   });
 });
 

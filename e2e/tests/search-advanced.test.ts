@@ -1,7 +1,7 @@
-// 検索機能 拡張テスト (P2)
+// 検索機能 拡張テスト (P2/P3)
 // SE-2: 2文字未満非表示、SE-4: kind All復帰、SE-7: ↓選択、SE-8: ↓+Enter遷移
 // SE-9: Escape閉じ、SE-11: 0件メッセージ、SE-12: 外クリック閉じ
-// SE-14: selectパラメータでカードハイライト
+// SE-13: 相対パス表示、SE-14: selectパラメータでカードハイライト
 
 import { test, expect } from "@playwright/test";
 import { navigateToMount, waitForSearchIndex } from "./helpers/navigation";
@@ -100,6 +100,18 @@ test.describe("検索機能 — 拡張", () => {
     // 検索バー外の領域をクリック
     await page.locator("body").click({ position: { x: 10, y: 10 } });
     await expect(page.getByTestId("search-results")).not.toBeVisible();
+  });
+
+  test("SE-13: 検索結果にファイルの相対パスが表示される", async ({ page }) => {
+    await page.goto("/");
+
+    const searchInput = page.getByTestId("search-input");
+    await searchInput.fill("deep");
+    await expect(page.getByTestId("search-results")).toBeVisible();
+
+    // nested/sub1/ 配下の deep.jpg の結果に相対パスが含まれる
+    const results = page.getByTestId("search-results");
+    await expect(results).toContainText("nested/sub1/");
   });
 
   // SE-14: select パラメータでカードハイライト — FileCard に aria-current 未実装

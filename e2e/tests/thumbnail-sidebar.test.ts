@@ -1,6 +1,7 @@
 // サムネイルサイドバーテスト
 // P1: TS-1(Tabトグル — fixme), TS-2(クリックジャンプ)
 // P2: TS-3(aria-current), TS-4(ページ送りで追従)
+// P3: TS-5(見開きで2枚 aria-current)
 
 import { test, expect } from "@playwright/test";
 import { openCgViewer } from "./helpers/navigation";
@@ -71,5 +72,25 @@ test.describe("サムネイルサイドバー", () => {
     // 1番目から aria-current が消える
     const firstThumb = sidebar.locator("button").first();
     await expect(firstThumb).not.toHaveAttribute("aria-current", "true");
+  });
+
+  // 見開き時の複数 aria-current は ThumbnailSidebar 側で未対応
+  test.fixme("TS-5: 見開きモードで2枚とも aria-current が設定される", async ({ page }) => {
+    await openCgViewer(page);
+    await expect(page).toHaveURL(/index=0/);
+
+    // Q キーで見開きモードに切り替え
+    await page.keyboard.press("q");
+    const spreadBtn = page.getByTestId("cg-spread-btn");
+    await expect(spreadBtn).toHaveText("2");
+
+    const sidebar = page.locator("[data-testid='cg-viewer'] aside");
+    await expect(sidebar).toBeVisible();
+
+    // 見開き index=0 では 1番目と2番目の両方に aria-current
+    const firstThumb = sidebar.locator("button").first();
+    const secondThumb = sidebar.locator("button").nth(1);
+    await expect(firstThumb).toHaveAttribute("aria-current", "true");
+    await expect(secondThumb).toHaveAttribute("aria-current", "true");
   });
 });
