@@ -2,12 +2,12 @@
 // 実行: npx tsx e2e/fixtures/generate-fixtures.ts
 //
 // 生成するファイル:
-// - pictures/ (JPEG x3) — セットジャンプテスト用セット1
+// - pictures/ (JPEG x3 + large.jpg) — セットジャンプ + CGスクロールテスト
 // - gallery/ (JPEG x2) — セットジャンプテスト用セット2
 // - archive/images.zip (JPEG x3) — アーカイブテスト用
 // - archive/mixed.zip (JPEG + MP4) — アーカイブ+動画テスト用
-// - videos/ (MP4 x2) — 動画タブテスト用
-// - docs/sample.pdf (2ページ) — PDFテスト用
+// - videos/ (MP4 x2 + unsupported.mkv) — 動画タブテスト用
+// - docs/sample.pdf (2ページ) + corrupted.pdf — PDFテスト用
 // - nested/sub/ (JPEG x1) — ネストナビゲーション用
 // - empty/ — エッジケース
 
@@ -58,6 +58,63 @@ function generateMinimalPdf(): Buffer {
   ];
   return Buffer.from(lines.join("\n"));
 }
+
+// 大きい JPEG (2000x3000) — CG スクロールテスト用
+// 最小限の有効な JPEG: SOI + APP0 + SOF0 + SOS + EOI
+function generateLargeJpeg(width: number, height: number): Buffer {
+  const soi = Buffer.from([0xff, 0xd8]); // Start of Image
+  // APP0 (JFIF)
+  const app0 = Buffer.from([
+    0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46, 0x00, 0x01,
+    0x01, 0x00, 0x00, 0x01, 0x00, 0x01, 0x00, 0x00,
+  ]);
+  // DQT (量子化テーブル、全1)
+  const dqt = Buffer.alloc(69);
+  dqt[0] = 0xff; dqt[1] = 0xdb;
+  dqt.writeUInt16BE(67, 2); // length
+  dqt[4] = 0x00; // table 0, 8-bit
+  for (let i = 5; i < 69; i++) dqt[i] = 1;
+  // SOF0 (ベースライン、1コンポーネント グレースケール)
+  const sof0 = Buffer.alloc(11);
+  sof0[0] = 0xff; sof0[1] = 0xc0;
+  sof0.writeUInt16BE(8 + 1 * 3, 2); // length
+  sof0[4] = 8; // precision
+  sof0.writeUInt16BE(height, 5);
+  sof0.writeUInt16BE(width, 7);
+  sof0[9] = 1; // components
+  sof0[10] = 1; // component id
+  // SOF0 コンポーネントパラメータ
+  const sof0Comp = Buffer.from([0x11, 0x00]); // sampling=1x1, quant table=0
+  // DHT (ハフマンテーブル、最小の DC テーブル)
+  const dht = Buffer.from([
+    0xff, 0xc4, 0x00, 0x1f, 0x00,
+    0x00, 0x01, 0x05, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b,
+  ]);
+  // SOS (スキャンヘッダ + ダミースキャンデータ)
+  const sos = Buffer.from([
+    0xff, 0xda, 0x00, 0x08, 0x01, 0x01, 0x00, 0x00, 0x3f, 0x00,
+  ]);
+  // ダミースキャンデータ (0x00 でパディング、0xff は 0xff 0x00 にエスケープ)
+  const scanData = Buffer.alloc(100, 0x00);
+  const eoi = Buffer.from([0xff, 0xd9]);
+
+  return Buffer.concat([soi, app0, dqt, sof0, sof0Comp, dht, sos, scanData, eoi]);
+}
+
+// 最小 MKV (EBML ヘッダのみ) — ブラウザ非対応フォーマットテスト用
+const MINIMAL_MKV = Buffer.from([
+  0x1a, 0x45, 0xdf, 0xa3, // EBML ID
+  0x93, // size = 19
+  0x42, 0x86, 0x81, 0x01, // EBMLVersion = 1
+  0x42, 0xf7, 0x81, 0x01, // EBMLReadVersion = 1
+  0x42, 0xf2, 0x81, 0x04, // EBMLMaxIDLength = 4
+  0x42, 0xf3, 0x81, 0x08, // EBMLMaxSizeLength = 8
+  0x42, 0x82, 0x84, 0x6d, 0x61, 0x74, 0x72, // DocType = "matr" (truncated)
+]);
+
+// 破損 PDF — エラー表示テスト用
+const CORRUPTED_PDF = Buffer.from("%PDF-1.4\nCORRUPTED_DATA_HERE\n%%EOF\n");
 
 // --- ZIP 生成 (Node.js 標準の zlib は ZIP 形式未対応なので手動構築) ---
 
@@ -161,10 +218,11 @@ function main(): void {
     fs.rmSync(OUT_DIR, { recursive: true });
   }
 
-  // pictures/ — セットジャンプ対象 (セット1)
+  // pictures/ — セットジャンプ対象 (セット1) + CG スクロールテスト用
   writeFile(path.join(OUT_DIR, "pictures", "photo1.jpg"), MINIMAL_JPEG);
   writeFile(path.join(OUT_DIR, "pictures", "photo2.jpg"), MINIMAL_JPEG);
   writeFile(path.join(OUT_DIR, "pictures", "photo3.jpg"), MINIMAL_JPEG);
+  writeFile(path.join(OUT_DIR, "pictures", "large.jpg"), generateLargeJpeg(2000, 3000));
 
   // gallery/ — セットジャンプ対象 (セット2)
   writeFile(path.join(OUT_DIR, "gallery", "art1.jpg"), MINIMAL_JPEG);
@@ -185,12 +243,14 @@ function main(): void {
   ]);
   writeFile(path.join(OUT_DIR, "archive", "mixed.zip"), mixedZip);
 
-  // videos/ — 動画タブテスト用
+  // videos/ — 動画タブテスト用 + MKV 非対応フォーマットテスト
   writeFile(path.join(OUT_DIR, "videos", "clip1.mp4"), MINIMAL_MP4);
   writeFile(path.join(OUT_DIR, "videos", "clip2.mp4"), MINIMAL_MP4);
+  writeFile(path.join(OUT_DIR, "videos", "unsupported.mkv"), MINIMAL_MKV);
 
-  // docs/ — PDFテスト用
+  // docs/ — PDFテスト用 + 破損 PDF エラーテスト
   writeFile(path.join(OUT_DIR, "docs", "sample.pdf"), generateMinimalPdf());
+  writeFile(path.join(OUT_DIR, "docs", "corrupted.pdf"), CORRUPTED_PDF);
 
   // nested/sub1/ + nested/sub2/ — ネストナビゲーション + セット間ジャンプ用
   writeFile(path.join(OUT_DIR, "nested", "sub1", "deep.jpg"), MINIMAL_JPEG);
