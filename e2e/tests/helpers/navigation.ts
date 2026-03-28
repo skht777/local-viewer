@@ -31,10 +31,24 @@ export async function openCgViewer(page: Page, mountName = "pictures") {
   await expect(page.locator("[data-testid='cg-viewer']")).toBeVisible();
 }
 
-// CG モードからマンガモードに切り替える
+// ツールバーでマンガモードを選択してからビューワーを開く
 export async function openMangaViewer(page: Page, mountName = "pictures") {
-  await openCgViewer(page, mountName);
-  await page.keyboard.press("m");
+  await navigateToMount(page, mountName);
+
+  // ツールバーでマンガモードを選択
+  await page.getByTestId("mode-toggle-manga").click();
+  await expect(page).toHaveURL(/mode=manga/);
+
+  // 画像タブに切り替え
+  const imagesTab = page.locator("[data-testid='tab-images']");
+  await expect(imagesTab).toBeVisible();
+  await imagesTab.click();
+
+  // 最初の画像カードをクリック
+  const firstImage = page.locator("[data-testid^='file-card-']").first();
+  await expect(firstImage).toBeVisible();
+  await firstImage.click({ force: true });
+
   await expect(page.locator("[data-testid='manga-viewer']")).toBeVisible();
 }
 

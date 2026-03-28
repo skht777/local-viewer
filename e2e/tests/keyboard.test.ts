@@ -73,25 +73,4 @@ test.describe("キーボード — CG モード", () => {
     await expect(page.locator("[data-testid='cg-viewer']")).not.toBeVisible();
   });
 
-  test("M で CG ↔ マンガ切替", async ({ page }) => {
-    await openCgInPictures(page);
-    await page.keyboard.press("m");
-    await expect(page).toHaveURL(/mode=manga/);
-    await expect(page.locator("[data-testid='manga-viewer']")).toBeVisible();
-    // マンガビューワーが完全に描画されてから M を押す
-    await page.keyboard.press("m");
-    await expect(page).toHaveURL(/mode=cg/);
-  });
-});
-
-test.describe("キーボード — マンガモード", () => {
-  test("Escape でビューワーを閉じる", async ({ page }) => {
-    await openCgInPictures(page);
-    await page.keyboard.press("m");
-    await expect(page.locator("[data-testid='manga-viewer']")).toBeVisible();
-    await page.keyboard.press("Escape");
-    await expect(
-      page.locator("[data-testid='manga-viewer']"),
-    ).not.toBeVisible();
-  });
 });

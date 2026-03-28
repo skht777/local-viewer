@@ -92,7 +92,6 @@ test.describe("CG ツールバー — ボタンクリック", () => {
     await closeBtn.click();
 
     await expect(page.getByTestId("cg-viewer")).not.toBeVisible();
-    await expect(page).not.toHaveURL(/mode=/);
     await expect(page).not.toHaveURL(/index=/);
   });
 });

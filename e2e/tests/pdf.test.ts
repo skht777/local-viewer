@@ -52,7 +52,6 @@ test.describe("PDF ビューワー", () => {
     await pdfCard.click({ force: true });
 
     await expect(page).toHaveURL(/page=\d+/);
-    await expect(page).toHaveURL(/mode=/);
   });
 
   test("PDF ビューワーでページカウンターが表示される", async ({ page }) => {

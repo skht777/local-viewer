@@ -28,31 +28,6 @@ test.describe("PDF ナビゲーション — 基本", () => {
     await expect(page).toHaveURL(/page=1/);
   });
 
-  test("PN-3: M キーでマンガモードに切り替わる", async ({ page }) => {
-    await openPdfViewer(page);
-
-    await page.keyboard.press("m");
-
-    await expect(page.getByTestId("pdf-manga-viewer")).toBeVisible();
-    await expect(page).toHaveURL(/mode=manga/);
-  });
-
-  // PDF マンガ → CG 切替で pdf-cg-viewer の描画が遅延する問題を調査中
-  test.fixme("PN-4: M キーで CG モードに復帰する", async ({ page }) => {
-    await openPdfViewer(page);
-
-    // CG → マンガ
-    await page.keyboard.press("m");
-    await expect(page.getByTestId("pdf-manga-viewer")).toBeVisible();
-    await expect(page).toHaveURL(/mode=manga/);
-
-    // マンガ → CG (URL パラメータで確認)
-    await page.keyboard.press("m");
-    await expect(page).toHaveURL(/mode=cg/);
-    // PDF CG ビューワーの canvas 描画を待機
-    await expect(page.getByTestId("pdf-cg-viewer")).toBeVisible({ timeout: 15_000 });
-  });
-
   test("PN-5: Escape で CG ビューワーを閉じる", async ({ page }) => {
     await openPdfViewer(page);
     await expect(page).toHaveURL(/pdf=/);
@@ -69,10 +44,13 @@ test.describe("PDF ナビゲーション — 基本", () => {
 test.describe("PDF ナビゲーション — P2", () => {
   // PDF マンガモードで Escape が効かない問題
   test.fixme("PN-6: Escape でマンガビューワーを閉じる", async ({ page }) => {
-    await openPdfViewer(page);
+    // ツールバーでマンガモードを選択してから PDF を開く
+    await navigateToMount(page, "docs");
+    await page.getByTestId("mode-toggle-manga").click();
 
-    // マンガモードに切り替え
-    await page.keyboard.press("m");
+    const pdfCard = page.locator("[data-testid^='file-card-']", { hasText: "sample.pdf" });
+    await expect(pdfCard).toBeVisible();
+    await pdfCard.click();
     await expect(page.getByTestId("pdf-manga-viewer")).toBeVisible();
 
     // Escape で閉じる

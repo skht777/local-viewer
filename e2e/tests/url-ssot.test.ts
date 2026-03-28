@@ -4,7 +4,7 @@
 import { test, expect } from "@playwright/test";
 
 test.describe("URL SSOT", () => {
-  test("ビューワーを閉じると index と mode が URL から削除される", async ({
+  test("ビューワーを閉じると index が URL から削除される", async ({
     page,
   }) => {
     await page.goto("/");
@@ -29,14 +29,12 @@ test.describe("URL SSOT", () => {
     // サムネイル読み込みによるDOM再構築を待つ
     await firstImage.click({ force: true });
     await expect(page).toHaveURL(/index=0/);
-    await expect(page).toHaveURL(/mode=cg/);
 
     // ビューワーを閉じる（Escape キー）
     await expect(page.locator("[data-testid='cg-viewer']")).toBeVisible();
     await page.keyboard.press("Escape");
     await expect(page.locator("[data-testid='cg-viewer']")).not.toBeVisible({ timeout: 10_000 });
     await expect(page).not.toHaveURL(/index=/);
-    await expect(page).not.toHaveURL(/mode=/);
   });
 
   test("タブ切り替えで URL の tab パラメータが更新される", async ({
@@ -98,6 +96,5 @@ test.describe("URL SSOT", () => {
     // 同じビューワー状態が復元される
     await expect(page.locator("[data-testid='cg-viewer']")).toBeVisible();
     await expect(page).toHaveURL(/index=1/);
-    await expect(page).toHaveURL(/mode=cg/);
   });
 });

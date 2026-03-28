@@ -70,7 +70,6 @@ test.describe("アーカイブ", () => {
     // サムネイル読み込みによる DOM 再構築を待つ
     await firstImage.click({ force: true });
     await expect(page.locator("[data-testid='cg-viewer']")).toBeVisible();
-    await expect(page).toHaveURL(/mode=cg/);
   });
 
   test("AR-4: mixed.zip で画像と動画の両方が表示される", async ({ page }) => {

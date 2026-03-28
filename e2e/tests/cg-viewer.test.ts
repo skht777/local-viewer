@@ -36,7 +36,6 @@ test.describe("CGモード", () => {
     page,
   }) => {
     await openCgViewer(page);
-    await expect(page).toHaveURL(/mode=cg/);
     await expect(page).toHaveURL(/index=0/);
   });
 
@@ -70,15 +69,6 @@ test.describe("CGモード", () => {
     await page.keyboard.press("Escape");
     await expect(page.locator("[data-testid='cg-viewer']")).not.toBeVisible();
     await expect(page).not.toHaveURL(/index=/);
-    await expect(page).not.toHaveURL(/mode=/);
   });
 
-  test("M キーでマンガモードに切り替わる", async ({ page }) => {
-    await openCgViewer(page);
-    await page.keyboard.press("m");
-    await expect(page).toHaveURL(/mode=manga/);
-    await expect(
-      page.locator("[data-testid='manga-viewer']"),
-    ).toBeVisible();
-  });
 });
