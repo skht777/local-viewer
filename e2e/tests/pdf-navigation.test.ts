@@ -42,8 +42,7 @@ test.describe("PDF ナビゲーション — 基本", () => {
 });
 
 test.describe("PDF ナビゲーション — P2", () => {
-  // PDF マンガモードで Escape が効かない問題
-  test.fixme("PN-6: Escape でマンガビューワーを閉じる", async ({ page }) => {
+  test("PN-6: Escape でマンガビューワーを閉じる", async ({ page }) => {
     // ツールバーでマンガモードを選択してから PDF を開く
     await navigateToMount(page, "docs");
     await page.getByTestId("mode-toggle-manga").click();
