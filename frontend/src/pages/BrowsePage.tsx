@@ -36,6 +36,7 @@ export default function BrowsePage() {
     closePdfViewer,
     setIndex,
     setPdfPage,
+    buildBrowseSearch,
   } = useViewerParams();
 
   // 現在のディレクトリのデータ
@@ -72,7 +73,6 @@ export default function BrowsePage() {
       initialPage: params.pdfPage,
       mode: params.mode,
       onPageChange: setPdfPage,
-      onModeChange: setMode,
       onClose: closePdfViewer,
     };
     if (params.mode === "manga") {
@@ -95,7 +95,6 @@ export default function BrowsePage() {
           currentNodeId={data?.current_node_id ?? null}
           mode={params.mode}
           onIndexChange={setIndex}
-          onModeChange={setMode}
           onClose={closeViewer}
         />
       );
@@ -110,7 +109,6 @@ export default function BrowsePage() {
         currentNodeId={data?.current_node_id ?? null}
         mode={params.mode}
         onIndexChange={setIndex}
-        onModeChange={setMode}
         onClose={closeViewer}
       />
     );
@@ -118,7 +116,11 @@ export default function BrowsePage() {
 
   return (
     <div className="flex min-h-screen flex-col">
-      <BrowseHeader currentName={data?.current_name ?? ""} />
+      <BrowseHeader
+        currentName={data?.current_name ?? ""}
+        mode={params.mode}
+        onModeChange={setMode}
+      />
       <ViewerTabs activeTab={params.tab} onTabChange={setTab} />
       <div className="flex flex-1 overflow-hidden">
         {isSidebarOpen && rootData && (
@@ -131,8 +133,7 @@ export default function BrowsePage() {
             entries={data?.entries ?? []}
             isLoading={isLoading}
             onNavigate={(id, options) => {
-              const search = options?.tab ? `?tab=${options.tab}` : "";
-              navigate(`/browse/${id}${search}`);
+              navigate(`/browse/${id}${buildBrowseSearch({ tab: options?.tab })}`);
             }}
             onImageClick={openViewer}
             onPdfClick={openPdfViewer}

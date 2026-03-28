@@ -2,17 +2,22 @@
 // - サイドバートグルボタン
 // - 「← トップ」ナビゲーション
 // - 現在パス表示
+// - モード切替トグル（CG / マンガ）
 // - 検索バー
 
 import { useNavigate } from "react-router-dom";
+import type { ViewerMode } from "../hooks/useViewerParams";
 import { useViewerStore } from "../stores/viewerStore";
+import { ModeToggle } from "./ModeToggle";
 import { SearchBar } from "./SearchBar";
 
 interface BrowseHeaderProps {
   currentName: string;
+  mode: ViewerMode;
+  onModeChange: (mode: ViewerMode) => void;
 }
 
-export function BrowseHeader({ currentName }: BrowseHeaderProps) {
+export function BrowseHeader({ currentName, mode, onModeChange }: BrowseHeaderProps) {
   const navigate = useNavigate();
   const toggleSidebar = useViewerStore((s) => s.toggleSidebar);
 
@@ -33,9 +38,12 @@ export function BrowseHeader({ currentName }: BrowseHeaderProps) {
       >
         ← トップ
       </button>
-      <span className="text-sm text-gray-400">{currentName}</span>
-      <div className="ml-auto w-64">
-        <SearchBar />
+      <span className="min-w-0 truncate text-sm text-gray-400">{currentName}</span>
+      <div className="ml-auto flex items-center gap-4">
+        <ModeToggle mode={mode} onModeChange={onModeChange} />
+        <div className="w-64">
+          <SearchBar />
+        </div>
       </div>
     </header>
   );
