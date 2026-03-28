@@ -1,7 +1,7 @@
 // CG ツールバー操作テスト
 // P1: CT-1(V幅), CT-2(H高さ), CT-5(Q見開き)
 // P2: CT-3(Wボタン幅), CT-4(Hボタン高さ), CT-6(見開きボタン), CT-7(ページセレクト), CT-8(閉じる)
-// P3: CT-9(Fキーフルスクリーン), CT-10(Fボタンフルスクリーン)
+
 
 import { test, expect } from "@playwright/test";
 import { openCgViewer } from "./helpers/navigation";
@@ -93,28 +93,5 @@ test.describe("CG ツールバー — ボタンクリック", () => {
 
     await expect(page.getByTestId("cg-viewer")).not.toBeVisible();
     await expect(page).not.toHaveURL(/index=/);
-  });
-});
-
-test.describe("CG ツールバー — フルスクリーン", () => {
-  // headless ブラウザではフルスクリーン API が動作しない
-  test.fixme("CT-9: F キーでフルスクリーンに切り替わる", async ({ page }) => {
-    await openCgViewer(page);
-
-    await page.keyboard.press("f");
-
-    const isFullscreen = await page.evaluate(() => !!document.fullscreenElement);
-    expect(isFullscreen).toBe(true);
-  });
-
-  // headless ブラウザではフルスクリーン API が動作しない
-  test.fixme("CT-10: F ボタンクリックでフルスクリーンに切り替わる", async ({ page }) => {
-    await openCgViewer(page);
-
-    const fullscreenBtn = page.getByRole("button", { name: "フルスクリーン" });
-    await fullscreenBtn.click();
-
-    const isFullscreen = await page.evaluate(() => !!document.fullscreenElement);
-    expect(isFullscreen).toBe(true);
   });
 });
