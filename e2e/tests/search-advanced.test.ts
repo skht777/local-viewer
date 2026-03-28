@@ -114,8 +114,7 @@ test.describe("検索機能 — 拡張", () => {
     await expect(results).toContainText("nested/sub1/");
   });
 
-  // SE-14: select パラメータでカードハイライト — FileCard に aria-current 未実装
-  test.fixme("SE-14: select パラメータで FileBrowser カードがハイライトされる", async ({ page }) => {
+  test("SE-14: select パラメータで FileBrowser カードがハイライトされる", async ({ page }) => {
     await page.goto("/");
 
     const searchInput = page.getByTestId("search-input");
