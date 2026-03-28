@@ -31,15 +31,9 @@ test.describe("URL SSOT", () => {
     await expect(page).toHaveURL(/index=0/);
     await expect(page).toHaveURL(/mode=cg/);
 
-    // ビューワーを閉じる（✕ ボタンをクリック）
-    const closeButton = page.locator("[data-testid='cg-viewer']").getByRole("button", { name: /閉じる|close|×/i });
-    if (await closeButton.isVisible()) {
-      await closeButton.click();
-    } else {
-      // ✕ ボタンがない場合は Escape（フォーカス確保のため2回）
-      await page.keyboard.press("Escape");
-      await page.keyboard.press("Escape");
-    }
+    // ビューワーを閉じる（Escape キー）
+    await expect(page.locator("[data-testid='cg-viewer']")).toBeVisible();
+    await page.keyboard.press("Escape");
     await expect(page.locator("[data-testid='cg-viewer']")).not.toBeVisible({ timeout: 10_000 });
     await expect(page).not.toHaveURL(/index=/);
     await expect(page).not.toHaveURL(/mode=/);
