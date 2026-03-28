@@ -27,7 +27,6 @@ interface CgViewerProps {
   currentNodeId: string | null;
   mode: ViewerMode;
   onIndexChange: (index: number) => void;
-  onModeChange: (mode: ViewerMode) => void;
   onClose: () => void;
 }
 
@@ -54,7 +53,6 @@ export function CgViewer({
   currentNodeId,
   mode,
   onIndexChange,
-  onModeChange,
   onClose,
 }: CgViewerProps) {
   const fitMode = useViewerStore((s) => s.fitMode);
@@ -97,7 +95,6 @@ export function CgViewer({
     cycleSpread: cycleSpreadMode,
     scrollUp: () => imageAreaRef.current?.scrollBy({ top: -100, behavior: "instant" }),
     scrollDown: () => imageAreaRef.current?.scrollBy({ top: 100, behavior: "instant" }),
-    toggleMode: () => onModeChange(mode === "cg" ? "manga" : "cg"),
     goNextSet: setJump.goNextSet,
     goPrevSet: setJump.goPrevSet,
     goNextSetParent: setJump.goNextSetParent,

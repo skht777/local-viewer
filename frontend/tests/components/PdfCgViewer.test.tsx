@@ -64,7 +64,6 @@ function defaultProps(overrides: Partial<React.ComponentProps<typeof PdfCgViewer
     initialPage: 1,
     mode: "cg" as const,
     onPageChange: vi.fn(),
-    onModeChange: vi.fn(),
     onClose: vi.fn(),
     ...overrides,
   };

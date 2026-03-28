@@ -35,7 +35,6 @@ describe("useMangaKeyboard", () => {
     scrollToBottom: vi.fn(),
     onEscape: vi.fn(),
     toggleFullscreen: vi.fn(),
-    toggleMode: vi.fn(),
     goNextSet: vi.fn(),
     goPrevSet: vi.fn(),
     goNextSetParent: vi.fn(),
@@ -91,11 +90,7 @@ describe("useMangaKeyboard", () => {
     expect(defaultCallbacks.toggleFullscreen).toHaveBeenCalledOnce();
   });
 
-  test("M キーで toggleMode が呼ばれる", () => {
-    renderHook(() => useMangaKeyboard(defaultCallbacks));
-    pressKey("m");
-    expect(defaultCallbacks.toggleMode).toHaveBeenCalledOnce();
-  });
+
 
   test("Escape キーで onEscape が呼ばれる", () => {
     renderHook(() => useMangaKeyboard(defaultCallbacks));

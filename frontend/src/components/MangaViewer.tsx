@@ -27,7 +27,6 @@ interface MangaViewerProps {
   currentNodeId: string | null;
   mode: ViewerMode;
   onIndexChange: (index: number) => void;
-  onModeChange: (mode: ViewerMode) => void;
   onClose: () => void;
 }
 
@@ -39,7 +38,6 @@ export function MangaViewer({
   currentNodeId,
   mode,
   onIndexChange,
-  onModeChange,
   onClose,
 }: MangaViewerProps) {
   const zoomLevel = useViewerStore((s) => s.zoomLevel);
@@ -130,7 +128,6 @@ export function MangaViewer({
     scrollToBottom: mangaScroll.scrollToBottom,
     onEscape: handleEscape,
     toggleFullscreen,
-    toggleMode: () => onModeChange(mode === "manga" ? "cg" : "manga"),
     goNextSet: setJump.goNextSet,
     goPrevSet: setJump.goPrevSet,
     goNextSetParent: setJump.goNextSetParent,

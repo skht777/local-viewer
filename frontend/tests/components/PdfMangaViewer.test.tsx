@@ -91,7 +91,6 @@ function defaultProps(overrides: Partial<React.ComponentProps<typeof PdfMangaVie
     initialPage: 1,
     mode: "manga" as const,
     onPageChange: vi.fn(),
-    onModeChange: vi.fn(),
     onClose: vi.fn(),
     ...overrides,
   };

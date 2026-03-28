@@ -32,7 +32,6 @@ const defaultProps = {
   currentNodeId: null,
   mode: "cg" as const,
   onIndexChange: () => {},
-  onModeChange: () => {},
   onClose: () => {},
 };
 

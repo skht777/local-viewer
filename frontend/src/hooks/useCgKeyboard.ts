@@ -16,7 +16,6 @@ interface CgKeyboardCallbacks {
   cycleSpread: () => void;
   scrollUp: () => void;
   scrollDown: () => void;
-  toggleMode?: () => void;
   goNextSet?: () => void;
   goPrevSet?: () => void;
   goNextSetParent?: () => void;
@@ -45,9 +44,6 @@ export function useCgKeyboard(callbacks: CgKeyboardCallbacks): void {
 
   // フルスクリーン
   useHotkeys("f", () => callbacks.toggleFullscreen());
-
-  // CG↔マンガモード切替
-  useHotkeys("m", () => callbacks.toggleMode?.());
 
   // Escape（優先順位は呼び出し元で階層化済み）
   useHotkeys("escape", () => callbacks.onEscape());

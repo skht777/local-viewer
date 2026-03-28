@@ -136,13 +136,6 @@ describe("useCgKeyboard", () => {
     expect(defaultCallbacks.scrollDown).toHaveBeenCalledOnce();
   });
 
-  test("M キーで toggleMode が呼ばれる", () => {
-    const callbacks = { ...defaultCallbacks, toggleMode: vi.fn() };
-    renderHook(() => useCgKeyboard(callbacks));
-    pressKey("m");
-    expect(callbacks.toggleMode).toHaveBeenCalledOnce();
-  });
-
   // --- Phase 3: セット間ジャンプ ---
 
   test("PageDown キーで goNextSet が呼ばれる", () => {

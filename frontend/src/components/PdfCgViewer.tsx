@@ -27,7 +27,6 @@ interface PdfCgViewerProps {
   initialPage: number;
   mode: ViewerMode;
   onPageChange: (page: number) => void;
-  onModeChange: (mode: ViewerMode) => void;
   onClose: () => void;
 }
 
@@ -38,7 +37,6 @@ export function PdfCgViewer({
   initialPage,
   mode,
   onPageChange,
-  onModeChange,
   onClose,
 }: PdfCgViewerProps) {
   const fitMode = useViewerStore((s) => s.fitMode);
@@ -100,7 +98,6 @@ export function PdfCgViewer({
     cycleSpread: cycleSpreadMode,
     scrollUp: () => imageAreaRef.current?.scrollBy({ top: -100, behavior: "instant" }),
     scrollDown: () => imageAreaRef.current?.scrollBy({ top: 100, behavior: "instant" }),
-    toggleMode: () => onModeChange(mode === "cg" ? "manga" : "cg"),
     goNextSet: setJump.goNextSet,
     goPrevSet: setJump.goPrevSet,
     goNextSetParent: setJump.goNextSetParent,

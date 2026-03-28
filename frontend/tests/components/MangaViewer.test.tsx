@@ -43,7 +43,6 @@ const defaultProps = {
   currentNodeId: null,
   mode: "manga" as const,
   onIndexChange: vi.fn(),
-  onModeChange: vi.fn(),
   onClose: vi.fn(),
 };
 

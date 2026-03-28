@@ -12,7 +12,6 @@ interface MangaKeyboardCallbacks {
   scrollToBottom: () => void;
   onEscape: () => void;
   toggleFullscreen: () => void;
-  toggleMode?: () => void;
   goNextSet?: () => void;
   goPrevSet?: () => void;
   goNextSetParent?: () => void;
@@ -33,9 +32,6 @@ export function useMangaKeyboard(callbacks: MangaKeyboardCallbacks): void {
 
   // フルスクリーン
   useHotkeys("f", () => callbacks.toggleFullscreen());
-
-  // CG↔マンガモード切替
-  useHotkeys("m", () => callbacks.toggleMode?.());
 
   // Escape（優先順位は呼び出し元で階層化済み）
   useHotkeys("escape", () => callbacks.onEscape());

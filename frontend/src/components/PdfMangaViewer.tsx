@@ -25,7 +25,6 @@ interface PdfMangaViewerProps {
   initialPage: number;
   mode: ViewerMode;
   onPageChange: (page: number) => void;
-  onModeChange: (mode: ViewerMode) => void;
   onClose: () => void;
 }
 
@@ -36,7 +35,6 @@ export function PdfMangaViewer({
   initialPage,
   mode,
   onPageChange,
-  onModeChange,
   onClose,
 }: PdfMangaViewerProps) {
   const zoomLevel = useViewerStore((s) => s.zoomLevel);
@@ -146,7 +144,6 @@ export function PdfMangaViewer({
     scrollToBottom: mangaScroll.scrollToBottom,
     onEscape: handleEscape,
     toggleFullscreen,
-    toggleMode: () => onModeChange(mode === "manga" ? "cg" : "manga"),
     goNextSet: setJump.goNextSet,
     goPrevSet: setJump.goPrevSet,
     goNextSetParent: setJump.goNextSetParent,
