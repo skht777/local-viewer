@@ -22,23 +22,16 @@ codex CLI を使ってコードレビューを実行する。
 
 git の変更差分をレビューする。
 
-### 前提チェック
+### 前提チェック + ベースブランチ検出
 
-実行前に Git 管理下か確認する:
-
-```bash
-git rev-parse --is-inside-work-tree
-```
-
-失敗した場合は「Git 管理外のため review モードは使用不可。ファイルを指定して exec モードを使用してください」とユーザーに伝える。
-
-### ベースブランチの検出
-
-`--base` 使用時、ブランチ名はハードコードせず自動検出する:
+1回の Bash 呼び出しで前提チェックとベースブランチ検出をまとめて実行する:
 
 ```bash
-git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@'
+git rev-parse --is-inside-work-tree && git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@'
 ```
+
+- `git rev-parse` が失敗した場合は「Git 管理外のため review モードは使用不可。ファイルを指定して exec モードを使用してください」とユーザーに伝える
+- `--base` 使用時、ブランチ名は上記で自動検出した値を使う
 
 ### コマンド
 
@@ -57,20 +50,35 @@ codex review --commit <SHA> "<レビュー指示>" -o /tmp/codex-review-output.m
 
 ## Mode B: exec モード（ファイル指定）
 
-特定ファイルを `/tmp` にコピーし、codex exec でレビューする。
+### ファイル配置の判定
 
-### 手順
+指定ファイルの絶対パスを確認し、以下のルールで Case A / Case B を判定する:
 
-1. `mktemp -d` で一意な作業ディレクトリを作成
-2. 指定ファイルをディレクトリ構造を保持してコピー
-3. `codex exec --skip-git-repo-check` を実行
-4. 出力を Read ツールで読み取りユーザーに提示
-5. 作業ディレクトリをクリーンアップ
+- 全ファイルが「プロジェクトルート配下」または「`~/.claude` 配下」→ **Case A**
+- それ以外のパスを含む → **Case B**
+
+### Case A: プロジェクト内 or `~/.claude` 内（主要ケース）
+
+コピー不要。`--add-dir ~/.claude` でプロジェクトと `~/.claude` 両方にアクセス可能。
+
+```bash
+codex exec -C "$(git rev-parse --show-toplevel)" \
+  --add-dir ~/.claude \
+  -s read-only \
+  "<レビュー指示>" \
+  -o /tmp/codex-review-output.md
+```
+
+- `--skip-git-repo-check` 不要（プロジェクトは Git 管理下）
+- Bash 呼び出し: 1回のみ
+
+### Case B: 外部ファイルを含む
+
+全ファイルを `/tmp` にコピーし、codex exec でレビューする。
 
 ```bash
 # 1. 一意な作業ディレクトリを作成
 workdir=$(mktemp -d /tmp/codex-review-XXXXXX)
-outfile=$(mktemp /tmp/codex-review-output-XXXXXX.md)
 
 # 2. コピー（ディレクトリ構造保持）
 for f in <files>; do
@@ -83,11 +91,11 @@ codex exec -C "$workdir" \
   -s read-only \
   --skip-git-repo-check \
   "<レビュー指示>" \
-  -o "$outfile"
+  -o /tmp/codex-review-output.md
 
-# 4. Read ツールで $outfile を読む
-# 5. クリーンアップ
-rm -rf "$workdir" "$outfile"
+# 4. Read ツールで出力ファイルを読む
+# 5. クリーンアップ（引数で削除対象を指定）
+.claude/scripts/codex-review-cleanup.sh "$workdir" /tmp/codex-review-output.md
 ```
 
 ## レビュー指示のデフォルト
@@ -95,13 +103,39 @@ rm -rf "$workdir" "$outfile"
 ユーザーが具体的な指示を出さない場合:
 
 ```
-以下のコードをレビューしてください。
-- コードの品質、バグ、セキュリティリスクを指摘
-- 改善提案を具体的に提示
+以下のコードをプロジェクト規約に基づきレビューしてください。
+
+## レビュー観点
+
+1. アーキテクチャ・依存関係
+   - レイヤー間の依存方向（Backend: routers→services→infrastructure、Frontend: pages→components→hooks→stores）
+   - path_security を経由しないファイルアクセスの有無
+
+2. セキュリティ
+   - パストラバーサル（resolve() + ROOT_DIR 検証）
+   - ユーザー入力のパス・コマンドへの直接組み込み
+   - シークレットのハードコード
+   - アーカイブ操作の安全性
+
+3. コーディング規約
+   - 命名規則（Python: snake_case、TypeScript: PascalCase/camelCase）
+   - 単一責任原則・Early Return・ガード節
+   - ファイル500行超過
+
+4. コメント駆動
+   - 複雑なロジック前の why/what コメントの有無
+
+5. バグ・エッジケース
+   - 未処理エラー、null/undefined の見落とし
+   - 非同期処理の競合・リソースリーク
+   - CPU バウンド処理によるイベントループブロック
+
+6. 改善提案
+   - 各指摘に重要度（Critical/Warning/Info）と修正例を付与
 ```
 
 ## 出力
 
-- `-o $outfile` でキャプチャ（`mktemp` で生成した一意なパス）
+- `-o /tmp/codex-review-output.md` でキャプチャ
 - Read ツールで読み取り、ユーザーに提示
 - 長い場合は要約を先に出し、詳細は求められたら提示
