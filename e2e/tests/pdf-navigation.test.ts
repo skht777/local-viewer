@@ -114,8 +114,7 @@ test.describe("PDF ナビゲーション — P2", () => {
     await expect(spreadBtn).toHaveText("2");
   });
 
-  // PDF ビューワーでのセット間ジャンプが未実装の可能性
-  test.fixme("PN-12: X キーでセット間ジャンプの NavigationPrompt が表示される", async ({ page }) => {
+  test("PN-12: X キーでセット間ジャンプの NavigationPrompt が表示される", async ({ page }) => {
     await openPdfViewer(page);
 
     await page.keyboard.press("x");

@@ -248,9 +248,10 @@ function main(): void {
   writeFile(path.join(OUT_DIR, "videos", "clip2.mp4"), MINIMAL_MP4);
   writeFile(path.join(OUT_DIR, "videos", "unsupported.mkv"), MINIMAL_MKV);
 
-  // docs/ — PDFテスト用 + 破損 PDF エラーテスト
+  // docs/ — PDFテスト用 + 破損 PDF エラーテスト + セットジャンプ対象
   writeFile(path.join(OUT_DIR, "docs", "sample.pdf"), generateMinimalPdf());
   writeFile(path.join(OUT_DIR, "docs", "corrupted.pdf"), CORRUPTED_PDF);
+  writeFile(path.join(OUT_DIR, "docs", "zzz_next.pdf"), generateMinimalPdf());
 
   // nested/sub1/ + nested/sub2/ — ネストナビゲーション + セット間ジャンプ用
   writeFile(path.join(OUT_DIR, "nested", "sub1", "deep.jpg"), MINIMAL_JPEG);
