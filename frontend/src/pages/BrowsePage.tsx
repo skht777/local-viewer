@@ -6,7 +6,7 @@
 
 import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { browseNodeOptions, browseRootOptions } from "../hooks/api/browseQueries";
 import { useViewerParams } from "../hooks/useViewerParams";
 import { useViewerStore } from "../stores/viewerStore";
@@ -38,6 +38,10 @@ export default function BrowsePage() {
     setPdfPage,
     buildBrowseSearch,
   } = useViewerParams();
+
+  // 検索結果からの遷移で select パラメータが指定されている場合のハイライト用
+  const [searchParams] = useSearchParams();
+  const selectedNodeId = searchParams.get("select") ?? undefined;
 
   // 現在のディレクトリのデータ
   const { data, isLoading } = useQuery(browseNodeOptions(nodeId));
@@ -138,6 +142,7 @@ export default function BrowsePage() {
             onImageClick={openViewer}
             onPdfClick={openPdfViewer}
             tab={params.tab}
+            selectedNodeId={selectedNodeId}
           />
         )}
       </div>

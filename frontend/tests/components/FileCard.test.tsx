@@ -37,4 +37,16 @@ describe("FileCard", () => {
     render(<FileCard entry={imageEntry} onClick={() => {}} />);
     expect(screen.getByText("2.0 KB")).toBeInTheDocument();
   });
+
+  test("isSelected=true で aria-current='true' が設定される", () => {
+    render(<FileCard entry={imageEntry} onClick={() => {}} isSelected />);
+    const button = screen.getByTestId("file-card-img001");
+    expect(button).toHaveAttribute("aria-current", "true");
+  });
+
+  test("isSelected=false で aria-current が設定されない", () => {
+    render(<FileCard entry={imageEntry} onClick={() => {}} />);
+    const button = screen.getByTestId("file-card-img001");
+    expect(button).not.toHaveAttribute("aria-current");
+  });
 });

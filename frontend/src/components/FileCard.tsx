@@ -9,6 +9,7 @@ import { formatFileSize } from "../utils/format";
 interface FileCardProps {
   entry: BrowseEntry;
   onClick: (entry: BrowseEntry) => void;
+  isSelected?: boolean;
 }
 
 // kind に応じたアイコン
@@ -29,7 +30,7 @@ function kindIcon(kind: BrowseEntry["kind"]): string {
   }
 }
 
-export function FileCard({ entry, onClick }: FileCardProps) {
+export function FileCard({ entry, onClick, isSelected }: FileCardProps) {
   const [hasImageError, setHasImageError] = useState(false);
   const isImagePreview = entry.kind === "image" && !hasImageError;
 
@@ -37,8 +38,9 @@ export function FileCard({ entry, onClick }: FileCardProps) {
     <button
       type="button"
       data-testid={`file-card-${entry.node_id}`}
+      aria-current={isSelected ? "true" : undefined}
       onClick={() => onClick(entry)}
-      className="flex cursor-pointer flex-col overflow-hidden rounded-lg bg-gray-800 transition-colors hover:bg-gray-700"
+      className={`flex cursor-pointer flex-col overflow-hidden rounded-lg transition-colors ${isSelected ? "bg-blue-600/30 ring-2 ring-blue-500" : "bg-gray-800 hover:bg-gray-700"}`}
     >
       <div className="flex aspect-square items-center justify-center bg-gray-700 text-4xl">
         {isImagePreview ? (

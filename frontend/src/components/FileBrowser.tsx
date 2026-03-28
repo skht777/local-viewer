@@ -15,6 +15,7 @@ interface FileBrowserProps {
   onImageClick?: (imageIndex: number) => void;
   onPdfClick?: (nodeId: string) => void;
   tab: ViewerTab;
+  selectedNodeId?: string;
 }
 
 // タブに応じて表示する kind をフィルタ
@@ -45,6 +46,7 @@ export function FileBrowser({
   onImageClick,
   onPdfClick,
   tab,
+  selectedNodeId,
 }: FileBrowserProps) {
   const filtered = filterByTab(entries, tab);
 
@@ -73,7 +75,12 @@ export function FileBrowser({
       {!isLoading && filtered.length > 0 && (
         <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
           {filtered.map((entry) => (
-            <FileCard key={entry.node_id} entry={entry} onClick={handleClick} />
+            <FileCard
+              key={entry.node_id}
+              entry={entry}
+              onClick={handleClick}
+              isSelected={entry.node_id === selectedNodeId}
+            />
           ))}
         </div>
       )}
