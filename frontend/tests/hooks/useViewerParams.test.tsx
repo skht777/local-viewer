@@ -65,7 +65,7 @@ describe("useViewerParams", () => {
     expect(result.current.isViewerOpen).toBe(false);
   });
 
-  test("openViewerでindex・mode・tabがURLに設定される", () => {
+  test("openViewerでindexとtabがURLに設定される", () => {
     const { result } = renderHook(() => useViewerParams(), {
       wrapper: createWrapper(["/?tab=filesets"]),
     });
@@ -78,7 +78,7 @@ describe("useViewerParams", () => {
     expect(result.current.isViewerOpen).toBe(true);
   });
 
-  test("closeViewerでindexとmodeがURLから削除される", () => {
+  test("closeViewerでindexがURLから削除される", () => {
     const { result } = renderHook(() => useViewerParams(), {
       wrapper: createWrapper(["/?tab=images&index=3&mode=cg"]),
     });
@@ -101,7 +101,7 @@ describe("useViewerParams", () => {
     expect(result.current.params.pdfPage).toBe(1);
   });
 
-  test("openPdfViewerでpdfとpageとmodeがURLに設定される", () => {
+  test("openPdfViewerでpdfとpageがURLに設定される", () => {
     const { result } = renderHook(() => useViewerParams(), {
       wrapper: createWrapper(["/?tab=filesets"]),
     });
@@ -158,6 +158,38 @@ describe("useViewerParams", () => {
     });
     expect(result.current.params.pdfPage).toBe(5);
   });
+
+  // --- mode 正規化 ---
+
+  test("setMode('manga')でURLにmode=mangaが設定される", () => {
+    const { result } = renderHook(() => useViewerParams(), {
+      wrapper: createWrapper(),
+    });
+    act(() => {
+      result.current.setMode("manga");
+    });
+    expect(result.current.params.mode).toBe("manga");
+  });
+
+  test("setMode('cg')でURLからmodeが削除される", () => {
+    const { result } = renderHook(() => useViewerParams(), {
+      wrapper: createWrapper(["/?mode=manga"]),
+    });
+    expect(result.current.params.mode).toBe("manga");
+    act(() => {
+      result.current.setMode("cg");
+    });
+    expect(result.current.params.mode).toBe("cg");
+  });
+
+  test("不正なmode値はcgに正規化される", () => {
+    const { result } = renderHook(() => useViewerParams(), {
+      wrapper: createWrapper(["/?mode=invalid"]),
+    });
+    expect(result.current.params.mode).toBe("cg");
+  });
+
+  // --- 排他制御 ---
 
   test("pdfとindexが同時に存在する場合pdfが優先される", () => {
     const { result } = renderHook(() => useViewerParams(), {

@@ -1,6 +1,8 @@
 // URL 状態管理フック
 // - useSearchParams をラップして型安全にアクセス
 // - URL が Single Source of Truth
+// - mode は browse スコープ: "manga" のみ URL に書き込み、"cg"(デフォルト) は省略
+// - index/pdf/page は viewer スコープ: ビューワー close で削除
 // - pdf と index は排他: openPdfViewer で index/tab 削除、openViewer で pdf/page 削除
 
 import { useSearchParams } from "react-router-dom";
@@ -28,6 +30,7 @@ interface UseViewerParamsReturn {
   openPdfViewer: (nodeId: string) => void;
   closePdfViewer: () => void;
   setPdfPage: (page: number) => void;
+  buildBrowseSearch: (overrides?: { tab?: string }) => string;
 }
 
 export function useViewerParams(): UseViewerParamsReturn {
@@ -36,7 +39,9 @@ export function useViewerParams(): UseViewerParamsReturn {
   const tab = (searchParams.get("tab") ?? "filesets") as ViewerTab;
   const hasIndex = searchParams.has("index");
   const index = hasIndex ? parseInt(searchParams.get("index")!, 10) : -1;
-  const mode = (searchParams.get("mode") ?? "cg") as ViewerMode;
+  // 不正値ガード: "manga" 以外はすべて "cg" に正規化
+  const rawMode = searchParams.get("mode");
+  const mode: ViewerMode = rawMode === "manga" ? "manga" : "cg";
   const pdfNodeId = searchParams.get("pdf") ?? null;
   const pdfPage = parseInt(searchParams.get("page") ?? "1", 10) || 1;
 
@@ -64,25 +69,30 @@ export function useViewerParams(): UseViewerParamsReturn {
     );
   };
 
+  // mode 正規化: "manga" のみ URL に書き込み、"cg" は省略（デフォルト）
   const setMode = (newMode: ViewerMode) => {
     setSearchParams(
       (prev) => {
         const next = new URLSearchParams(prev);
-        next.set("mode", newMode);
+        if (newMode === "manga") {
+          next.set("mode", "manga");
+        } else {
+          next.delete("mode");
+        }
         return next;
       },
       { replace: true },
     );
   };
 
-  // 画像ビューワーを開く: tab=images + index + mode を設定、pdf/page を削除
+  // 画像ビューワーを開く: tab=images + index を設定、pdf/page を削除
+  // mode は browse スコープで管理済みなのでここでは操作しない
   const openViewer = (newIndex: number) => {
     setSearchParams(
       (prev) => {
         const next = new URLSearchParams(prev);
         next.set("tab", "images");
         next.set("index", String(newIndex));
-        next.set("mode", next.get("mode") ?? "cg");
         // PDF パラメータを排他的に削除
         next.delete("pdf");
         next.delete("page");
@@ -92,27 +102,26 @@ export function useViewerParams(): UseViewerParamsReturn {
     );
   };
 
-  // 画像ビューワーを閉じる: index と mode を URL から削除
+  // 画像ビューワーを閉じる: viewer スコープ (index) のみ削除
   const closeViewer = () => {
     setSearchParams(
       (prev) => {
         const next = new URLSearchParams(prev);
         next.delete("index");
-        next.delete("mode");
         return next;
       },
       { replace: true },
     );
   };
 
-  // PDF ビューワーを開く: pdf/page/mode を設定、index/tab を削除
+  // PDF ビューワーを開く: pdf/page を設定、index/tab を削除
+  // mode は browse スコープで管理済みなのでここでは操作しない
   const openPdfViewer = (nodeId: string) => {
     setSearchParams(
       (prev) => {
         const next = new URLSearchParams(prev);
         next.set("pdf", nodeId);
         next.set("page", "1");
-        next.set("mode", next.get("mode") ?? "cg");
         // 画像ビューワーパラメータを排他的に削除
         next.delete("index");
         next.delete("tab");
@@ -122,14 +131,13 @@ export function useViewerParams(): UseViewerParamsReturn {
     );
   };
 
-  // PDF ビューワーを閉じる: pdf/page/mode を URL から削除
+  // PDF ビューワーを閉じる: viewer スコープ (pdf/page) のみ削除
   const closePdfViewer = () => {
     setSearchParams(
       (prev) => {
         const next = new URLSearchParams(prev);
         next.delete("pdf");
         next.delete("page");
-        next.delete("mode");
         return next;
       },
       { replace: true },
@@ -148,6 +156,17 @@ export function useViewerParams(): UseViewerParamsReturn {
     );
   };
 
+  // browse スコープのパラメータを維持し、viewer スコープだけ除外した search 文字列を返す
+  // ディレクトリ遷移時に mode/tab を引き継ぐために使用
+  const buildBrowseSearch = (overrides?: { tab?: string }): string => {
+    const next = new URLSearchParams();
+    const currentMode = searchParams.get("mode");
+    if (currentMode === "manga") next.set("mode", "manga");
+    const nextTab = overrides?.tab ?? searchParams.get("tab");
+    if (nextTab && nextTab !== "filesets") next.set("tab", nextTab);
+    return next.toString() ? `?${next}` : "";
+  };
+
   return {
     params: { tab, index, mode, pdfNodeId, pdfPage },
     isViewerOpen,
@@ -160,5 +179,6 @@ export function useViewerParams(): UseViewerParamsReturn {
     openPdfViewer,
     closePdfViewer,
     setPdfPage,
+    buildBrowseSearch,
   };
 }
