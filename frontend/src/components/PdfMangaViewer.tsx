@@ -89,10 +89,13 @@ export function PdfMangaViewer({
     scrollSpeed,
   });
 
-  // currentIndex を URL に同期
+  // currentIndex を URL に同期（値が変化した場合のみ）
   useEffect(() => {
-    onPageChange(mangaScroll.currentIndex + 1); // 1-based
-  }, [mangaScroll.currentIndex, onPageChange]);
+    const page = mangaScroll.currentIndex + 1; // 1-based
+    if (page !== initialPage) {
+      onPageChange(page);
+    }
+  }, [mangaScroll.currentIndex, initialPage, onPageChange]);
 
   // 初期表示で initialPage の位置にスクロール
   const initialScrollDone = useRef(false);
