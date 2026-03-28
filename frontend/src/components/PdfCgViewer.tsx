@@ -240,7 +240,7 @@ export function PdfCgViewer({
         <div
           ref={combinedRef}
           data-testid="pdf-cg-page-area"
-          className={`flex flex-1 items-center justify-center ${fitMode === "original" ? "overflow-auto" : "overflow-hidden"}`}
+          className="flex flex-1 items-center justify-center overflow-auto"
           onClick={handleClick}
           onMouseMove={handleMouseMove}
         >
