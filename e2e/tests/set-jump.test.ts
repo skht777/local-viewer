@@ -152,3 +152,32 @@ test.describe("セット間ジャンプ — ディレクトリ間", () => {
     await expect(page).toHaveURL(/\/browse\//);
   });
 });
+
+test.describe("NavigationPrompt キーボード操作", () => {
+  // Y/N キーバインドが NavigationPrompt に未実装 (UIテキストのみ)
+  // 実装されたら fixme を解除する
+  test.fixme("Y キーで次のセットに遷移する", async ({ page }) => {
+    await openCgInArchiveZip(page);
+    const initialUrl = page.url();
+
+    await page.keyboard.press("x");
+    const prompt = page.locator("[data-testid='navigation-prompt']");
+    await expect(prompt).toBeVisible({ timeout: 5000 });
+
+    await page.keyboard.press("y");
+    await expect(page).not.toHaveURL(initialUrl);
+    await expect(page).toHaveURL(/\/browse\//);
+  });
+
+  test.fixme("N キーでキャンセルされる", async ({ page }) => {
+    await openCgInArchiveZip(page);
+
+    await page.keyboard.press("x");
+    const prompt = page.locator("[data-testid='navigation-prompt']");
+    await expect(prompt).toBeVisible({ timeout: 5000 });
+
+    await page.keyboard.press("n");
+    await expect(prompt).not.toBeVisible();
+    await expect(page.locator("[data-testid='cg-viewer']")).toBeVisible();
+  });
+});

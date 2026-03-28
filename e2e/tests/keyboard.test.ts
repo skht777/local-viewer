@@ -63,8 +63,8 @@ test.describe("キーボード — CG モード", () => {
   test("End で末尾ページ", async ({ page }) => {
     await openCgInPictures(page);
     await page.keyboard.press("End");
-    // pictures/ には 3 枚あるので index=2
-    await expect(page).toHaveURL(/index=2/);
+    // pictures/ には 4 枚 (photo1-3 + large) あるので index=3
+    await expect(page).toHaveURL(/index=3/);
   });
 
   test("Escape でビューワーを閉じる", async ({ page }) => {

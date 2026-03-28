@@ -17,7 +17,7 @@ test.describe("PDF ビューワー", () => {
 
     // PDF ファイルカードをクリック
     const pdfCard = page.locator("[data-testid^='file-card-']", {
-      hasText: /\.pdf/,
+      hasText: "sample.pdf",
     });
     await expect(pdfCard).toBeVisible();
     await pdfCard.click({ force: true });
@@ -46,7 +46,7 @@ test.describe("PDF ビューワー", () => {
     await expect(page).toHaveURL(/\/browse\//);
 
     const pdfCard = page.locator("[data-testid^='file-card-']", {
-      hasText: /\.pdf/,
+      hasText: "sample.pdf",
     });
     await expect(pdfCard).toBeVisible();
     await pdfCard.click({ force: true });
@@ -67,7 +67,7 @@ test.describe("PDF ビューワー", () => {
     await expect(page).toHaveURL(/\/browse\//);
 
     const pdfCard = page.locator("[data-testid^='file-card-']", {
-      hasText: /\.pdf/,
+      hasText: "sample.pdf",
     });
     await expect(pdfCard).toBeVisible();
     await pdfCard.click({ force: true });
