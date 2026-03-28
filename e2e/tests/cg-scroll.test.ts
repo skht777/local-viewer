@@ -71,13 +71,20 @@ test.describe("CG スクロール", () => {
     ).toBeLessThan(scrollAfterDown);
   });
 
-  // CS-5: ページスライダーの存在を確認 — CgToolbar には <select> のみでスライダー無し
+  // CS-5: 下部フェードインページスライダーでページが変更される
   test("CS-5: ページスライダーでページが変更される", async ({ page }) => {
     await openCgViewer(page);
 
-    // CgToolbar にはページスライダー (range input) が未実装
-    const slider = page.getByTestId("cg-viewer").locator("input[type='range']");
-    await expect(slider).toBeVisible();
+    // スライダーは画面下部に近づくとフェードインする
+    // マウスを画面下部に移動して表示させる
+    const viewer = page.getByTestId("cg-viewer");
+    const box = await viewer.boundingBox();
+    if (box) {
+      await page.mouse.move(box.x + box.width / 2, box.y + box.height - 20);
+    }
+
+    const slider = page.getByTestId("page-slider").locator("input[type='range']");
+    await expect(slider).toBeVisible({ timeout: 5000 });
 
     // スライダーを操作して index が変化するか確認
     await slider.fill("2");
