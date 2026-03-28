@@ -103,7 +103,7 @@ test.describe("アーカイブ", () => {
   });
 
   // アーカイブクリック時の tab=images 自動切替が未実装
-  test.fixme("AR-5: アーカイブ遷移時に画像タブに自動切替される", async ({ page }) => {
+  test("AR-5: アーカイブ遷移時に画像タブに自動切替される", async ({ page }) => {
     await navigateToArchive(page);
 
     // images.zip をクリック

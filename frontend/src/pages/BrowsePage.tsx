@@ -130,10 +130,12 @@ export default function BrowsePage() {
           <FileBrowser
             entries={data?.entries ?? []}
             isLoading={isLoading}
-            onNavigate={(id) => navigate(`/browse/${id}`)}
+            onNavigate={(id, options) => {
+              const search = options?.tab ? `?tab=${options.tab}` : "";
+              navigate(`/browse/${id}${search}`);
+            }}
             onImageClick={openViewer}
             onPdfClick={openPdfViewer}
-            onTabChange={setTab}
             tab={params.tab}
           />
         )}

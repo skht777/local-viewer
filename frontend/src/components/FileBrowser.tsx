@@ -11,10 +11,9 @@ import { FileCard } from "./FileCard";
 interface FileBrowserProps {
   entries: BrowseEntry[];
   isLoading: boolean;
-  onNavigate: (nodeId: string) => void;
+  onNavigate: (nodeId: string, options?: { tab?: ViewerTab }) => void;
   onImageClick?: (imageIndex: number) => void;
   onPdfClick?: (nodeId: string) => void;
-  onTabChange?: (tab: ViewerTab) => void;
   tab: ViewerTab;
 }
 
@@ -45,7 +44,6 @@ export function FileBrowser({
   onNavigate,
   onImageClick,
   onPdfClick,
-  onTabChange,
   tab,
 }: FileBrowserProps) {
   const filtered = filterByTab(entries, tab);
@@ -54,8 +52,7 @@ export function FileBrowser({
     if (entry.kind === "archive") {
       // アーカイブ遷移時は画像タブに自動切替
       // (アーカイブ内は画像のみなので filesets タブでは空表示になる)
-      onTabChange?.("images");
-      onNavigate(entry.node_id);
+      onNavigate(entry.node_id, { tab: "images" });
     } else if (entry.kind === "directory") {
       onNavigate(entry.node_id);
     } else if (entry.kind === "pdf") {
