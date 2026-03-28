@@ -29,6 +29,7 @@ test.describe("CG スクロール", () => {
     await page.keyboard.press("s");
     await expect.poll(
       () => imageArea.evaluate((el) => el.scrollTop),
+      { message: "S キーで scrollTop が増加するはず", timeout: 5000 },
     ).toBeGreaterThan(0);
 
     const scrollAfterS = await imageArea.evaluate((el) => el.scrollTop);
@@ -36,7 +37,7 @@ test.describe("CG スクロール", () => {
     await page.keyboard.press("w");
     await expect.poll(
       () => imageArea.evaluate((el) => el.scrollTop),
-      { message: "W キーで scrollTop が減少するはず" },
+      { message: "W キーで scrollTop が減少するはず", timeout: 5000 },
     ).toBeLessThan(scrollAfterS);
   });
 
@@ -60,6 +61,7 @@ test.describe("CG スクロール", () => {
     await page.keyboard.press("ArrowDown");
     await expect.poll(
       () => imageArea.evaluate((el) => el.scrollTop),
+      { message: "↓キーで scrollTop が増加するはず", timeout: 5000 },
     ).toBeGreaterThan(0);
 
     const scrollAfterDown = await imageArea.evaluate((el) => el.scrollTop);
@@ -67,7 +69,7 @@ test.describe("CG スクロール", () => {
     await page.keyboard.press("ArrowUp");
     await expect.poll(
       () => imageArea.evaluate((el) => el.scrollTop),
-      { message: "↑キーで scrollTop が減少するはず" },
+      { message: "↑キーで scrollTop が減少するはず", timeout: 5000 },
     ).toBeLessThan(scrollAfterDown);
   });
 

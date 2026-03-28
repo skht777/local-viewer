@@ -71,10 +71,34 @@ test.describe("CG モード — 水平ページスライダー", () => {
   });
 
   test("PS-6: 画像1枚のみの場合スライダーが表示されない", async ({ page }) => {
-    // pictures マウントポイントで画像が複数ある前提なので、
-    // 1枚のみケースは totalCount <= 1 で非表示の確認
-    // → 現在のテストデータでは検証困難なため skip
-    test.skip();
+    // nested/sub1 は画像1枚のみ
+    await test.step("nested マウントポイントの sub1 に移動", async () => {
+      await page.goto("/");
+      const nestedMount = page.locator("[data-testid^='mount-']", { hasText: "nested" });
+      await expect(nestedMount).toBeVisible();
+      await nestedMount.click();
+      await expect(page).toHaveURL(/\/browse\//);
+
+      const sub1 = page.locator("[data-testid^='file-card-']", { hasText: "sub1" });
+      await expect(sub1).toBeVisible();
+      await sub1.click();
+    });
+
+    await test.step("画像タブで1枚の画像を開く", async () => {
+      const imagesTab = page.locator("[data-testid='tab-images']");
+      await expect(imagesTab).toBeVisible();
+      await imagesTab.click();
+
+      const firstImage = page.locator("[data-testid^='file-card-']").first();
+      await expect(firstImage).toBeVisible();
+      await firstImage.click({ force: true });
+      await expect(page.getByTestId("cg-viewer")).toBeVisible();
+    });
+
+    await test.step("スライダーが DOM に存在しない", async () => {
+      const slider = page.getByTestId("page-slider");
+      await expect(slider).not.toBeAttached();
+    });
   });
 });
 
