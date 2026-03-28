@@ -87,61 +87,53 @@ export function useViewerParams(): UseViewerParamsReturn {
 
   // 画像ビューワーを開く: tab=images + index を設定、pdf/page を削除
   // mode は browse スコープで管理済みなのでここでは操作しない
+  // push モード: ブラウザ Back でビューワー状態に復帰可能
   const openViewer = (newIndex: number) => {
-    setSearchParams(
-      (prev) => {
-        const next = new URLSearchParams(prev);
-        next.set("tab", "images");
-        next.set("index", String(newIndex));
-        // PDF パラメータを排他的に削除
-        next.delete("pdf");
-        next.delete("page");
-        return next;
-      },
-      { replace: true },
-    );
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      next.set("tab", "images");
+      next.set("index", String(newIndex));
+      // PDF パラメータを排他的に削除
+      next.delete("pdf");
+      next.delete("page");
+      return next;
+    });
   };
 
   // 画像ビューワーを閉じる: viewer スコープ (index) のみ削除
+  // push モード: ブラウザ Back でビューワー状態に復帰可能
   const closeViewer = () => {
-    setSearchParams(
-      (prev) => {
-        const next = new URLSearchParams(prev);
-        next.delete("index");
-        return next;
-      },
-      { replace: true },
-    );
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      next.delete("index");
+      return next;
+    });
   };
 
   // PDF ビューワーを開く: pdf/page を設定、index/tab を削除
   // mode は browse スコープで管理済みなのでここでは操作しない
+  // push モード: ブラウザ Back でビューワー状態に復帰可能
   const openPdfViewer = (nodeId: string) => {
-    setSearchParams(
-      (prev) => {
-        const next = new URLSearchParams(prev);
-        next.set("pdf", nodeId);
-        next.set("page", "1");
-        // 画像ビューワーパラメータを排他的に削除
-        next.delete("index");
-        next.delete("tab");
-        return next;
-      },
-      { replace: true },
-    );
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      next.set("pdf", nodeId);
+      next.set("page", "1");
+      // 画像ビューワーパラメータを排他的に削除
+      next.delete("index");
+      next.delete("tab");
+      return next;
+    });
   };
 
   // PDF ビューワーを閉じる: viewer スコープ (pdf/page) のみ削除
+  // push モード: ブラウザ Back でビューワー状態に復帰可能
   const closePdfViewer = () => {
-    setSearchParams(
-      (prev) => {
-        const next = new URLSearchParams(prev);
-        next.delete("pdf");
-        next.delete("page");
-        return next;
-      },
-      { replace: true },
-    );
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      next.delete("pdf");
+      next.delete("page");
+      return next;
+    });
   };
 
   // PDF ページ番号を更新
