@@ -10,7 +10,7 @@ import { renderWithProviders } from "./helpers/renderWithProviders";
 describe("App", () => {
   test("ダークテーマの背景クラスが適用される", () => {
     const { container } = renderWithProviders(<App />);
-    const root = container.querySelector(".bg-gray-900");
+    const root = container.querySelector(".bg-surface-base");
     expect(root).toBeInTheDocument();
   });
 
