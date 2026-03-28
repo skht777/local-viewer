@@ -27,6 +27,27 @@ describe("NavigationPrompt", () => {
     expect(onCancel).toHaveBeenCalledOnce();
   });
 
+  test("Y キー押下で onConfirm が呼ばれる", async () => {
+    const onConfirm = vi.fn();
+    render(<NavigationPrompt message="test" onConfirm={onConfirm} onCancel={() => {}} />);
+    await userEvent.keyboard("y");
+    expect(onConfirm).toHaveBeenCalledOnce();
+  });
+
+  test("Enter キー押下で onConfirm が呼ばれる", async () => {
+    const onConfirm = vi.fn();
+    render(<NavigationPrompt message="test" onConfirm={onConfirm} onCancel={() => {}} />);
+    await userEvent.keyboard("{Enter}");
+    expect(onConfirm).toHaveBeenCalledOnce();
+  });
+
+  test("N キー押下で onCancel が呼ばれる", async () => {
+    const onCancel = vi.fn();
+    render(<NavigationPrompt message="test" onConfirm={() => {}} onCancel={onCancel} />);
+    await userEvent.keyboard("n");
+    expect(onCancel).toHaveBeenCalledOnce();
+  });
+
   test("5秒後に自動で onCancel が呼ばれる", () => {
     vi.useFakeTimers();
     const onCancel = vi.fn();

@@ -156,7 +156,7 @@ test.describe("セット間ジャンプ — ディレクトリ間", () => {
 test.describe("NavigationPrompt キーボード操作", () => {
   // Y/N キーバインドが NavigationPrompt に未実装 (UIテキストのみ)
   // 実装されたら fixme を解除する
-  test.fixme("Y キーで次のセットに遷移する", async ({ page }) => {
+  test("Y キーで次のセットに遷移する", async ({ page }) => {
     await openCgInArchiveZip(page);
     const initialUrl = page.url();
 
@@ -169,7 +169,7 @@ test.describe("NavigationPrompt キーボード操作", () => {
     await expect(page).toHaveURL(/\/browse\//);
   });
 
-  test.fixme("N キーでキャンセルされる", async ({ page }) => {
+  test("N キーでキャンセルされる", async ({ page }) => {
     await openCgInArchiveZip(page);
 
     await page.keyboard.press("x");
@@ -182,7 +182,7 @@ test.describe("NavigationPrompt キーボード操作", () => {
   });
 
   // SJ-8: Enter キーも Y と同様に未実装
-  test.fixme("SJ-8: Enter キーで次のセットに遷移する", async ({ page }) => {
+  test("SJ-8: Enter キーで次のセットに遷移する", async ({ page }) => {
     await openCgInArchiveZip(page);
     const initialUrl = page.url();
 

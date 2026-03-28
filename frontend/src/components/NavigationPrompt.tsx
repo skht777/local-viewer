@@ -18,6 +18,22 @@ export function NavigationPrompt({ message, onConfirm, onCancel }: NavigationPro
     return () => clearTimeout(timer);
   }, [onCancel]);
 
+  // Y/Enter で確認、N でキャンセル
+  // Escape は CgViewer/MangaViewer の handleEscape チェーンに任せる（二重呼び出し回避）
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === "y" || e.key === "Y" || e.key === "Enter") {
+        e.preventDefault();
+        onConfirm();
+      } else if (e.key === "n" || e.key === "N") {
+        e.preventDefault();
+        onCancel();
+      }
+    };
+    document.addEventListener("keydown", handler);
+    return () => document.removeEventListener("keydown", handler);
+  }, [onConfirm, onCancel]);
+
   return (
     <div
       data-testid="navigation-prompt"
