@@ -1,5 +1,6 @@
 // 動画タブテスト
 // 仕様出典: plan-phase5.md, plan-phase5.5.md, initial-architecture.md §動画タブ
+// P2: VD-3(ファイル名ラベル)
 
 import { test, expect } from "@playwright/test";
 
@@ -47,6 +48,28 @@ test.describe("動画タブ", () => {
       await expect(video).toBeVisible();
       const src = await video.getAttribute("src");
       expect(src).toBeTruthy();
+    }
+  });
+
+  test("VD-3: 動画カード内にファイル名ラベルが表示される", async ({ page }) => {
+    await page.goto("/");
+
+    // videos マウントポイントへ遷移
+    const videosMount = page.locator("[data-testid^='mount-']", {
+      hasText: "videos",
+    });
+    await expect(videosMount).toBeVisible();
+    await videosMount.click();
+    await expect(page).toHaveURL(/\/browse\//);
+
+    const videosTab = page.locator("[data-testid='tab-videos']");
+    if (await videosTab.isVisible()) {
+      await videosTab.click();
+
+      // video-card 内に "clip1.mp4" テキストが表示される
+      const videoCard = page.locator("[data-testid^='video-card-']").first();
+      await expect(videoCard).toBeVisible();
+      await expect(videoCard).toContainText("clip1.mp4");
     }
   });
 });

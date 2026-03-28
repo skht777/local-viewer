@@ -1,6 +1,7 @@
-// ディレクトリツリーテスト (P1)
-// DT-1: ファイルカードクリックでディレクトリ遷移
-// DT-2: 遷移先で子ディレクトリが表示される
+// ディレクトリツリーテスト
+// P1: DT-1(カードクリック遷移), DT-2(遷移後画像表示)
+// P2: DT-4(空ディレクトリ), DT-5(サイドバートグル)
+// DT-3 は DT-2 でカバー済みのためスキップ
 
 import { test, expect } from "@playwright/test";
 import { navigateToMount } from "./helpers/navigation";
@@ -37,5 +38,32 @@ test.describe("ディレクトリツリー", () => {
     // sub1 内の画像が表示される
     const imageCard = page.locator("[data-testid^='file-card-']", { hasText: "deep" });
     await expect(imageCard).toBeVisible();
+  });
+
+  test("DT-4: 空ディレクトリで「ファイルがありません」が表示される", async ({ page }) => {
+    await navigateToMount(page, "empty");
+
+    // 空ディレクトリでは「ファイルがありません」テキストが表示される
+    await expect(page.getByText("ファイルがありません")).toBeVisible();
+  });
+
+  test("DT-5: サイドバートグルボタンでツリーが表示/非表示になる", async ({ page }) => {
+    await navigateToMount(page, "nested");
+
+    // サイドバーはデフォルトで表示
+    const sidebar = page.locator("aside");
+    await expect(sidebar.first()).toBeVisible();
+
+    // トグルボタンクリック → 非表示
+    const toggleBtn = page.getByRole("button", { name: "サイドバー切替" });
+    await toggleBtn.click();
+
+    // サイドバーが非表示になることを確認
+    // DirectoryTree は aside 要素で、isSidebarOpen=false で条件レンダリング除外
+    await expect(sidebar).not.toBeVisible();
+
+    // 再度クリック → 表示復帰
+    await toggleBtn.click();
+    await expect(sidebar.first()).toBeVisible();
   });
 });

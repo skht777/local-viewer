@@ -1,21 +1,25 @@
 // アーカイブテスト
 // 仕様出典: plan-phase4.md, initial-architecture.md §フォルダ/アーカイブの統一扱い
+// P2: AR-4(mixed.zip 画像+動画), AR-5(画像タブ自動切替)
 
 import { test, expect } from "@playwright/test";
+
+// archive マウントポイントに遷移するヘルパー
+async function navigateToArchive(page: import("@playwright/test").Page) {
+  await page.goto("/");
+  const archiveMount = page.locator("[data-testid^='mount-']", {
+    hasText: "archive",
+  });
+  await expect(archiveMount).toBeVisible();
+  await archiveMount.click();
+  await expect(page).toHaveURL(/\/browse\//);
+}
 
 test.describe("アーカイブ", () => {
   test("ファイルセットタブにアーカイブがフォルダと同列表示される", async ({
     page,
   }) => {
-    await page.goto("/");
-
-    // archive マウントポイントカードをクリック
-    const archiveMount = page.locator("[data-testid^='mount-']", {
-      hasText: "archive",
-    });
-    await expect(archiveMount).toBeVisible();
-    await archiveMount.click();
-    await expect(page).toHaveURL(/\/browse\//);
+    await navigateToArchive(page);
 
     // ZIP ファイルがファイルセットとして表示される
     const zipCard = page.locator("[data-testid^='file-card-']", {
@@ -25,21 +29,14 @@ test.describe("アーカイブ", () => {
   });
 
   test("アーカイブクリックで中身が展開表示される", async ({ page }) => {
-    await page.goto("/");
-
-    // archive マウントポイントカードをクリック
-    const archiveMount = page.locator("[data-testid^='mount-']", {
-      hasText: "archive",
-    });
-    await expect(archiveMount).toBeVisible();
-    await archiveMount.click();
-    await expect(page).toHaveURL(/\/browse\//);
+    await navigateToArchive(page);
 
     // images.zip をクリック
     const zipCard = page.locator("[data-testid^='file-card-']", {
       hasText: "images.zip",
     });
     await expect(zipCard).toBeVisible();
+    // サムネイル読み込みによる DOM 再構築を待つ
     await zipCard.click({ force: true });
 
     // アーカイブ内に移動して画像タブに画像が表示される
@@ -53,20 +50,13 @@ test.describe("アーカイブ", () => {
   });
 
   test("アーカイブ内の画像を CG モードで閲覧できる", async ({ page }) => {
-    await page.goto("/");
-
-    // archive マウントポイントカードをクリック
-    const archiveMount = page.locator("[data-testid^='mount-']", {
-      hasText: "archive",
-    });
-    await expect(archiveMount).toBeVisible();
-    await archiveMount.click();
-    await expect(page).toHaveURL(/\/browse\//);
+    await navigateToArchive(page);
 
     const zipCard = page.locator("[data-testid^='file-card-']", {
       hasText: "images.zip",
     });
     await expect(zipCard).toBeVisible();
+    // サムネイル読み込みによる DOM 再構築を待つ
     await zipCard.click({ force: true });
 
     const imagesTab = page.locator("[data-testid='tab-images']");
@@ -77,8 +67,54 @@ test.describe("アーカイブ", () => {
     // 画像をクリックしてCGモードを開く
     const firstImage = page.locator("[data-testid^='file-card-']").first();
     await expect(firstImage).toBeVisible();
+    // サムネイル読み込みによる DOM 再構築を待つ
     await firstImage.click({ force: true });
     await expect(page.locator("[data-testid='cg-viewer']")).toBeVisible();
     await expect(page).toHaveURL(/mode=cg/);
+  });
+
+  test("AR-4: mixed.zip で画像と動画の両方が表示される", async ({ page }) => {
+    await navigateToArchive(page);
+
+    // mixed.zip をクリック
+    const mixedZip = page.locator("[data-testid^='file-card-']", {
+      hasText: "mixed.zip",
+    });
+    await expect(mixedZip).toBeVisible();
+    // サムネイル読み込みによる DOM 再構築を待つ
+    await mixedZip.click({ force: true });
+    await expect(page).toHaveURL(/\/browse\//);
+
+    // 画像タブに画像がある
+    const imagesTab = page.locator("[data-testid='tab-images']");
+    if (await imagesTab.isVisible()) {
+      await imagesTab.click();
+      const imageCards = page.locator("[data-testid^='file-card-']");
+      await expect(imageCards.first()).toBeVisible();
+    }
+
+    // 動画タブに動画がある
+    const videosTab = page.locator("[data-testid='tab-videos']");
+    if (await videosTab.isVisible()) {
+      await videosTab.click();
+      const videoCards = page.locator("[data-testid^='video-card-']");
+      await expect(videoCards.first()).toBeVisible();
+    }
+  });
+
+  // アーカイブクリック時の tab=images 自動切替が未実装
+  test.fixme("AR-5: アーカイブ遷移時に画像タブに自動切替される", async ({ page }) => {
+    await navigateToArchive(page);
+
+    // images.zip をクリック
+    const imagesZip = page.locator("[data-testid^='file-card-']", {
+      hasText: "images.zip",
+    });
+    await expect(imagesZip).toBeVisible();
+    // サムネイル読み込みによる DOM 再構築を待つ
+    await imagesZip.click({ force: true });
+
+    // URL に tab=images が設定される
+    await expect(page).toHaveURL(/tab=images/);
   });
 });

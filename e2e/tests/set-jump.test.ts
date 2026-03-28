@@ -180,4 +180,34 @@ test.describe("NavigationPrompt キーボード操作", () => {
     await expect(prompt).not.toBeVisible();
     await expect(page.locator("[data-testid='cg-viewer']")).toBeVisible();
   });
+
+  // SJ-8: Enter キーも Y と同様に未実装
+  test.fixme("SJ-8: Enter キーで次のセットに遷移する", async ({ page }) => {
+    await openCgInArchiveZip(page);
+    const initialUrl = page.url();
+
+    await page.keyboard.press("x");
+    const prompt = page.locator("[data-testid='navigation-prompt']");
+    await expect(prompt).toBeVisible({ timeout: 5000 });
+
+    await page.keyboard.press("Enter");
+    await expect(page).not.toHaveURL(initialUrl);
+    await expect(page).toHaveURL(/\/browse\//);
+  });
+});
+
+test.describe("NavigationPrompt 自動消去", () => {
+  test("SJ-10: 5秒で NavigationPrompt が自動消去される", async ({ page }) => {
+    await openCgInArchiveZip(page);
+
+    await page.keyboard.press("x");
+    const prompt = page.locator("[data-testid='navigation-prompt']");
+    await expect(prompt).toBeVisible({ timeout: 5000 });
+
+    // 5秒のタイマーで自動消去 — waitForTimeout 禁止のため toBeHidden のタイムアウトで待機
+    await expect(prompt).not.toBeVisible({ timeout: 6000 });
+
+    // CG ビューワーは維持されている
+    await expect(page.locator("[data-testid='cg-viewer']")).toBeVisible();
+  });
 });
