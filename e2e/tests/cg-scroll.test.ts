@@ -10,7 +10,7 @@ test.use({ viewport: { width: 1024, height: 200 } });
 
 test.describe("CG スクロール", () => {
   // CgViewer.tsx L100-101: scrollUp/scrollDown が空関数で未実装
-  test.fixme("CS-1: S キーで下にスクロールする", async ({ page }) => {
+  test("CS-1: S キーで下にスクロールする", async ({ page }) => {
     await openCgViewer(page);
     const imageArea = page.getByTestId("cg-image-area");
 
@@ -22,7 +22,7 @@ test.describe("CG スクロール", () => {
     ).toBeGreaterThan(0);
   });
 
-  test.fixme("CS-2: W キーで上にスクロールする", async ({ page }) => {
+  test("CS-2: W キーで上にスクロールする", async ({ page }) => {
     await openCgViewer(page);
     const imageArea = page.getByTestId("cg-image-area");
 
@@ -41,7 +41,7 @@ test.describe("CG スクロール", () => {
   });
 
   // CS-3, CS-4: ↓↑ キーも scrollUp/scrollDown と同じ空関数を呼ぶため fixme
-  test.fixme("CS-3: ↓キーで下にスクロールする", async ({ page }) => {
+  test("CS-3: ↓キーで下にスクロールする", async ({ page }) => {
     await openCgViewer(page);
     const imageArea = page.getByTestId("cg-image-area");
 
@@ -53,7 +53,7 @@ test.describe("CG スクロール", () => {
     ).toBeGreaterThan(0);
   });
 
-  test.fixme("CS-4: ↑キーで上にスクロールする", async ({ page }) => {
+  test("CS-4: ↑キーで上にスクロールする", async ({ page }) => {
     await openCgViewer(page);
     const imageArea = page.getByTestId("cg-image-area");
 
@@ -72,7 +72,7 @@ test.describe("CG スクロール", () => {
   });
 
   // CS-5: ページスライダーの存在を確認 — CgToolbar には <select> のみでスライダー無し
-  test.fixme("CS-5: ページスライダーでページが変更される", async ({ page }) => {
+  test("CS-5: ページスライダーでページが変更される", async ({ page }) => {
     await openCgViewer(page);
 
     // CgToolbar にはページスライダー (range input) が未実装

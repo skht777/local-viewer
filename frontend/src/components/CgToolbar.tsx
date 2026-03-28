@@ -91,6 +91,19 @@ export function CgToolbar({
         ))}
       </select>
 
+      {/* ページスライダー */}
+      {totalCount > 1 && (
+        <input
+          type="range"
+          min={0}
+          max={totalCount - 1}
+          value={currentIndex}
+          onChange={(e) => onGoTo(Number(e.target.value))}
+          aria-label="ページスライダー"
+          className="w-24"
+        />
+      )}
+
       <div className="flex-1" />
 
       {/* フルスクリーン */}
