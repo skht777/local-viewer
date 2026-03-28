@@ -37,7 +37,7 @@ export function NavigationPrompt({ message, onConfirm, onCancel }: NavigationPro
   return (
     <div
       data-testid="navigation-prompt"
-      className="fixed bottom-8 left-1/2 z-50 -translate-x-1/2 rounded-lg bg-gray-800 px-6 py-3 shadow-lg"
+      className="fixed bottom-8 left-1/2 z-50 -translate-x-1/2 rounded-lg bg-surface-raised px-6 py-3 shadow-lg"
     >
       <p className="mb-2 text-sm text-white">{message}</p>
       <div className="flex items-center gap-3 text-xs text-gray-400">
@@ -52,7 +52,7 @@ export function NavigationPrompt({ message, onConfirm, onCancel }: NavigationPro
         <button
           type="button"
           onClick={onCancel}
-          className="rounded bg-gray-700 px-3 py-1 text-gray-300 hover:bg-gray-600"
+          className="rounded bg-surface-raised px-3 py-1 text-gray-300 hover:bg-surface-overlay"
           aria-label="いいえ"
         >
           いいえ

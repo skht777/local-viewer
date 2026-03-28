@@ -42,7 +42,7 @@ export function MangaToolbar({
         <select
           value={currentIndex}
           onChange={(e) => onScrollToImage(Number(e.target.value))}
-          className="rounded bg-gray-800 px-2 py-1 text-xs text-white"
+          className="rounded bg-surface-raised px-2 py-1 text-xs text-white"
           aria-label="ページ選択"
         >
           {Array.from({ length: totalCount }, (_, i) => (
@@ -56,7 +56,7 @@ export function MangaToolbar({
         <button
           type="button"
           onClick={onZoomOut}
-          className="rounded px-2 py-1 text-xs text-gray-300 hover:bg-gray-700"
+          className="rounded px-2 py-1 text-xs text-gray-300 hover:bg-surface-raised"
           aria-label="ズームアウト"
         >
           -
@@ -80,7 +80,7 @@ export function MangaToolbar({
         <button
           type="button"
           onClick={onZoomIn}
-          className="rounded px-2 py-1 text-xs text-gray-300 hover:bg-gray-700"
+          className="rounded px-2 py-1 text-xs text-gray-300 hover:bg-surface-raised"
           aria-label="ズームイン"
         >
           +
@@ -118,7 +118,7 @@ export function MangaToolbar({
         <button
           type="button"
           onClick={onToggleFullscreen}
-          className="rounded px-2 py-1 text-xs text-gray-300 hover:bg-gray-700"
+          className="rounded px-2 py-1 text-xs text-gray-300 hover:bg-surface-raised"
           aria-label="フルスクリーン"
         >
           F
@@ -126,7 +126,7 @@ export function MangaToolbar({
         <button
           type="button"
           onClick={onClose}
-          className="rounded px-2 py-1 text-xs text-gray-300 hover:bg-gray-700"
+          className="rounded px-2 py-1 text-xs text-gray-300 hover:bg-surface-raised"
           aria-label="閉じる"
         >
           ✕

@@ -17,7 +17,7 @@ export function MountPointCard({ entry, onSelect, index }: MountPointCardProps) 
       data-testid={`mount-${entry.node_id}`}
       onClick={() => onSelect(entry.node_id)}
       style={{ "--stagger-delay": `${(index ?? 0) * 80}ms` } as React.CSSProperties}
-      className="flex cursor-pointer flex-col items-center gap-2 rounded-xl bg-gray-800 p-6 animate-fade-in-up transition-colors hover:bg-gray-700"
+      className="flex cursor-pointer flex-col items-center gap-2 rounded-xl bg-surface-card ring-1 ring-white/5 p-6 animate-fade-in-up transition-all duration-150 hover:bg-surface-raised hover:scale-[1.02]"
     >
       <div className="text-4xl">{entry.kind === "directory" ? "\u{1F4C1}" : "\u{1F4E6}"}</div>
       <h2 className="text-lg font-medium">{entry.name}</h2>

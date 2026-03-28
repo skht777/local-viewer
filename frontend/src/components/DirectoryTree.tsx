@@ -49,8 +49,8 @@ function TreeNode({ entry, depth, activeNodeId }: TreeNodeProps) {
         type="button"
         data-testid={`tree-node-${entry.node_id}`}
         onClick={handleClick}
-        className={`flex w-full items-center gap-1 px-2 py-1 text-left text-sm transition-colors hover:bg-gray-700 ${
-          isActive ? "bg-gray-700 text-white" : "text-gray-300"
+        className={`flex w-full items-center gap-1 px-2 py-1 text-left text-sm transition-colors hover:bg-surface-raised ${
+          isActive ? "bg-surface-raised text-white" : "text-gray-300"
         }`}
         style={{ paddingLeft: `${depth * 16 + 8}px` }}
       >
@@ -77,7 +77,7 @@ export function DirectoryTree({ rootEntries, activeNodeId }: DirectoryTreeProps)
   );
 
   return (
-    <aside className="w-64 shrink-0 overflow-y-auto border-r border-gray-700 bg-gray-800">
+    <aside className="w-64 shrink-0 overflow-y-auto border-r border-white/5 bg-surface-card">
       <div className="p-2 text-xs font-medium uppercase tracking-wider text-gray-500">
         ディレクトリ
       </div>

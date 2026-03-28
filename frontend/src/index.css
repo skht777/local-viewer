@@ -59,7 +59,7 @@ input[type="range"] {
 /* select ドロップダウンのダーク化 */
 select,
 select option {
-  background-color: #1f2937; /* gray-800 */
+  background-color: var(--color-surface-raised);
   color: #f9fafb; /* gray-50 */
 }
 

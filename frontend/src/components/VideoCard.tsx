@@ -38,7 +38,7 @@ export function VideoCard({ entry, initialTime, onTimeUpdate }: VideoCardProps) 
   return (
     <div
       data-testid={`video-card-${entry.node_id}`}
-      className="overflow-hidden rounded-lg bg-gray-800"
+      className="overflow-hidden rounded-lg bg-surface-card ring-1 ring-white/5"
     >
       {/* ファイル名ラベルを動画の上に配置 */}
       <div className="px-3 pt-3">
@@ -53,7 +53,7 @@ export function VideoCard({ entry, initialTime, onTimeUpdate }: VideoCardProps) 
         {hasError ? (
           <div
             data-testid="video-error-fallback"
-            className="flex aspect-video items-center justify-center rounded bg-gray-700 text-sm text-gray-400"
+            className="flex aspect-video items-center justify-center rounded bg-surface-raised text-sm text-gray-400"
           >
             この形式はブラウザで再生できません
           </div>

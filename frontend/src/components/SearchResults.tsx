@@ -33,7 +33,7 @@ export function SearchResults({
 }: SearchResultsProps) {
   if (isIndexing) {
     return (
-      <div className="absolute z-50 mt-1 w-full rounded-lg bg-gray-800 p-4 text-gray-400 shadow-lg">
+      <div className="absolute z-50 mt-1 w-full rounded-lg bg-surface-raised p-4 text-gray-400 shadow-lg">
         インデックス構築中...
       </div>
     );
@@ -41,7 +41,7 @@ export function SearchResults({
 
   if (isLoading) {
     return (
-      <div className="absolute z-50 mt-1 w-full rounded-lg bg-gray-800 p-4 text-gray-400 shadow-lg">
+      <div className="absolute z-50 mt-1 w-full rounded-lg bg-surface-raised p-4 text-gray-400 shadow-lg">
         検索中...
       </div>
     );
@@ -49,7 +49,7 @@ export function SearchResults({
 
   if (results.length === 0) {
     return (
-      <div className="absolute z-50 mt-1 w-full rounded-lg bg-gray-800 p-4 text-gray-400 shadow-lg">
+      <div className="absolute z-50 mt-1 w-full rounded-lg bg-surface-raised p-4 text-gray-400 shadow-lg">
         結果が見つかりません
       </div>
     );
@@ -57,14 +57,14 @@ export function SearchResults({
 
   return (
     <div
-      className="absolute z-50 mt-1 max-h-96 w-full overflow-y-auto rounded-lg bg-gray-800 shadow-lg"
+      className="absolute z-50 mt-1 max-h-96 w-full overflow-y-auto rounded-lg bg-surface-raised shadow-lg"
       data-testid="search-results"
     >
       <ul>
         {results.map((result, i) => (
           <li
             key={result.node_id}
-            className={`cursor-pointer px-4 py-2 ${i === activeIndex ? "bg-blue-600/20 hover:bg-blue-600/30" : "hover:bg-gray-700"}`}
+            className={`cursor-pointer px-4 py-2 ${i === activeIndex ? "bg-blue-600/20 hover:bg-blue-600/30" : "hover:bg-surface-overlay"}`}
             onClick={() => onSelect(result)}
             data-testid={`search-result-${i}`}
             aria-selected={i === activeIndex ? "true" : undefined}

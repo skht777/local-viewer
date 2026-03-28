@@ -17,7 +17,7 @@ const TABS: { key: ViewerTab; label: string }[] = [
 
 export function ViewerTabs({ activeTab, onTabChange }: ViewerTabsProps) {
   return (
-    <nav className="flex border-b border-gray-700 bg-gray-800 px-4">
+    <nav className="flex border-b border-white/5 bg-surface-card px-4">
       {TABS.map((tab) => (
         <button
           key={tab.key}

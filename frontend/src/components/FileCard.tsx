@@ -40,9 +40,9 @@ export function FileCard({ entry, onClick, isSelected }: FileCardProps) {
       data-testid={`file-card-${entry.node_id}`}
       aria-current={isSelected ? "true" : undefined}
       onClick={() => onClick(entry)}
-      className={`flex cursor-pointer flex-col overflow-hidden rounded-lg transition-colors ${isSelected ? "bg-blue-600/30 ring-2 ring-blue-500" : "bg-gray-800 hover:bg-gray-700"}`}
+      className={`flex cursor-pointer flex-col overflow-hidden rounded-lg transition-all duration-150 ${isSelected ? "bg-blue-600/30 ring-2 ring-blue-500" : "bg-surface-card ring-1 ring-white/5 hover:bg-surface-raised hover:scale-[1.02]"}`}
     >
-      <div className="flex aspect-square items-center justify-center bg-gray-700 text-4xl">
+      <div className="flex aspect-square items-center justify-center bg-surface-raised text-4xl">
         {isImagePreview ? (
           <img
             src={`/api/file/${entry.node_id}`}

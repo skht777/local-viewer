@@ -22,11 +22,11 @@ export function BrowseHeader({ currentName, mode, onModeChange }: BrowseHeaderPr
   const toggleSidebar = useViewerStore((s) => s.toggleSidebar);
 
   return (
-    <header className="flex items-center gap-4 border-b border-gray-700 bg-gray-800 p-4">
+    <header className="flex items-center gap-4 border-b border-white/5 bg-surface-card p-4">
       <button
         type="button"
         onClick={toggleSidebar}
-        className="rounded-lg px-2 py-1.5 text-lg text-gray-300 transition-colors hover:bg-gray-700 hover:text-white"
+        className="rounded-lg px-2 py-1.5 text-lg text-gray-300 transition-colors hover:bg-surface-raised hover:text-white"
         aria-label="サイドバー切替"
       >
         &#x2261;
@@ -34,7 +34,7 @@ export function BrowseHeader({ currentName, mode, onModeChange }: BrowseHeaderPr
       <button
         type="button"
         onClick={() => navigate("/")}
-        className="rounded-lg px-3 py-1.5 text-sm text-gray-300 transition-colors hover:bg-gray-700 hover:text-white"
+        className="rounded-lg px-3 py-1.5 text-sm text-gray-300 transition-colors hover:bg-surface-raised hover:text-white"
       >
         ← トップ
       </button>

@@ -192,7 +192,7 @@ export function PdfCgViewer({
         <button
           type="button"
           onClick={onClose}
-          className="rounded bg-gray-700 px-4 py-2 text-white hover:bg-gray-600"
+          className="rounded bg-surface-raised px-4 py-2 text-white hover:bg-surface-overlay"
         >
           閉じる
         </button>

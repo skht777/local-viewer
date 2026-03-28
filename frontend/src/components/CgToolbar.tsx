@@ -59,7 +59,7 @@ export function CgToolbar({
         <button
           type="button"
           onClick={onFitWidth}
-          className={`rounded px-2 py-1 text-xs ${fitMode === "width" ? "bg-blue-600 text-white" : "text-gray-300 hover:bg-gray-700"}`}
+          className={`rounded px-2 py-1 text-xs ${fitMode === "width" ? "bg-blue-600 text-white" : "text-gray-300 hover:bg-surface-raised"}`}
           aria-label="幅フィット"
           aria-pressed={fitMode === "width"}
         >
@@ -68,7 +68,7 @@ export function CgToolbar({
         <button
           type="button"
           onClick={onFitHeight}
-          className={`rounded px-2 py-1 text-xs ${fitMode === "height" ? "bg-blue-600 text-white" : "text-gray-300 hover:bg-gray-700"}`}
+          className={`rounded px-2 py-1 text-xs ${fitMode === "height" ? "bg-blue-600 text-white" : "text-gray-300 hover:bg-surface-raised"}`}
           aria-label="高さフィット"
           aria-pressed={fitMode === "height"}
         >
@@ -80,7 +80,7 @@ export function CgToolbar({
           <button
             type="button"
             onClick={onCycleSpread}
-            className="rounded px-2 py-1 text-xs text-gray-300 hover:bg-gray-700"
+            className="rounded px-2 py-1 text-xs text-gray-300 hover:bg-surface-raised"
             aria-label="見開き切替"
             data-testid="cg-spread-btn"
           >
@@ -92,7 +92,7 @@ export function CgToolbar({
         <select
           value={currentIndex}
           onChange={(e) => onGoTo(Number(e.target.value))}
-          className="rounded bg-gray-800 px-2 py-1 text-xs text-white"
+          className="rounded bg-surface-raised px-2 py-1 text-xs text-white"
         >
           {Array.from({ length: totalCount }, (_, i) => (
             <option key={i} value={i}>
@@ -115,7 +115,7 @@ export function CgToolbar({
         <button
           type="button"
           onClick={onToggleFullscreen}
-          className="rounded px-2 py-1 text-xs text-gray-300 hover:bg-gray-700"
+          className="rounded px-2 py-1 text-xs text-gray-300 hover:bg-surface-raised"
           aria-label="フルスクリーン"
         >
           F
@@ -123,7 +123,7 @@ export function CgToolbar({
         <button
           type="button"
           onClick={onClose}
-          className="rounded px-2 py-1 text-xs text-gray-300 hover:bg-gray-700"
+          className="rounded px-2 py-1 text-xs text-gray-300 hover:bg-surface-raised"
           aria-label="閉じる"
         >
           ✕
