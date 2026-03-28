@@ -1,5 +1,26 @@
 @import "tailwindcss";
 
+@theme {
+  /* サーフェス階層 — 僅かに青を含んだダーク */
+  --color-surface-base: #0a0a0f;
+  --color-surface-ground: #111118;
+  --color-surface-card: #1a1a24;
+  --color-surface-raised: #24243a;
+  --color-surface-overlay: #2a2a3d;
+
+  /* フォントスタック（OS ネイティブフォント優先、emoji フォールバック維持） */
+  --font-sans: "SF Pro Text", "Segoe UI", system-ui, -apple-system, sans-serif, "Apple Color Emoji", "Segoe UI Emoji";
+  --font-mono: "SF Mono", "Cascadia Code", "Consolas", ui-monospace, monospace;
+
+  /* トップページ用スタガードアニメーション */
+  --animate-fade-in-up: fade-in-up 0.4s ease-out both;
+
+  @keyframes fade-in-up {
+    from { opacity: 0; transform: translateY(8px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+}
+
 /* ダークテーマ基盤 — ブラウザネイティブ UI をダーク化 */
 :root {
   color-scheme: dark;
