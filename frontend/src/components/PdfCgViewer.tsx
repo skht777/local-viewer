@@ -18,6 +18,7 @@ import { usePdfRenderCache } from "../hooks/usePdfRenderCache";
 import { PdfCanvas } from "./PdfCanvas";
 import { CgToolbar } from "./CgToolbar";
 import { NavigationPrompt } from "./NavigationPrompt";
+import { PageSlider } from "./PageSlider";
 
 interface PdfCgViewerProps {
   pdfNodeId: string;
@@ -109,7 +110,8 @@ export function PdfCgViewer({
   // カーソルオートハイド
   const cursorTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
   const imageAreaRef = useRef<HTMLDivElement>(null);
-  const handleMouseMove = useCallback(() => {
+  // カーソルオートハイドをリセット（スライダー操作時にも呼ばれる）
+  const resetCursorTimer = useCallback(() => {
     if (imageAreaRef.current) imageAreaRef.current.style.cursor = "";
     clearTimeout(cursorTimerRef.current);
     cursorTimerRef.current = setTimeout(() => {
@@ -231,7 +233,7 @@ export function PdfCgViewer({
           data-testid="pdf-cg-page-area"
           className="flex flex-1 items-center justify-center overflow-auto"
           onClick={handleClick}
-          onMouseMove={handleMouseMove}
+          onMouseMove={resetCursorTimer}
         >
           {displayIndices.map((pageIdx) => (
             <div
@@ -254,6 +256,15 @@ export function PdfCgViewer({
             </div>
           ))}
         </div>
+
+        {/* ページスライダー（下部フェードイン） */}
+        <PageSlider
+          currentIndex={currentPage}
+          totalCount={pageCount}
+          onGoTo={nav.goTo}
+          containerRef={imageAreaRef}
+          onSliderActivity={resetCursorTimer}
+        />
 
         {/* セット間ジャンプの確認プロンプト */}
         {setJump.prompt && (

@@ -17,6 +17,7 @@ import { useSetJump } from "../hooks/useSetJump";
 import type { ViewerMode } from "../hooks/useViewerParams";
 import { CgToolbar } from "./CgToolbar";
 import { NavigationPrompt } from "./NavigationPrompt";
+import { PageSlider } from "./PageSlider";
 
 interface CgViewerProps {
   images: BrowseEntry[];
@@ -107,7 +108,8 @@ export function CgViewer({
   const cursorTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
   const imageAreaRef = useRef<HTMLDivElement>(null);
 
-  const handleMouseMove = useCallback(() => {
+  // カーソルオートハイドをリセット（スライダー操作時にも呼ばれる）
+  const resetCursorTimer = useCallback(() => {
     if (imageAreaRef.current) {
       imageAreaRef.current.style.cursor = "";
     }
@@ -168,7 +170,7 @@ export function CgViewer({
           data-testid="cg-image-area"
           className="flex flex-1 items-center justify-center overflow-auto"
           onClick={handleImageClick}
-          onMouseMove={handleMouseMove}
+          onMouseMove={resetCursorTimer}
         >
           {displayIndices.map((idx) => {
             const img = images[idx];
@@ -192,6 +194,15 @@ export function CgViewer({
             );
           })}
         </div>
+
+        {/* ページスライダー（下部フェードイン） */}
+        <PageSlider
+          currentIndex={currentIndex}
+          totalCount={images.length}
+          onGoTo={nav.goTo}
+          containerRef={imageAreaRef}
+          onSliderActivity={resetCursorTimer}
+        />
 
         {/* セット間ジャンプの確認プロンプト */}
         {setJump.prompt && (
