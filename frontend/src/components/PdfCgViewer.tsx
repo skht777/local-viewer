@@ -1,7 +1,7 @@
 // PDF CG モードビューワー: 1ページ or 見開き表示
 // - usePdfDocument で PDF 読み込み
 // - PdfCanvas で canvas 描画
-// - CgToolbar (showSpread=true), PageCounter, キーボード等を再利用
+// - CgToolbar (showSpread=true), キーボード等を再利用
 // - spreadMode に応じた 1 ページ / 2 ページ横並び表示
 // - ResizeObserver でコンテナサイズを動的計測
 // - useSetJump: currentNodeId = pdfNodeId (PDF 自身)
@@ -18,7 +18,6 @@ import { usePdfRenderCache } from "../hooks/usePdfRenderCache";
 import { PdfCanvas } from "./PdfCanvas";
 import { CgToolbar } from "./CgToolbar";
 import { NavigationPrompt } from "./NavigationPrompt";
-import { PageCounter } from "./PageCounter";
 
 interface PdfCgViewerProps {
   pdfNodeId: string;
@@ -215,6 +214,9 @@ export function PdfCgViewer({
           currentIndex={currentPage}
           totalCount={pageCount}
           showSpread={true}
+          setName={pdfName}
+          currentPage={firstDisplay}
+          currentPageEnd={currentEnd}
           onFitWidth={() => setFitMode("width")}
           onFitHeight={() => setFitMode("height")}
           onCycleSpread={cycleSpreadMode}
@@ -252,14 +254,6 @@ export function PdfCgViewer({
             </div>
           ))}
         </div>
-
-        {/* ページカウンター */}
-        <PageCounter
-          setName={pdfName}
-          current={firstDisplay}
-          currentEnd={currentEnd}
-          total={pageCount}
-        />
 
         {/* セット間ジャンプの確認プロンプト */}
         {setJump.prompt && (

@@ -8,6 +8,8 @@ describe("CgToolbar", () => {
     spreadMode: "single" as const,
     currentIndex: 2,
     totalCount: 10,
+    setName: "test-set",
+    currentPage: 3,
     onFitWidth: vi.fn(),
     onFitHeight: vi.fn(),
     onCycleSpread: vi.fn(),
@@ -74,5 +76,17 @@ describe("CgToolbar", () => {
   test("見開きボタンに data-testid=cg-spread-btn がある", () => {
     render(<CgToolbar {...defaultProps} />);
     expect(screen.getByTestId("cg-spread-btn")).toBeInTheDocument();
+  });
+
+  test("ページカウンターがツールバー中央に表示される", () => {
+    render(<CgToolbar {...defaultProps} />);
+    const counter = screen.getByTestId("page-counter");
+    expect(counter).toHaveTextContent("test-set 3 / 10");
+  });
+
+  test("見開き時のページカウンターが範囲表示される", () => {
+    render(<CgToolbar {...defaultProps} currentPage={3} currentPageEnd={4} />);
+    const counter = screen.getByTestId("page-counter");
+    expect(counter).toHaveTextContent("test-set 3-4 / 10");
   });
 });

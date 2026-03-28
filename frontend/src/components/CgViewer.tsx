@@ -1,4 +1,4 @@
-// CGモード本体: 画像1枚 or 見開き表示 + ツールバー + ページカウンター + サムネイルサイドバー
+// CGモード本体: 画像1枚 or 見開き表示 + ツールバー
 // - spreadMode に応じた 1 枚 / 2 枚横並び表示
 // - fitMode に応じた画像サイズ制御（小さい画像も拡大表示）
 // - 画像クリックでページ送り（画面中央分割: 右半分→次、左半分→前）
@@ -17,7 +17,6 @@ import { useSetJump } from "../hooks/useSetJump";
 import type { ViewerMode } from "../hooks/useViewerParams";
 import { CgToolbar } from "./CgToolbar";
 import { NavigationPrompt } from "./NavigationPrompt";
-import { PageCounter } from "./PageCounter";
 
 interface CgViewerProps {
   images: BrowseEntry[];
@@ -152,6 +151,9 @@ export function CgViewer({
           spreadMode={spreadMode}
           currentIndex={currentIndex}
           totalCount={images.length}
+          setName={setName}
+          currentPage={firstDisplay}
+          currentPageEnd={currentEnd}
           onFitWidth={() => setFitMode("width")}
           onFitHeight={() => setFitMode("height")}
           onCycleSpread={cycleSpreadMode}
@@ -190,14 +192,6 @@ export function CgViewer({
             );
           })}
         </div>
-
-        {/* ページカウンター */}
-        <PageCounter
-          setName={setName}
-          current={firstDisplay}
-          currentEnd={currentEnd}
-          total={images.length}
-        />
 
         {/* セット間ジャンプの確認プロンプト */}
         {setJump.prompt && (

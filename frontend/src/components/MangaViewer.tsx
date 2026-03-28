@@ -17,7 +17,6 @@ import { useSetJump } from "../hooks/useSetJump";
 import type { ViewerMode } from "../hooks/useViewerParams";
 import { MangaToolbar } from "./MangaToolbar";
 import { NavigationPrompt } from "./NavigationPrompt";
-import { PageCounter } from "./PageCounter";
 
 interface MangaViewerProps {
   images: BrowseEntry[];
@@ -167,6 +166,7 @@ export function MangaViewer({
           totalCount={images.length}
           zoomLevel={zoomLevel}
           scrollSpeed={scrollSpeed}
+          setName={setName}
           onScrollToImage={mangaScroll.scrollToImage}
           onZoomIn={zoomIn}
           onZoomOut={zoomOut}
@@ -212,13 +212,6 @@ export function MangaViewer({
             })}
           </div>
         </div>
-
-        {/* ページカウンター */}
-        <PageCounter
-          setName={setName}
-          current={mangaScroll.currentIndex + 1}
-          total={images.length}
-        />
 
         {/* セット間ジャンプの確認プロンプト */}
         {setJump.prompt && (

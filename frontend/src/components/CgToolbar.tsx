@@ -1,8 +1,10 @@
-// CGモードのツールバー
-// - フィット切替(V: 幅, H: 高さ) + 見開き切替(Q) + フルスクリーン(F) + 閉じる
-// - ページセレクト: <select> ドロップダウンでページ直接ジャンプ
+// CGモードのツールバー（3カラム構成）
+// - 左: フィット切替(W, H) + 見開き切替(Q) + ページセレクト
+// - 中央: ページカウンター（セット名 + ページ番号）
+// - 右: フルスクリーン(F) + 閉じる
 
 import type { FitMode, SpreadMode } from "../stores/viewerStore";
+import { formatPageLabel } from "../utils/formatPageLabel";
 
 interface CgToolbarProps {
   fitMode: FitMode;
@@ -10,6 +12,9 @@ interface CgToolbarProps {
   currentIndex: number;
   totalCount: number;
   showSpread?: boolean;
+  setName: string;
+  currentPage: number;
+  currentPageEnd?: number;
   onFitWidth: () => void;
   onFitHeight: () => void;
   onCycleSpread?: () => void;
@@ -36,6 +41,9 @@ export function CgToolbar({
   currentIndex,
   totalCount,
   showSpread = true,
+  setName,
+  currentPage,
+  currentPageEnd,
   onFitWidth,
   onFitHeight,
   onCycleSpread,
@@ -44,87 +52,83 @@ export function CgToolbar({
   onClose,
 }: CgToolbarProps) {
   return (
-    <div className="absolute top-0 right-0 left-0 z-10 flex items-center gap-2 bg-black/60 px-3 py-2">
-      {/* フィット切替 */}
-      <button
-        type="button"
-        onClick={onFitWidth}
-        className={`rounded px-2 py-1 text-xs ${fitMode === "width" ? "bg-blue-600 text-white" : "text-gray-300 hover:bg-gray-700"}`}
-        aria-label="幅フィット"
-        aria-pressed={fitMode === "width"}
-      >
-        W
-      </button>
-      <button
-        type="button"
-        onClick={onFitHeight}
-        className={`rounded px-2 py-1 text-xs ${fitMode === "height" ? "bg-blue-600 text-white" : "text-gray-300 hover:bg-gray-700"}`}
-        aria-label="高さフィット"
-        aria-pressed={fitMode === "height"}
-      >
-        H
-      </button>
-
-      {/* 見開き切替 */}
-      {showSpread && (
+    <div className="absolute top-0 right-0 left-0 z-10 flex items-center bg-black/60 px-3 py-2">
+      {/* 左: コントロール群 */}
+      <div className="flex items-center gap-2">
+        {/* フィット切替 */}
         <button
           type="button"
-          onClick={onCycleSpread}
-          className="rounded px-2 py-1 text-xs text-gray-300 hover:bg-gray-700"
-          aria-label="見開き切替"
-          data-testid="cg-spread-btn"
+          onClick={onFitWidth}
+          className={`rounded px-2 py-1 text-xs ${fitMode === "width" ? "bg-blue-600 text-white" : "text-gray-300 hover:bg-gray-700"}`}
+          aria-label="幅フィット"
+          aria-pressed={fitMode === "width"}
         >
-          {spreadLabel(spreadMode)}
+          W
         </button>
-      )}
+        <button
+          type="button"
+          onClick={onFitHeight}
+          className={`rounded px-2 py-1 text-xs ${fitMode === "height" ? "bg-blue-600 text-white" : "text-gray-300 hover:bg-gray-700"}`}
+          aria-label="高さフィット"
+          aria-pressed={fitMode === "height"}
+        >
+          H
+        </button>
 
-      {/* ページセレクト */}
-      <select
-        value={currentIndex}
-        onChange={(e) => onGoTo(Number(e.target.value))}
-        className="rounded bg-gray-800 px-2 py-1 text-xs text-white"
-      >
-        {Array.from({ length: totalCount }, (_, i) => (
-          <option key={i} value={i}>
-            Page {i + 1}
-          </option>
-        ))}
-      </select>
+        {/* 見開き切替 */}
+        {showSpread && (
+          <button
+            type="button"
+            onClick={onCycleSpread}
+            className="rounded px-2 py-1 text-xs text-gray-300 hover:bg-gray-700"
+            aria-label="見開き切替"
+            data-testid="cg-spread-btn"
+          >
+            {spreadLabel(spreadMode)}
+          </button>
+        )}
 
-      {/* ページスライダー */}
-      {totalCount > 1 && (
-        <input
-          type="range"
-          min={0}
-          max={totalCount - 1}
+        {/* ページセレクト */}
+        <select
           value={currentIndex}
           onChange={(e) => onGoTo(Number(e.target.value))}
-          aria-label="ページスライダー"
-          className="w-24"
-        />
-      )}
+          className="rounded bg-gray-800 px-2 py-1 text-xs text-white"
+        >
+          {Array.from({ length: totalCount }, (_, i) => (
+            <option key={i} value={i}>
+              Page {i + 1}
+            </option>
+          ))}
+        </select>
+      </div>
 
-      <div className="flex-1" />
-
-      {/* フルスクリーン */}
-      <button
-        type="button"
-        onClick={onToggleFullscreen}
-        className="rounded px-2 py-1 text-xs text-gray-300 hover:bg-gray-700"
-        aria-label="フルスクリーン"
+      {/* 中央: ページカウンター */}
+      <span
+        data-testid="page-counter"
+        className="flex-1 truncate text-center text-xs text-gray-300"
       >
-        F
-      </button>
+        {formatPageLabel(setName, currentPage, totalCount, currentPageEnd)}
+      </span>
 
-      {/* 閉じる */}
-      <button
-        type="button"
-        onClick={onClose}
-        className="rounded px-2 py-1 text-xs text-gray-300 hover:bg-gray-700"
-        aria-label="閉じる"
-      >
-        ✕
-      </button>
+      {/* 右: フルスクリーン + 閉じる */}
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          onClick={onToggleFullscreen}
+          className="rounded px-2 py-1 text-xs text-gray-300 hover:bg-gray-700"
+          aria-label="フルスクリーン"
+        >
+          F
+        </button>
+        <button
+          type="button"
+          onClick={onClose}
+          className="rounded px-2 py-1 text-xs text-gray-300 hover:bg-gray-700"
+          aria-label="閉じる"
+        >
+          ✕
+        </button>
+      </div>
     </div>
   );
 }

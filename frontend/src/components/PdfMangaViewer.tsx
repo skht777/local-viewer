@@ -16,7 +16,6 @@ import { usePdfPageSizes } from "../hooks/usePdfPageSizes";
 import { PdfCanvas } from "./PdfCanvas";
 import { MangaToolbar } from "./MangaToolbar";
 import { NavigationPrompt } from "./NavigationPrompt";
-import { PageCounter } from "./PageCounter";
 
 interface PdfMangaViewerProps {
   pdfNodeId: string;
@@ -210,6 +209,7 @@ export function PdfMangaViewer({
           totalCount={pageCount}
           zoomLevel={zoomLevel}
           scrollSpeed={scrollSpeed}
+          setName={pdfName}
           onScrollToImage={mangaScroll.scrollToImage}
           onZoomIn={zoomIn}
           onZoomOut={zoomOut}
@@ -256,9 +256,6 @@ export function PdfMangaViewer({
             ))}
           </div>
         </div>
-
-        {/* ページカウンター */}
-        <PageCounter setName={pdfName} current={mangaScroll.currentIndex + 1} total={pageCount} />
 
         {/* セット間ジャンプの確認プロンプト */}
         {setJump.prompt && (
