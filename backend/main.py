@@ -14,6 +14,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.concurrency import run_in_threadpool
 
 from backend.config import init_settings
 from backend.errors import (
@@ -144,7 +145,9 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
     )
     scan_task.add_done_callback(lambda _: None)  # 参照保持で GC 防止
 
-    # FileWatcher 開始 (スキャン完了を待たない、UPSERT で競合安全)
+    # FileWatcher 開始
+    # PollingObserver.start() は初回スナップショットで同期的にディレクトリ全体を走査する
+    # WSL2 (9p) 等の遅いファイルシステムで lifespan をブロックしないよう非同期で起動
     _file_watcher = FileWatcher(
         indexer=_indexer,
         root_dir=settings.root_dir,
@@ -152,7 +155,8 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
         mode=settings.watch_mode,
         poll_interval=settings.watch_poll_interval,
     )
-    _file_watcher.start()
+    watcher_task = asyncio.create_task(run_in_threadpool(_file_watcher.start))
+    watcher_task.add_done_callback(lambda _: None)  # GC 防止
 
     # DI: routers のスタブを実インスタンスに差し替え
     _app.dependency_overrides[browse.get_node_registry] = get_node_registry
