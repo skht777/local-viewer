@@ -127,8 +127,8 @@ test.describe("PDF ナビゲーション — P2", () => {
 });
 
 test.describe("PDF ナビゲーション — P3", () => {
-  // 破損 PDF が pdf kind として認識されない可能性、または pdf-render-error 未表示
-  test.fixme("PN-14: 破損 PDF でエラー表示される", async ({ page }) => {
+  // 破損 PDF は pdfjs-dist パース段階で失敗し pdf-error を表示する
+  test("PN-14: 破損 PDF でエラー表示される", async ({ page }) => {
     await navigateToMount(page, "docs");
 
     // corrupted.pdf をクリック
@@ -138,8 +138,8 @@ test.describe("PDF ナビゲーション — P3", () => {
     await expect(corruptedCard).toBeVisible();
     await corruptedCard.click();
 
-    // PDF レンダリングエラーが表示される
-    await expect(page.getByTestId("pdf-render-error")).toBeVisible({
+    // PDF ドキュメント読み込みエラーが表示される
+    await expect(page.getByTestId("pdf-error")).toBeVisible({
       timeout: 10_000,
     });
   });
