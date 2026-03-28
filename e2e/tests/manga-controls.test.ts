@@ -155,8 +155,8 @@ test.describe("マンガモード — 速度スライダー", () => {
 });
 
 test.describe("マンガモード — 速度・ズーム効果", () => {
-  // Home 後にスクロール位置が安定しない場合がある (flaky)
-  test.fixme("MC-11: 速度変更が S キーのスクロール量に反映される", async ({ page }) => {
+  // スライダー操作後はフォーカスを外して hotkeys を有効化する
+  test("MC-11: 速度変更が S キーのスクロール量に反映される", async ({ page }) => {
     await openMangaViewer(page);
     const scrollArea = page.getByTestId("manga-scroll-area");
 
@@ -177,6 +177,10 @@ test.describe("マンガモード — 速度・ズーム効果", () => {
     const speedSlider = page.getByRole("slider", { name: "スクロール速度" });
     await speedSlider.fill("3");
     await expect(page.getByTestId("manga-scroll-speed-label")).toHaveText("3x");
+
+    // スライダーからフォーカスを外して hotkeys を有効化
+    // (react-hotkeys-hook は enableOnFormTags: false がデフォルト)
+    await scrollArea.click();
 
     // 3.0x で S キー → スクロール量がデフォルトより大きい
     await page.keyboard.press("s");
