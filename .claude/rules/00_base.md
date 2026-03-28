@@ -33,5 +33,7 @@
 - `07_testing.md` — テスト戦略・TDD
 - `08_comment_driven.md` — コメント駆動開発
 - `09_security.md` — セキュリティ規約
+- `10_e2e_testing.md` — E2Eテスト規約 (Playwright)
+- `11_e2e_performance_debug.md` — E2Eパフォーマンス・デバッグ規約
 - `backend-fastapi.md` — FastAPI固有規約 (パススコープ)
 - `frontend-react.md` — React固有規約 (パススコープ)
