@@ -249,6 +249,30 @@ class NodeRegistry:
 
         return entries
 
+    def list_mount_roots(
+        self, mount_names: dict[Path, str] | None = None
+    ) -> list[EntryMeta]:
+        """マウントポイントのルートディレクトリ一覧を返す.
+
+        mount_names が指定されている場合はマウント名を使用、
+        なければディレクトリ名をフォールバックとして使用。
+        """
+        names = mount_names or {}
+        entries: list[EntryMeta] = []
+        for _, _, root in self._root_entries:
+            node_id = self.register(root)
+            name = names.get(root, root.name)
+            child_count = self._count_children_scandir(str(root))
+            entries.append(
+                EntryMeta(
+                    node_id=node_id,
+                    name=name,
+                    kind=EntryKind.DIRECTORY,
+                    child_count=child_count,
+                )
+            )
+        return entries
+
     def get_parent_node_id(self, path: Path) -> str | None:
         """パスの親ディレクトリの node_id を返す.
 

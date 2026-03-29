@@ -324,6 +324,39 @@ def test_複数ルートでルートBのファイルを登録できる(
     assert resolved == (root_b / "file_b.txt").resolve()
 
 
+def test_異なるルートの同名ファイルに異なるnode_idを返す(
+    multi_registry: NodeRegistry, multi_roots: tuple[Path, Path]
+) -> None:
+    root_a, root_b = multi_roots
+    id_a = multi_registry.register(root_a / "common.txt")
+    id_b = multi_registry.register(root_b / "common.txt")
+    assert id_a != id_b
+
+
+def test_list_mount_rootsでマウントポイント一覧を返す(
+    multi_registry: NodeRegistry, multi_roots: tuple[Path, Path]
+) -> None:
+    root_a, root_b = multi_roots
+    mount_names = {root_a.resolve(): "Root A", root_b.resolve(): "Root B"}
+    entries = multi_registry.list_mount_roots(mount_names)
+    assert len(entries) == 2
+    names = {e.name for e in entries}
+    assert names == {"Root A", "Root B"}
+    # 全エントリに node_id が付与されている
+    for e in entries:
+        assert len(e.node_id) == 16
+        assert e.kind == "directory"
+
+
+def test_list_mount_rootsでマウント名がない場合はディレクトリ名を使う(
+    multi_registry: NodeRegistry, multi_roots: tuple[Path, Path]
+) -> None:
+    entries = multi_registry.list_mount_roots({})
+    names = {e.name for e in entries}
+    assert "root_a" in names
+    assert "root_b" in names
+
+
 def test_list_archive_entriesで画像のみがkind_imageになる(
     registry: NodeRegistry, root_dir: Path
 ) -> None:
