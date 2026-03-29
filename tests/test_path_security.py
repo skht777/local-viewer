@@ -120,3 +120,140 @@ def test_safe_joinで正常なパスを結合する(
 ) -> None:
     result = security.safe_join("subdir", "nested.txt")
     assert result == (root_dir / "subdir" / "nested.txt").resolve()
+
+
+# --- 複数ルート対応テスト ---
+
+
+@pytest.fixture
+def multi_roots(tmp_path: Path) -> tuple[Path, Path]:
+    """複数ルート用テストディレクトリ."""
+    root_a = tmp_path / "root_a"
+    root_b = tmp_path / "root_b"
+    root_a.mkdir()
+    root_b.mkdir()
+    (root_a / "file_a.txt").write_text("a")
+    (root_b / "file_b.txt").write_text("b")
+    (root_a / "shared_name").mkdir()
+    (root_b / "shared_name").mkdir()
+    return root_a, root_b
+
+
+@pytest.fixture
+def multi_security(multi_roots: tuple[Path, Path]) -> PathSecurity:
+    """複数ルートの PathSecurity."""
+    return PathSecurity(list(multi_roots))
+
+
+class TestRootDirsプロパティ:
+    def test_単一ルートでroot_dirsが1要素のリストを返す(
+        self, security: PathSecurity, root_dir: Path
+    ) -> None:
+        assert security.root_dirs == [root_dir.resolve()]
+
+    def test_複数ルートでroot_dirsが全ルートを返す(
+        self, multi_security: PathSecurity, multi_roots: tuple[Path, Path]
+    ) -> None:
+        root_a, root_b = multi_roots
+        assert multi_security.root_dirs == [root_a.resolve(), root_b.resolve()]
+
+    def test_単一ルートでroot_dirが後方互換で動作する(
+        self, security: PathSecurity, root_dir: Path
+    ) -> None:
+        assert security.root_dir == root_dir.resolve()
+
+
+class TestMultiRootValidate:
+    def test_root_A配下のファイルを許可する(
+        self, multi_security: PathSecurity, multi_roots: tuple[Path, Path]
+    ) -> None:
+        root_a, _ = multi_roots
+        result = multi_security.validate(root_a / "file_a.txt")
+        assert result == (root_a / "file_a.txt").resolve()
+
+    def test_root_B配下のファイルを許可する(
+        self, multi_security: PathSecurity, multi_roots: tuple[Path, Path]
+    ) -> None:
+        _, root_b = multi_roots
+        result = multi_security.validate(root_b / "file_b.txt")
+        assert result == (root_b / "file_b.txt").resolve()
+
+    def test_どのルートにも属さないパスを拒否する(
+        self, multi_security: PathSecurity, tmp_path: Path
+    ) -> None:
+        with pytest.raises(PathSecurityError):
+            multi_security.validate(tmp_path / "outside.txt")
+
+    def test_root_A配下からroot_Bへのトラバーサルを拒否する(
+        self, multi_security: PathSecurity, multi_roots: tuple[Path, Path]
+    ) -> None:
+        root_a, _ = multi_roots
+        with pytest.raises(PathSecurityError):
+            multi_security.validate(root_a / ".." / ".." / "etc" / "passwd")
+
+
+class TestFindRootFor:
+    def test_root_A配下のパスに対してroot_Aを返す(
+        self, multi_security: PathSecurity, multi_roots: tuple[Path, Path]
+    ) -> None:
+        root_a, _ = multi_roots
+        result = multi_security.find_root_for((root_a / "file_a.txt").resolve())
+        assert result == root_a.resolve()
+
+    def test_root_B配下のパスに対してroot_Bを返す(
+        self, multi_security: PathSecurity, multi_roots: tuple[Path, Path]
+    ) -> None:
+        _, root_b = multi_roots
+        result = multi_security.find_root_for((root_b / "file_b.txt").resolve())
+        assert result == root_b.resolve()
+
+    def test_どのルートにも属さないパスにNoneを返す(
+        self, multi_security: PathSecurity, tmp_path: Path
+    ) -> None:
+        result = multi_security.find_root_for(tmp_path / "outside.txt")
+        assert result is None
+
+    def test_ルート自体に対してルートを返す(
+        self, multi_security: PathSecurity, multi_roots: tuple[Path, Path]
+    ) -> None:
+        root_a, _ = multi_roots
+        result = multi_security.find_root_for(root_a.resolve())
+        assert result == root_a.resolve()
+
+
+class TestValidateMountPath:
+    def test_base_dir配下のディレクトリを許可する(self, tmp_path: Path) -> None:
+        base = tmp_path / "base"
+        base.mkdir()
+        target = base / "subdir"
+        target.mkdir()
+        result = PathSecurity.validate_mount_path(target, base)
+        assert result == target.resolve()
+
+    def test_base_dir外のパスを拒否する(self, tmp_path: Path) -> None:
+        base = tmp_path / "base"
+        base.mkdir()
+        outside = tmp_path / "outside"
+        outside.mkdir()
+        with pytest.raises(PathSecurityError):
+            PathSecurity.validate_mount_path(outside, base)
+
+    def test_存在しないディレクトリを拒否する(self, tmp_path: Path) -> None:
+        base = tmp_path / "base"
+        base.mkdir()
+        with pytest.raises(PathSecurityError):
+            PathSecurity.validate_mount_path(base / "nonexistent", base)
+
+    def test_ファイルパスを拒否する(self, tmp_path: Path) -> None:
+        base = tmp_path / "base"
+        base.mkdir()
+        f = base / "file.txt"
+        f.write_text("hello")
+        with pytest.raises(PathSecurityError):
+            PathSecurity.validate_mount_path(f, base)
+
+    def test_base_dir自体を許可する(self, tmp_path: Path) -> None:
+        base = tmp_path / "base"
+        base.mkdir()
+        result = PathSecurity.validate_mount_path(base, base)
+        assert result == base.resolve()
