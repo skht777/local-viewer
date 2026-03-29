@@ -1,4 +1,4 @@
-// E2E テスト用 mounts.json を生成する
+// E2E テスト用 mounts.json を生成する (v2 スキーマ)
 // playwright globalSetup から呼び出される
 // test-data 配下の各ディレクトリを個別マウントポイントとして登録
 
@@ -16,10 +16,11 @@ export function generateMountsJson(outputPath: string): void {
     .map((e) => ({
       mount_id: crypto.randomBytes(8).toString("hex").slice(0, 16),
       name: e.name,
-      path: path.join(testDataDir, e.name),
+      slug: e.name,
+      host_path: path.join(testDataDir, e.name),
     }));
 
-  const config = { version: 1, mounts };
+  const config = { version: 2, mounts };
   const dir = path.dirname(outputPath);
   if (!fs.existsSync(dir)) {
     fs.mkdirSync(dir, { recursive: true });
