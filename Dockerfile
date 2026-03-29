@@ -15,6 +15,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 # curl for HEALTHCHECK, unrar-free for RAR archives
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
+    ffmpeg \
     unrar-free \
     && rm -rf /var/lib/apt/lists/*
 
