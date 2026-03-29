@@ -214,7 +214,7 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
             scan_task = asyncio.create_task(
                 _background_scan(_indexer, root, path_security, mount.mount_id)
             )
-        scan_task.add_done_callback(lambda _: None)
+        scan_task.add_done_callback(_log_task_exception)
 
     # FileWatcher 開始 (全マウントを一括監視)
     # PollingObserver.start() は初回スナップショットで同期的にディレクトリ全体を走査する
@@ -230,7 +230,7 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
         mounts=watcher_mounts,
     )
     watcher_task = asyncio.create_task(run_in_threadpool(_file_watcher.start))
-    watcher_task.add_done_callback(lambda _: None)  # GC 防止
+    watcher_task.add_done_callback(_log_task_exception)
 
     # DI: routers のスタブを実インスタンスに差し替え
     _app.dependency_overrides[browse.get_node_registry] = get_node_registry
@@ -255,6 +255,16 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
     _archive_service = None
     _video_converter = None
     _temp_file_cache = None
+
+
+def _log_task_exception(task: asyncio.Task[object]) -> None:
+    """asyncio タスクの未処理例外をログに記録する."""
+    if task.cancelled():
+        logger.warning(
+            "バックグラウンドタスクがキャンセルされました: %s", task.get_name()
+        )
+    elif task.exception():
+        logger.error("バックグラウンドタスク例外: %s", task.exception())
 
 
 async def _background_scan(
