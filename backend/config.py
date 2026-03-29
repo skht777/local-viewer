@@ -29,6 +29,10 @@ class Settings:
     # 動画変換設定
     video_remux_timeout: int  # FFmpeg remux タイムアウト (秒)
 
+    # マウントポイント設定
+    mount_base_dir: Path | None  # マウント許可親ディレクトリ (MOUNT_BASE_DIR)
+    mount_config_path: str  # mounts.json パス
+
     # 検索/インデックス設定
     index_db_path: str  # SQLite FTS5 インデックス DB パス
     watch_mode: str  # ファイル監視モード (auto, native, polling)
@@ -38,6 +42,7 @@ class Settings:
     search_query_timeout: int  # 検索クエリのタイムアウト (秒)
 
     def __init__(self) -> None:
+        # ROOT_DIR: 後方互換フォールバック (mounts.json 未設定時に使用)
         raw = os.environ.get("ROOT_DIR", "")
         if not raw:
             msg = "ROOT_DIR 環境変数が設定されていません"
@@ -48,6 +53,13 @@ class Settings:
                 f"ROOT_DIR が存在しないか、ディレクトリではありません: {self.root_dir}"
             )
             raise ValueError(msg)
+
+        # マウントポイント設定
+        mount_base = os.environ.get("MOUNT_BASE_DIR", "")
+        self.mount_base_dir = Path(mount_base).resolve() if mount_base else None
+        self.mount_config_path = os.environ.get(
+            "MOUNT_CONFIG_PATH", "config/mounts.json"
+        )
         self.is_allow_symlinks = os.environ.get("ALLOW_SYMLINKS", "false").lower() in (
             "true",
             "1",
