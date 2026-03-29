@@ -120,23 +120,14 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
     # マウントポイント設定の読み込み
     from backend.services.mount_config import MountConfigService
 
-    base_dir = settings.mount_base_dir or settings.root_dir
-    if base_dir is None:
-        msg = "MOUNT_BASE_DIR または ROOT_DIR が必要です"
-        raise ValueError(msg)
+    base_dir = settings.mount_base_dir
     mount_service = MountConfigService(FilePath(settings.mount_config_path), base_dir)
     mount_config = mount_service.load()
-
-    # mounts.json が空なら ROOT_DIR から自動マイグレーション
-    if not mount_config.mounts and settings.root_dir is not None:
-        logger.info("mounts.json 未設定: ROOT_DIR からマイグレーション")
-        mount_service.migrate_from_root_dir(settings.root_dir)
-        mount_config = mount_service.load()
 
     if not mount_config.mounts:
         logger.warning(
             "マウントポイントが未登録です。"
-            "manage_mounts.py でマウントポイントを追加してください"
+            "manage_mounts.sh でマウントポイントを追加してください"
         )
 
     # マウントポイントからルートディレクトリリストを構築

@@ -39,8 +39,8 @@ class PathSecurity:
             self._roots = [r.resolve() for r in settings_or_dirs]
             self.is_allow_symlinks = is_allow_symlinks
         else:
-            # 後方互換: Settings オブジェクトから初期化
-            self._roots = [settings_or_dirs.root_dir.resolve()]
+            # Settings オブジェクトから初期化
+            self._roots = [settings_or_dirs.mount_base_dir.resolve()]
             self.is_allow_symlinks = settings_or_dirs.is_allow_symlinks
 
         # 文字列比較用にキャッシュ (全ルート)

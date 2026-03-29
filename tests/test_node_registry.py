@@ -70,13 +70,13 @@ def root_dir(tmp_path: Path) -> Path:
 @pytest.fixture
 def registry(root_dir: Path) -> Generator[NodeRegistry]:
     """テスト用 NodeRegistry."""
-    os.environ["ROOT_DIR"] = str(root_dir)
+    os.environ["MOUNT_BASE_DIR"] = str(root_dir)
     os.environ.pop("ALLOW_SYMLINKS", None)
     settings = Settings()
     security = PathSecurity(settings)
     reg = NodeRegistry(security)
     yield reg
-    os.environ.pop("ROOT_DIR", None)
+    os.environ.pop("MOUNT_BASE_DIR", None)
 
 
 def test_パスを登録してnode_idを返す(registry: NodeRegistry, root_dir: Path) -> None:

@@ -109,11 +109,11 @@ def test_root(tmp_path: Path) -> Path:
 @pytest.fixture
 def test_settings(test_root: Path) -> Generator[Settings]:
     """テスト用 Settings."""
-    os.environ["ROOT_DIR"] = str(test_root)
+    os.environ["MOUNT_BASE_DIR"] = str(test_root)
     os.environ.pop("ALLOW_SYMLINKS", None)
     s = Settings()
     yield s
-    os.environ.pop("ROOT_DIR", None)
+    os.environ.pop("MOUNT_BASE_DIR", None)
 
 
 @pytest.fixture

@@ -294,7 +294,7 @@ async def client_with_small_limit(
     with zipfile.ZipFile(zip_path, "w") as zf:
         zf.writestr("large.jpg", b"\xff\xd8" + b"\x00" * 1024)
 
-    os.environ["ROOT_DIR"] = str(tmp_path)
+    os.environ["MOUNT_BASE_DIR"] = str(tmp_path)
     # 抽出上限を 512 バイトに設定
     os.environ["ARCHIVE_MAX_ENTRY_SIZE"] = "512"
     settings = Settings()
@@ -333,7 +333,7 @@ async def client_with_small_limit(
         yield ac, registry
 
     app.dependency_overrides.clear()
-    os.environ.pop("ROOT_DIR", None)
+    os.environ.pop("MOUNT_BASE_DIR", None)
 
 
 async def test_抽出上限超過でAPIが422を返す(

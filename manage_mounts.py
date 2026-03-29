@@ -23,10 +23,7 @@ def _get_service() -> MountConfigService:
     config_path = os.environ.get("MOUNT_CONFIG_PATH", "config/mounts.json")
     base_dir_str = os.environ.get("MOUNT_BASE_DIR", "")
     if not base_dir_str:
-        # ROOT_DIR をフォールバックとして使用
-        base_dir_str = os.environ.get("ROOT_DIR", "")
-    if not base_dir_str:
-        print("エラー: MOUNT_BASE_DIR または ROOT_DIR を設定してください")
+        print("エラー: MOUNT_BASE_DIR を設定してください")
         sys.exit(1)
 
     base_dir = Path(base_dir_str).resolve()
@@ -40,7 +37,7 @@ def _get_service() -> MountConfigService:
 def _show_mounts(service: MountConfigService) -> None:
     """現在のマウントポイントを表示する."""
     config = service.load()
-    base_dir = os.environ.get("MOUNT_BASE_DIR", os.environ.get("ROOT_DIR", ""))
+    base_dir = os.environ.get("MOUNT_BASE_DIR", "")
     print(f"\nMOUNT_BASE_DIR: {base_dir}")
     print()
 

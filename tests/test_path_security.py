@@ -23,11 +23,11 @@ def root_dir(tmp_path: Path) -> Path:
 @pytest.fixture
 def settings(root_dir: Path) -> Generator[Settings]:
     """テスト用 Settings."""
-    os.environ["ROOT_DIR"] = str(root_dir)
+    os.environ["MOUNT_BASE_DIR"] = str(root_dir)
     os.environ.pop("ALLOW_SYMLINKS", None)
     s = Settings()
     yield s
-    os.environ.pop("ROOT_DIR", None)
+    os.environ.pop("MOUNT_BASE_DIR", None)
 
 
 @pytest.fixture
@@ -93,7 +93,7 @@ def test_symlinkがデフォルトで拒否される(
 def test_ALLOW_SYMLINKS有効時にsymlinkを許可する(
     root_dir: Path,
 ) -> None:
-    os.environ["ROOT_DIR"] = str(root_dir)
+    os.environ["MOUNT_BASE_DIR"] = str(root_dir)
     os.environ["ALLOW_SYMLINKS"] = "true"
     try:
         s = Settings()
@@ -104,7 +104,7 @@ def test_ALLOW_SYMLINKS有効時にsymlinkを許可する(
         result = sec.validate(link / "nested.txt")
         assert result == (root_dir / "subdir" / "nested.txt").resolve()
     finally:
-        os.environ.pop("ROOT_DIR", None)
+        os.environ.pop("MOUNT_BASE_DIR", None)
         os.environ.pop("ALLOW_SYMLINKS", None)
 
 
