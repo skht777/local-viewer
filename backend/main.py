@@ -9,7 +9,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path as FilePath
 from typing import TYPE_CHECKING
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import FileResponse
@@ -328,6 +328,7 @@ async def health() -> dict[str, str]:
 # --- 本番用: 静的ファイル配信 + SPA フォールバック ---
 # Vite ビルド出力を配信。開発時は Vite dev server がプロキシで処理するため影響なし
 _static_dir = FilePath(__file__).parent.parent / "static"
+_index_html = _static_dir / "index.html"
 
 if _static_dir.exists():
     # ハッシュ付きアセット (JS/CSS) — 長期キャッシュ可能
@@ -337,10 +338,22 @@ if _static_dir.exists():
         name="assets",
     )
 
-    # SPA フォールバック — /api 以外の全パスで index.html を返す
-    @app.get("/{full_path:path}")
-    async def spa_fallback(full_path: str) -> FileResponse:
-        """SPA のクライアントサイドルーティング対応."""
-        if full_path.startswith("api/"):
-            raise HTTPException(status_code=404, detail="Not Found")
-        return FileResponse(_static_dir / "index.html")
+    # SPA フォールバック — /api 以外の 404 レスポンスを index.html で置換
+    from starlette.middleware.base import BaseHTTPMiddleware
+    from starlette.requests import Request as StarletteRequest
+    from starlette.responses import Response as StarletteResponse
+
+    class _SPAFallbackMiddleware(BaseHTTPMiddleware):
+        async def dispatch(
+            self, request: StarletteRequest, call_next: object
+        ) -> StarletteResponse:
+            response = await call_next(request)  # type: ignore[operator]
+            # /api パスはそのまま返す
+            if request.url.path.startswith("/api"):
+                return response
+            # 404 の場合のみ index.html を返す (SPA ルーティング)
+            if response.status_code == 404:
+                return FileResponse(_index_html)
+            return response
+
+    app.add_middleware(_SPAFallbackMiddleware)
