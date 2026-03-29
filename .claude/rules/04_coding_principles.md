@@ -35,6 +35,7 @@
 ### Python
 - double quotes, 88文字行, space indent (Ruff)
 - import順序: stdlib → third-party → local (Ruff isort)
+- `except OSError, ValueError:` — Python 3.14 では PEP 758 により括弧なしで複数例外をキャッチ可能。Ruff は括弧を外すフォーマットを行うが、これは正しい挙動であり、手動で括弧を追加しないこと（Python 2 の `as` 解釈ではない）
 
 ### TypeScript
 - double quotes, semicolons, 2-space indent (oxfmt)
