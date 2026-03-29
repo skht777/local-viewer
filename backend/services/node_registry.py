@@ -100,9 +100,6 @@ class NodeRegistry:
         self._root_entries: list[tuple[str, str, Path]] = [
             (str(r), str(r) + os.sep, r) for r in path_security.root_dirs
         ]
-        # 後方互換: 先頭ルートの高速パス用キャッシュ
-        self._root_str = self._root_entries[0][0]
-        self._root_prefix = self._root_entries[0][1]
         # アーカイブエントリ用マッピング (LRU, 上限管理)
         self._id_to_archive_entry: OrderedDict[str, tuple[Path, str]] = OrderedDict()
         self._archive_entry_to_id: dict[str, str] = {}
