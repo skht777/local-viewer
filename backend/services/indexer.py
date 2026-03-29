@@ -323,8 +323,9 @@ class Indexer:
         self,
         root_dir: Path,
         path_security: PathSecurity,
+        mount_id: str = "",
     ) -> int:
-        """ROOT_DIR 以下を再帰走査してインデックスに追加する.
+        """ルートディレクトリ以下を再帰走査してインデックスに追加する.
 
         - PathSecurity チェックを通過したエントリのみ登録
         - 1000 エントリごとにバッチ INSERT
@@ -334,6 +335,8 @@ class Indexer:
         conn = self._connect()
         count = 0
         batch: list[tuple[str, str, str, int | None, int]] = []
+        # mount_id が指定されている場合、relative_path にプレフィックスを付与
+        prefix = f"{mount_id}/" if mount_id else ""
 
         try:
             for dirpath, dirnames, filenames in os.walk(root_dir):
@@ -346,7 +349,7 @@ class Indexer:
                     except Exception:
                         dirnames.clear()
                         continue
-                    rel = str(dp.relative_to(root_dir))
+                    rel = prefix + str(dp.relative_to(root_dir))
                     mtime = dp.stat().st_mtime_ns
                     batch.append((rel, dp.name, "directory", None, mtime))
                     count += 1
@@ -369,7 +372,7 @@ class Indexer:
                         st = fp.stat()
                     except OSError:
                         continue
-                    rel = str(fp.relative_to(root_dir))
+                    rel = prefix + str(fp.relative_to(root_dir))
                     batch.append((rel, fname, kind, st.st_size, st.st_mtime_ns))
                     count += 1
 
@@ -389,6 +392,7 @@ class Indexer:
         self,
         root_dir: Path,
         path_security: PathSecurity,
+        mount_id: str = "",
     ) -> tuple[int, int, int]:
         """差分スキャン (追加, 更新, 削除) の件数を返す.
 
@@ -399,6 +403,7 @@ class Indexer:
         added = 0
         updated = 0
         deleted = 0
+        prefix = f"{mount_id}/" if mount_id else ""
 
         try:
             # 既存エントリのパスと mtime を取得
@@ -415,7 +420,7 @@ class Indexer:
                     except Exception:
                         dirnames.clear()
                         continue
-                    rel = str(dp.relative_to(root_dir))
+                    rel = prefix + str(dp.relative_to(root_dir))
                     seen.add(rel)
                     mtime = dp.stat().st_mtime_ns
                     if rel not in existing:
@@ -446,7 +451,7 @@ class Indexer:
                         st = fp.stat()
                     except OSError:
                         continue
-                    rel = str(fp.relative_to(root_dir))
+                    rel = prefix + str(fp.relative_to(root_dir))
                     seen.add(rel)
                     if rel not in existing:
                         self.add_entry(
@@ -473,6 +478,7 @@ class Indexer:
         self,
         root_dir: Path,
         path_security: PathSecurity,
+        mount_id: str = "",
     ) -> int:
         """全エントリを削除して再スキャンする."""
         self._is_rebuilding = True
@@ -483,7 +489,7 @@ class Indexer:
                 conn.commit()
             finally:
                 conn.close()
-            return self.scan_directory(root_dir, path_security)
+            return self.scan_directory(root_dir, path_security, mount_id)
         finally:
             self._is_rebuilding = False
 
