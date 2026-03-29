@@ -6,9 +6,11 @@ paths:
 # FastAPI Conventions
 
 ## Routing
-- One router per resource: `browse.py`, `file.py`, `search.py`
+- One router per resource: `mounts.py`, `browse.py`, `file.py`, `search.py`
 - All routes under `/api/` prefix
 - Use node_id path parameters, not raw filesystem paths
+- `GET /api/mounts` — マウントポイント一覧（TopPage で使用）
+- `GET /api/browse` のルート一覧機能は廃止 → `/api/mounts` に移譲
 
 ## Responses
 - Common error model: `{"error": str, "code": str, "detail"?: any}`

@@ -14,6 +14,7 @@ e2e/
 ├── tsconfig.json
 ├── fixtures/
 │   ├── test-data/             # テスト用ファイル（画像・動画・PDF・ZIP）
+│   ├── e2e-mounts.json        # E2E用マウントポイント定義（MOUNT_CONFIG_PATH で指定）
 │   └── generate-fixtures.ts   # フィクスチャ生成スクリプト
 ├── tests/
 │   ├── pages/                 # Page Object Model（必要に応じて）
@@ -137,6 +138,14 @@ test.describe("CGモード", () => {
 
 - 複数テストで共通する操作（ビューワーを開く等）はヘルパー関数に抽出する
 - ヘルパーはテストファイル上部、または `e2e/tests/helpers/` に配置
+
+## 環境変数設定
+
+E2E テストでは以下の環境変数でマウントポイントを制御する:
+- `MOUNT_CONFIG_PATH` — E2E 用マウント定義ファイル (`e2e/fixtures/e2e-mounts.json`) を指定
+- `MOUNT_BASE_DIR` — テスト用データディレクトリの親パス (`e2e/fixtures/test-data` 等) を指定
+
+`playwright.config.ts` の `webServer.env` でこれらを設定し、テスト環境を本番と分離する。
 
 ## テスト独立性
 

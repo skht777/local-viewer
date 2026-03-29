@@ -26,8 +26,11 @@ FastAPI バックエンド + React フロントエンド、Docker で配布。
 python -m venv backend/.venv && source backend/.venv/bin/activate && pip install -r backend/requirements-dev.txt
 cd frontend && npm install && cd ..
 
+# マウントポイント管理（TUI）
+python manage_mounts.py
+
 # Docker
-cp .env.example .env  # DATA_DIR を先に編集
+cp .env.example .env  # MOUNT_BASE_DIR を先に編集
 docker compose up --build
 
 # Lint（バックエンド）
@@ -49,8 +52,11 @@ cd e2e && npx playwright test --ui   # UI モード
 - `pyproject.toml` — Ruff + mypy + pytest 設定（リポジトリルート、backend/ 配下ではない）
 - `.oxlintrc.json` — oxlint 設定（react/typescript プラグイン）
 - `backend/main.py` — FastAPI エントリポイント
-- `backend/config.py` — 環境変数ベースの設定モジュール
+- `backend/config.py` — 環境変数ベースの設定モジュール（MOUNT_BASE_DIR, MOUNT_CONFIG_PATH 等）
 - `backend/errors.py` — 共通エラーモデル
+- `backend/services/mount_config.py` — マウントポイント設定の読み書き（mounts.json 管理）
+- `manage_mounts.py` — マウントポイント管理 TUI スクリプト（プロジェクトルート）
+- `config/mounts.json` — マウントポイント定義ファイル（Docker では named volume `viewer-config` に配置）
 - `frontend/vite.config.ts` — Vite + Tailwind v4 + /api プロキシ + Vitest
 - `frontend/src/index.css` — Tailwind v4 `@theme` カスタムトークン定義
 - `.env.example` — Docker ボリューム/ポート/リソース設定テンプレート
@@ -60,7 +66,7 @@ cd e2e && npx playwright test --ui   # UI モード
 - **uvicorn はプロジェクトルートから実行** — `uvicorn backend.main:app`（`backend/` からではない）
 - **Tailwind v4** — `tailwind.config.js` や `postcss.config.js` は不要、`@tailwindcss/vite` プラグインを使用
 - **lint-staged は venv パスを使用** — `package.json` 内で `backend/.venv/bin/ruff` として呼び出し
-- **node_id 不透明ID** — API はクライアントに実ファイルパスを公開しない
+- **node_id 不透明ID** — API はクライアントに実ファイルパスを公開しない。生成時にルートパスを含めて複数マウントポイント間の衝突を回避
 - **デフォルト 127.0.0.1 バインド** — LAN アクセスには `.env` で `BIND_HOST=0.0.0.0` を明示指定
 
 ## 実装時に特に気を付けたいこと

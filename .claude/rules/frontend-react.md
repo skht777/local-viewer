@@ -15,6 +15,7 @@ paths:
 - TanStack Query for all server data (API responses, caching, prefetch)
 - zustand for UI-only state (viewer mode, zoom level, sidebar open/close)
 - Never duplicate server state in zustand
+- TopPage は `GET /api/mounts` からマウントポイント一覧を取得して表示する
 
 ## Hooks
 - Custom hooks prefixed with `use`
