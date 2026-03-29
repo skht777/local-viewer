@@ -6,6 +6,7 @@ services:
     volumes:
       - ${DATA_DIR:-./sample}:/mnt-host:ro
       - viewer-config:/app/config
+      - viewer-index:/app/data
     tmpfs:
       - /tmp/viewer-disk-cache:size=${DISK_CACHE_SIZE:-2g}
     environment:
@@ -13,7 +14,7 @@ services:
       - MOUNT_CONFIG_PATH=/app/config/mounts.json
       - ROOT_DIR=/mnt-host
       - BIND_HOST=${BIND_HOST:-127.0.0.1}
-      - INDEX_DB_PATH=/tmp/viewer-disk-cache/index.db
+      - INDEX_DB_PATH=/app/data/index.db
       - WATCH_MODE=${WATCH_MODE:-auto}
       - WATCH_POLL_INTERVAL=${WATCH_POLL_INTERVAL:-30}
       - REBUILD_RATE_LIMIT_SECONDS=${REBUILD_RATE_LIMIT_SECONDS:-60}
@@ -25,3 +26,4 @@ services:
 
 volumes:
   viewer-config:
+  viewer-index:
