@@ -34,6 +34,9 @@ COPY backend/ ./backend/
 # Frontend static assets from Stage 1
 COPY --from=frontend /app/frontend/dist ./static/
 
+# マウント設定・インデックス DB の永続化ディレクトリ (viewer ユーザーで書き込み可能に)
+RUN mkdir -p /app/config /app/data && chown -R viewer:viewer /app/config /app/data
+
 USER viewer
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
