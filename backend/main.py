@@ -116,10 +116,30 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
         app_logger.setLevel(logging.INFO)
 
     settings = init_settings()
-    path_security = PathSecurity(settings)
+
+    # マウントポイント設定の読み込み
+    from backend.services.mount_config import MountConfigService
+
+    base_dir = settings.mount_base_dir or settings.root_dir
+    mount_service = MountConfigService(FilePath(settings.mount_config_path), base_dir)
+    mount_config = mount_service.load()
+
+    # mounts.json が空なら ROOT_DIR から自動マイグレーション
+    if not mount_config.mounts:
+        logger.info("mounts.json 未設定: ROOT_DIR からマイグレーション")
+        mount_service.migrate_from_root_dir(settings.root_dir)
+        mount_config = mount_service.load()
+
+    # マウントポイントからルートディレクトリリストを構築
+    root_dirs = [FilePath(m.path).resolve() for m in mount_config.mounts]
+    mount_names = {FilePath(m.path).resolve(): m.name for m in mount_config.mounts}
+    path_security = PathSecurity(
+        root_dirs, is_allow_symlinks=settings.is_allow_symlinks
+    )
     _node_registry = NodeRegistry(
         path_security,
         archive_registry_max_entries=settings.archive_registry_max_entries,
+        mount_names=mount_names,
     )
 
     # アーカイブサービス初期化
@@ -160,21 +180,26 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
     _indexer = Indexer(settings.index_db_path)
     _indexer.init_db()
 
-    # バックグラウンドで初回フルスキャン (イベントループ非ブロック)
-    scan_task = asyncio.create_task(
-        _background_scan(_indexer, settings.root_dir, path_security)
-    )
-    scan_task.add_done_callback(lambda _: None)  # 参照保持で GC 防止
+    # 各マウントポイントのバックグラウンドスキャン
+    for mount in mount_config.mounts:
+        root = FilePath(mount.path).resolve()
+        scan_task = asyncio.create_task(
+            _background_scan(_indexer, root, path_security, mount.mount_id)
+        )
+        scan_task.add_done_callback(lambda _: None)
 
-    # FileWatcher 開始
+    # FileWatcher 開始 (全マウントを一括監視)
     # PollingObserver.start() は初回スナップショットで同期的にディレクトリ全体を走査する
     # WSL2 (9p) 等の遅いファイルシステムで lifespan をブロックしないよう非同期で起動
+    watcher_mounts = [
+        (m.mount_id, FilePath(m.path).resolve()) for m in mount_config.mounts
+    ]
     _file_watcher = FileWatcher(
         indexer=_indexer,
-        root_dir=settings.root_dir,
         path_security=path_security,
         mode=settings.watch_mode,
         poll_interval=settings.watch_poll_interval,
+        mounts=watcher_mounts,
     )
     watcher_task = asyncio.create_task(run_in_threadpool(_file_watcher.start))
     watcher_task.add_done_callback(lambda _: None)  # GC 防止
@@ -208,13 +233,20 @@ async def _background_scan(
     indexer: Indexer,
     root_dir: FilePath,
     path_security: PathSecurity,
+    mount_id: str = "",
 ) -> None:
     """バックグラウンドで初回インデックススキャンを実行する."""
     try:
         from starlette.concurrency import run_in_threadpool
 
-        count = await run_in_threadpool(indexer.scan_directory, root_dir, path_security)
-        logger.info("初回インデックス完了: %d エントリ", count)
+        count = await run_in_threadpool(
+            indexer.scan_directory, root_dir, path_security, mount_id
+        )
+        logger.info(
+            "初回インデックス完了: %d エントリ (%s)",
+            count,
+            mount_id or "default",
+        )
     except Exception:
         logger.exception("初回インデックススキャンに失敗しました")
 

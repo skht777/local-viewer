@@ -89,6 +89,7 @@ class NodeRegistry:
         self,
         path_security: PathSecurity,
         archive_registry_max_entries: int = 100_000,
+        mount_names: dict[Path, str] | None = None,
     ) -> None:
         self._path_security = path_security
         self._secret = os.environ.get(
@@ -100,6 +101,8 @@ class NodeRegistry:
         self._root_entries: list[tuple[str, str, Path]] = [
             (str(r), str(r) + os.sep, r) for r in path_security.root_dirs
         ]
+        # マウントポイント名マッピング
+        self._mount_names: dict[Path, str] = mount_names or {}
         # アーカイブエントリ用マッピング (LRU, 上限管理)
         self._id_to_archive_entry: OrderedDict[str, tuple[Path, str]] = OrderedDict()
         self._archive_entry_to_id: dict[str, str] = {}
@@ -254,10 +257,11 @@ class NodeRegistry:
     ) -> list[EntryMeta]:
         """マウントポイントのルートディレクトリ一覧を返す.
 
-        mount_names が指定されている場合はマウント名を使用、
-        なければディレクトリ名をフォールバックとして使用。
+        mount_names が指定されている場合はそれを使用、
+        なければインスタンスの _mount_names、
+        さらになければディレクトリ名をフォールバック。
         """
-        names = mount_names or {}
+        names = mount_names or self._mount_names
         entries: list[EntryMeta] = []
         for _, _, root in self._root_entries:
             node_id = self.register(root)
