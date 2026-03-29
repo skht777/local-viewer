@@ -398,56 +398,50 @@ class Indexer:
         root_dir: Path,
         path_security: PathSecurity,
         mount_id: str = "",
+        *,
+        workers: int = 8,
     ) -> int:
-        """ルートディレクトリ以下を再帰走査してインデックスに追加する.
+        """ルートディレクトリ以下を並列走査してインデックスに追加する.
 
-        - PathSecurity チェックを通過したエントリのみ登録
+        - parallel_walk で BFS レベル単位の並列 stat
+        - PathSecurity チェックはワーカースレッド内で実行
         - 1000 エントリごとにバッチ INSERT
         - スキャン完了後 _is_ready = True
         - 戻り値: 登録エントリ数
         """
+        from backend.services.parallel_walk import parallel_walk
+
         conn = self._connect()
         count = 0
         batch: list[tuple[str, str, str, int | None, int]] = []
-        # mount_id が指定されている場合、relative_path にプレフィックスを付与
         prefix = f"{mount_id}/" if mount_id else ""
 
-        try:
-            for dirpath, dirnames, filenames in os.walk(root_dir):
-                dp = Path(dirpath)
+        # PathSecurity をワーカー内で呼び出すバリデータ
+        def validator(p: Path) -> bool:
+            try:
+                path_security.validate(p)
+                return True
+            except Exception:
+                return False
 
+        try:
+            for entry in parallel_walk(
+                root_dir, workers=workers, path_validator=validator
+            ):
                 # ディレクトリ自体を登録 (ルートは除く)
-                if dp != root_dir:
-                    try:
-                        path_security.validate(dp)
-                    except Exception:
-                        dirnames.clear()
-                        continue
-                    rel = prefix + str(dp.relative_to(root_dir))
-                    mtime = dp.stat().st_mtime_ns
-                    batch.append((rel, dp.name, "directory", None, mtime))
+                if entry.path != root_dir:
+                    rel = prefix + str(entry.path.relative_to(root_dir))
+                    mtime = entry.path.stat().st_mtime_ns
+                    batch.append((rel, entry.path.name, "directory", None, mtime))
                     count += 1
 
-                # 隠しディレクトリをスキップ
-                dirnames[:] = [d for d in dirnames if not d.startswith(".")]
-
-                for fname in filenames:
-                    if fname.startswith("."):
-                        continue
-                    fp = dp / fname
-                    try:
-                        path_security.validate(fp)
-                    except Exception:  # noqa: S112
-                        continue
+                # indexable なファイルのみ登録
+                for fname, size, mtime_ns in entry.files:
                     kind = _classify_by_extension(fname)
                     if kind not in INDEXABLE_KINDS:
                         continue
-                    try:
-                        st = fp.stat()
-                    except OSError:
-                        continue
-                    rel = prefix + str(fp.relative_to(root_dir))
-                    batch.append((rel, fname, kind, st.st_size, st.st_mtime_ns))
+                    rel = prefix + str((entry.path / fname).relative_to(root_dir))
+                    batch.append((rel, fname, kind, size, mtime_ns))
                     count += 1
 
                     if len(batch) >= _BATCH_SIZE:

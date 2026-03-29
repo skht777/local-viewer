@@ -212,7 +212,13 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
             )
         else:
             scan_task = asyncio.create_task(
-                _background_scan(_indexer, root, path_security, mount.mount_id)
+                _background_scan(
+                    _indexer,
+                    root,
+                    path_security,
+                    mount.mount_id,
+                    workers=settings.scan_workers,
+                )
             )
         scan_task.add_done_callback(lambda _: None)
 
@@ -262,13 +268,19 @@ async def _background_scan(
     root_dir: FilePath,
     path_security: PathSecurity,
     mount_id: str = "",
+    *,
+    workers: int = 8,
 ) -> None:
     """バックグラウンドで初回インデックススキャンを実行する."""
     try:
         from starlette.concurrency import run_in_threadpool
 
         count = await run_in_threadpool(
-            indexer.scan_directory, root_dir, path_security, mount_id
+            indexer.scan_directory,
+            root_dir,
+            path_security,
+            mount_id,
+            workers=workers,
         )
         logger.info(
             "初回インデックス完了: %d エントリ (%s)",

@@ -90,6 +90,7 @@ class Settings:
         )
         self.search_max_results = int(os.environ.get("SEARCH_MAX_RESULTS", "200"))
         self.search_query_timeout = int(os.environ.get("SEARCH_QUERY_TIMEOUT", "5"))
+        self.scan_workers = int(os.environ.get("SCAN_WORKERS", "8"))
 
 
 _settings: Settings | None = None
