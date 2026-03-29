@@ -4,15 +4,15 @@ services:
     ports:
       - "${HOST_PORT:-8000}:8000"
     volumes:
-      - ${DATA_DIR:-./sample}:/mnt-host:ro
-      - viewer-config:/app/config
+      # --- managed mounts (do not edit) ---
+      # --- end managed mounts ---
+      - ./config:/app/config
       - viewer-index:/app/data
     tmpfs:
       - /tmp/viewer-disk-cache:size=${DISK_CACHE_SIZE:-2g}
     environment:
-      - MOUNT_BASE_DIR=/mnt-host
+      - MOUNT_BASE_DIR=${MOUNT_BASE_DIR:-/mnt-host}
       - MOUNT_CONFIG_PATH=/app/config/mounts.json
-      - ROOT_DIR=/mnt-host
       - BIND_HOST=${BIND_HOST:-127.0.0.1}
       - INDEX_DB_PATH=/app/data/index.db
       - WATCH_MODE=${WATCH_MODE:-auto}
@@ -25,5 +25,4 @@ services:
     cpus: ${CPUS:-2.0}
 
 volumes:
-  viewer-config:
   viewer-index:
