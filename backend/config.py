@@ -14,7 +14,7 @@ class Settings:
     - is_allow_symlinks: symlink 追跡の許可フラグ
     """
 
-    root_dir: Path
+    root_dir: Path | None  # 後方互換フォールバック (mounts.json 未設定時)
     is_allow_symlinks: bool
 
     # アーカイブ安全性設定
@@ -42,24 +42,30 @@ class Settings:
     search_query_timeout: int  # 検索クエリのタイムアウト (秒)
 
     def __init__(self) -> None:
-        # ROOT_DIR: 後方互換フォールバック (mounts.json 未設定時に使用)
-        raw = os.environ.get("ROOT_DIR", "")
-        if not raw:
-            msg = "ROOT_DIR 環境変数が設定されていません"
-            raise ValueError(msg)
-        self.root_dir = Path(raw).resolve()
-        if not self.root_dir.is_dir():
-            msg = (
-                f"ROOT_DIR が存在しないか、ディレクトリではありません: {self.root_dir}"
-            )
-            raise ValueError(msg)
-
-        # マウントポイント設定
+        # マウントポイント設定 (MOUNT_BASE_DIR が主設定)
         mount_base = os.environ.get("MOUNT_BASE_DIR", "")
         self.mount_base_dir = Path(mount_base).resolve() if mount_base else None
         self.mount_config_path = os.environ.get(
             "MOUNT_CONFIG_PATH", "config/mounts.json"
         )
+
+        # ROOT_DIR: 後方互換フォールバック (mounts.json 未設定時に使用)
+        raw = os.environ.get("ROOT_DIR", "")
+        if raw:
+            self.root_dir = Path(raw).resolve()
+            if not self.root_dir.is_dir():
+                msg = (
+                    "ROOT_DIR が存在しないか、ディレクトリではありません:"
+                    f" {self.root_dir}"
+                )
+                raise ValueError(msg)
+        else:
+            self.root_dir = None
+
+        # MOUNT_BASE_DIR も ROOT_DIR も未設定ならエラー
+        if self.mount_base_dir is None and self.root_dir is None:
+            msg = "MOUNT_BASE_DIR または ROOT_DIR のいずれかを設定してください"
+            raise ValueError(msg)
         self.is_allow_symlinks = os.environ.get("ALLOW_SYMLINKS", "false").lower() in (
             "true",
             "1",

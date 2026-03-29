@@ -121,17 +121,30 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
     from backend.services.mount_config import MountConfigService
 
     base_dir = settings.mount_base_dir or settings.root_dir
+    if base_dir is None:
+        msg = "MOUNT_BASE_DIR または ROOT_DIR が必要です"
+        raise ValueError(msg)
     mount_service = MountConfigService(FilePath(settings.mount_config_path), base_dir)
     mount_config = mount_service.load()
 
     # mounts.json が空なら ROOT_DIR から自動マイグレーション
-    if not mount_config.mounts:
+    if not mount_config.mounts and settings.root_dir is not None:
         logger.info("mounts.json 未設定: ROOT_DIR からマイグレーション")
         mount_service.migrate_from_root_dir(settings.root_dir)
         mount_config = mount_service.load()
 
+    if not mount_config.mounts:
+        logger.warning(
+            "マウントポイントが未登録です。"
+            "manage_mounts.py でマウントポイントを追加してください"
+        )
+
     # マウントポイントからルートディレクトリリストを構築
-    root_dirs = [FilePath(m.path).resolve() for m in mount_config.mounts]
+    # マウント未登録の場合は base_dir をフォールバックルートに
+    if mount_config.mounts:
+        root_dirs = [FilePath(m.path).resolve() for m in mount_config.mounts]
+    else:
+        root_dirs = [base_dir.resolve()]
     mount_names = {FilePath(m.path).resolve(): m.name for m in mount_config.mounts}
     path_security = PathSecurity(
         root_dirs, is_allow_symlinks=settings.is_allow_symlinks
@@ -328,7 +341,6 @@ async def health() -> dict[str, str]:
 # --- 本番用: 静的ファイル配信 + SPA フォールバック ---
 # Vite ビルド出力を配信。開発時は Vite dev server がプロキシで処理するため影響なし
 _static_dir = FilePath(__file__).parent.parent / "static"
-_index_html = _static_dir / "index.html"
 
 if _static_dir.exists():
     # ハッシュ付きアセット (JS/CSS) — 長期キャッシュ可能
@@ -338,19 +350,8 @@ if _static_dir.exists():
         name="assets",
     )
 
-    # SPA フォールバック — ルート未一致の 404 を index.html で置換
-    # /api パスはそのまま 404 を返す (API エンドポイントの正常な 404)
-    from starlette.exceptions import HTTPException as StarletteHTTPException
-    from starlette.requests import Request as StarletteRequest
-    from starlette.responses import JSONResponse
-
-    @app.exception_handler(StarletteHTTPException)
-    async def _spa_or_api_error(
-        request: StarletteRequest, exc: StarletteHTTPException
-    ) -> FileResponse | JSONResponse:
-        if exc.status_code == 404 and not request.url.path.startswith("/api"):
-            return FileResponse(_index_html)
-        return JSONResponse(
-            {"error": exc.detail},
-            status_code=exc.status_code,
-        )
+    # SPA フォールバック — /api 以外の全パスで index.html を返す
+    @app.get("/{full_path:path}")
+    async def spa_fallback(full_path: str) -> FileResponse:
+        """SPA のクライアントサイドルーティング対応."""
+        return FileResponse(_static_dir / "index.html")
