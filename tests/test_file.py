@@ -318,6 +318,11 @@ async def client_with_small_limit(
     app.dependency_overrides[file.get_archive_service] = lambda: archive_svc
     app.dependency_overrides[file.get_temp_file_cache] = lambda: temp_cache
 
+    from backend.services.video_converter import VideoConverter
+
+    converter = VideoConverter(temp_cache=temp_cache, timeout=30)
+    app.dependency_overrides[file.get_video_converter] = lambda: converter
+
     app.add_exception_handler(PathSecurityError, path_security_error_handler)  # type: ignore[arg-type]
     app.add_exception_handler(NodeNotFoundError, node_not_found_error_handler)  # type: ignore[arg-type]
     app.add_exception_handler(ArchiveSecurityError, archive_security_error_handler)  # type: ignore[arg-type]

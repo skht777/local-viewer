@@ -34,6 +34,7 @@ from backend.services.archive_service import ArchiveService
 from backend.services.node_registry import NodeRegistry
 from backend.services.path_security import PathSecurity
 from backend.services.temp_file_cache import TempFileCache
+from backend.services.video_converter import VideoConverter
 
 if TYPE_CHECKING:
     from backend.services.file_watcher import FileWatcher
@@ -45,6 +46,7 @@ logger = logging.getLogger(__name__)
 _node_registry: NodeRegistry | None = None
 _archive_service: ArchiveService | None = None
 _temp_file_cache: TempFileCache | None = None
+_video_converter: VideoConverter | None = None
 _indexer: Indexer | None = None
 _file_watcher: FileWatcher | None = None
 
@@ -73,6 +75,14 @@ def get_temp_file_cache() -> TempFileCache:
     return _temp_file_cache
 
 
+def get_video_converter() -> VideoConverter:
+    """VideoConverter の DI 用依存関数."""
+    if _video_converter is None:
+        msg = "VideoConverter が初期化されていません"
+        raise RuntimeError(msg)
+    return _video_converter
+
+
 def get_indexer() -> Indexer:
     """Indexer の DI 用依存関数."""
     if _indexer is None:
@@ -95,7 +105,8 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
 
     起動時: Settings → PathSecurity → NodeRegistry → ArchiveService を初期化。
     """
-    global _node_registry, _archive_service, _temp_file_cache, _indexer, _file_watcher
+    global _node_registry, _archive_service, _temp_file_cache
+    global _video_converter, _indexer, _file_watcher
 
     # アプリケーションロガーを uvicorn のハンドラに接続
     # uvicorn はルートロガーを設定しないため、backend.* の出力先がない
@@ -124,6 +135,16 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
     _temp_file_cache = TempFileCache(
         max_size_bytes=settings.archive_disk_cache_mb * 1024 * 1024,
     )
+
+    # 動画変換サービス初期化
+    _video_converter = VideoConverter(
+        temp_cache=_temp_file_cache,
+        timeout=settings.video_remux_timeout,
+    )
+    if _video_converter.is_available:
+        logger.info("Video remux: FFmpeg available")
+    else:
+        logger.warning("Video remux: FFmpeg not found, MKV files will not be remuxed")
 
     # 起動時診断: 各アーカイブ形式の利用可否
     diag = _archive_service.get_diagnostics()
@@ -164,6 +185,7 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
     _app.dependency_overrides[browse.get_archive_service] = get_archive_service
     _app.dependency_overrides[file.get_archive_service] = get_archive_service
     _app.dependency_overrides[file.get_temp_file_cache] = get_temp_file_cache
+    _app.dependency_overrides[file.get_video_converter] = get_video_converter
     _app.dependency_overrides[search.get_indexer] = get_indexer
     _app.dependency_overrides[search.get_node_registry] = get_node_registry
     _app.dependency_overrides[search.get_path_security] = _get_path_security
@@ -178,6 +200,7 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
     _indexer = None
     _node_registry = None
     _archive_service = None
+    _video_converter = None
     _temp_file_cache = None
 
 

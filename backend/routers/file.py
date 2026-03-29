@@ -15,6 +15,7 @@ from backend.services.archive_service import ArchiveService
 from backend.services.extensions import MIME_MAP, PDF_EXTENSIONS, VIDEO_EXTENSIONS
 from backend.services.node_registry import NodeRegistry
 from backend.services.temp_file_cache import TempFileCache
+from backend.services.video_converter import VideoConverter
 
 router = APIRouter(prefix="/api", tags=["file"])
 
@@ -28,6 +29,12 @@ def get_archive_service() -> ArchiveService:
 def get_temp_file_cache() -> TempFileCache:
     """TempFileCache の DI スタブ."""
     msg = "TempFileCache が DI で設定されていません"
+    raise RuntimeError(msg)
+
+
+def get_video_converter() -> VideoConverter:
+    """VideoConverter の DI スタブ."""
+    msg = "VideoConverter が DI で設定されていません"
     raise RuntimeError(msg)
 
 
@@ -58,6 +65,7 @@ async def serve_file(
     registry: NodeRegistry = Depends(get_node_registry),
     archive_service: ArchiveService = Depends(get_archive_service),
     temp_cache: TempFileCache = Depends(get_temp_file_cache),
+    video_converter: VideoConverter = Depends(get_video_converter),
 ) -> Response:
     """ファイルまたはアーカイブエントリを配信する.
 
@@ -68,7 +76,7 @@ async def serve_file(
     archive_entry = registry.resolve_archive_entry(node_id)
     if archive_entry is not None:
         return await _serve_archive_entry(
-            archive_entry, request, archive_service, temp_cache
+            archive_entry, request, archive_service, temp_cache, video_converter
         )
 
     path = registry.resolve(node_id)
@@ -92,13 +100,21 @@ async def serve_file(
     if if_none_match and if_none_match.strip('"') == etag:
         return Response(status_code=304, headers={"ETag": f'"{etag}"'})
 
-    return FileResponse(
-        path=path,
-        headers={
-            "ETag": f'"{etag}"',
-            "Cache-Control": "private, max-age=3600",
-        },
-    )
+    headers = {
+        "ETag": f'"{etag}"',
+        "Cache-Control": "private, max-age=3600",
+    }
+
+    # MKV remux: ブラウザ非対応コンテナを MP4 に変換して配信
+    ext = path.suffix.lower()
+    if video_converter.needs_remux(ext) and video_converter.is_available:
+        remuxed = await run_in_threadpool(
+            video_converter.get_remuxed, path, path.stat().st_mtime_ns
+        )
+        if remuxed is not None:
+            return FileResponse(path=remuxed, media_type="video/mp4", headers=headers)
+
+    return FileResponse(path=path, headers=headers)
 
 
 def _entry_ext(entry_name: str) -> str:
@@ -128,6 +144,7 @@ async def _serve_archive_entry(
     request: Request,
     archive_service: ArchiveService,
     temp_cache: TempFileCache,
+    video_converter: VideoConverter,
 ) -> Response:
     """アーカイブエントリを配信する.
 
@@ -153,6 +170,7 @@ async def _serve_archive_entry(
             etag,
             archive_service,
             temp_cache,
+            video_converter,
         )
 
     # 画像エントリ: メモリから Response
@@ -177,9 +195,12 @@ async def _serve_archive_large_entry(
     etag: str,
     archive_service: ArchiveService,
     temp_cache: TempFileCache,
+    video_converter: VideoConverter,
 ) -> Response:
     """動画/PDF エントリを tmpfile 経由で配信する (Range 対応)."""
     key = temp_cache.make_key(archive_path, mtime_ns, entry_name)
+    ext = _entry_ext(entry_name)
+    is_remux_target = video_converter.needs_remux(ext) and video_converter.is_available
     headers = {
         "ETag": f'"{etag}"',
         "Cache-Control": "private, max-age=3600",
@@ -188,6 +209,15 @@ async def _serve_archive_large_entry(
     # キャッシュヒット
     cached = temp_cache.get(key)
     if cached is not None:
+        # キャッシュ済み MKV を MP4 に remux
+        if is_remux_target:
+            remuxed = await run_in_threadpool(
+                video_converter.get_remuxed, cached, mtime_ns
+            )
+            if remuxed is not None:
+                return FileResponse(
+                    path=remuxed, media_type="video/mp4", headers=headers
+                )
         return FileResponse(
             path=cached,
             media_type=_entry_mime(entry_name),
@@ -201,6 +231,12 @@ async def _serve_archive_large_entry(
         archive_service.extract_entry_to_file(archive_path, entry_name, dest)
 
     path = await run_in_threadpool(temp_cache.put_with_writer, key, writer, 0, suffix)
+
+    # アーカイブ内 MKV エントリを MP4 に remux
+    if is_remux_target:
+        remuxed = await run_in_threadpool(video_converter.get_remuxed, path, mtime_ns)
+        if remuxed is not None:
+            return FileResponse(path=remuxed, media_type="video/mp4", headers=headers)
 
     return FileResponse(
         path=path,

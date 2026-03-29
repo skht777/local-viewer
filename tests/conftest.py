@@ -159,6 +159,12 @@ async def client(
     )
     app.dependency_overrides[file.get_temp_file_cache] = lambda: test_temp_cache
 
+    # VideoConverter (テスト用 — FFmpeg なし環境でも動作するよう無効化)
+    from backend.services.video_converter import VideoConverter
+
+    test_converter = VideoConverter(temp_cache=test_temp_cache, timeout=30)
+    app.dependency_overrides[file.get_video_converter] = lambda: test_converter
+
     # 例外ハンドラ登録 (lifespan が動かないテスト用)
     app.add_exception_handler(
         PathSecurityError,
@@ -230,6 +236,11 @@ async def search_client(
         max_size_bytes=100 * 1024 * 1024,
     )
     app.dependency_overrides[file.get_temp_file_cache] = lambda: test_temp_cache
+
+    from backend.services.video_converter import VideoConverter
+
+    test_converter = VideoConverter(temp_cache=test_temp_cache, timeout=30)
+    app.dependency_overrides[file.get_video_converter] = lambda: test_converter
 
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
