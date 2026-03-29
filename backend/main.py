@@ -25,7 +25,7 @@ from backend.errors import (
     node_not_found_error_handler,
     path_security_error_handler,
 )
-from backend.routers import browse, file, search
+from backend.routers import browse, file, mounts, search
 from backend.services.archive_security import (
     ArchivePasswordError,
     ArchiveSecurityError,
@@ -214,7 +214,7 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
     _app.dependency_overrides[search.get_indexer] = get_indexer
     _app.dependency_overrides[search.get_node_registry] = get_node_registry
     _app.dependency_overrides[search.get_path_security] = _get_path_security
-    # get_settings は config モジュール関数を直接使用。override 不要
+    _app.dependency_overrides[mounts.get_node_registry] = get_node_registry
 
     yield
 
@@ -276,6 +276,7 @@ app.add_exception_handler(ArchiveSecurityError, archive_security_error_handler)
 app.add_exception_handler(ArchivePasswordError, archive_password_error_handler)
 
 # ルーター登録
+app.include_router(mounts.router)
 app.include_router(browse.router)
 app.include_router(file.router)
 app.include_router(search.router)

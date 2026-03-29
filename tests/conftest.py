@@ -18,7 +18,7 @@ from backend.errors import (
     path_security_error_handler,
 )
 from backend.main import app
-from backend.routers import browse, file, search
+from backend.routers import browse, file, mounts, search
 from backend.services.archive_security import (
     ArchiveEntryValidator,
     ArchivePasswordError,
@@ -147,6 +147,7 @@ async def client(
     """
     app.dependency_overrides[browse.get_node_registry] = lambda: test_node_registry
     app.dependency_overrides[file.get_node_registry] = lambda: test_node_registry
+    app.dependency_overrides[mounts.get_node_registry] = lambda: test_node_registry
     app.dependency_overrides[browse.get_archive_service] = lambda: test_archive_service
     app.dependency_overrides[file.get_archive_service] = lambda: test_archive_service
 
@@ -213,6 +214,7 @@ async def search_client(
     """
     app.dependency_overrides[browse.get_node_registry] = lambda: test_node_registry
     app.dependency_overrides[file.get_node_registry] = lambda: test_node_registry
+    app.dependency_overrides[mounts.get_node_registry] = lambda: test_node_registry
     app.dependency_overrides[browse.get_archive_service] = lambda: test_archive_service
     app.dependency_overrides[file.get_archive_service] = lambda: test_archive_service
     # rebuild レート制限をリセット (monotonic 起点未定のため十分過去に設定)
