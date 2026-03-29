@@ -7,7 +7,8 @@
 import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
-import { browseNodeOptions, browseRootOptions } from "../hooks/api/browseQueries";
+import { browseNodeOptions } from "../hooks/api/browseQueries";
+import { mountListOptions } from "../hooks/api/mountQueries";
 import { useViewerParams } from "../hooks/useViewerParams";
 import { useViewerStore } from "../stores/viewerStore";
 import { BrowseHeader } from "../components/BrowseHeader";
@@ -46,8 +47,22 @@ export default function BrowsePage() {
   // 現在のディレクトリのデータ
   const { data, isLoading } = useQuery(browseNodeOptions(nodeId));
 
-  // ルート一覧 (ツリー用)
-  const { data: rootData } = useQuery(browseRootOptions());
+  // マウントポイント一覧 (ツリー用)
+  const { data: mountData } = useQuery(mountListOptions());
+
+  // MountEntry → BrowseEntry に変換してツリーに渡す
+  const rootEntries = useMemo(
+    () =>
+      (mountData?.mounts ?? []).map((m) => ({
+        node_id: m.node_id,
+        name: m.name,
+        kind: "directory" as const,
+        size_bytes: null,
+        mime_type: null,
+        child_count: m.child_count,
+      })),
+    [mountData?.mounts],
+  );
 
   // 現在のディレクトリ内の画像エントリのみ（CgViewer の表示範囲）
   const images = useMemo(
@@ -127,8 +142,8 @@ export default function BrowsePage() {
       />
       <ViewerTabs activeTab={params.tab} onTabChange={setTab} />
       <div className="flex flex-1 overflow-hidden">
-        {isSidebarOpen && rootData && (
-          <DirectoryTree rootEntries={rootData.entries} activeNodeId={nodeId ?? ""} />
+        {isSidebarOpen && rootEntries.length > 0 && (
+          <DirectoryTree rootEntries={rootEntries} activeNodeId={nodeId ?? ""} />
         )}
         {params.tab === "videos" ? (
           <VideoFeed videos={videos} />

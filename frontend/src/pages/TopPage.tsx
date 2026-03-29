@@ -1,16 +1,16 @@
 // ランディングページ
-// - /api/browse からマウントポイント一覧を取得
+// - /api/mounts からマウントポイント一覧を取得
 // - カードクリックで /browse/:nodeId に遷移
 
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
-import { browseRootOptions } from "../hooks/api/browseQueries";
+import { mountListOptions } from "../hooks/api/mountQueries";
 import { MountPointCard } from "../components/MountPointCard";
 import { SearchBar } from "../components/SearchBar";
 
 export default function TopPage() {
   const navigate = useNavigate();
-  const { data, isLoading, error } = useQuery(browseRootOptions());
+  const { data, isLoading, error } = useQuery(mountListOptions());
 
   return (
     <div className="flex min-h-screen flex-col items-center px-8 py-16">
@@ -22,10 +22,10 @@ export default function TopPage() {
 
       {data && (
         <div className="mb-12 grid w-full max-w-4xl grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
-          {data.entries.map((entry, index) => (
+          {data.mounts.map((mount, index) => (
             <MountPointCard
-              key={entry.node_id}
-              entry={entry}
+              key={mount.node_id}
+              mount={mount}
               index={index}
               onSelect={(nodeId) => navigate(`/browse/${nodeId}`)}
             />
