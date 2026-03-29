@@ -29,6 +29,9 @@ Thumbs.db
 # Docker
 .env
 
+# マウントポイント設定 (manage_mounts.sh で管理)
+config/mounts.json
+
 # Claude Code
 .claude/settings.local.json
 .claude/plans/
