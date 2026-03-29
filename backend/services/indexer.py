@@ -461,10 +461,21 @@ class Indexer:
         prefix = f"{mount_id}/" if mount_id else ""
 
         try:
-            # 既存エントリのパスと mtime を取得
-            existing = dict(
-                conn.execute("SELECT relative_path, mtime_ns FROM entries").fetchall()
-            )
+            # 既存エントリのパスと mtime を取得 (マウント単位でフィルタ)
+            if prefix:
+                existing = dict(
+                    conn.execute(
+                        "SELECT relative_path, mtime_ns FROM entries"
+                        " WHERE relative_path LIKE ?",
+                        (prefix + "%",),
+                    ).fetchall()
+                )
+            else:
+                existing = dict(
+                    conn.execute(
+                        "SELECT relative_path, mtime_ns FROM entries"
+                    ).fetchall()
+                )
             seen: set[str] = set()
 
             for dirpath, dirnames, filenames in os.walk(root_dir):

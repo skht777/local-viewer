@@ -476,6 +476,43 @@ class TestIndexerIndexableKinds:
         assert len(results) == 1
 
 
+class TestIndexerMountScopedIncrementalScan:
+    """マウント単位の incremental_scan."""
+
+    def test_incremental_scanがマウント単位でフィルタされる(
+        self, indexer: Indexer, tmp_path: Path
+    ) -> None:
+        """mount_id 指定時、他マウントのエントリを削除しない."""
+        from unittest.mock import MagicMock
+
+        security = MagicMock()
+        security.validate = MagicMock(side_effect=lambda p: p)
+
+        # mount_a のデータを手動登録
+        indexer.add_entry(
+            IndexEntry("mount_a/clip.mp4", "clip.mp4", "video", 1000, 100)
+        )
+        # mount_b のデータを手動登録
+        indexer.add_entry(
+            IndexEntry("mount_b/doc.pdf", "doc.pdf", "pdf", 2000, 200)
+        )
+        assert indexer.entry_count() == 2
+
+        # mount_a を空ディレクトリで incremental_scan
+        root_a = tmp_path / "mount_a"
+        root_a.mkdir()
+
+        added, updated, deleted = indexer.incremental_scan(
+            root_a, security, mount_id="mount_a"
+        )
+
+        # mount_a のエントリのみ削除、mount_b は残る
+        assert deleted == 1
+        assert indexer.entry_count() == 1
+        results, _ = indexer.search("doc.pdf")
+        assert len(results) == 1
+
+
 class TestIndexerSchemaVersion:
     """スキーマバージョン管理."""
 
