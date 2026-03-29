@@ -7,22 +7,6 @@ from httpx import AsyncClient
 from backend.services.node_registry import NodeRegistry
 
 
-async def test_ルート一覧が200を返す(client: AsyncClient) -> None:
-    response = await client.get("/api/browse")
-    assert response.status_code == 200
-
-
-async def test_ルート一覧にエントリが含まれる(client: AsyncClient) -> None:
-    response = await client.get("/api/browse")
-    data = response.json()
-    assert len(data["entries"]) > 0
-
-
-async def test_ルート一覧のcurrent_node_idがNone(client: AsyncClient) -> None:
-    response = await client.get("/api/browse")
-    data = response.json()
-    assert data["current_node_id"] is None
-
 
 async def test_ディレクトリのbrowseが200を返す(
     client: AsyncClient, test_node_registry: NodeRegistry
@@ -101,8 +85,12 @@ async def test_エントリのメタ情報が正しい(
 
 async def test_エントリがディレクトリ優先でソートされている(
     client: AsyncClient,
+    test_node_registry: NodeRegistry,
 ) -> None:
-    response = await client.get("/api/browse")
+    # ルートディレクトリの node_id を取得して browse
+    root = test_node_registry.path_security.root_dirs[0]
+    root_id = test_node_registry.register(root)
+    response = await client.get(f"/api/browse/{root_id}")
     data = response.json()
     kinds = [e["kind"] for e in data["entries"]]
 

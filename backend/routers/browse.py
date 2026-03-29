@@ -49,39 +49,6 @@ def _compute_etag(entries: list[EntryMeta]) -> str:
     return hashlib.md5(content.encode()).hexdigest()  # noqa: S324
 
 
-@router.get("/browse", response_model=BrowseResponse)
-async def browse_root(
-    request: Request,
-    registry: NodeRegistry = Depends(get_node_registry),
-) -> BrowseResponse | Response:
-    """ルートディレクトリ一覧を返す.
-
-    ROOT_DIR 直下のエントリをメタ情報付きで返す。
-    ETag が一致すれば 304 Not Modified を返す。
-    """
-    root = registry.path_security.root_dirs[0]
-    entries = await run_in_threadpool(registry.list_directory, root)
-
-    etag = _compute_etag(entries)
-    if request.headers.get("if-none-match") == etag:
-        return Response(
-            status_code=304,
-            headers={"ETag": etag, "Cache-Control": "private, no-cache"},
-        )
-
-    response = BrowseResponse(
-        current_node_id=None,
-        current_name="root",
-        parent_node_id=None,
-        entries=entries,
-    )
-    return Response(
-        content=response.model_dump_json(),
-        media_type="application/json",
-        headers={"ETag": etag, "Cache-Control": "private, no-cache"},
-    )
-
-
 @router.get("/browse/{node_id}", response_model=BrowseResponse)
 async def browse_directory(
     node_id: str,
