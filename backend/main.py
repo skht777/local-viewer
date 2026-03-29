@@ -142,10 +142,10 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
     # マウントポイントからルートディレクトリリストを構築
     # マウント未登録の場合は base_dir をフォールバックルートに
     if mount_config.mounts:
-        root_dirs = [FilePath(m.path).resolve() for m in mount_config.mounts]
+        root_dirs = [m.resolve_path(base_dir) for m in mount_config.mounts]
     else:
         root_dirs = [base_dir.resolve()]
-    mount_names = {FilePath(m.path).resolve(): m.name for m in mount_config.mounts}
+    mount_names = {m.resolve_path(base_dir): m.name for m in mount_config.mounts}
     path_security = PathSecurity(
         root_dirs, is_allow_symlinks=settings.is_allow_symlinks
     )
@@ -156,7 +156,7 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
     )
     # mount_id → root_dir マッピング (search 用)
     _node_registry.set_mount_id_map(
-        {m.mount_id: FilePath(m.path).resolve() for m in mount_config.mounts}
+        {m.mount_id: m.resolve_path(base_dir) for m in mount_config.mounts}
     )
 
     # アーカイブサービス初期化
@@ -201,7 +201,7 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
     has_existing = _indexer.entry_count() > 0
 
     for mount in mount_config.mounts:
-        root = FilePath(mount.path).resolve()
+        root = mount.resolve_path(base_dir)
         if has_existing:
             scan_task = asyncio.create_task(
                 _background_incremental_scan(
@@ -218,7 +218,7 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
     # PollingObserver.start() は初回スナップショットで同期的にディレクトリ全体を走査する
     # WSL2 (9p) 等の遅いファイルシステムで lifespan をブロックしないよう非同期で起動
     watcher_mounts = [
-        (m.mount_id, FilePath(m.path).resolve()) for m in mount_config.mounts
+        (m.mount_id, m.resolve_path(base_dir)) for m in mount_config.mounts
     ]
     _file_watcher = FileWatcher(
         indexer=_indexer,

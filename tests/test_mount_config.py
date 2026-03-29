@@ -14,9 +14,6 @@ def base_dir(tmp_path: Path) -> Path:
     """テスト用ベースディレクトリ."""
     base = tmp_path / "mnt-host"
     base.mkdir()
-    (base / "photos").mkdir()
-    (base / "videos").mkdir()
-    (base / "music").mkdir()
     return base
 
 
@@ -38,9 +35,34 @@ class TestLoad:
     ) -> None:
         config = service.load()
         assert config.mounts == []
-        assert config.version == 1
+        assert config.version == 2
 
-    def test_有効な設定ファイルを読み込める(
+    def test_v2スキーマの設定ファイルを読み込める(
+        self, service: MountConfigService, config_path: Path
+    ) -> None:
+        config_path.parent.mkdir(parents=True, exist_ok=True)
+        config_path.write_text(
+            json.dumps(
+                {
+                    "version": 2,
+                    "mounts": [
+                        {
+                            "mount_id": "abc12345",
+                            "name": "Photos",
+                            "slug": "photos",
+                            "host_path": "/mnt/d/photos",
+                        }
+                    ],
+                }
+            )
+        )
+        config = service.load()
+        assert len(config.mounts) == 1
+        assert config.mounts[0].name == "Photos"
+        assert config.mounts[0].slug == "photos"
+        assert config.mounts[0].host_path == "/mnt/d/photos"
+
+    def test_v1スキーマをslugに変換して読み込める(
         self, service: MountConfigService, config_path: Path, base_dir: Path
     ) -> None:
         config_path.parent.mkdir(parents=True, exist_ok=True)
@@ -60,8 +82,8 @@ class TestLoad:
         )
         config = service.load()
         assert len(config.mounts) == 1
-        assert config.mounts[0].name == "Photos"
-        assert config.mounts[0].mount_id == "abc12345"
+        assert config.mounts[0].slug == "photos"
+        assert config.mounts[0].host_path == ""
 
     def test_壊れたJSONでエラーを返す(
         self, service: MountConfigService, config_path: Path
@@ -72,13 +94,38 @@ class TestLoad:
             service.load()
 
 
+class TestResolvePath:
+    def test_通常のslugからパスを導出する(self, base_dir: Path) -> None:
+        mount = MountPoint(mount_id="abc", name="Photos", slug="photos")
+        result = mount.resolve_path(base_dir)
+        assert result == (base_dir / "photos").resolve()
+
+    def test_ドットslugはbase_dir自体を返す(self, base_dir: Path) -> None:
+        mount = MountPoint(mount_id="abc", name="Root", slug=".")
+        result = mount.resolve_path(base_dir)
+        assert result == base_dir.resolve()
+
+    def test_不正なslugでPathSecurityErrorを送出する(self, base_dir: Path) -> None:
+        mount = MountPoint(mount_id="abc", name="Bad", slug="..")
+        with pytest.raises(PathSecurityError):
+            mount.resolve_path(base_dir)
+
+    def test_スラッシュ含むslugでPathSecurityErrorを送出する(
+        self, base_dir: Path
+    ) -> None:
+        mount = MountPoint(mount_id="abc", name="Bad", slug="a/b")
+        with pytest.raises(PathSecurityError):
+            mount.resolve_path(base_dir)
+
+
 class TestAddMount:
     def test_マウントポイントを追加して永続化できる(
-        self, service: MountConfigService, base_dir: Path
+        self, service: MountConfigService
     ) -> None:
-        mount = service.add_mount("Photos", str(base_dir / "photos"))
+        mount = service.add_mount("Photos", "photos", "/mnt/d/photos")
         assert mount.name == "Photos"
-        assert mount.path == str((base_dir / "photos").resolve())
+        assert mount.slug == "photos"
+        assert mount.host_path == "/mnt/d/photos"
         assert len(mount.mount_id) == 16
 
         # 永続化確認
@@ -86,56 +133,30 @@ class TestAddMount:
         assert len(config.mounts) == 1
         assert config.mounts[0].mount_id == mount.mount_id
 
-    def test_名前の重複を拒否する(
-        self, service: MountConfigService, base_dir: Path
-    ) -> None:
-        service.add_mount("Photos", str(base_dir / "photos"))
+    def test_名前の重複を拒否する(self, service: MountConfigService) -> None:
+        service.add_mount("Photos", "photos")
         with pytest.raises(ValueError, match="同名のマウントポイント"):
-            service.add_mount("Photos", str(base_dir / "videos"))
+            service.add_mount("Photos", "videos")
 
-    def test_重複パスのマウントを拒否する(
-        self, service: MountConfigService, base_dir: Path
-    ) -> None:
-        service.add_mount("Photos", str(base_dir / "photos"))
-        with pytest.raises(ValueError, match="既に登録されています"):
-            service.add_mount("Photos2", str(base_dir / "photos"))
+    def test_重複slugのマウントを拒否する(self, service: MountConfigService) -> None:
+        service.add_mount("Photos", "photos")
+        with pytest.raises(ValueError, match="同じ slug"):
+            service.add_mount("Photos2", "photos")
 
-    def test_MOUNT_BASE_DIR外のパスを拒否する(
-        self, service: MountConfigService, tmp_path: Path
-    ) -> None:
-        outside = tmp_path / "outside"
-        outside.mkdir()
-        with pytest.raises(PathSecurityError, match="MOUNT_BASE_DIR"):
-            service.add_mount("Outside", str(outside))
+    def test_不正なslugを拒否する(self, service: MountConfigService) -> None:
+        with pytest.raises(PathSecurityError):
+            service.add_mount("Bad", "../escape")
 
-    def test_存在しないディレクトリを拒否する(
-        self, service: MountConfigService, base_dir: Path
-    ) -> None:
-        with pytest.raises(PathSecurityError, match="ディレクトリが存在しません"):
-            service.add_mount("Nonexistent", str(base_dir / "nonexistent"))
-
-    def test_親子関係のマウントを拒否する(
-        self, service: MountConfigService, base_dir: Path
-    ) -> None:
-        # 親を先に登録
-        service.add_mount("Base", str(base_dir))
-        # その子を追加しようとする
-        with pytest.raises(ValueError, match="親子関係"):
-            service.add_mount("Photos", str(base_dir / "photos"))
-
-    def test_子を先に登録した後に親を追加しようとすると拒否する(
-        self, service: MountConfigService, base_dir: Path
-    ) -> None:
-        service.add_mount("Photos", str(base_dir / "photos"))
-        with pytest.raises(ValueError, match="親子関係"):
-            service.add_mount("Base", str(base_dir))
+    def test_空のslugを拒否する(self, service: MountConfigService) -> None:
+        with pytest.raises(PathSecurityError):
+            service.add_mount("Bad", "")
 
 
 class TestRemoveMount:
     def test_マウントポイントを削除できる(
-        self, service: MountConfigService, base_dir: Path
+        self, service: MountConfigService
     ) -> None:
-        mount = service.add_mount("Photos", str(base_dir / "photos"))
+        mount = service.add_mount("Photos", "photos")
         service.remove_mount(mount.mount_id)
         config = service.load()
         assert len(config.mounts) == 0
@@ -149,9 +170,9 @@ class TestRemoveMount:
 
 class TestUpdateMount:
     def test_マウントポイント名を更新できる(
-        self, service: MountConfigService, base_dir: Path
+        self, service: MountConfigService
     ) -> None:
-        mount = service.add_mount("Photos", str(base_dir / "photos"))
+        mount = service.add_mount("Photos", "photos")
         updated = service.update_mount(mount.mount_id, name="My Photos")
         assert updated.name == "My Photos"
         assert updated.mount_id == mount.mount_id
@@ -171,7 +192,28 @@ class TestROOTDIRマイグレーション:
         self, service: MountConfigService, base_dir: Path
     ) -> None:
         mount = service.migrate_from_root_dir(base_dir)
+        assert mount.slug == "."
         assert mount.name == base_dir.name
-        assert mount.path == str(base_dir.resolve())
         config = service.load()
         assert len(config.mounts) == 1
+        assert config.version == 2
+
+    def test_ROOT_DIRがbase_dirの子ディレクトリの場合(
+        self, service: MountConfigService, base_dir: Path
+    ) -> None:
+        subdir = base_dir / "photos"
+        subdir.mkdir()
+        mount = service.migrate_from_root_dir(subdir)
+        assert mount.slug == "photos"
+
+
+class TestSave:
+    def test_v2形式で保存される(
+        self, service: MountConfigService, config_path: Path
+    ) -> None:
+        service.add_mount("Photos", "photos", "/mnt/d/photos")
+        raw = json.loads(config_path.read_text())
+        assert raw["version"] == 2
+        assert "slug" in raw["mounts"][0]
+        assert "host_path" in raw["mounts"][0]
+        assert "path" not in raw["mounts"][0]

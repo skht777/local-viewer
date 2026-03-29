@@ -128,23 +128,21 @@ class PathSecurity:
         return resolved
 
     @staticmethod
-    def validate_mount_path(path: Path, base_dir: Path) -> Path:
-        """マウントポイントパスを検証する (TUI + MountConfigService 用).
+    def validate_slug(slug: str) -> None:
+        """マウントポイントの slug が安全であることを検証する.
 
-        - resolve() 後に base_dir 配下であること
-        - 存在するディレクトリであること
+        slug は MOUNT_BASE_DIR 直下のディレクトリ名。
+        パストラバーサルに利用できる文字列を拒否する。
         """
-        resolved = path.resolve()
-        base_resolved = base_dir.resolve()
-        base_str = str(base_resolved)
-        base_prefix = base_str + os.sep
-        s = str(resolved)
-        if s != base_str and not s.startswith(base_prefix):
-            raise PathSecurityError("MOUNT_BASE_DIR の外へのアクセスは禁止されています")
-        if not resolved.is_dir():
-            msg = f"ディレクトリが存在しません: {resolved}"
+        if not slug or slug == ".":
+            msg = "slug が空または '.' です"
             raise PathSecurityError(msg)
-        return resolved
+        if "\x00" in slug:
+            raise PathSecurityError("slug に NUL バイトが含まれています")
+        if "/" in slug or "\\" in slug:
+            raise PathSecurityError("slug にパス区切り文字が含まれています")
+        if slug == ".." or slug.startswith(".."):
+            raise PathSecurityError("slug に不正なパス要素が含まれています")
 
     def _is_under_root(self, resolved: Path) -> bool:
         """resolved パスが許可ルートのいずれか配下にあるか判定する.

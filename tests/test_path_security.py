@@ -221,39 +221,33 @@ class TestFindRootFor:
         assert result == root_a.resolve()
 
 
-class TestValidateMountPath:
-    def test_base_dir配下のディレクトリを許可する(self, tmp_path: Path) -> None:
-        base = tmp_path / "base"
-        base.mkdir()
-        target = base / "subdir"
-        target.mkdir()
-        result = PathSecurity.validate_mount_path(target, base)
-        assert result == target.resolve()
+class TestValidateSlug:
+    def test_正常なスラッグを許可する(self) -> None:
+        PathSecurity.validate_slug("photos")  # 例外なし
 
-    def test_base_dir外のパスを拒否する(self, tmp_path: Path) -> None:
-        base = tmp_path / "base"
-        base.mkdir()
-        outside = tmp_path / "outside"
-        outside.mkdir()
+    def test_ハイフン付きスラッグを許可する(self) -> None:
+        PathSecurity.validate_slug("my-photos")  # 例外なし
+
+    def test_空のスラッグを拒否する(self) -> None:
         with pytest.raises(PathSecurityError):
-            PathSecurity.validate_mount_path(outside, base)
+            PathSecurity.validate_slug("")
 
-    def test_存在しないディレクトリを拒否する(self, tmp_path: Path) -> None:
-        base = tmp_path / "base"
-        base.mkdir()
+    def test_ドットのみのスラッグを拒否する(self) -> None:
         with pytest.raises(PathSecurityError):
-            PathSecurity.validate_mount_path(base / "nonexistent", base)
+            PathSecurity.validate_slug(".")
 
-    def test_ファイルパスを拒否する(self, tmp_path: Path) -> None:
-        base = tmp_path / "base"
-        base.mkdir()
-        f = base / "file.txt"
-        f.write_text("hello")
+    def test_ドットドットを拒否する(self) -> None:
         with pytest.raises(PathSecurityError):
-            PathSecurity.validate_mount_path(f, base)
+            PathSecurity.validate_slug("..")
 
-    def test_base_dir自体を許可する(self, tmp_path: Path) -> None:
-        base = tmp_path / "base"
-        base.mkdir()
-        result = PathSecurity.validate_mount_path(base, base)
-        assert result == base.resolve()
+    def test_NULバイトを含むスラッグを拒否する(self) -> None:
+        with pytest.raises(PathSecurityError):
+            PathSecurity.validate_slug("test\x00slug")
+
+    def test_スラッシュを含むスラッグを拒否する(self) -> None:
+        with pytest.raises(PathSecurityError):
+            PathSecurity.validate_slug("path/traversal")
+
+    def test_バックスラッシュを含むスラッグを拒否する(self) -> None:
+        with pytest.raises(PathSecurityError):
+            PathSecurity.validate_slug("path\\traversal")

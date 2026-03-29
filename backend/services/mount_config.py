@@ -1,16 +1,22 @@
 """マウントポイント設定の管理.
 
 mounts.json の読み書きとマウントポイントの CRUD を提供する。
-パス検証は PathSecurity.validate_mount_path() に委譲する。
+slug のバリデーションは PathSecurity.validate_slug() に委譲する。
+
+スキーマ:
+  v1: mount_id, name, path (コンテナ内絶対パス)
+  v2: mount_id, name, slug (MOUNT_BASE_DIR からの相対名), host_path
 """
 
 from __future__ import annotations
 
 import json
+import os
 import uuid
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from pathlib import Path
 
+from backend.errors import PathSecurityError
 from backend.services.path_security import PathSecurity
 
 
@@ -20,19 +26,40 @@ class MountPoint:
 
     - mount_id: UUID v4 hex 16文字の安定識別子
     - name: 表示名
-    - path: コンテナ内の絶対パス (resolve 済み)
+    - slug: MOUNT_BASE_DIR からの相対ディレクトリ名
+    - host_path: ホスト側パス (バックエンドでは不使用、manage_mounts.sh 用)
     """
 
     mount_id: str
     name: str
-    path: str
+    slug: str
+    host_path: str = ""
+
+    def resolve_path(self, base_dir: Path) -> Path:
+        """slug からコンテナ内の絶対パスを導出する.
+
+        - "." は base_dir 自体を返す (ROOT_DIR マイグレーション互換)
+        - それ以外は validate_slug() で安全性を検証した上で base_dir / slug を返す
+        - resolve 後が base_dir 配下であることを防御的に確認
+        """
+        if self.slug == ".":
+            return base_dir.resolve()
+        PathSecurity.validate_slug(self.slug)
+        resolved = (base_dir / self.slug).resolve()
+        base_resolved = base_dir.resolve()
+        base_str = str(base_resolved)
+        resolved_str = str(resolved)
+        if resolved_str != base_str and not resolved_str.startswith(base_str + os.sep):
+            msg = "slug が MOUNT_BASE_DIR 外を参照しています"
+            raise PathSecurityError(msg)
+        return resolved
 
 
 @dataclass
 class MountConfig:
     """マウントポイント設定全体.
 
-    - version: スキーマバージョン
+    - version: スキーマバージョン (1 or 2)
     - mounts: マウントポイントのリスト
     """
 
@@ -54,10 +81,11 @@ class MountConfigService:
     def load(self) -> MountConfig:
         """設定ファイルを読み込む.
 
+        v1 (path フィールド) と v2 (slug フィールド) の両方に対応。
         ファイルが存在しない場合は空の設定を返す。
         """
         if not self._config_path.exists():
-            return MountConfig(version=1, mounts=[])
+            return MountConfig(version=2, mounts=[])
 
         try:
             raw = json.loads(self._config_path.read_text())
@@ -65,37 +93,49 @@ class MountConfigService:
             msg = f"設定ファイルの読み込みに失敗: {exc}"
             raise ValueError(msg) from exc
 
-        mounts = [
-            MountPoint(
-                mount_id=m["mount_id"],
-                name=m["name"],
-                path=m["path"],
+        mounts: list[MountPoint] = []
+        for m in raw.get("mounts", []):
+            slug = m.get("slug", "")
+            if not slug and "path" in m:
+                # v1 互換: path から slug を導出
+                slug = self._derive_slug_from_path(m["path"])
+            mounts.append(
+                MountPoint(
+                    mount_id=m["mount_id"],
+                    name=m["name"],
+                    slug=slug,
+                    host_path=m.get("host_path", ""),
+                )
             )
-            for m in raw.get("mounts", [])
-        ]
-        return MountConfig(version=raw.get("version", 1), mounts=mounts)
+        return MountConfig(version=raw.get("version", 2), mounts=mounts)
 
     def save(self, config: MountConfig) -> None:
-        """設定をファイルに書き込む."""
+        """設定を v2 形式でファイルに書き込む."""
         self._config_path.parent.mkdir(parents=True, exist_ok=True)
         data = {
-            "version": config.version,
-            "mounts": [asdict(m) for m in config.mounts],
+            "version": 2,
+            "mounts": [
+                {
+                    "mount_id": m.mount_id,
+                    "name": m.name,
+                    "slug": m.slug,
+                    "host_path": m.host_path,
+                }
+                for m in config.mounts
+            ],
         }
         self._config_path.write_text(
             json.dumps(data, ensure_ascii=False, indent=2) + "\n"
         )
 
-    def add_mount(self, name: str, path: str) -> MountPoint:
+    def add_mount(self, name: str, slug: str, host_path: str = "") -> MountPoint:
         """マウントポイントを追加する.
 
-        - PathSecurity でパス検証
-        - 名前・パスの重複チェック
-        - 親子関係チェック
+        - slug の安全性を検証
+        - 名前・slug の重複チェック
         - mounts.json に永続化
         """
-        resolved = PathSecurity.validate_mount_path(Path(path), self._base_dir)
-        resolved_str = str(resolved)
+        PathSecurity.validate_slug(slug)
 
         config = self.load()
 
@@ -105,19 +145,17 @@ class MountConfigService:
                 msg = f"同名のマウントポイントが既に存在します: {name}"
                 raise ValueError(msg)
 
-        # パスの重複チェック
+        # slug の重複チェック
         for m in config.mounts:
-            if m.path == resolved_str:
-                msg = f"同じパスが既に登録されています: {resolved_str}"
+            if m.slug == slug:
+                msg = f"同じ slug が既に登録されています: {slug}"
                 raise ValueError(msg)
-
-        # 親子関係チェック
-        self._validate_no_overlap(resolved, config.mounts)
 
         mount = MountPoint(
             mount_id=uuid.uuid4().hex[:16],
             name=name,
-            path=resolved_str,
+            slug=slug,
+            host_path=host_path,
         )
         config.mounts.append(mount)
         self.save(config)
@@ -149,39 +187,35 @@ class MountConfigService:
         """ROOT_DIR からの自動マイグレーション.
 
         ROOT_DIR をそのまま1つのマウントポイントとして登録する。
+        ROOT_DIR == MOUNT_BASE_DIR の場合は slug="." (ベースディレクトリ自体)。
         """
         resolved = root_dir.resolve()
+        slug = self._derive_slug_from_path(str(resolved))
         mount = MountPoint(
             mount_id=uuid.uuid4().hex[:16],
             name=resolved.name,
-            path=str(resolved),
+            slug=slug,
         )
-        config = MountConfig(version=1, mounts=[mount])
+        config = MountConfig(version=2, mounts=[mount])
         self.save(config)
         return mount
 
-    def _validate_no_overlap(
-        self,
-        path: Path,
-        existing: list[MountPoint],
-        exclude_id: str | None = None,
-    ) -> None:
-        """既存マウントとの親子関係を検証する.
+    def _derive_slug_from_path(self, path_str: str) -> str:
+        """v1 の path フィールドから slug を導出する.
 
-        path が既存マウントの親または子になっていないことを確認。
+        base_dir と一致する場合は "." を返す。
+        base_dir 配下の場合は相対パスを返す。
+        それ以外は basename を返す。
         """
-        path_str = str(path)
-        path_prefix = path_str + "/"
-        for m in existing:
-            if exclude_id and m.mount_id == exclude_id:
-                continue
-            m_str = m.path
-            m_prefix = m_str + "/"
-            # path が既存の子 or 親
-            if path_str.startswith(m_prefix) or m_str.startswith(path_prefix):
-                msg = f"親子関係のマウントポイントは登録できません: {path} と {m.path}"
-                raise ValueError(msg)
-            # 完全一致 (重複パスチェックで弾かれるが念のため)
-            if path_str == m_str:
-                msg = f"同じパスが既に登録されています: {path_str}"
-                raise ValueError(msg)
+        try:
+            resolved = Path(path_str).resolve()
+        except OSError, ValueError:
+            return Path(path_str).name
+
+        base_resolved = self._base_dir
+        if resolved == base_resolved:
+            return "."
+        try:
+            return str(resolved.relative_to(base_resolved))
+        except ValueError:
+            return resolved.name

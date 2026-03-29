@@ -50,7 +50,7 @@ def _show_mounts(service: MountConfigService) -> None:
 
     for i, m in enumerate(config.mounts, 1):
         print(f"  {i}. [{m.mount_id}] {m.name}")
-        print(f"     → {m.path}")
+        print(f"     → {m.slug}")
 
 
 def _add_mount(service: MountConfigService) -> None:
@@ -61,12 +61,13 @@ def _add_mount(service: MountConfigService) -> None:
         print("キャンセルしました")
         return
 
-    # デフォルト名: ディレクトリ名
-    default_name = Path(path).name
+    # パスから slug を導出 (ディレクトリ名)
+    slug = Path(path).name
+    default_name = slug
     name = input(f"表示名 [{default_name}]: ").strip() or default_name
 
     try:
-        mount = service.add_mount(name, path)
+        mount = service.add_mount(name, slug)
         print(f"\n追加しました: [{mount.mount_id}] {mount.name}")
         print("サーバー再起動が必要です")
     except Exception as exc:
