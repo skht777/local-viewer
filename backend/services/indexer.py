@@ -37,6 +37,10 @@ _BATCH_SIZE = 1000
 # FTS5 trigram の最小トークン長
 _TRIGRAM_MIN_CHARS = 3
 
+# インデックス対象の kind (検索可能なエントリ)
+# image は個別ファイル数が膨大 (TB 規模で数百万件) のため除外
+INDEXABLE_KINDS = frozenset({"directory", "video", "archive", "pdf"})
+
 _SCHEMA_SQL = """
 PRAGMA journal_mode=WAL;
 PRAGMA busy_timeout=5000;
