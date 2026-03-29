@@ -474,6 +474,7 @@ class Indexer:
                     self.remove_entry(rel_path)
                     deleted += 1
 
+            self._is_ready = True
             return added, updated, deleted
         finally:
             conn.close()
@@ -496,6 +497,15 @@ class Indexer:
             return self.scan_directory(root_dir, path_security, mount_id)
         finally:
             self._is_rebuilding = False
+
+    def entry_count(self) -> int:
+        """登録済みエントリ数を返す."""
+        conn = self._connect()
+        try:
+            row = conn.execute("SELECT COUNT(*) FROM entries").fetchone()
+            return row[0] if row else 0
+        finally:
+            conn.close()
 
     @property
     def is_ready(self) -> bool:

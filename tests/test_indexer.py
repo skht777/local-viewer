@@ -336,6 +336,42 @@ class TestIndexerRebuild:
         assert indexer.is_rebuilding is False
 
 
+class TestIndexerEntryCount:
+    """entry_count メソッド."""
+
+    def test_空のDBで0を返す(self, indexer: Indexer) -> None:
+        assert indexer.entry_count() == 0
+
+    def test_エントリ追加後に正しい件数を返す(self, indexer: Indexer) -> None:
+        indexer.add_entry(
+            IndexEntry("test/a.mp4", "a.mp4", "video", 1000, 100)
+        )
+        indexer.add_entry(
+            IndexEntry("test/b.zip", "b.zip", "archive", 2000, 200)
+        )
+        assert indexer.entry_count() == 2
+
+
+class TestIndexerIsReadyAfterIncrementalScan:
+    """incremental_scan 後の is_ready フラグ."""
+
+    def test_incremental_scan後にis_readyがTrueになる(
+        self, indexer: Indexer, tmp_path: Path
+    ) -> None:
+        from unittest.mock import MagicMock
+
+        root = tmp_path / "data"
+        root.mkdir()
+        (root / "clip.mp4").write_bytes(b"\x00" * 100)
+
+        security = MagicMock()
+        security.validate = MagicMock(side_effect=lambda p: p)
+
+        assert indexer.is_ready is False
+        indexer.incremental_scan(root, security)
+        assert indexer.is_ready is True
+
+
 class TestIndexerScanDirectory:
     """ディレクトリスキャン.
 
