@@ -41,9 +41,18 @@ _TRIGRAM_MIN_CHARS = 3
 # image は個別ファイル数が膨大 (TB 規模で数百万件) のため除外
 INDEXABLE_KINDS = frozenset({"directory", "video", "archive", "pdf"})
 
+# スキーマバージョン (DB 永続化時のマイグレーション用)
+# バージョン不一致なら全テーブル DROP → 再作成
+_SCHEMA_VERSION = 2
+
 _SCHEMA_SQL = """
 PRAGMA journal_mode=WAL;
 PRAGMA busy_timeout=5000;
+
+CREATE TABLE IF NOT EXISTS schema_meta (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+);
 
 CREATE TABLE IF NOT EXISTS entries (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -144,12 +153,54 @@ class Indexer:
         return conn
 
     def init_db(self) -> None:
-        """DB スキーマを作成する."""
+        """DB スキーマを作成する.
+
+        永続化 DB のバージョンが不一致なら全テーブルを DROP して再作成する。
+        インデックス DB はファイルシステムから復元可能なキャッシュなので安全。
+        """
         conn = self._connect()
         try:
+            # 既存バージョンを確認 (schema_meta が存在しない場合は None)
+            existing_version = self._get_schema_version(conn)
+            if existing_version is not None and existing_version != str(
+                _SCHEMA_VERSION
+            ):
+                logger.info(
+                    "スキーマバージョン不一致 (%s → %s): DB を再作成",
+                    existing_version,
+                    _SCHEMA_VERSION,
+                )
+                self._drop_all_tables(conn)
+
             conn.executescript(_SCHEMA_SQL)
+
+            # バージョンを記録
+            conn.execute(
+                "INSERT OR REPLACE INTO schema_meta (key, value) VALUES (?, ?)",
+                ("schema_version", str(_SCHEMA_VERSION)),
+            )
+            conn.commit()
         finally:
             conn.close()
+
+    @staticmethod
+    def _get_schema_version(conn: sqlite3.Connection) -> str | None:
+        """現在のスキーマバージョンを返す (テーブル未存在なら None)."""
+        try:
+            row = conn.execute(
+                "SELECT value FROM schema_meta WHERE key = 'schema_version'"
+            ).fetchone()
+            return row[0] if row else None
+        except sqlite3.OperationalError:
+            return None
+
+    @staticmethod
+    def _drop_all_tables(conn: sqlite3.Connection) -> None:
+        """全テーブルを DROP する (スキーマ再作成用)."""
+        conn.execute("DROP TABLE IF EXISTS entries_fts")
+        conn.execute("DROP TABLE IF EXISTS entries")
+        conn.execute("DROP TABLE IF EXISTS schema_meta")
+        conn.commit()
 
     # --- 検索 ---
 

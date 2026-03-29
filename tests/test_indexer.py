@@ -476,6 +476,56 @@ class TestIndexerIndexableKinds:
         assert len(results) == 1
 
 
+class TestIndexerSchemaVersion:
+    """スキーマバージョン管理."""
+
+    def test_init_dbでスキーマバージョンが記録される(self, db_path: str) -> None:
+        idx = Indexer(db_path)
+        idx.init_db()
+
+        conn = sqlite3.connect(db_path)
+        row = conn.execute(
+            "SELECT value FROM schema_meta WHERE key = 'schema_version'"
+        ).fetchone()
+        conn.close()
+        assert row is not None
+        assert row[0] == "2"
+
+    def test_バージョン不一致でDBが再作成される(self, db_path: str) -> None:
+        # 旧バージョンの DB を作成
+        idx = Indexer(db_path)
+        idx.init_db()
+        idx.add_entry(
+            IndexEntry("test/a.mp4", "a.mp4", "video", 1000, 100)
+        )
+        assert idx.entry_count() == 1
+
+        # バージョンを古い値に書き換え
+        conn = sqlite3.connect(db_path)
+        conn.execute(
+            "UPDATE schema_meta SET value = '1' WHERE key = 'schema_version'"
+        )
+        conn.commit()
+        conn.close()
+
+        # 再度 init_db → バージョン不一致で再作成
+        idx2 = Indexer(db_path)
+        idx2.init_db()
+        assert idx2.entry_count() == 0  # データが消えている
+
+    def test_同一バージョンでデータが保持される(self, db_path: str) -> None:
+        idx = Indexer(db_path)
+        idx.init_db()
+        idx.add_entry(
+            IndexEntry("test/a.mp4", "a.mp4", "video", 1000, 100)
+        )
+
+        # 再度 init_db → 同一バージョンなのでデータ保持
+        idx2 = Indexer(db_path)
+        idx2.init_db()
+        assert idx2.entry_count() == 1
+
+
 class TestIndexerConcurrency:
     """WAL モードでの同時アクセス."""
 

@@ -184,12 +184,21 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
     _indexer = Indexer(settings.index_db_path)
     _indexer.init_db()
 
-    # 各マウントポイントのバックグラウンドスキャン
+    # DB に既存エントリがあれば incremental_scan、なければ full scan
+    has_existing = _indexer.entry_count() > 0
+
     for mount in mount_config.mounts:
         root = FilePath(mount.path).resolve()
-        scan_task = asyncio.create_task(
-            _background_scan(_indexer, root, path_security, mount.mount_id)
-        )
+        if has_existing:
+            scan_task = asyncio.create_task(
+                _background_incremental_scan(
+                    _indexer, root, path_security, mount.mount_id
+                )
+            )
+        else:
+            scan_task = asyncio.create_task(
+                _background_scan(_indexer, root, path_security, mount.mount_id)
+            )
         scan_task.add_done_callback(lambda _: None)
 
     # FileWatcher 開始 (全マウントを一括監視)
@@ -253,6 +262,30 @@ async def _background_scan(
         )
     except Exception:
         logger.exception("初回インデックススキャンに失敗しました")
+
+
+async def _background_incremental_scan(
+    indexer: Indexer,
+    root_dir: FilePath,
+    path_security: PathSecurity,
+    mount_id: str = "",
+) -> None:
+    """バックグラウンドで差分インデックススキャンを実行する."""
+    try:
+        from starlette.concurrency import run_in_threadpool
+
+        added, updated, deleted = await run_in_threadpool(
+            indexer.incremental_scan, root_dir, path_security, mount_id
+        )
+        logger.info(
+            "差分インデックス完了: +%d ~%d -%d (%s)",
+            added,
+            updated,
+            deleted,
+            mount_id or "default",
+        )
+    except Exception:
+        logger.exception("差分インデックススキャンに失敗しました")
 
 
 app = FastAPI(
