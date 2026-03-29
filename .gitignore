@@ -38,8 +38,10 @@ Thumbs.db
 e2e/node_modules/
 e2e/dist/
 e2e/test-results/
+e2e/fixtures/e2e-mounts.json
 frontend/test-results/
 e2e/playwright-report/
+test-results/
 
 # Build artifacts
 *.log
