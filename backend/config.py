@@ -26,6 +26,9 @@ class Settings:
     archive_disk_cache_mb: int  # ディスクキャッシュ容量 (MB)
     archive_registry_max_entries: int  # NodeRegistry アーカイブエントリ上限
 
+    # 動画変換設定
+    video_remux_timeout: int  # FFmpeg remux タイムアウト (秒)
+
     # 検索/インデックス設定
     index_db_path: str  # SQLite FTS5 インデックス DB パス
     watch_mode: str  # ファイル監視モード (auto, native, polling)
@@ -69,6 +72,9 @@ class Settings:
         self.archive_registry_max_entries = int(
             os.environ.get("ARCHIVE_REGISTRY_MAX_ENTRIES", "100000")
         )
+
+        # 動画変換設定
+        self.video_remux_timeout = int(os.environ.get("VIDEO_REMUX_TIMEOUT", "120"))
 
         # 検索/インデックス設定
         self.index_db_path = os.environ.get(

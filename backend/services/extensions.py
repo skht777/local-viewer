@@ -12,6 +12,8 @@ IMAGE_EXTENSIONS = frozenset(
     {".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp", ".avif"}
 )
 VIDEO_EXTENSIONS = frozenset({".mp4", ".webm", ".mkv", ".avi", ".mov"})
+# ブラウザ非対応の動画コンテナ (MP4 への remux 対象)
+REMUX_EXTENSIONS = frozenset({".mkv"})
 ARCHIVE_EXTENSIONS = frozenset({".zip", ".rar", ".7z", ".cbz", ".cbr"})
 PDF_EXTENSIONS = frozenset({".pdf"})
 
