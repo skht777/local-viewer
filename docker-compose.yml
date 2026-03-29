@@ -4,8 +4,6 @@ services:
     ports:
       - "${HOST_PORT:-8000}:8000"
     volumes:
-      # --- managed mounts (do not edit) ---
-      # --- end managed mounts ---
       - ./config:/app/config
       - viewer-index:/app/data
     tmpfs:

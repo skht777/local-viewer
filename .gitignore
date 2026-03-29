@@ -28,6 +28,7 @@ Thumbs.db
 
 # Docker
 .env
+docker-compose.override.yml
 
 # マウントポイント設定 (manage_mounts.sh で管理)
 config/mounts.json

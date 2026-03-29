@@ -28,7 +28,8 @@ local-viewer/
 │   ├── fixtures/              # テスト用フィクスチャ
 │   └── tests/                 # Playwright テストファイル
 ├── Dockerfile               # マルチステージビルド
-└── docker-compose.yml
+├── docker-compose.yml           # 静的設定 (git tracked)
+└── docker-compose.override.yml  # マウント定義 (manage_mounts.sh 自動生成, gitignored)
 ```
 
 ## 依存関係ルール

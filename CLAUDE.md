@@ -56,7 +56,8 @@ cd e2e && npx playwright test --ui   # UI モード
 - `backend/services/mount_config.py` — マウントポイント設定の読み書き（mounts.json v2 スキーマ: slug + host_path）
 - `init.sh` — 初回セットアップ（.env コピー + manage_mounts.sh）
 - `start.sh` — Docker コンテナ起動（docker compose up --build）
-- `manage_mounts.sh` — マウントポイント管理 Bash TUI（ホスト側で実行、docker-compose.yml + mounts.json を更新）
+- `manage_mounts.sh` — マウントポイント管理 Bash TUI（ホスト側で実行、docker-compose.override.yml + mounts.json を更新）
+- `docker-compose.override.yml` — manage_mounts.sh が自動生成するマウント定義（gitignored）
 - `config/mounts.json` — マウントポイント定義ファイル（Docker ではバインドマウント ./config:/app/config）
 - `frontend/vite.config.ts` — Vite + Tailwind v4 + /api プロキシ + Vitest
 - `frontend/src/index.css` — Tailwind v4 `@theme` カスタムトークン定義
