@@ -52,11 +52,6 @@ class PathSecurity:
         self._root_prefix = self._root_str + os.sep
 
     @property
-    def root_dir(self) -> Path:
-        """後方互換: 先頭のルートディレクトリを返す."""
-        return self._roots[0]
-
-    @property
     def root_dirs(self) -> list[Path]:
         """全許可ルートディレクトリを返す."""
         return list(self._roots)

@@ -101,7 +101,7 @@ async def search(
         raise HTTPException(status_code=422, detail=f"不正な kind: {kind}")
 
     # 検索実行 (CPU バウンド)
-    root_dir = path_security.root_dir
+    root_dir = path_security.root_dirs[0]
     search_results = await run_in_threadpool(
         _resolve_search_results,
         indexer,
@@ -219,7 +219,7 @@ async def rebuild_index(
     _last_rebuild_time = now
 
     # バックグラウンドで再構築 (参照保持で GC 防止)
-    root_dir = path_security.root_dir
+    root_dir = path_security.root_dirs[0]
     task = asyncio.create_task(_background_rebuild(indexer, root_dir, path_security))
     _background_tasks.add(task)
     task.add_done_callback(_background_tasks.discard)

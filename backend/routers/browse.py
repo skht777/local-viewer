@@ -59,7 +59,7 @@ async def browse_root(
     ROOT_DIR 直下のエントリをメタ情報付きで返す。
     ETag が一致すれば 304 Not Modified を返す。
     """
-    root = registry.path_security.root_dir
+    root = registry.path_security.root_dirs[0]
     entries = await run_in_threadpool(registry.list_directory, root)
 
     etag = _compute_etag(entries)
