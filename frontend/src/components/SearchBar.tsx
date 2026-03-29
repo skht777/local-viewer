@@ -13,7 +13,6 @@ import { SearchResults } from "./SearchResults";
 const KIND_FILTERS = [
   { label: "All", value: null },
   { label: "\u{1F4C1}", value: "directory" },
-  { label: "\u{1F5BC}", value: "image" },
   { label: "\u{1F3AC}", value: "video" },
   { label: "\u{1F4C4}", value: "pdf" },
   { label: "\u{1F4E6}", value: "archive" },
