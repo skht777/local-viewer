@@ -100,14 +100,19 @@ async def search(
     if kind and kind not in _VALID_KINDS:
         raise HTTPException(status_code=422, detail=f"不正な kind: {kind}")
 
+    # mount_id → root_dir マッピング (NodeRegistry から取得)
+    mount_map = registry.mount_id_map
+    # 後方互換: mount_map が空なら root_dirs[0] を使う
+    if not mount_map:
+        mount_map = {"": path_security.root_dirs[0]}
+
     # 検索実行 (CPU バウンド)
-    root_dir = path_security.root_dirs[0]
     search_results = await run_in_threadpool(
         _resolve_search_results,
         indexer,
         registry,
         path_security,
-        root_dir,
+        mount_map,
         q,
         kind,
         limit,
@@ -121,7 +126,7 @@ def _resolve_search_results(
     indexer: Indexer,
     registry: NodeRegistry,
     path_security: PathSecurity,
-    root_dir: Path,
+    mount_map: dict[str, Path],
     query: str,
     kind: str | None,
     limit: int,
@@ -129,13 +134,13 @@ def _resolve_search_results(
 ) -> SearchResponse:
     """検索結果に node_id を付与して返す.
 
+    relative_path の形式: "{mount_id}/{actual_path}" からマウントルートを解決。
     削除済みファイルをスキップしつつ limit まで結果を埋める。
     """
-    # limit+1 件集める → 超過分で has_more を判定
     collect_limit = limit + 1
     results: list[SearchResultResponse] = []
     db_offset = offset
-    max_iterations = 5  # 無限ループ防止
+    max_iterations = 5
 
     for _ in range(max_iterations):
         hits, has_more_in_db = indexer.search(
@@ -145,7 +150,9 @@ def _resolve_search_results(
             break
 
         for hit in hits:
-            abs_path = root_dir / hit.relative_path
+            abs_path = _resolve_hit_path(hit.relative_path, mount_map)
+            if abs_path is None:
+                continue
             try:
                 path_security.validate_existing(abs_path)
             except PathSecurityError, OSError:
@@ -155,7 +162,8 @@ def _resolve_search_results(
 
             # 親ディレクトリの node_id
             parent_path = abs_path.parent
-            if parent_path == root_dir:
+            root = path_security.find_root_for(parent_path)
+            if root is not None and parent_path == root:
                 parent_node_id = None
             else:
                 try:
@@ -190,6 +198,22 @@ def _resolve_search_results(
         has_more=has_more,
         query=query,
     )
+
+
+def _resolve_hit_path(relative_path: str, mount_map: dict[str, Path]) -> Path | None:
+    """relative_path から絶対パスを解決する.
+
+    形式: "{mount_id}/{actual_relative}" → mount_map[mount_id] / actual_relative
+    mount_id がない (legacy) 場合は最初のマウントを使用。
+    """
+    parts = relative_path.split("/", 1)
+    if len(parts) == 2 and parts[0] in mount_map:
+        return mount_map[parts[0]] / parts[1]
+    # mount_id プレフィックスがない場合 (単一マウントの後方互換)
+    if mount_map:
+        first_root = next(iter(mount_map.values()))
+        return first_root / relative_path
+    return None
 
 
 @router.post("/index/rebuild", status_code=202)

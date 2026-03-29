@@ -1,6 +1,6 @@
 // Playwright E2E テスト設定
 // - E2E 専用ポート (8001/5174) で開発サーバーと共存可能
-// - テストデータの ROOT_DIR でバックエンドを起動
+// - テストデータの各ディレクトリをマウントポイントとして起動
 // - 現在 chromium のみ
 
 import { defineConfig } from "@playwright/test";
@@ -8,6 +8,7 @@ import path from "node:path";
 
 const projectRoot = path.resolve(import.meta.dirname, "..");
 const testDataDir = path.resolve(import.meta.dirname, "fixtures/test-data");
+const mountsPath = path.resolve(import.meta.dirname, "fixtures/e2e-mounts.json");
 
 // E2E 専用ポート（開発サーバーの 8000/5173 と競合しない）
 const BACKEND_PORT = 8001;
@@ -17,11 +18,12 @@ export default defineConfig({
   testDir: "./tests",
   timeout: 30_000,
   retries: 1,
+  globalSetup: "./global-setup.ts",
   reporter: [["html", { open: "never" }], ["list"]],
 
   webServer: [
     {
-      command: `bash -c 'source ${projectRoot}/backend/.venv/bin/activate && ROOT_DIR=${testDataDir} NODE_SECRET=e2e-test-secret uvicorn backend.main:app --port ${BACKEND_PORT}'`,
+      command: `bash -c 'source ${projectRoot}/backend/.venv/bin/activate && MOUNT_BASE_DIR=${testDataDir} MOUNT_CONFIG_PATH=${mountsPath} ROOT_DIR=${testDataDir} NODE_SECRET=e2e-test-secret uvicorn backend.main:app --port ${BACKEND_PORT}'`,
       cwd: projectRoot,
       port: BACKEND_PORT,
       reuseExistingServer: false,

@@ -141,6 +141,10 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
         archive_registry_max_entries=settings.archive_registry_max_entries,
         mount_names=mount_names,
     )
+    # mount_id → root_dir マッピング (search 用)
+    _node_registry.set_mount_id_map(
+        {m.mount_id: FilePath(m.path).resolve() for m in mount_config.mounts}
+    )
 
     # アーカイブサービス初期化
     from backend.services.archive_security import ArchiveEntryValidator

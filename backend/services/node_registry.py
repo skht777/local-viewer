@@ -103,6 +103,8 @@ class NodeRegistry:
         ]
         # マウントポイント名マッピング
         self._mount_names: dict[Path, str] = mount_names or {}
+        # mount_id → root_dir マッピング (search 用)
+        self._mount_id_map: dict[str, Path] = {}
         # アーカイブエントリ用マッピング (LRU, 上限管理)
         self._id_to_archive_entry: OrderedDict[str, tuple[Path, str]] = OrderedDict()
         self._archive_entry_to_id: dict[str, str] = {}
@@ -112,6 +114,15 @@ class NodeRegistry:
     def path_security(self) -> PathSecurity:
         """PathSecurity インスタンスを返す."""
         return self._path_security
+
+    @property
+    def mount_id_map(self) -> dict[str, Path]:
+        """mount_id → root_dir のマッピング."""
+        return dict(self._mount_id_map)
+
+    def set_mount_id_map(self, mapping: dict[str, Path]) -> None:
+        """mount_id → root_dir マッピングを設定する."""
+        self._mount_id_map = dict(mapping)
 
     def _generate_id(self, path: Path) -> str:
         """パスから決定的な node_id を生成する.
