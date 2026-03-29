@@ -6,7 +6,7 @@ paths:
 # FastAPI Conventions
 
 ## Routing
-- One router per resource: `browse.py`, `file.py`, `archive.py`, `search.py`
+- One router per resource: `browse.py`, `file.py`, `search.py`
 - All routes under `/api/` prefix
 - Use node_id path parameters, not raw filesystem paths
 

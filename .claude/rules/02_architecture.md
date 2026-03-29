@@ -12,8 +12,15 @@ local-viewer/
 │   │   ├── pages/           # ページコンポーネント (1ルート1ファイル)
 │   │   ├── components/      # UIコンポーネント
 │   │   ├── hooks/           # カスタムフック
-│   │   └── stores/          # zustand ストア (UI状態のみ)
+│   │   ├── stores/          # zustand ストア (UI状態のみ)
+│   │   ├── lib/             # 外部ライブラリ設定 (pdfjs等)
+│   │   ├── types/           # API型定義
+│   │   └── utils/           # ユーティリティ関数
 │   └── tests/
+├── e2e/
+│   ├── playwright.config.ts   # E2E テスト設定
+│   ├── fixtures/              # テスト用フィクスチャ
+│   └── tests/                 # Playwright テストファイル
 ├── Dockerfile               # マルチステージビルド
 └── docker-compose.yml
 ```

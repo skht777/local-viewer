@@ -1,7 +1,7 @@
 # 技術スタック
 
 ## バックエンド
-- Python 3.13
+- Python 3.14
 - FastAPI + uvicorn
 - Pillow (画像処理)
 - zipfile (標準), rarfile + unrar (RAR), py7zr (7z)
@@ -17,7 +17,6 @@
 - react-hotkeys-hook (キーボードショートカット)
 - @tanstack/react-virtual (仮想スクロール)
 - pdfjs-dist (PDF描画)
-- yet-another-react-lightbox (画像ビューワー)
 - react-router-dom (ルーティング)
 
 ## 開発ツール

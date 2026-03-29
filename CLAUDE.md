@@ -1,70 +1,79 @@
-# CLAUDE.md -- Project Conventions for local-viewer
+# CLAUDE.md -- local-viewer プロジェクト規約
 
-Local Content Viewer: a web app to browse images, videos, and PDFs
-from local directories. FastAPI backend + React frontend, distributed
-via Docker.
+ローカルディレクトリの画像・動画・PDFを閲覧する Web アプリ。
+FastAPI バックエンド + React フロントエンド、Docker で配布。
 
-## Tech Stack
-- Backend: FastAPI + uvicorn (Python 3.14)
-- Frontend: React + Vite + TypeScript
-- Styling: Tailwind CSS v4 (Vite plugin, no PostCSS config)
-- State: TanStack Query (server) + zustand (UI only)
+## 技術スタック
+- バックエンド: FastAPI + uvicorn (Python 3.14)
+- フロントエンド: React + Vite + TypeScript
+- スタイリング: Tailwind CSS v4 (Vite プラグイン、PostCSS 設定なし)
+- 状態管理: TanStack Query (サーバー) + zustand (UI のみ)
 - Lint/Format: Ruff (Python), oxlint + oxfmt (TypeScript)
-- Container: Docker multi-stage build
+- コンテナ: Docker マルチステージビルド
 
-## Environment Setup
-- Python 3.14 via pyenv (`pyenv install 3.14`)
-- Node.js 24 via nodenv (`nodenv install 24.11.1`)
-- Both version files (`.python-version`, `.node-version`) are in repo root
+## 環境構築
+- Python 3.14: pyenv (`pyenv install 3.14`)
+- Node.js 24: nodenv (`nodenv install 24.11.1`)
+- バージョンファイル (`.python-version`, `.node-version`) はリポジトリルートに配置
 
 ## Commands
 
 ```bash
-# Dev (both servers)
+# 開発サーバー起動（バックエンド + フロントエンド）
 ./start.sh
 
-# First-time setup
+# 初回セットアップ
 python -m venv backend/.venv && source backend/.venv/bin/activate && pip install -r backend/requirements-dev.txt
 cd frontend && npm install && cd ..
 
 # Docker
-cp .env.example .env  # edit DATA_DIR first
+cp .env.example .env  # DATA_DIR を先に編集
 docker compose up --build
 
-# Lint (backend)
+# Lint（バックエンド）
 source backend/.venv/bin/activate && ruff check backend/ && ruff format --check backend/ && mypy backend/
 
-# Lint (frontend)
+# Lint（フロントエンド）
 npx oxlint frontend/src/ && npx oxfmt --check frontend/src/
 
 # Test
 source backend/.venv/bin/activate && pytest
 cd frontend && npx vitest run
+
+# E2E Test
+cd e2e && npx playwright test
+cd e2e && npx playwright test --ui   # UI モード
 ```
 
-## Key Files
-- `pyproject.toml` — Ruff + mypy + pytest config (at repo root, not backend/)
-- `.oxlintrc.json` — oxlint config (react/typescript plugins)
-- `backend/main.py` — FastAPI entry point
-- `frontend/vite.config.ts` — Vite + Tailwind v4 + /api proxy + Vitest
-- `.env.example` — Docker volume/port/resource config template
+## 主要ファイル
+- `pyproject.toml` — Ruff + mypy + pytest 設定（リポジトリルート、backend/ 配下ではない）
+- `.oxlintrc.json` — oxlint 設定（react/typescript プラグイン）
+- `backend/main.py` — FastAPI エントリポイント
+- `backend/config.py` — 環境変数ベースの設定モジュール
+- `backend/errors.py` — 共通エラーモデル
+- `frontend/vite.config.ts` — Vite + Tailwind v4 + /api プロキシ + Vitest
+- `frontend/src/index.css` — Tailwind v4 `@theme` カスタムトークン定義
+- `.env.example` — Docker ボリューム/ポート/リソース設定テンプレート
+- `e2e/playwright.config.ts` — E2E テスト設定
 
-## Gotchas
-- **uvicorn must run from project root** — `uvicorn backend.main:app`, not from `backend/`
-- **Tailwind v4** — no `tailwind.config.js` or `postcss.config.js`, uses `@tailwindcss/vite` plugin
-- **lint-staged uses venv path** — ruff is called as `backend/.venv/bin/ruff` in `package.json`
-- **node_id opaque IDs** — API never exposes raw filesystem paths to client
-- **Default bind 127.0.0.1** — LAN access requires explicit `BIND_HOST=0.0.0.0` in `.env`
+## 注意事項
+- **uvicorn はプロジェクトルートから実行** — `uvicorn backend.main:app`（`backend/` からではない）
+- **Tailwind v4** — `tailwind.config.js` や `postcss.config.js` は不要、`@tailwindcss/vite` プラグインを使用
+- **lint-staged は venv パスを使用** — `package.json` 内で `backend/.venv/bin/ruff` として呼び出し
+- **node_id 不透明ID** — API はクライアントに実ファイルパスを公開しない
+- **デフォルト 127.0.0.1 バインド** — LAN アクセスには `.env` で `BIND_HOST=0.0.0.0` を明示指定
 
-## Gotchas (cont.)
-- **`docs/` is gitignored** — 実装計画は `docs/plan-*.md` に保存（gitignored、ローカル保全のみ）
+## 実装時に特に気を付けたいこと
 
-## TDD
+### TDD
 - Red → Green → Refactor を小刻みに回す
 - 失敗するテストを先に書いてから最小限の実装
 - テスト名は日本語で振る舞いを記述
 
-## Git Workflow
+### Git Workflow
 - 1つの論理的な変更単位ごとにコミットする（テストが通る状態で）
 - リファクタリングと機能追加は別コミット（Tidy First）
 - 作業完了時にコミットを忘れずに行う
+
+### 計画書の保管
+- 実装計画は `docs/plan-*.md` に保存（gitignored、ローカル保全のみ）
