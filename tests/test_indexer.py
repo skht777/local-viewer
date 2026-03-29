@@ -670,3 +670,161 @@ class TestIndexerWarmStart:
         self, indexer: Indexer
     ) -> None:
         assert indexer.check_mount_fingerprint(["aaa111"]) is False
+
+
+class TestIndexerMtimePruning:
+    """incremental_scan のディレクトリ mtime 枝刈り."""
+
+    def test_未変更ディレクトリ配下がスキップされる(
+        self, indexer: Indexer, tmp_path: Path
+    ) -> None:
+        """mtime が変わっていないディレクトリの子は再走査しない."""
+        from unittest.mock import MagicMock
+
+        root = tmp_path / "data"
+        root.mkdir()
+        sub = root / "sub"
+        sub.mkdir()
+        (sub / "clip.mp4").write_bytes(b"\x00" * 100)
+
+        security = MagicMock()
+        security.validate = MagicMock(side_effect=lambda p: p)
+
+        # 初回スキャン
+        indexer.scan_directory(root, security)
+        assert indexer.entry_count() == 2  # sub + clip.mp4
+
+        # 変更なしで incremental_scan
+        added, updated, deleted = indexer.incremental_scan(root, security)
+        assert added == 0
+        assert updated == 0
+        assert deleted == 0
+
+        # データは保持されている
+        results, _ = indexer.search("clip")
+        assert len(results) == 1
+
+    def test_変更されたディレクトリのファイルが更新される(
+        self, indexer: Indexer, tmp_path: Path
+    ) -> None:
+        from unittest.mock import MagicMock
+
+        root = tmp_path / "data"
+        root.mkdir()
+        sub = root / "sub"
+        sub.mkdir()
+        (sub / "clip.mp4").write_bytes(b"\x00" * 100)
+
+        security = MagicMock()
+        security.validate = MagicMock(side_effect=lambda p: p)
+
+        indexer.scan_directory(root, security)
+
+        # 新ファイル追加 + mtime を明示的に更新 (タイムスタンプ分解能対策)
+        (sub / "new.mp4").write_bytes(b"\x00" * 50)
+        os.utime(sub, (sub.stat().st_atime, sub.stat().st_mtime + 1))
+
+        added, updated, deleted = indexer.incremental_scan(root, security)
+        assert added == 1  # new.mp4
+
+    def test_削除されたファイルが正しく検出される(
+        self, indexer: Indexer, tmp_path: Path
+    ) -> None:
+        from unittest.mock import MagicMock
+
+        root = tmp_path / "data"
+        root.mkdir()
+        sub = root / "sub"
+        sub.mkdir()
+        (sub / "a.mp4").write_bytes(b"\x00" * 100)
+        (sub / "b.mp4").write_bytes(b"\x00" * 100)
+
+        security = MagicMock()
+        security.validate = MagicMock(side_effect=lambda p: p)
+
+        indexer.scan_directory(root, security)
+        assert indexer.entry_count() == 3  # sub + a.mp4 + b.mp4
+
+        # ファイル削除 + mtime を明示的に更新 (タイムスタンプ分解能対策)
+        (sub / "b.mp4").unlink()
+        os.utime(sub, (sub.stat().st_atime, sub.stat().st_mtime + 1))
+
+        added, updated, deleted = indexer.incremental_scan(root, security)
+        assert deleted == 1
+
+    def test_サブディレクトリ削除が正しく検出される(
+        self, indexer: Indexer, tmp_path: Path
+    ) -> None:
+        from unittest.mock import MagicMock
+        import shutil
+
+        root = tmp_path / "data"
+        root.mkdir()
+        sub = root / "sub"
+        sub.mkdir()
+        deep = sub / "deep"
+        deep.mkdir()
+        (deep / "clip.mp4").write_bytes(b"\x00" * 100)
+
+        security = MagicMock()
+        security.validate = MagicMock(side_effect=lambda p: p)
+
+        indexer.scan_directory(root, security)
+        assert indexer.entry_count() == 3  # sub + deep + clip.mp4
+
+        # サブディレクトリ削除 + mtime を明示的に更新
+        shutil.rmtree(deep)
+        os.utime(sub, (sub.stat().st_atime, sub.stat().st_mtime + 1))
+
+        added, updated, deleted = indexer.incremental_scan(root, security)
+        assert deleted == 2  # deep + clip.mp4
+
+    def test_プレフィックス部分一致で別ディレクトリが混同されない(
+        self, indexer: Indexer, tmp_path: Path
+    ) -> None:
+        """'dir' と 'dir2' が bisect で混同されないことを確認."""
+        from unittest.mock import MagicMock
+
+        root = tmp_path / "data"
+        root.mkdir()
+        (root / "dir").mkdir()
+        (root / "dir" / "a.mp4").write_bytes(b"\x00" * 100)
+        (root / "dir2").mkdir()
+        (root / "dir2" / "b.mp4").write_bytes(b"\x00" * 100)
+
+        security = MagicMock()
+        security.validate = MagicMock(side_effect=lambda p: p)
+
+        indexer.scan_directory(root, security)
+        assert indexer.entry_count() == 4  # dir, a.mp4, dir2, b.mp4
+
+        # dir2 にファイル追加 + mtime を明示的に更新
+        dir2 = root / "dir2"
+        (dir2 / "c.mp4").write_bytes(b"\x00" * 50)
+        os.utime(dir2, (dir2.stat().st_atime, dir2.stat().st_mtime + 1))
+
+        added, updated, deleted = indexer.incremental_scan(root, security)
+        assert added == 1  # c.mp4 のみ
+        # dir 配下の a.mp4 は保持
+        results, _ = indexer.search("a.mp4")
+        assert len(results) == 1
+
+    def test_空ディレクトリの枝刈りでエラーにならない(
+        self, indexer: Indexer, tmp_path: Path
+    ) -> None:
+        from unittest.mock import MagicMock
+
+        root = tmp_path / "data"
+        root.mkdir()
+        (root / "empty").mkdir()
+
+        security = MagicMock()
+        security.validate = MagicMock(side_effect=lambda p: p)
+
+        indexer.scan_directory(root, security)
+        assert indexer.entry_count() == 1  # empty ディレクトリのみ
+
+        # 変更なしで incremental_scan
+        added, updated, deleted = indexer.incremental_scan(root, security)
+        assert added == 0
+        assert deleted == 0

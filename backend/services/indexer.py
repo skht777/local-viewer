@@ -8,6 +8,7 @@
 
 from __future__ import annotations
 
+import bisect
 import logging
 import os
 import re
@@ -129,6 +130,23 @@ def _classify_by_extension(name: str) -> str:
     if ext in ARCHIVE_EXTENSIONS:
         return "archive"
     return "other"
+
+
+def _mark_descendants_seen(
+    sorted_keys: list[str], dir_rel: str, seen: set[str]
+) -> None:
+    """ソート済みキーからプレフィックス一致するエントリを seen に追加する.
+
+    bisect で開始位置を特定し、プレフィックスが外れた時点で打ち切る。
+    dir_rel="dir" の場合、"dir/" で始まるエントリのみ対象 ("dir2/" は除外)。
+    """
+    prefix = dir_rel + "/"
+    start = bisect.bisect_left(sorted_keys, prefix)
+    for i in range(start, len(sorted_keys)):
+        if sorted_keys[i].startswith(prefix):
+            seen.add(sorted_keys[i])
+        else:
+            break
 
 
 class Indexer:
@@ -454,6 +472,7 @@ class Indexer:
         """差分スキャン (追加, 更新, 削除) の件数を返す.
 
         - mtime_ns で変更を検出
+        - ディレクトリ mtime が未変更なら配下を枝刈り (mlocate 方式)
         - 既存パスが見つからなければ削除
         """
         conn = self._connect()
@@ -480,6 +499,9 @@ class Indexer:
                 )
             seen: set[str] = set()
 
+            # 枝刈り用: ソート済みキーで子孫エントリを高速に seen マーク
+            sorted_existing_keys = sorted(existing.keys())
+
             for dirpath, dirnames, filenames in os.walk(root_dir):
                 dp = Path(dirpath)
                 if dp != root_dir:
@@ -501,6 +523,12 @@ class Indexer:
                             IndexEntry(rel, dp.name, "directory", None, mtime)
                         )
                         updated += 1
+                    else:
+                        # mtime 未変更: 配下のファイルは追加/削除されていない
+                        # DB 上の子孫エントリを seen に追加して削除検出から除外
+                        _mark_descendants_seen(sorted_existing_keys, rel, seen)
+                        dirnames.clear()
+                        continue
 
                 dirnames[:] = [d for d in dirnames if not d.startswith(".")]
 
