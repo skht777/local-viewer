@@ -114,7 +114,7 @@ class PathSecurity:
             if Path(part).is_absolute():
                 raise PathSecurityError("絶対パスは指定できません")
 
-        joined = self.root_dir.joinpath(*parts)
+        joined = self._roots[0].joinpath(*parts)
         return self.validate(joined)
 
     def validate_child(self, child: Path, *, is_symlink: bool) -> Path:

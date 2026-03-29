@@ -32,7 +32,7 @@ from backend.services.path_security import PathSecurity
 async def test_ファイル配信が200を返す(
     client: AsyncClient, test_node_registry: NodeRegistry
 ) -> None:
-    root = test_node_registry.path_security.root_dir
+    root = test_node_registry.path_security.root_dirs[0]
     entries = test_node_registry.list_directory(root)
     file_entry = next(e for e in entries if e.name == "file.txt")
 
@@ -43,7 +43,7 @@ async def test_ファイル配信が200を返す(
 async def test_ファイル配信の内容が正しい(
     client: AsyncClient, test_node_registry: NodeRegistry
 ) -> None:
-    root = test_node_registry.path_security.root_dir
+    root = test_node_registry.path_security.root_dirs[0]
     entries = test_node_registry.list_directory(root)
     file_entry = next(e for e in entries if e.name == "file.txt")
 
@@ -54,7 +54,7 @@ async def test_ファイル配信の内容が正しい(
 async def test_ETagヘッダが返る(
     client: AsyncClient, test_node_registry: NodeRegistry
 ) -> None:
-    root = test_node_registry.path_security.root_dir
+    root = test_node_registry.path_security.root_dirs[0]
     entries = test_node_registry.list_directory(root)
     file_entry = next(e for e in entries if e.name == "file.txt")
 
@@ -65,7 +65,7 @@ async def test_ETagヘッダが返る(
 async def test_CacheControlヘッダが返る(
     client: AsyncClient, test_node_registry: NodeRegistry
 ) -> None:
-    root = test_node_registry.path_security.root_dir
+    root = test_node_registry.path_security.root_dirs[0]
     entries = test_node_registry.list_directory(root)
     file_entry = next(e for e in entries if e.name == "file.txt")
 
@@ -76,7 +76,7 @@ async def test_CacheControlヘッダが返る(
 async def test_IfNoneMatchで304を返す(
     client: AsyncClient, test_node_registry: NodeRegistry
 ) -> None:
-    root = test_node_registry.path_security.root_dir
+    root = test_node_registry.path_security.root_dirs[0]
     entries = test_node_registry.list_directory(root)
     file_entry = next(e for e in entries if e.name == "file.txt")
 
@@ -95,7 +95,7 @@ async def test_IfNoneMatchで304を返す(
 async def test_IfNoneMatchが不一致なら200を返す(
     client: AsyncClient, test_node_registry: NodeRegistry
 ) -> None:
-    root = test_node_registry.path_security.root_dir
+    root = test_node_registry.path_security.root_dirs[0]
     entries = test_node_registry.list_directory(root)
     file_entry = next(e for e in entries if e.name == "file.txt")
 
@@ -114,7 +114,7 @@ async def test_存在しないnode_idで404を返す(client: AsyncClient) -> Non
 async def test_ディレクトリのnode_idで422を返す(
     client: AsyncClient, test_node_registry: NodeRegistry
 ) -> None:
-    root = test_node_registry.path_security.root_dir
+    root = test_node_registry.path_security.root_dirs[0]
     entries = test_node_registry.list_directory(root)
     dir_entry = next(e for e in entries if e.name == "dir_a")
 
@@ -125,7 +125,7 @@ async def test_ディレクトリのnode_idで422を返す(
 async def test_MIMEタイプがContentTypeに反映される(
     client: AsyncClient, test_node_registry: NodeRegistry
 ) -> None:
-    root = test_node_registry.path_security.root_dir
+    root = test_node_registry.path_security.root_dirs[0]
     dir_a_entries = test_node_registry.list_directory(root / "dir_a")
     img_entry = next(e for e in dir_a_entries if e.name == "image.jpg")
 
@@ -136,7 +136,7 @@ async def test_MIMEタイプがContentTypeに反映される(
 async def test_Rangeリクエストで206を返す(
     client: AsyncClient, test_node_registry: NodeRegistry
 ) -> None:
-    root = test_node_registry.path_security.root_dir
+    root = test_node_registry.path_security.root_dirs[0]
     entries = test_node_registry.list_directory(root)
     file_entry = next(e for e in entries if e.name == "file.txt")
 
@@ -345,7 +345,7 @@ async def test_抽出上限超過でAPIが422を返す(
     NodeRegistry に直接エントリを登録してテスト。
     """
     ac, registry = client_with_small_limit
-    root = registry.path_security.root_dir
+    root = registry.path_security.root_dirs[0]
 
     archive = root / "dir_a" / "big.zip"
     entry_node_id = registry.register_archive_entry(archive, "large.jpg")

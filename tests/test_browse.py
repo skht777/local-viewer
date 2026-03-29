@@ -28,7 +28,7 @@ async def test_ディレクトリのbrowseが200を返す(
     client: AsyncClient, test_node_registry: NodeRegistry
 ) -> None:
     # まずルート一覧で dir_a の node_id を取得
-    root = test_node_registry.path_security.root_dir
+    root = test_node_registry.path_security.root_dirs[0]
     entries = test_node_registry.list_directory(root)
     dir_a = next(e for e in entries if e.name == "dir_a")
 
@@ -39,7 +39,7 @@ async def test_ディレクトリのbrowseが200を返す(
 async def test_ディレクトリのbrowseに子エントリが含まれる(
     client: AsyncClient, test_node_registry: NodeRegistry
 ) -> None:
-    root = test_node_registry.path_security.root_dir
+    root = test_node_registry.path_security.root_dirs[0]
     entries = test_node_registry.list_directory(root)
     dir_a = next(e for e in entries if e.name == "dir_a")
 
@@ -53,7 +53,7 @@ async def test_ディレクトリのbrowseに子エントリが含まれる(
 async def test_ディレクトリのbrowseでparent_node_idが返る(
     client: AsyncClient, test_node_registry: NodeRegistry
 ) -> None:
-    root = test_node_registry.path_security.root_dir
+    root = test_node_registry.path_security.root_dirs[0]
     entries = test_node_registry.list_directory(root)
     dir_a = next(e for e in entries if e.name == "dir_a")
 
@@ -70,7 +70,7 @@ async def test_ディレクトリのbrowseでparent_node_idが返る(
 async def test_ファイルのnode_idでbrowseすると422(
     client: AsyncClient, test_node_registry: NodeRegistry
 ) -> None:
-    root = test_node_registry.path_security.root_dir
+    root = test_node_registry.path_security.root_dirs[0]
     entries = test_node_registry.list_directory(root)
     file_entry = next(e for e in entries if e.name == "file.txt")
 
@@ -86,7 +86,7 @@ async def test_存在しないnode_idで404を返す(client: AsyncClient) -> Non
 async def test_エントリのメタ情報が正しい(
     client: AsyncClient, test_node_registry: NodeRegistry
 ) -> None:
-    root = test_node_registry.path_security.root_dir
+    root = test_node_registry.path_security.root_dirs[0]
     entries = test_node_registry.list_directory(root)
     dir_a = next(e for e in entries if e.name == "dir_a")
 

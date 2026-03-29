@@ -157,10 +157,10 @@ class TestRootDirsプロパティ:
         root_a, root_b = multi_roots
         assert multi_security.root_dirs == [root_a.resolve(), root_b.resolve()]
 
-    def test_単一ルートでroot_dirが後方互換で動作する(
+    def test_単一ルートでroot_dirs先頭が取得できる(
         self, security: PathSecurity, root_dir: Path
     ) -> None:
-        assert security.root_dir == root_dir.resolve()
+        assert security.root_dirs[0] == root_dir.resolve()
 
 
 class TestMultiRootValidate:
