@@ -61,9 +61,9 @@ class TestBatchFlushWorker:
         mock_indexer: MagicMock,
         tmp_path: Path,
     ) -> None:
-        # 実ファイルを作成
-        fp = tmp_path / "test.jpg"
-        fp.write_bytes(b"\xff\xd8" * 10)
+        # 実ファイルを作成 (インデックス対象の拡張子)
+        fp = tmp_path / "test.mp4"
+        fp.write_bytes(b"\x00" * 10)
 
         worker.start()
         worker.enqueue(str(fp), "add")
@@ -93,8 +93,8 @@ class TestBatchFlushWorker:
         mock_indexer: MagicMock,
         tmp_path: Path,
     ) -> None:
-        fp = tmp_path / "rapid.jpg"
-        fp.write_bytes(b"\xff\xd8" * 10)
+        fp = tmp_path / "rapid.mp4"
+        fp.write_bytes(b"\x00" * 10)
 
         worker.start()
         # add → remove → add で最終的に add のみ
@@ -118,13 +118,13 @@ class TestBatchFlushWorker:
 
         # ファイル作成
         for i in range(100):
-            (tmp_path / f"file_{i}.jpg").write_bytes(b"\xff\xd8" * 10)
+            (tmp_path / f"file_{i}.mp4").write_bytes(b"\x00" * 10)
 
         thread_count_before = threading.active_count()
         worker.start()
 
         for i in range(100):
-            worker.enqueue(str(tmp_path / f"file_{i}.jpg"), "add")
+            worker.enqueue(str(tmp_path / f"file_{i}.mp4"), "add")
 
         time.sleep(0.3)
         thread_count_during = threading.active_count()
@@ -147,8 +147,8 @@ class TestIndexEventHandler:
 
         from watchdog.events import FileCreatedEvent
 
-        fp = tmp_path / "new.jpg"
-        fp.write_bytes(b"\xff\xd8" * 10)
+        fp = tmp_path / "new.mp4"
+        fp.write_bytes(b"\x00" * 10)
         handler.on_created(FileCreatedEvent(str(fp)))
 
         worker.enqueue.assert_called_once_with(str(fp), "add")
@@ -159,9 +159,9 @@ class TestIndexEventHandler:
 
         from watchdog.events import FileDeletedEvent
 
-        handler.on_deleted(FileDeletedEvent(str(tmp_path / "gone.jpg")))
+        handler.on_deleted(FileDeletedEvent(str(tmp_path / "gone.mp4")))
         worker.enqueue.assert_called_once_with(
-            str(tmp_path / "gone.jpg"), "remove"
+            str(tmp_path / "gone.mp4"), "remove"
         )
 
     def test_movedイベントで削除と追加がpendingに追加される(
@@ -172,8 +172,8 @@ class TestIndexEventHandler:
 
         from watchdog.events import FileMovedEvent
 
-        src = str(tmp_path / "old.jpg")
-        dest = str(tmp_path / "new.jpg")
+        src = str(tmp_path / "old.mp4")
+        dest = str(tmp_path / "new.mp4")
         handler.on_moved(FileMovedEvent(src, dest))
 
         assert worker.enqueue.call_count == 2
@@ -187,6 +187,16 @@ class TestIndexEventHandler:
         from watchdog.events import FileCreatedEvent
 
         handler.on_created(FileCreatedEvent(str(tmp_path / ".hidden")))
+        worker.enqueue.assert_not_called()
+
+    def test_画像ファイルのイベントが無視される(self, tmp_path: Path) -> None:
+        worker = MagicMock()
+        handler = IndexEventHandler(worker=worker, root_dir=tmp_path)
+
+        from watchdog.events import FileCreatedEvent
+
+        handler.on_created(FileCreatedEvent(str(tmp_path / "photo.jpg")))
+        handler.on_created(FileCreatedEvent(str(tmp_path / "pic.png")))
         worker.enqueue.assert_not_called()
 
     def test_対象外拡張子のファイルが無視される(self, tmp_path: Path) -> None:

@@ -371,6 +371,75 @@ class TestIndexerScanDirectory:
         assert len(results) == 1
 
 
+class TestIndexerIndexableKinds:
+    """インデックス対象の kind フィルタリング."""
+
+    def test_scan_directoryで画像ファイルがスキップされる(
+        self, indexer: Indexer, tmp_path: Path
+    ) -> None:
+        """image kind のファイルはインデックスに登録されない."""
+        from unittest.mock import MagicMock
+
+        root = tmp_path / "data"
+        root.mkdir()
+        # image (スキップ対象)
+        (root / "photo.jpg").write_bytes(b"\xff\xd8" * 100)
+        (root / "pic.png").write_bytes(b"\x89PNG" * 100)
+        # video (登録対象)
+        (root / "clip.mp4").write_bytes(b"\x00" * 100)
+        # archive (登録対象)
+        (root / "pack.zip").write_bytes(b"PK" * 100)
+        # pdf (登録対象)
+        (root / "doc.pdf").write_bytes(b"%PDF" * 100)
+        # サブディレクトリ (登録対象)
+        (root / "sub").mkdir()
+
+        security = MagicMock()
+        security.validate = MagicMock(side_effect=lambda p: p)
+
+        count = indexer.scan_directory(root, security)
+
+        # video, archive, pdf, sub ディレクトリ = 4 件
+        assert count == 4
+
+        # image は検索にヒットしない
+        results, _ = indexer.search("photo")
+        assert len(results) == 0
+        results, _ = indexer.search("pic")
+        assert len(results) == 0
+
+        # video, archive, pdf は検索にヒットする
+        results, _ = indexer.search("clip")
+        assert len(results) == 1
+        results, _ = indexer.search("pack")
+        assert len(results) == 1
+        results, _ = indexer.search("doc.pdf")
+        assert len(results) == 1
+
+    def test_incremental_scanで画像ファイルがスキップされる(
+        self, indexer: Indexer, tmp_path: Path
+    ) -> None:
+        """incremental_scan でも image kind は登録されない."""
+        from unittest.mock import MagicMock
+
+        root = tmp_path / "data"
+        root.mkdir()
+        (root / "photo.jpg").write_bytes(b"\xff\xd8" * 100)
+        (root / "clip.mp4").write_bytes(b"\x00" * 100)
+
+        security = MagicMock()
+        security.validate = MagicMock(side_effect=lambda p: p)
+
+        added, updated, deleted = indexer.incremental_scan(root, security)
+
+        # video のみ追加 = 1 件
+        assert added == 1
+        results, _ = indexer.search("photo")
+        assert len(results) == 0
+        results, _ = indexer.search("clip")
+        assert len(results) == 1
+
+
 class TestIndexerConcurrency:
     """WAL モードでの同時アクセス."""
 

@@ -24,11 +24,10 @@ from watchdog.observers.polling import PollingObserver
 
 from backend.services.extensions import (
     ARCHIVE_EXTENSIONS,
-    IMAGE_EXTENSIONS,
     PDF_EXTENSIONS,
     VIDEO_EXTENSIONS,
 )
-from backend.services.indexer import IndexEntry, _classify_by_extension
+from backend.services.indexer import INDEXABLE_KINDS, IndexEntry, _classify_by_extension
 
 if TYPE_CHECKING:
     from backend.services.indexer import Indexer
@@ -36,10 +35,8 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-# インデックス対象の拡張子
-_TARGET_EXTENSIONS = (
-    IMAGE_EXTENSIONS | VIDEO_EXTENSIONS | PDF_EXTENSIONS | ARCHIVE_EXTENSIONS
-)
+# インデックス対象の拡張子 (INDEXABLE_KINDS に対応するもののみ)
+_TARGET_EXTENSIONS = VIDEO_EXTENSIONS | ARCHIVE_EXTENSIONS | PDF_EXTENSIONS
 
 
 class BatchFlushWorker(threading.Thread):
@@ -123,7 +120,7 @@ class BatchFlushWorker(threading.Thread):
             size = None
         else:
             kind = _classify_by_extension(p.name)
-            if kind == "other":
+            if kind not in INDEXABLE_KINDS:
                 return
             try:
                 size = p.stat().st_size

@@ -370,7 +370,7 @@ class Indexer:
                     except Exception:  # noqa: S112
                         continue
                     kind = _classify_by_extension(fname)
-                    if kind == "other":
+                    if kind not in INDEXABLE_KINDS:
                         continue
                     try:
                         st = fp.stat()
@@ -449,7 +449,7 @@ class Indexer:
                     except Exception:  # noqa: S112
                         continue
                     kind = _classify_by_extension(fname)
-                    if kind == "other":
+                    if kind not in INDEXABLE_KINDS:
                         continue
                     try:
                         st = fp.stat()
