@@ -204,40 +204,42 @@ class IndexEventHandler(FileSystemEventHandler):
 
 
 class FileWatcher:
-    """ファイルシステム変更を監視してインデックスを更新する."""
+    """ファイルシステム変更を監視してインデックスを更新する.
+
+    mounts: (mount_id, root_dir) のリスト。各マウントを個別に監視。
+    単一ルートの場合は root_dir パラメータで後方互換。
+    """
 
     def __init__(
         self,
         indexer: Indexer,
-        root_dir: Path,
-        path_security: PathSecurity,
+        root_dir: Path | None = None,
+        path_security: PathSecurity | None = None,
         mode: str = "auto",
         poll_interval: int = 30,
         flush_interval: float = 1.0,
+        *,
+        mounts: list[tuple[str, Path]] | None = None,
     ) -> None:
         self._indexer = indexer
-        self._root_dir = root_dir
         self._path_security = path_security
         self._mode = mode
         self._poll_interval = poll_interval
         self._flush_interval = flush_interval
+        # 複数マウント対応: mounts が指定されればそれを使用
+        if mounts is not None:
+            self._mounts = mounts
+        elif root_dir is not None:
+            self._mounts = [("", root_dir)]
+        else:
+            msg = "root_dir または mounts が必要です"
+            raise ValueError(msg)
         # mypy: Observer は変数として扱われるため Any を使用
         self._observer: Observer | PollingObserver | None = None  # type: ignore[valid-type]
-        self._worker: BatchFlushWorker | None = None
+        self._workers: list[BatchFlushWorker] = []
 
     def start(self) -> None:
-        """監視を開始する (Observer + BatchFlushWorker)."""
-        self._worker = BatchFlushWorker(
-            indexer=self._indexer,
-            path_security=self._path_security,
-            root_dir=self._root_dir,
-            interval=self._flush_interval,
-        )
-        handler = IndexEventHandler(
-            worker=self._worker,
-            root_dir=self._root_dir,
-        )
-
+        """監視を開始する (Observer + BatchFlushWorker per mount)."""
         actual_mode = self._detect_mode() if self._mode == "auto" else self._mode
         if actual_mode == "polling":
             self._observer = PollingObserver(timeout=self._poll_interval)
@@ -246,8 +248,26 @@ class FileWatcher:
             self._observer = Observer()
             logger.info("FileWatcher: native モード (inotify)")
 
-        self._observer.schedule(handler, str(self._root_dir), recursive=True)
-        self._worker.start()
+        for mount_id, root_dir in self._mounts:
+            worker = BatchFlushWorker(
+                indexer=self._indexer,
+                path_security=self._path_security,
+                root_dir=root_dir,
+                interval=self._flush_interval,
+            )
+            handler = IndexEventHandler(
+                worker=worker,
+                root_dir=root_dir,
+            )
+            self._observer.schedule(handler, str(root_dir), recursive=True)
+            worker.start()
+            self._workers.append(worker)
+            logger.info(
+                "FileWatcher: 監視開始 %s (%s)",
+                root_dir,
+                mount_id or "default",
+            )
+
         self._observer.start()
 
     def stop(self) -> None:
@@ -256,10 +276,10 @@ class FileWatcher:
             self._observer.stop()
             self._observer.join(timeout=5)
             self._observer = None
-        if self._worker:
-            self._worker.stop()
-            self._worker.join(timeout=5)
-            self._worker = None
+        for worker in self._workers:
+            worker.stop()
+            worker.join(timeout=5)
+        self._workers.clear()
 
     @property
     def is_running(self) -> bool:
@@ -273,7 +293,7 @@ class FileWatcher:
         """
         try:
             mounts = Path("/proc/mounts").read_text()
-            root_str = str(self._root_dir)
+            root_str = str(self._mounts[0][1])
             for line in mounts.splitlines():
                 parts = line.split()
                 if len(parts) >= 3 and root_str.startswith(parts[1]):
