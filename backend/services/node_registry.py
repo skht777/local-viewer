@@ -96,9 +96,13 @@ class NodeRegistry:
         ).encode()
         self._id_to_path: dict[str, Path] = {}
         self._path_to_id: dict[str, str] = {}
-        # 文字列比較用にルートパスをキャッシュ
-        self._root_str = str(path_security.root_dir)
-        self._root_prefix = self._root_str + os.sep
+        # 複数ルート対応: 全ルートのキャッシュ
+        self._root_entries: list[tuple[str, str, Path]] = [
+            (str(r), str(r) + os.sep, r) for r in path_security.root_dirs
+        ]
+        # 後方互換: 先頭ルートの高速パス用キャッシュ
+        self._root_str = self._root_entries[0][0]
+        self._root_prefix = self._root_entries[0][1]
         # アーカイブエントリ用マッピング (LRU, 上限管理)
         self._id_to_archive_entry: OrderedDict[str, tuple[Path, str]] = OrderedDict()
         self._archive_entry_to_id: dict[str, str] = {}
@@ -112,12 +116,18 @@ class NodeRegistry:
     def _generate_id(self, path: Path) -> str:
         """パスから決定的な node_id を生成する.
 
-        HMAC-SHA256(secret, relative_path) の先頭16文字 (hex)。
+        HMAC-SHA256(secret, "{root}::{relative_path}") の先頭16文字。
+        ルートパスを入力に含め、異なるマウントの同名ファイルの衝突を回避。
         """
-        relative = path.relative_to(self._path_security.root_dir)
+        root = self._path_security.find_root_for(path)
+        if root is None:
+            msg = f"パスがどのルートにも属しません: {path}"
+            raise ValueError(msg)
+        relative = path.relative_to(root)
+        hmac_input = f"{root}::{relative}"
         digest = hmac.new(
             self._secret,
-            str(relative).encode(),
+            hmac_input.encode(),
             hashlib.sha256,
         ).hexdigest()
         return digest[:16]
@@ -149,10 +159,23 @@ class NodeRegistry:
             return self._path_to_id[key]
 
         # 文字列スライスで相対パス取得 (root 配下が保証済み)
-        rel = key[len(self._root_prefix) :] if key != self._root_str else ""
+        # 複数ルートを順に試行
+        root_str = ""
+        rel = ""
+        for rs, rp, _ in self._root_entries:
+            if key == rs:
+                root_str = rs
+                rel = ""
+                break
+            if key.startswith(rp):
+                root_str = rs
+                rel = key[len(rp) :]
+                break
+
+        hmac_input = f"{root_str}::{rel}"
         digest = hmac.new(
             self._secret,
-            rel.encode(),
+            hmac_input.encode(),
             hashlib.sha256,
         ).hexdigest()
         node_id = digest[:16]
@@ -232,13 +255,16 @@ class NodeRegistry:
     def get_parent_node_id(self, path: Path) -> str | None:
         """パスの親ディレクトリの node_id を返す.
 
-        ROOT_DIR または ROOT_DIR 直下のディレクトリの場合は None。
+        ルートディレクトリまたはルート直下のディレクトリの場合は None。
         """
         resolved = path.resolve()
-        if resolved == self._path_security.root_dir:
+        roots = self._path_security.root_dirs
+        # ルートディレクトリ自体なら None
+        if resolved in roots:
             return None
         parent = resolved.parent
-        if parent == self._path_security.root_dir:
+        # ルート直下なら None
+        if parent in roots:
             return None
         try:
             self._path_security.validate(parent)
@@ -262,8 +288,12 @@ class NodeRegistry:
 
         # HMAC でアーカイブ相対パスとエントリ名から node_id を生成
         resolved = archive_path.resolve()
-        rel = str(resolved.relative_to(self._path_security.root_dir))
-        hmac_input = f"arc::{rel}::{entry_name}"
+        root = self._path_security.find_root_for(resolved)
+        if root is None:
+            msg = f"アーカイブがどのルートにも属しません: {resolved}"
+            raise ValueError(msg)
+        rel = str(resolved.relative_to(root))
+        hmac_input = f"arc::{root}::{rel}::{entry_name}"
         digest = hmac.new(
             self._secret,
             hmac_input.encode(),

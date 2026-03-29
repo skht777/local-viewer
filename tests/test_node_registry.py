@@ -272,6 +272,58 @@ def test_list_archive_entriesでEntryMetaリストを返す(
     assert result[1].kind == "image"
 
 
+# --- 複数ルート対応テスト ---
+
+
+@pytest.fixture
+def multi_roots(tmp_path: Path) -> tuple[Path, Path]:
+    """複数ルート用テストディレクトリ."""
+    root_a = tmp_path / "root_a"
+    root_b = tmp_path / "root_b"
+    root_a.mkdir()
+    root_b.mkdir()
+    (root_a / "file_a.txt").write_text("a")
+    (root_b / "file_b.txt").write_text("b")
+    # 両ルートに同名ファイルを配置
+    (root_a / "common.txt").write_text("from_a")
+    (root_b / "common.txt").write_text("from_b")
+    return root_a, root_b
+
+
+@pytest.fixture
+def multi_registry(multi_roots: tuple[Path, Path]) -> NodeRegistry:
+    """複数ルートの NodeRegistry."""
+    security = PathSecurity(list(multi_roots))
+    return NodeRegistry(security)
+
+
+def test_複数ルートでNodeRegistryを初期化できる(
+    multi_registry: NodeRegistry,
+) -> None:
+    assert multi_registry.path_security is not None
+    assert len(multi_registry.path_security.root_dirs) == 2
+
+
+def test_複数ルートでルートAのファイルを登録できる(
+    multi_registry: NodeRegistry, multi_roots: tuple[Path, Path]
+) -> None:
+    root_a, _ = multi_roots
+    node_id = multi_registry.register(root_a / "file_a.txt")
+    assert isinstance(node_id, str)
+    assert len(node_id) == 16
+    resolved = multi_registry.resolve(node_id)
+    assert resolved == (root_a / "file_a.txt").resolve()
+
+
+def test_複数ルートでルートBのファイルを登録できる(
+    multi_registry: NodeRegistry, multi_roots: tuple[Path, Path]
+) -> None:
+    _, root_b = multi_roots
+    node_id = multi_registry.register(root_b / "file_b.txt")
+    resolved = multi_registry.resolve(node_id)
+    assert resolved == (root_b / "file_b.txt").resolve()
+
+
 def test_list_archive_entriesで画像のみがkind_imageになる(
     registry: NodeRegistry, root_dir: Path
 ) -> None:
