@@ -202,19 +202,25 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
     # マウント構成を DB に保存 (次回起動時の Warm Start 判定用)
     _indexer.save_mount_fingerprint(current_mount_ids)
 
+    import threading as _threading
+
     for mount in mount_config.mounts:
         root = mount.resolve_path(base_dir)
         if has_existing:
-            scan_task = asyncio.create_task(
-                _background_incremental_scan(
-                    _indexer, root, path_security, mount.mount_id
-                )
+            t = _threading.Thread(
+                target=_background_incremental_scan_sync,
+                args=(_indexer, root, path_security, mount.mount_id),
+                daemon=True,
+                name=f"index-scan-{mount.mount_id}",
             )
         else:
-            scan_task = asyncio.create_task(
-                _background_scan(_indexer, root, path_security, mount.mount_id)
+            t = _threading.Thread(
+                target=_background_scan_sync,
+                args=(_indexer, root, path_security, mount.mount_id),
+                daemon=True,
+                name=f"index-scan-{mount.mount_id}",
             )
-        scan_task.add_done_callback(_log_task_exception)
+        t.start()
 
     # FileWatcher 開始 (全マウントを一括監視)
     # PollingObserver.start() は初回スナップショットで同期的にディレクトリ全体を走査する
@@ -267,19 +273,15 @@ def _log_task_exception(task: asyncio.Task[object]) -> None:
         logger.error("バックグラウンドタスク例外: %s", task.exception())
 
 
-async def _background_scan(
+def _background_scan_sync(
     indexer: Indexer,
     root_dir: FilePath,
     path_security: PathSecurity,
     mount_id: str = "",
 ) -> None:
-    """バックグラウンドで初回インデックススキャンを実行する."""
+    """バックグラウンドスレッドで初回インデックススキャンを実行する."""
     try:
-        from starlette.concurrency import run_in_threadpool
-
-        count = await run_in_threadpool(
-            indexer.scan_directory, root_dir, path_security, mount_id
-        )
+        count = indexer.scan_directory(root_dir, path_security, mount_id)
         logger.info(
             "初回インデックス完了: %d エントリ (%s)",
             count,
@@ -289,18 +291,16 @@ async def _background_scan(
         logger.exception("初回インデックススキャンに失敗しました")
 
 
-async def _background_incremental_scan(
+def _background_incremental_scan_sync(
     indexer: Indexer,
     root_dir: FilePath,
     path_security: PathSecurity,
     mount_id: str = "",
 ) -> None:
-    """バックグラウンドで差分インデックススキャンを実行する."""
+    """バックグラウンドスレッドで差分インデックススキャンを実行する."""
     try:
-        from starlette.concurrency import run_in_threadpool
-
-        added, updated, deleted = await run_in_threadpool(
-            indexer.incremental_scan, root_dir, path_security, mount_id
+        added, updated, deleted = indexer.incremental_scan(
+            root_dir, path_security, mount_id
         )
         logger.info(
             "差分インデックス完了: +%d ~%d -%d (%s)",
