@@ -9,7 +9,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path as FilePath
 from typing import TYPE_CHECKING
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import FileResponse
@@ -341,4 +341,6 @@ if _static_dir.exists():
     @app.get("/{full_path:path}")
     async def spa_fallback(full_path: str) -> FileResponse:
         """SPA のクライアントサイドルーティング対応."""
+        if full_path.startswith("api/"):
+            raise HTTPException(status_code=404, detail="Not Found")
         return FileResponse(_static_dir / "index.html")
