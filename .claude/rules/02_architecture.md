@@ -3,9 +3,11 @@
 ## ディレクトリ構造
 ```
 local-viewer/
-├── manage_mounts.py         # マウントポイント管理 TUI
+├── init.sh                  # 初回セットアップ
+├── start.sh                 # Docker コンテナ起動
+├── manage_mounts.sh         # マウントポイント管理 Bash TUI (ホスト側)
 ├── config/
-│   └── mounts.json          # マウントポイント定義 (Docker: viewer-config volume)
+│   └── mounts.json          # マウントポイント定義 (Docker: バインドマウント ./config:/app/config)
 ├── backend/
 │   ├── main.py              # FastAPI エントリポイント
 │   ├── routers/             # APIルーター (1リソース1ファイル)

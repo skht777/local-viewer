@@ -1,7 +1,7 @@
 """マウントポイント一覧 API.
 
 GET /api/mounts — マウントポイント一覧 (TopPage 用)
-管理操作は TUI (manage_mounts.py) で行う。Web API は読み取り専用。
+管理操作は manage_mounts.sh で行う。Web API は読み取り専用。
 """
 
 from fastapi import APIRouter, Depends

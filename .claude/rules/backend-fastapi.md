@@ -25,3 +25,4 @@ paths:
 ## Dependencies
 - Shared services (archive_reader, node_registry, indexer) as FastAPI dependencies
 - Configuration via environment variables, accessed through settings module
+- MOUNT_BASE_DIR は .env → docker-compose.yml 経由でコンテナ環境変数に注入

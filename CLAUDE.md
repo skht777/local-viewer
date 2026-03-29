@@ -19,19 +19,18 @@ FastAPI バックエンド + React フロントエンド、Docker で配布。
 ## Commands
 
 ```bash
-# 開発サーバー起動（バックエンド + フロントエンド）
+# 初回セットアップ (.env コピー + マウントポイント設定)
+./init.sh
+
+# Docker コンテナ起動 (ビルド + 起動)
 ./start.sh
 
-# 初回セットアップ
+# マウントポイント管理（Bash TUI、ホスト側で実行）
+./manage_mounts.sh
+
+# ローカル開発用セットアップ
 python -m venv backend/.venv && source backend/.venv/bin/activate && pip install -r backend/requirements-dev.txt
 cd frontend && npm install && cd ..
-
-# マウントポイント管理（TUI）
-python manage_mounts.py
-
-# Docker
-cp .env.example .env  # MOUNT_BASE_DIR を先に編集
-docker compose up --build
 
 # Lint（バックエンド）
 source backend/.venv/bin/activate && ruff check backend/ && ruff format --check backend/ && mypy backend/
@@ -54,16 +53,18 @@ cd e2e && npx playwright test --ui   # UI モード
 - `backend/main.py` — FastAPI エントリポイント
 - `backend/config.py` — 環境変数ベースの設定モジュール（MOUNT_BASE_DIR, MOUNT_CONFIG_PATH 等）
 - `backend/errors.py` — 共通エラーモデル
-- `backend/services/mount_config.py` — マウントポイント設定の読み書き（mounts.json 管理）
-- `manage_mounts.py` — マウントポイント管理 TUI スクリプト（プロジェクトルート）
-- `config/mounts.json` — マウントポイント定義ファイル（Docker では named volume `viewer-config` に配置）
+- `backend/services/mount_config.py` — マウントポイント設定の読み書き（mounts.json v2 スキーマ: slug + host_path）
+- `init.sh` — 初回セットアップ（.env コピー + manage_mounts.sh）
+- `start.sh` — Docker コンテナ起動（docker compose up --build）
+- `manage_mounts.sh` — マウントポイント管理 Bash TUI（ホスト側で実行、docker-compose.yml + mounts.json を更新）
+- `config/mounts.json` — マウントポイント定義ファイル（Docker ではバインドマウント ./config:/app/config）
 - `frontend/vite.config.ts` — Vite + Tailwind v4 + /api プロキシ + Vitest
 - `frontend/src/index.css` — Tailwind v4 `@theme` カスタムトークン定義
 - `.env.example` — Docker ボリューム/ポート/リソース設定テンプレート
 - `e2e/playwright.config.ts` — E2E テスト設定
 
 ## 注意事項
-- **uvicorn はプロジェクトルートから実行** — `uvicorn backend.main:app`（`backend/` からではない）
+- **uvicorn はプロジェクトルートから実行** — Docker 内で自動実行。ローカル開発時は `uvicorn backend.main:app`
 - **Tailwind v4** — `tailwind.config.js` や `postcss.config.js` は不要、`@tailwindcss/vite` プラグインを使用
 - **lint-staged は venv パスを使用** — `package.json` 内で `backend/.venv/bin/ruff` として呼び出し
 - **node_id 不透明ID** — API はクライアントに実ファイルパスを公開しない。生成時にルートパスを含めて複数マウントポイント間の衝突を回避
