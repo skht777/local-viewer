@@ -72,6 +72,7 @@ class SearchResponse(BaseModel):
     results: list[SearchResultResponse]
     has_more: bool
     query: str
+    is_stale: bool = False
 
 
 # --- エンドポイント ---
@@ -119,6 +120,7 @@ async def search(
         offset,
     )
 
+    search_results.is_stale = indexer.is_stale
     return search_results
 
 

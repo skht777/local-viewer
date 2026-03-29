@@ -230,3 +230,39 @@ async def test_rebuildのレート制限で429を返す(
     # 2 回目は 429 (60 秒以内)
     r2 = await search_client.post("/api/index/rebuild")
     assert r2.status_code == 429
+
+
+async def test_warm_start状態でis_staleがTrueのレスポンスを返す(
+    search_client: AsyncClient,
+    test_indexer: Indexer,
+    test_root: Path,
+) -> None:
+    test_indexer._is_stale = True
+
+    img = test_root / "photo.png"
+    rel = str(img.relative_to(test_root))
+    test_indexer.add_entry(
+        IndexEntry(rel, "photo.png", "image", 100, img.stat().st_mtime_ns)
+    )
+
+    response = await search_client.get("/api/search", params={"q": "photo"})
+    assert response.status_code == 200
+    data = response.json()
+    assert data["is_stale"] is True
+
+
+async def test_スキャン完了後にis_staleがFalseのレスポンスを返す(
+    search_client: AsyncClient,
+    test_indexer: Indexer,
+    test_root: Path,
+) -> None:
+    img = test_root / "photo.png"
+    rel = str(img.relative_to(test_root))
+    test_indexer.add_entry(
+        IndexEntry(rel, "photo.png", "image", 100, img.stat().st_mtime_ns)
+    )
+
+    response = await search_client.get("/api/search", params={"q": "photo"})
+    assert response.status_code == 200
+    data = response.json()
+    assert data["is_stale"] is False

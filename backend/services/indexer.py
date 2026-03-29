@@ -143,6 +143,7 @@ class Indexer:
     def __init__(self, db_path: str) -> None:
         self._db_path = db_path
         self._is_ready = False
+        self._is_stale = False
         self._is_rebuilding = False
 
     def _connect(self) -> sqlite3.Connection:
@@ -438,6 +439,7 @@ class Indexer:
             if batch:
                 self._batch_insert(conn, batch)
 
+            self._is_stale = False
             self._is_ready = True
             return count
         finally:
@@ -536,6 +538,7 @@ class Indexer:
                     self.remove_entry(rel_path)
                     deleted += 1
 
+            self._is_stale = False
             self._is_ready = True
             return added, updated, deleted
         finally:
@@ -575,9 +578,44 @@ class Indexer:
         return self._is_ready
 
     @property
+    def is_stale(self) -> bool:
+        """インデックスが古い可能性があるか (バックグラウンドスキャン中)."""
+        return self._is_stale
+
+    @property
     def is_rebuilding(self) -> bool:
         """再構築中か."""
         return self._is_rebuilding
+
+    def mark_warm_start(self) -> None:
+        """既存 DB データで即座に検索を提供する (stale-while-revalidate)."""
+        self._is_ready = True
+        self._is_stale = True
+
+    def check_mount_fingerprint(self, mount_ids: list[str]) -> bool:
+        """現在のマウント構成が DB 保存時と一致するか確認する."""
+        conn = self._connect()
+        try:
+            row = conn.execute(
+                "SELECT value FROM schema_meta WHERE key = 'mount_fingerprint'"
+            ).fetchone()
+            if row is None:
+                return False
+            return row[0] == ",".join(mount_ids)
+        finally:
+            conn.close()
+
+    def save_mount_fingerprint(self, mount_ids: list[str]) -> None:
+        """スキャン完了時にマウント構成を保存する."""
+        conn = self._connect()
+        try:
+            conn.execute(
+                "INSERT OR REPLACE INTO schema_meta (key, value) VALUES (?, ?)",
+                ("mount_fingerprint", ",".join(mount_ids)),
+            )
+            conn.commit()
+        finally:
+            conn.close()
 
     @staticmethod
     def _batch_insert(

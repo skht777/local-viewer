@@ -600,3 +600,73 @@ class TestIndexerConcurrency:
         t2.join()
 
         assert errors == [], f"同時アクセスでエラー: {errors}"
+
+
+class TestIndexerWarmStart:
+    """Warm Start (stale-while-revalidate) のテスト."""
+
+    def test_初期状態ではis_staleがFalse(self, indexer: Indexer) -> None:
+        assert indexer.is_stale is False
+
+    def test_mark_warm_startでis_readyがTrueかつis_staleがTrue(
+        self, indexer: Indexer
+    ) -> None:
+        assert indexer.is_ready is False
+        indexer.mark_warm_start()
+        assert indexer.is_ready is True
+        assert indexer.is_stale is True
+
+    def test_scan_directory後にis_staleがFalseになる(
+        self, indexer: Indexer, tmp_path: Path
+    ) -> None:
+        from unittest.mock import MagicMock
+
+        root = tmp_path / "root"
+        root.mkdir()
+        (root / "test.mp4").touch()
+
+        security = MagicMock()
+        security.validate = MagicMock(side_effect=lambda p: p)
+
+        indexer.mark_warm_start()
+        assert indexer.is_stale is True
+
+        indexer.scan_directory(root, security)
+        assert indexer.is_ready is True
+        assert indexer.is_stale is False
+
+    def test_incremental_scan後にis_staleがFalseになる(
+        self, indexer: Indexer, tmp_path: Path
+    ) -> None:
+        from unittest.mock import MagicMock
+
+        root = tmp_path / "root"
+        root.mkdir()
+
+        security = MagicMock()
+        security.validate = MagicMock(side_effect=lambda p: p)
+
+        indexer.mark_warm_start()
+        assert indexer.is_stale is True
+
+        indexer.incremental_scan(root, security)
+        assert indexer.is_ready is True
+        assert indexer.is_stale is False
+
+    def test_check_mount_fingerprintが一致を正しく検出(
+        self, indexer: Indexer
+    ) -> None:
+        mount_ids = ["aaa111", "bbb222"]
+        indexer.save_mount_fingerprint(mount_ids)
+        assert indexer.check_mount_fingerprint(mount_ids) is True
+
+    def test_check_mount_fingerprintが不一致を正しく検出(
+        self, indexer: Indexer
+    ) -> None:
+        indexer.save_mount_fingerprint(["aaa111", "bbb222"])
+        assert indexer.check_mount_fingerprint(["aaa111", "ccc333"]) is False
+
+    def test_check_mount_fingerprintが未保存でFalseを返す(
+        self, indexer: Indexer
+    ) -> None:
+        assert indexer.check_mount_fingerprint(["aaa111"]) is False

@@ -191,6 +191,17 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
     # DB に既存エントリがあれば incremental_scan、なければ full scan
     has_existing = _indexer.entry_count() > 0
 
+    # Warm Start: マウント構成が一致すれば既存データで即座に検索を提供
+    current_mount_ids = sorted(m.mount_id for m in mount_config.mounts)
+    if has_existing and _indexer.check_mount_fingerprint(current_mount_ids):
+        _indexer.mark_warm_start()
+        logger.info("Warm Start: 既存インデックスで検索を有効化 (stale)")
+    else:
+        has_existing = False
+
+    # マウント構成を DB に保存 (次回起動時の Warm Start 判定用)
+    _indexer.save_mount_fingerprint(current_mount_ids)
+
     for mount in mount_config.mounts:
         root = mount.resolve_path(base_dir)
         if has_existing:
