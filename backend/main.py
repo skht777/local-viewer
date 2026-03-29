@@ -338,22 +338,19 @@ if _static_dir.exists():
         name="assets",
     )
 
-    # SPA フォールバック — /api 以外の 404 レスポンスを index.html で置換
-    from starlette.middleware.base import BaseHTTPMiddleware
+    # SPA フォールバック — ルート未一致の 404 を index.html で置換
+    # /api パスはそのまま 404 を返す (API エンドポイントの正常な 404)
+    from starlette.exceptions import HTTPException as StarletteHTTPException
     from starlette.requests import Request as StarletteRequest
-    from starlette.responses import Response as StarletteResponse
+    from starlette.responses import JSONResponse
 
-    class _SPAFallbackMiddleware(BaseHTTPMiddleware):
-        async def dispatch(
-            self, request: StarletteRequest, call_next: object
-        ) -> StarletteResponse:
-            response = await call_next(request)  # type: ignore[operator]
-            # /api パスはそのまま返す
-            if request.url.path.startswith("/api"):
-                return response
-            # 404 の場合のみ index.html を返す (SPA ルーティング)
-            if response.status_code == 404:
-                return FileResponse(_index_html)
-            return response
-
-    app.add_middleware(_SPAFallbackMiddleware)
+    @app.exception_handler(StarletteHTTPException)
+    async def _spa_or_api_error(
+        request: StarletteRequest, exc: StarletteHTTPException
+    ) -> FileResponse | JSONResponse:
+        if exc.status_code == 404 and not request.url.path.startswith("/api"):
+            return FileResponse(_index_html)
+        return JSONResponse(
+            {"error": exc.detail},
+            status_code=exc.status_code,
+        )
