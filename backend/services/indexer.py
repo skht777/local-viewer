@@ -430,16 +430,19 @@ class Indexer:
                 # 隠しディレクトリをスキップ
                 dirnames[:] = [d for d in dirnames if not d.startswith(".")]
 
+                # 拡張子チェックを validate() の前に実行
+                # (drvfs 上では resolve() が 0.43ms/call のため、
+                #  indexable でない 96% のファイルの validate() をスキップ)
                 for fname in filenames:
                     if fname.startswith("."):
+                        continue
+                    kind = _classify_by_extension(fname)
+                    if kind not in INDEXABLE_KINDS:
                         continue
                     fp = dp / fname
                     try:
                         path_security.validate(fp)
                     except Exception:  # noqa: S112
-                        continue
-                    kind = _classify_by_extension(fname)
-                    if kind not in INDEXABLE_KINDS:
                         continue
                     try:
                         st = fp.stat()
@@ -534,13 +537,13 @@ class Indexer:
                 for fname in filenames:
                     if fname.startswith("."):
                         continue
+                    kind = _classify_by_extension(fname)
+                    if kind not in INDEXABLE_KINDS:
+                        continue
                     fp = dp / fname
                     try:
                         path_security.validate(fp)
                     except Exception:  # noqa: S112
-                        continue
-                    kind = _classify_by_extension(fname)
-                    if kind not in INDEXABLE_KINDS:
                         continue
                     try:
                         st = fp.stat()
