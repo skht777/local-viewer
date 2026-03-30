@@ -93,6 +93,15 @@ export const useViewerStore = create<ViewerState>()(
         spreadMode: state.spreadMode,
         zoomLevel: state.zoomLevel,
         scrollSpeed: state.scrollSpeed,
+        expandedNodeIds: [...state.expandedNodeIds],
+      }),
+      // Set<string> ↔ Array<string> の変換
+      merge: (persisted, current) => ({
+        ...current,
+        ...(persisted as Record<string, unknown>),
+        expandedNodeIds: new Set(
+          (persisted as { expandedNodeIds?: string[] })?.expandedNodeIds ?? [],
+        ),
       }),
     },
   ),

@@ -95,10 +95,36 @@ describe("viewerStore", () => {
     expect(stored.state.isSidebarOpen).toBeUndefined();
   });
 
-  test("永続化対象外の expandedNodeIds は localStorage に含まれない", () => {
+  test("expandedNodeIds が localStorage に配列として保存される", () => {
     useViewerStore.getState().toggleExpanded("node1");
+    useViewerStore.getState().toggleExpanded("node2");
     const stored = JSON.parse(localStorage.getItem("viewer-store") ?? "{}");
-    expect(stored.state.expandedNodeIds).toBeUndefined();
+    const ids = stored.state.expandedNodeIds as string[];
+    expect(ids).toContain("node1");
+    expect(ids).toContain("node2");
+  });
+
+  test("localStorage から expandedNodeIds が Set として復元される", () => {
+    // localStorage に配列形式で保存
+    localStorage.setItem(
+      "viewer-store",
+      JSON.stringify({
+        state: {
+          fitMode: "height",
+          spreadMode: "single",
+          zoomLevel: 100,
+          scrollSpeed: 1.0,
+          expandedNodeIds: ["a", "b"],
+        },
+        version: 0,
+      }),
+    );
+    // ストアを再構築（persist rehydrate）
+    useViewerStore.persist.rehydrate();
+    const state = useViewerStore.getState();
+    expect(state.expandedNodeIds).toBeInstanceOf(Set);
+    expect(state.expandedNodeIds.has("a")).toBe(true);
+    expect(state.expandedNodeIds.has("b")).toBe(true);
   });
 
   // --- Phase 3: zoomLevel / scrollSpeed ---
