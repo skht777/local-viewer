@@ -13,12 +13,14 @@ import { useFullscreen } from "../hooks/useFullscreen";
 import { useCgNavigation } from "../hooks/useCgNavigation";
 import { useCgKeyboard } from "../hooks/useCgKeyboard";
 import { useSetJump } from "../hooks/useSetJump";
+import { useToast } from "../hooks/useToast";
 import { usePdfDocument } from "../hooks/usePdfDocument";
 import { usePdfRenderCache } from "../hooks/usePdfRenderCache";
 import { PdfCanvas } from "./PdfCanvas";
 import { CgToolbar } from "./CgToolbar";
 import { NavigationPrompt } from "./NavigationPrompt";
 import { PageSlider } from "./PageSlider";
+import { Toast } from "./Toast";
 
 interface PdfCgViewerProps {
   pdfNodeId: string;
@@ -65,6 +67,26 @@ export function PdfCgViewer({
   // ページナビゲーション (spread 対応)
   const nav = useCgNavigation(pageCount, currentPage, handlePageChange, spreadMode);
 
+  // ページ境界トースト
+  const { toastMessage, showToast, dismissToast } = useToast();
+
+  // 境界チェック付きナビゲーション
+  const handleGoNext = useCallback(() => {
+    if (!nav.canGoNext) {
+      showToast("最後のページです");
+      return;
+    }
+    nav.goNext();
+  }, [nav, showToast]);
+
+  const handleGoPrev = useCallback(() => {
+    if (!nav.canGoPrev) {
+      showToast("最初のページです");
+      return;
+    }
+    nav.goPrev();
+  }, [nav, showToast]);
+
   // セット間ジャンプ: currentNodeId = PDF 自身、parentNodeId = 親ディレクトリ
   const setJump = useSetJump({
     currentNodeId: pdfNodeId,
@@ -87,8 +109,8 @@ export function PdfCgViewer({
 
   // キーボードショートカット (spread 有効)
   useCgKeyboard({
-    goNext: nav.goNext,
-    goPrev: nav.goPrev,
+    goNext: handleGoNext,
+    goPrev: handleGoPrev,
     goFirst: nav.goFirst,
     goLast: nav.goLast,
     onEscape: handleEscape,
@@ -121,10 +143,10 @@ export function PdfCgViewer({
     (e: React.MouseEvent<HTMLDivElement>) => {
       const rect = e.currentTarget.getBoundingClientRect();
       const mid = rect.left + rect.width / 2;
-      if (e.clientX > mid) nav.goNext();
-      else nav.goPrev();
+      if (e.clientX > mid) handleGoNext();
+      else handleGoPrev();
     },
-    [nav],
+    [handleGoNext, handleGoPrev],
   );
 
   // コンテナサイズ (fitMode 計算用) — ResizeObserver で動的計測
@@ -262,6 +284,9 @@ export function PdfCgViewer({
           containerRef={imageAreaRef}
           onSliderActivity={resetCursorTimer}
         />
+
+        {/* ページ境界トースト */}
+        {toastMessage && <Toast message={toastMessage} onDismiss={dismissToast} />}
 
         {/* セット間ジャンプの確認プロンプト */}
         {setJump.prompt && (

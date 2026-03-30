@@ -14,10 +14,12 @@ import { useCgNavigation } from "../hooks/useCgNavigation";
 import { useCgKeyboard } from "../hooks/useCgKeyboard";
 import { useImagePreload } from "../hooks/useImagePreload";
 import { useSetJump } from "../hooks/useSetJump";
+import { useToast } from "../hooks/useToast";
 import type { ViewerMode } from "../hooks/useViewerParams";
 import { CgToolbar } from "./CgToolbar";
 import { NavigationPrompt } from "./NavigationPrompt";
 import { PageSlider } from "./PageSlider";
+import { Toast } from "./Toast";
 
 interface CgViewerProps {
   images: BrowseEntry[];
@@ -66,6 +68,26 @@ export function CgViewer({
   const preloadRange = spreadMode === "single" ? 2 : 4;
   useImagePreload(images, currentIndex, preloadRange);
 
+  // 画像境界トースト
+  const { toastMessage, showToast, dismissToast } = useToast();
+
+  // 境界チェック付きナビゲーション
+  const handleGoNext = useCallback(() => {
+    if (!nav.canGoNext) {
+      showToast("最後の画像です");
+      return;
+    }
+    nav.goNext();
+  }, [nav, showToast]);
+
+  const handleGoPrev = useCallback(() => {
+    if (!nav.canGoPrev) {
+      showToast("最初の画像です");
+      return;
+    }
+    nav.goPrev();
+  }, [nav, showToast]);
+
   // セット間ジャンプ
   const setJump = useSetJump({ currentNodeId, parentNodeId, mode });
 
@@ -84,8 +106,8 @@ export function CgViewer({
 
   // キーボードショートカット
   useCgKeyboard({
-    goNext: nav.goNext,
-    goPrev: nav.goPrev,
+    goNext: handleGoNext,
+    goPrev: handleGoPrev,
     goFirst: nav.goFirst,
     goLast: nav.goLast,
     onEscape: handleEscape,
@@ -124,12 +146,12 @@ export function CgViewer({
       const rect = e.currentTarget.getBoundingClientRect();
       const mid = rect.left + rect.width / 2;
       if (e.clientX > mid) {
-        nav.goNext();
+        handleGoNext();
       } else {
-        nav.goPrev();
+        handleGoPrev();
       }
     },
-    [nav],
+    [handleGoNext, handleGoPrev],
   );
 
   const { displayIndices } = nav;
@@ -200,6 +222,9 @@ export function CgViewer({
           containerRef={imageAreaRef}
           onSliderActivity={resetCursorTimer}
         />
+
+        {/* 画像境界トースト */}
+        {toastMessage && <Toast message={toastMessage} onDismiss={dismissToast} />}
 
         {/* セット間ジャンプの確認プロンプト */}
         {setJump.prompt && (
