@@ -4,7 +4,7 @@
 
 import { test, expect } from "@playwright/test";
 
-// archive マウントポイントに遷移するヘルパー
+// archive マウントポイントに遷移し、zips サブディレクトリに入るヘルパー
 async function navigateToArchive(page: import("@playwright/test").Page) {
   await page.goto("/");
   const archiveMount = page.locator("[data-testid^='mount-']", {
@@ -12,6 +12,14 @@ async function navigateToArchive(page: import("@playwright/test").Page) {
   });
   await expect(archiveMount).toBeVisible();
   await archiveMount.click();
+  await expect(page).toHaveURL(/\/browse\//);
+
+  // zips サブディレクトリに入る
+  const zipsDir = page.locator("[data-testid^='file-card-']", {
+    hasText: "zips",
+  });
+  await expect(zipsDir).toBeVisible();
+  await zipsDir.click();
   await expect(page).toHaveURL(/\/browse\//);
 }
 

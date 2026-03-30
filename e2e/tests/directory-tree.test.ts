@@ -9,6 +9,13 @@ import { navigateToMount } from "./helpers/navigation";
 test.describe("ディレクトリツリー", () => {
   test("DT-1: ディレクトリカードクリックでサブディレクトリに遷移する", async ({ page }) => {
     await navigateToMount(page, "nested");
+
+    // dirs サブディレクトリに入る
+    const dirsCard = page.locator("[data-testid^='file-card-']", { hasText: "dirs" });
+    await expect(dirsCard).toBeVisible();
+    await dirsCard.click();
+    await expect(page).toHaveURL(/\/browse\//);
+
     const initialUrl = page.url();
 
     // sub1 ディレクトリカードをクリック
@@ -23,6 +30,12 @@ test.describe("ディレクトリツリー", () => {
 
   test("DT-2: サブディレクトリ遷移後に画像が表示される", async ({ page }) => {
     await navigateToMount(page, "nested");
+
+    // dirs サブディレクトリに入る
+    const dirsCard = page.locator("[data-testid^='file-card-']", { hasText: "dirs" });
+    await expect(dirsCard).toBeVisible();
+    await dirsCard.click();
+    await expect(page).toHaveURL(/\/browse\//);
 
     // sub1 に遷移
     const sub1Card = page.locator("[data-testid^='file-card-']", { hasText: "sub1" });

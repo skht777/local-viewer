@@ -72,13 +72,16 @@ export async function showToolbar(page: Page) {
 }
 
 // 検索インデックス構築完了を待機する
-// バックエンド起動直後はインデックス未構築で 503 を返す場合がある
+// バックエンド起動直後はインデックス未構築で 503 を返すか、200 でも結果が空の場合がある
+// ※ 画像はインデックス対象外のため、動画ファイル名 (clip) で確認する
 export async function waitForSearchIndex(request: APIRequestContext) {
   await expect.poll(
     async () => {
-      const res = await request.get("/api/search?q=photo&limit=1");
-      return res.status();
+      const res = await request.get("/api/search?q=clip&limit=1");
+      if (res.status() !== 200) return 0;
+      const body = await res.json();
+      return body.results?.length ?? 0;
     },
-    { timeout: 15_000, message: "検索インデックス構築待ち" },
-  ).not.toBe(503);
+    { timeout: 30_000, message: "検索インデックス構築待ち" },
+  ).toBeGreaterThanOrEqual(1);
 }

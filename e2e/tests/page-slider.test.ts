@@ -71,12 +71,18 @@ test.describe("CG モード — 水平ページスライダー", () => {
   });
 
   test("PS-6: 画像1枚のみの場合スライダーが表示されない", async ({ page }) => {
-    // nested/sub1 は画像1枚のみ
-    await test.step("nested マウントポイントの sub1 に移動", async () => {
+    // nested/dirs/sub1 は画像1枚のみ
+    await test.step("nested マウントポイントの dirs/sub1 に移動", async () => {
       await page.goto("/");
       const nestedMount = page.locator("[data-testid^='mount-']", { hasText: "nested" });
       await expect(nestedMount).toBeVisible();
       await nestedMount.click();
+      await expect(page).toHaveURL(/\/browse\//);
+
+      // dirs サブディレクトリに入る
+      const dirsDir = page.locator("[data-testid^='file-card-']", { hasText: "dirs" });
+      await expect(dirsDir).toBeVisible();
+      await dirsDir.click();
       await expect(page).toHaveURL(/\/browse\//);
 
       const sub1 = page.locator("[data-testid^='file-card-']", { hasText: "sub1" });

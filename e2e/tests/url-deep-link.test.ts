@@ -8,15 +8,16 @@ import { openCgViewer, openMangaViewer, navigateToMount, showToolbar } from "./h
 
 // API から node_id を動的取得するヘルパー
 async function getNodeIds(request: import("@playwright/test").APIRequestContext) {
-  const rootRes = await request.get("/api/browse");
-  const root = await rootRes.json();
+  // /api/mounts でマウントポイント一覧を取得
+  const mountsRes = await request.get("/api/mounts");
+  const mountsData = await mountsRes.json();
 
   // pictures マウントポイントの node_id
-  const picturesMount = root.entries.find((e: { name: string }) => e.name === "pictures");
+  const picturesMount = mountsData.mounts.find((m: { name: string }) => m.name === "pictures");
   if (!picturesMount) throw new Error("pictures マウントポイントが見つかりません");
 
   // docs マウントポイントの node_id
-  const docsMount = root.entries.find((e: { name: string }) => e.name === "docs");
+  const docsMount = mountsData.mounts.find((m: { name: string }) => m.name === "docs");
   if (!docsMount) throw new Error("docs マウントポイントが見つかりません");
 
   // docs 内の sample.pdf の node_id

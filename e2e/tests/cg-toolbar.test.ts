@@ -33,13 +33,13 @@ test.describe("CG ツールバー — キーバインド", () => {
     const spreadBtn = page.getByTestId("cg-spread-btn");
 
     // single → spread → spread-offset → single
-    await expect(spreadBtn).toHaveText("1");
+    await expect(spreadBtn).toHaveText("1頁");
     await page.keyboard.press("q");
-    await expect(spreadBtn).toHaveText("2");
+    await expect(spreadBtn).toHaveText("見開");
     await page.keyboard.press("q");
-    await expect(spreadBtn).toHaveText("2+");
+    await expect(spreadBtn).toHaveText("見+1");
     await page.keyboard.press("q");
-    await expect(spreadBtn).toHaveText("1");
+    await expect(spreadBtn).toHaveText("1頁");
   });
 });
 
@@ -90,13 +90,13 @@ test.describe("CG ツールバー — ボタンクリック", () => {
     const spreadBtn = page.getByTestId("cg-spread-btn");
 
     // single → spread → spread-offset → single
-    await expect(spreadBtn).toHaveText("1");
+    await expect(spreadBtn).toHaveText("1頁");
     await spreadBtn.click();
-    await expect(spreadBtn).toHaveText("2");
+    await expect(spreadBtn).toHaveText("見開");
     await spreadBtn.click();
-    await expect(spreadBtn).toHaveText("2+");
+    await expect(spreadBtn).toHaveText("見+1");
     await spreadBtn.click();
-    await expect(spreadBtn).toHaveText("1");
+    await expect(spreadBtn).toHaveText("1頁");
   });
 
   test("CT-7: ページセレクトでページに直接ジャンプする", async ({ page }) => {

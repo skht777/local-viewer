@@ -113,9 +113,9 @@ test.describe("PDF ナビゲーション — P2", () => {
     await expect(spreadBtn).toBeVisible();
 
     // Q キーでサイクルが動作する
-    await expect(spreadBtn).toHaveText("1");
+    await expect(spreadBtn).toHaveText("1頁");
     await page.keyboard.press("q");
-    await expect(spreadBtn).toHaveText("2");
+    await expect(spreadBtn).toHaveText("見開");
   });
 
   test("PN-12: X キーでセット間ジャンプの NavigationPrompt が表示される", async ({ page }) => {
