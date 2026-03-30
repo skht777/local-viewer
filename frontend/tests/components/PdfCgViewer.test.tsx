@@ -148,6 +148,6 @@ describe("PdfCgViewer", () => {
     });
 
     // CgToolbar の showSpread=true により見開きボタンが表示される
-    expect(screen.getByLabelText("見開き切替")).toBeTruthy();
+    expect(screen.getByTestId("cg-spread-btn")).toBeTruthy();
   });
 });

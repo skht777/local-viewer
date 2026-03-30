@@ -34,7 +34,7 @@ describe("SearchBar", () => {
   test("kindフィルタボタンが表示される", () => {
     renderSearchBar();
     expect(screen.getByTestId("kind-filter-all")).toBeInTheDocument();
-    expect(screen.getByTestId("kind-filter-image")).toBeInTheDocument();
+    expect(screen.getByTestId("kind-filter-directory")).toBeInTheDocument();
     expect(screen.getByTestId("kind-filter-video")).toBeInTheDocument();
   });
 
