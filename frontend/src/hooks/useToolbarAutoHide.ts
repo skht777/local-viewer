@@ -2,8 +2,9 @@
 // - デスクトップ: コンテナ上部 60px 以内にマウスが来たら表示
 // - タッチデバイス: 常に表示（pointer: coarse）
 // - pointerleave で非表示に戻す
+// - コールバック ref でコンテナ要素の遅延マウントに対応（PDF ローディング等）
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 // 上端からの近接閾値（px）
 const PROXIMITY_THRESHOLD = 60;
@@ -20,19 +21,21 @@ function detectTouch(): boolean {
 interface UseToolbarAutoHideReturn {
   isToolbarVisible: boolean;
   isTouch: boolean;
+  containerCallbackRef: (node: HTMLElement | null) => void;
 }
 
-export function useToolbarAutoHide(
-  containerRef: React.RefObject<HTMLElement | null>,
-): UseToolbarAutoHideReturn {
+export function useToolbarAutoHide(): UseToolbarAutoHideReturn {
   const [isNearTop, setIsNearTop] = useState(false);
+  const [container, setContainer] = useState<HTMLElement | null>(null);
   const isTouch = detectTouch();
 
-  useEffect(() => {
-    if (isTouch) return;
+  // コールバック ref: DOM 要素のマウント/アンマウントを追跡
+  const containerCallbackRef = useCallback((node: HTMLElement | null) => {
+    setContainer(node);
+  }, []);
 
-    const container = containerRef.current;
-    if (!container) return;
+  useEffect(() => {
+    if (isTouch || !container) return;
 
     const handlePointerMove = (e: PointerEvent) => {
       const rect = container.getBoundingClientRect();
@@ -51,10 +54,11 @@ export function useToolbarAutoHide(
       container.removeEventListener("pointermove", handlePointerMove);
       container.removeEventListener("pointerleave", handlePointerLeave);
     };
-  }, [containerRef]);
+  }, [container, isTouch]);
 
   return {
     isToolbarVisible: isTouch || isNearTop,
     isTouch,
+    containerCallbackRef,
   };
 }

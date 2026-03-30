@@ -60,6 +60,9 @@ test.describe("ツールバー自動表示/非表示 — PDF CG モード", () =
   test("PDF CG モードでも上部ホバーで表示される", async ({ page }) => {
     await openPdfViewer(page);
 
+    // PDF 描画完了を待つ（page-counter が表示されるまで）
+    await expect(page.getByTestId("page-counter")).toContainText(/\d+\s*\/\s*\d+/);
+
     // 初期状態は非表示
     await page.mouse.move(600, 400);
     const wrapper = page.getByTestId("toolbar-wrapper");

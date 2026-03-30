@@ -125,8 +125,8 @@ export function CgViewer({
   });
 
   // ツールバー自動表示/非表示
-  const viewerContainerRef = useRef<HTMLDivElement>(null);
-  const { isToolbarVisible, isTouch } = useToolbarAutoHide(viewerContainerRef);
+
+  const { isToolbarVisible, isTouch, containerCallbackRef } = useToolbarAutoHide();
 
   // カーソルオートハイド
   const cursorTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
@@ -170,7 +170,7 @@ export function CgViewer({
   return (
     <div data-testid="cg-viewer" className="fixed inset-0 z-50 flex bg-black">
       {/* メインエリア */}
-      <div ref={viewerContainerRef} className="relative flex flex-1 flex-col overflow-hidden">
+      <div ref={containerCallbackRef} className="relative flex flex-1 flex-col overflow-hidden">
         {/* ツールバー（デスクトップ: 自動表示/非表示、タッチ: 常時表示・通常フロー） */}
         <div
           data-testid="toolbar-wrapper"

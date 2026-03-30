@@ -69,8 +69,8 @@ export function PdfCgViewer({
   const nav = useCgNavigation(pageCount, currentPage, handlePageChange, spreadMode);
 
   // ツールバー自動表示/非表示
-  const viewerContainerRef = useRef<HTMLDivElement>(null);
-  const { isToolbarVisible, isTouch } = useToolbarAutoHide(viewerContainerRef);
+
+  const { isToolbarVisible, isTouch, containerCallbackRef } = useToolbarAutoHide();
 
   // ページ境界トースト
   const { toastMessage, showToast, dismissToast } = useToast();
@@ -232,7 +232,7 @@ export function PdfCgViewer({
   return (
     <div data-testid="pdf-cg-viewer" className="fixed inset-0 z-50 flex bg-black">
       {/* メインエリア */}
-      <div ref={viewerContainerRef} className="relative flex flex-1 flex-col overflow-hidden">
+      <div ref={containerCallbackRef} className="relative flex flex-1 flex-col overflow-hidden">
         {/* ツールバー（デスクトップ: 自動表示/非表示、タッチ: 常時表示・通常フロー） */}
         <div
           data-testid="toolbar-wrapper"
