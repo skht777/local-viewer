@@ -19,8 +19,10 @@ interface SearchResultsProps {
   hasMore: boolean;
   isLoading: boolean;
   isIndexing: boolean;
+  isError?: boolean;
   activeIndex: number;
   onSelect: (result: SearchResult) => void;
+  onRetry?: () => void;
 }
 
 export function SearchResults({
@@ -28,8 +30,10 @@ export function SearchResults({
   hasMore,
   isLoading,
   isIndexing,
+  isError,
   activeIndex,
   onSelect,
+  onRetry,
 }: SearchResultsProps) {
   if (isIndexing) {
     return (
@@ -43,6 +47,23 @@ export function SearchResults({
     return (
       <div className="absolute z-50 mt-1 w-full rounded-lg bg-surface-raised p-4 text-gray-400 shadow-lg">
         検索中...
+      </div>
+    );
+  }
+
+  if (isError) {
+    return (
+      <div className="absolute z-50 mt-1 w-full rounded-lg bg-surface-raised p-4 shadow-lg">
+        <p className="text-red-400">検索に失敗しました</p>
+        {onRetry && (
+          <button
+            type="button"
+            onClick={onRetry}
+            className="mt-2 rounded bg-blue-600 px-3 py-1 text-xs text-white hover:bg-blue-500"
+          >
+            再試行
+          </button>
+        )}
       </div>
     );
   }

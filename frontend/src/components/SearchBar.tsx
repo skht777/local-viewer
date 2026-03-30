@@ -29,7 +29,9 @@ export function SearchBar() {
     results,
     hasMore,
     isLoading,
+    isError,
     isIndexing,
+    refetch,
   } = useSearch();
 
   const [isOpen, setIsOpen] = useState(false);
@@ -144,8 +146,10 @@ export function SearchBar() {
           hasMore={hasMore}
           isLoading={isLoading}
           isIndexing={isIndexing}
+          isError={isError}
           activeIndex={activeIndex}
           onSelect={handleSelect}
+          onRetry={refetch}
         />
       )}
     </div>

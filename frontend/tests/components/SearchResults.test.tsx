@@ -155,4 +155,38 @@ describe("SearchResults", () => {
     const secondItem = screen.getByTestId("search-result-1");
     expect(secondItem).not.toHaveAttribute("aria-selected", "true");
   });
+
+  test("isError=true でエラーメッセージが表示される", () => {
+    render(
+      <SearchResults
+        results={[]}
+        hasMore={false}
+        isLoading={false}
+        isIndexing={false}
+        isError={true}
+        activeIndex={-1}
+        onSelect={() => {}}
+      />,
+    );
+    expect(screen.getByText("検索に失敗しました")).toBeInTheDocument();
+    expect(screen.queryByText("結果が見つかりません")).not.toBeInTheDocument();
+  });
+
+  test("isError=true のとき再試行ボタンクリックで onRetry が呼ばれる", async () => {
+    const onRetry = vi.fn();
+    render(
+      <SearchResults
+        results={[]}
+        hasMore={false}
+        isLoading={false}
+        isIndexing={false}
+        isError={true}
+        activeIndex={-1}
+        onSelect={() => {}}
+        onRetry={onRetry}
+      />,
+    );
+    await userEvent.click(screen.getByRole("button", { name: "再試行" }));
+    expect(onRetry).toHaveBeenCalledOnce();
+  });
 });

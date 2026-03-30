@@ -22,6 +22,7 @@ interface UseSearchReturn {
   isLoading: boolean;
   isError: boolean;
   isIndexing: boolean;
+  refetch: () => void;
 }
 
 export function useSearch(): UseSearchReturn {
@@ -38,9 +39,9 @@ export function useSearch(): UseSearchReturn {
   }, [query]);
 
   const opts = searchOptions(debouncedQuery, kind ?? undefined);
-  const { data, isLoading, isError, error } = useQuery({
+  const { data, isLoading, isError, error, refetch } = useQuery({
     ...opts,
-    retry: false,
+    retry: 1,
   });
 
   // 503 → インデックス構築中
@@ -61,5 +62,6 @@ export function useSearch(): UseSearchReturn {
     isLoading,
     isError: isError && !isIndexing,
     isIndexing,
+    refetch: () => void refetch(),
   };
 }
