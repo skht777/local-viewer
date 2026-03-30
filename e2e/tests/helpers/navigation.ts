@@ -64,6 +64,13 @@ export async function openPdfViewer(page: Page) {
   await expect(page.locator("[data-testid='pdf-cg-viewer']")).toBeVisible();
 }
 
+// ツールバーを表示する（マウスを上部に移動してポインターイベント発火）
+export async function showToolbar(page: Page) {
+  await page.mouse.move(600, 20);
+  const wrapper = page.getByTestId("toolbar-wrapper");
+  await expect(wrapper).toHaveCSS("opacity", "1");
+}
+
 // 検索インデックス構築完了を待機する
 // バックエンド起動直後はインデックス未構築で 503 を返す場合がある
 export async function waitForSearchIndex(request: APIRequestContext) {

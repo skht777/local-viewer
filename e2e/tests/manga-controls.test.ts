@@ -5,7 +5,7 @@
 // P3: MC-9(スクロール速度スライダー)
 
 import { test, expect } from "@playwright/test";
-import { openMangaViewer } from "./helpers/navigation";
+import { openMangaViewer, showToolbar } from "./helpers/navigation";
 
 test.describe("マンガモード — キーバインド", () => {
   test("MC-1: + キーでズームインする", async ({ page }) => {
@@ -56,6 +56,7 @@ test.describe("マンガモード — キーバインド", () => {
 test.describe("マンガモード — ツールバー操作", () => {
   test("MC-4: ズームスライダー操作で manga-zoom-level が更新される", async ({ page }) => {
     await openMangaViewer(page);
+    await showToolbar(page);
 
     const zoomSlider = page.getByRole("slider", { name: "ズーム" });
     await expect(zoomSlider).toBeVisible();
@@ -69,6 +70,7 @@ test.describe("マンガモード — ツールバー操作", () => {
 
   test("MC-5: +/- ボタンクリックでズームが 25% 変化する", async ({ page }) => {
     await openMangaViewer(page);
+    await showToolbar(page);
     await expect(page.getByTestId("manga-zoom-level")).toHaveText("100%");
 
     // + ボタンクリック → 125%
@@ -142,6 +144,7 @@ test.describe("マンガモード — ナビゲーション", () => {
 test.describe("マンガモード — 速度スライダー", () => {
   test("MC-9: スクロール速度スライダー操作で manga-scroll-speed-label が更新される", async ({ page }) => {
     await openMangaViewer(page);
+    await showToolbar(page);
 
     const speedSlider = page.getByRole("slider", { name: "スクロール速度" });
     await expect(speedSlider).toBeVisible();

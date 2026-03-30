@@ -212,6 +212,7 @@ export function PdfMangaViewer({
       <div ref={viewerContainerRef} className="relative flex flex-1 flex-col overflow-hidden">
         {/* ツールバー（デスクトップ: 自動表示/非表示、タッチ: 常時表示・通常フロー） */}
         <div
+          data-testid="toolbar-wrapper"
           className={
             isTouch
               ? "relative z-10"

@@ -38,6 +38,8 @@ async function openCgInArchiveZip(page: import("@playwright/test").Page) {
   await firstImage.click({ force: true });
 
   await expect(page.locator("[data-testid='cg-viewer']")).toBeVisible();
+  // フック初期化完了を待つ（ページカウンターが描画されるまで）
+  await expect(page.getByTestId("page-counter")).toContainText(/\d+\s*\/\s*\d+/);
 }
 
 // nested/sub1 で CG モードを開く (ディレクトリ間ジャンプ用)
@@ -71,6 +73,7 @@ async function openCgInNestedSub1(page: import("@playwright/test").Page) {
   await firstImage.click({ force: true });
 
   await expect(page.locator("[data-testid='cg-viewer']")).toBeVisible();
+  await expect(page.getByTestId("page-counter")).toContainText(/\d+\s*\/\s*\d+/);
 }
 
 test.describe("セット間ジャンプ — アーカイブ間", () => {
@@ -193,6 +196,56 @@ test.describe("NavigationPrompt キーボード操作", () => {
     await page.keyboard.press("Enter");
     await expect(page).not.toHaveURL(initialUrl);
     await expect(page).toHaveURL(/\/browse\//);
+  });
+});
+
+test.describe("NavigationPrompt extraConfirmKeys（Z/X 確認ショートカット）", () => {
+  test("X → プロンプト表示 → X で次のセットに遷移する", async ({ page }) => {
+    await openCgInArchiveZip(page);
+    const initialUrl = page.url();
+
+    await page.keyboard.press("x");
+    const prompt = page.locator("[data-testid='navigation-prompt']");
+    await expect(prompt).toBeVisible({ timeout: 5000 });
+
+    // X キー（2回目）で確認
+    await page.keyboard.press("x");
+    await expect(page).not.toHaveURL(initialUrl);
+    await expect(page).toHaveURL(/\/browse\//);
+  });
+
+  test("Z → プロンプト表示 → Z で前のセットに遷移する", async ({ page }) => {
+    await openCgInNestedSub1(page);
+
+    // まず sub2 に移動
+    await page.keyboard.press("x");
+    const prompt = page.locator("[data-testid='navigation-prompt']");
+    await expect(prompt).toBeVisible({ timeout: 5000 });
+    await prompt.locator("button", { hasText: "はい" }).click();
+
+    // sub2 で CG ビューワーが開くのを待つ
+    await expect(page.locator("[data-testid='cg-viewer']")).toBeVisible();
+    const sub2Url = page.url();
+
+    // Z で前のセット (sub1) に戻る
+    await page.keyboard.press("z");
+    await expect(prompt).toBeVisible({ timeout: 5000 });
+
+    // Z キー（2回目）で確認
+    await page.keyboard.press("z");
+    await expect(page).not.toHaveURL(sub2Url);
+    await expect(page).toHaveURL(/\/browse\//);
+  });
+
+  test("ヒントテキストに X が含まれている", async ({ page }) => {
+    await openCgInArchiveZip(page);
+
+    await page.keyboard.press("x");
+    const prompt = page.locator("[data-testid='navigation-prompt']");
+    await expect(prompt).toBeVisible({ timeout: 5000 });
+
+    // ヒントテキストに X が含まれる
+    await expect(prompt).toContainText("X");
   });
 });
 

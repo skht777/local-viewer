@@ -6,7 +6,7 @@
 // P3: PN-14(破損PDF エラー表示)
 
 import { test, expect } from "@playwright/test";
-import { navigateToMount, openPdfViewer } from "./helpers/navigation";
+import { navigateToMount, openPdfViewer, showToolbar } from "./helpers/navigation";
 
 test.describe("PDF ナビゲーション — 基本", () => {
   test("PN-1: D キーで次ページに進む", async ({ page }) => {
@@ -62,6 +62,7 @@ test.describe("PDF ナビゲーション — P2", () => {
 
   test("PN-7: ページセレクトでページにジャンプする", async ({ page }) => {
     await openPdfViewer(page);
+    await showToolbar(page);
     await expect(page).toHaveURL(/page=1/);
 
     // <select> で Page 2 (value=1) を選択
@@ -88,6 +89,7 @@ test.describe("PDF ナビゲーション — P2", () => {
 
     await page.keyboard.press("v");
 
+    await showToolbar(page);
     const wBtn = page.getByRole("button", { name: "幅フィット" });
     await expect(wBtn).toHaveAttribute("aria-pressed", "true");
   });
@@ -97,12 +99,14 @@ test.describe("PDF ナビゲーション — P2", () => {
 
     await page.keyboard.press("h");
 
+    await showToolbar(page);
     const hBtn = page.getByRole("button", { name: "高さフィット" });
     await expect(hBtn).toHaveAttribute("aria-pressed", "true");
   });
 
   test("PN-11: Q キーで見開きボタンは表示されるが操作可能 (PDF は showSpread=true)", async ({ page }) => {
     await openPdfViewer(page);
+    await showToolbar(page);
 
     // PDF CG ビューワーでは showSpread=true なので見開きボタンが存在する
     const spreadBtn = page.getByTestId("cg-spread-btn");

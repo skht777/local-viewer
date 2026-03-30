@@ -4,7 +4,7 @@
 //     UD-7(zoomLevel永続化), UD-8(タブURL保持), UD-9(scrollSpeed永続化)
 
 import { test, expect } from "@playwright/test";
-import { openCgViewer, openMangaViewer, navigateToMount } from "./helpers/navigation";
+import { openCgViewer, openMangaViewer, navigateToMount, showToolbar } from "./helpers/navigation";
 
 // API から node_id を動的取得するヘルパー
 async function getNodeIds(request: import("@playwright/test").APIRequestContext) {
@@ -146,6 +146,7 @@ test.describe("localStorage 永続化", () => {
 
   test("UD-9: scrollSpeed が localStorage に永続化される", async ({ page }) => {
     await openMangaViewer(page);
+    await showToolbar(page);
 
     // 速度を 2.0x に変更
     const speedSlider = page.getByRole("slider", { name: "スクロール速度" });
