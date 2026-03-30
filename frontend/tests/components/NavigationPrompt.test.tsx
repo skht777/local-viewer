@@ -48,6 +48,38 @@ describe("NavigationPrompt", () => {
     expect(onCancel).toHaveBeenCalledOnce();
   });
 
+  test("extraConfirmKeys の X キーで onConfirm が呼ばれる", async () => {
+    const onConfirm = vi.fn();
+    render(
+      <NavigationPrompt message="test" onConfirm={onConfirm} onCancel={() => {}} extraConfirmKeys={["x"]} />,
+    );
+    await userEvent.keyboard("x");
+    expect(onConfirm).toHaveBeenCalledOnce();
+  });
+
+  test("extraConfirmKeys の Z キーで onConfirm が呼ばれる", async () => {
+    const onConfirm = vi.fn();
+    render(
+      <NavigationPrompt message="test" onConfirm={onConfirm} onCancel={() => {}} extraConfirmKeys={["z"]} />,
+    );
+    await userEvent.keyboard("z");
+    expect(onConfirm).toHaveBeenCalledOnce();
+  });
+
+  test("extraConfirmKeys 未指定時は X キーで onConfirm が呼ばれない", async () => {
+    const onConfirm = vi.fn();
+    render(<NavigationPrompt message="test" onConfirm={onConfirm} onCancel={() => {}} />);
+    await userEvent.keyboard("x");
+    expect(onConfirm).not.toHaveBeenCalled();
+  });
+
+  test("extraConfirmKeys 指定時にヒントテキストにキーが含まれる", () => {
+    render(
+      <NavigationPrompt message="test" onConfirm={() => {}} onCancel={() => {}} extraConfirmKeys={["x"]} />,
+    );
+    expect(screen.getByText(/X.*Y.*Enter/i)).toBeInTheDocument();
+  });
+
   test("5秒後に自動で onCancel が呼ばれる", () => {
     vi.useFakeTimers();
     const onCancel = vi.fn();

@@ -128,8 +128,8 @@ export function MangaViewer({
     scrollToBottom: mangaScroll.scrollToBottom,
     onEscape: handleEscape,
     toggleFullscreen,
-    goNextSet: setJump.goNextSet,
-    goPrevSet: setJump.goPrevSet,
+    goNextSet: setJump.prompt ? undefined : setJump.goNextSet,
+    goPrevSet: setJump.prompt ? undefined : setJump.goPrevSet,
     goNextSetParent: setJump.goNextSetParent,
     goPrevSetParent: setJump.goPrevSetParent,
     zoomIn,
@@ -227,6 +227,7 @@ export function MangaViewer({
             message={setJump.prompt.message}
             onConfirm={setJump.prompt.onConfirm}
             onCancel={setJump.prompt.onCancel}
+            extraConfirmKeys={setJump.prompt.extraConfirmKeys}
           />
         )}
       </div>

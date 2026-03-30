@@ -9,30 +9,37 @@ interface NavigationPromptProps {
   message: string;
   onConfirm: () => void;
   onCancel: () => void;
+  extraConfirmKeys?: string[];
 }
 
-export function NavigationPrompt({ message, onConfirm, onCancel }: NavigationPromptProps) {
+export function NavigationPrompt({
+  message,
+  onConfirm,
+  onCancel,
+  extraConfirmKeys,
+}: NavigationPromptProps) {
   // 5秒で自動消去
   useEffect(() => {
     const timer = setTimeout(onCancel, 5000);
     return () => clearTimeout(timer);
   }, [onCancel]);
 
-  // Y/Enter で確認、N でキャンセル
+  // Y/Enter/extraConfirmKeys で確認、N でキャンセル
   // Escape は CgViewer/MangaViewer の handleEscape チェーンに任せる（二重呼び出し回避）
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      if (e.key === "y" || e.key === "Y" || e.key === "Enter") {
+      const key = e.key.toLowerCase();
+      if (key === "y" || e.key === "Enter" || extraConfirmKeys?.includes(key)) {
         e.preventDefault();
         onConfirm();
-      } else if (e.key === "n" || e.key === "N") {
+      } else if (key === "n") {
         e.preventDefault();
         onCancel();
       }
     };
     document.addEventListener("keydown", handler);
     return () => document.removeEventListener("keydown", handler);
-  }, [onConfirm, onCancel]);
+  }, [onConfirm, onCancel, extraConfirmKeys]);
 
   return (
     <div
@@ -57,7 +64,11 @@ export function NavigationPrompt({ message, onConfirm, onCancel }: NavigationPro
         >
           いいえ
         </button>
-        <span>Y / Enter で移動、N / Esc でキャンセル</span>
+        <span>
+          {extraConfirmKeys
+            ? `${extraConfirmKeys.map((k) => k.toUpperCase()).join(" / ")} / Y / Enter で移動、N / Esc でキャンセル`
+            : "Y / Enter で移動、N / Esc でキャンセル"}
+        </span>
       </div>
     </div>
   );

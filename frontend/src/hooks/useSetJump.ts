@@ -23,6 +23,7 @@ interface Prompt {
   message: string;
   onConfirm: () => void;
   onCancel: () => void;
+  extraConfirmKeys?: string[];
 }
 
 interface UseSetJumpReturn {
@@ -81,6 +82,7 @@ export function useSetJump({
         navigateToTarget(sibling);
       },
       onCancel: () => setPrompt(null),
+      extraConfirmKeys: ["x"],
     });
   }, [findSibling, navigateToTarget]);
 
@@ -95,6 +97,7 @@ export function useSetJump({
         navigateToTarget(sibling);
       },
       onCancel: () => setPrompt(null),
+      extraConfirmKeys: ["z"],
     });
   }, [findSibling, navigateToTarget]);
 
