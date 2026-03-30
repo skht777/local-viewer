@@ -1,4 +1,4 @@
-import { render, screen, act } from "@testing-library/react";
+import { render, screen, act, fireEvent } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { NavigationPrompt } from "../../src/components/NavigationPrompt";
 
@@ -88,6 +88,48 @@ describe("NavigationPrompt", () => {
       vi.advanceTimersByTime(5000);
     });
     expect(onCancel).toHaveBeenCalledOnce();
+    vi.useRealTimers();
+  });
+
+  test("ホバー中は5秒経過しても onCancel が呼ばれない", () => {
+    vi.useFakeTimers();
+    const onCancel = vi.fn();
+    render(<NavigationPrompt message="test" onConfirm={() => {}} onCancel={onCancel} />);
+    const prompt = screen.getByTestId("navigation-prompt");
+
+    // 2秒後にホバー開始
+    act(() => { vi.advanceTimersByTime(2000); });
+    act(() => { fireEvent.mouseEnter(prompt); });
+
+    // さらに4秒経過（合計6秒）しても呼ばれない
+    act(() => { vi.advanceTimersByTime(4000); });
+    expect(onCancel).not.toHaveBeenCalled();
+
+    vi.useRealTimers();
+  });
+
+  test("ホバー解除後に残り時間で onCancel が呼ばれる", () => {
+    vi.useFakeTimers();
+    const onCancel = vi.fn();
+    render(<NavigationPrompt message="test" onConfirm={() => {}} onCancel={onCancel} />);
+    const prompt = screen.getByTestId("navigation-prompt");
+
+    // 2秒後にホバー開始
+    act(() => { vi.advanceTimersByTime(2000); });
+    act(() => { fireEvent.mouseEnter(prompt); });
+
+    // 1秒後にホバー解除（残り約3秒）
+    act(() => { vi.advanceTimersByTime(1000); });
+    act(() => { fireEvent.mouseLeave(prompt); });
+
+    // 残り時間（約3秒）が経過する前は呼ばれない
+    act(() => { vi.advanceTimersByTime(2000); });
+    expect(onCancel).not.toHaveBeenCalled();
+
+    // 残り時間（約3秒）が経過すると呼ばれる
+    act(() => { vi.advanceTimersByTime(2000); });
+    expect(onCancel).toHaveBeenCalledOnce();
+
     vi.useRealTimers();
   });
 });
