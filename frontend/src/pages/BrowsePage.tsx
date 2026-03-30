@@ -181,6 +181,7 @@ export default function BrowsePage() {
             onPdfClick={openPdfViewer}
             tab={params.tab}
             selectedNodeId={selectedNodeId}
+            onTabChange={setTab}
           />
         )}
       </div>
