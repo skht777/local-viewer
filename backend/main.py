@@ -14,7 +14,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
-from starlette.concurrency import run_in_threadpool
 
 from backend.config import init_settings
 from backend.errors import (
@@ -204,27 +203,7 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
 
     import threading as _threading
 
-    for mount in mount_config.mounts:
-        root = mount.resolve_path(base_dir)
-        if has_existing:
-            t = _threading.Thread(
-                target=_background_incremental_scan_sync,
-                args=(_indexer, root, path_security, mount.mount_id),
-                daemon=True,
-                name=f"index-scan-{mount.mount_id}",
-            )
-        else:
-            t = _threading.Thread(
-                target=_background_scan_sync,
-                args=(_indexer, root, path_security, mount.mount_id),
-                daemon=True,
-                name=f"index-scan-{mount.mount_id}",
-            )
-        t.start()
-
-    # FileWatcher 開始 (全マウントを一括監視)
-    # PollingObserver.start() は初回スナップショットで同期的にディレクトリ全体を走査する
-    # WSL2 (9p) 等の遅いファイルシステムで lifespan をブロックしないよう非同期で起動
+    # FileWatcher 準備 (スキャン完了後に起動)
     watcher_mounts = [
         (m.mount_id, m.resolve_path(base_dir)) for m in mount_config.mounts
     ]
@@ -235,8 +214,37 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
         poll_interval=settings.watch_poll_interval,
         mounts=watcher_mounts,
     )
-    watcher_task = asyncio.create_task(run_in_threadpool(_file_watcher.start))
-    watcher_task.add_done_callback(_log_task_exception)
+
+    def _scan_then_watch(
+        scan_fn: object,
+        args: tuple[object, ...],
+    ) -> None:
+        """スキャン完了後に FileWatcher を起動する."""
+        try:
+            scan_fn(*args)  # type: ignore[operator]
+        except Exception:
+            logger.exception("スキャンスレッドで例外が発生しました")
+            return
+        try:
+            if _file_watcher is not None:
+                _file_watcher.start()
+        except Exception:
+            logger.exception("FileWatcher の起動に失敗しました")
+
+    for mount in mount_config.mounts:
+        root = mount.resolve_path(base_dir)
+        if has_existing:
+            scan_fn = _background_incremental_scan_sync
+        else:
+            scan_fn = _background_scan_sync
+        scan_args = (_indexer, root, path_security, mount.mount_id)
+        t = _threading.Thread(
+            target=_scan_then_watch,
+            args=(scan_fn, scan_args),
+            daemon=False,
+            name=f"index-scan-{mount.mount_id}",
+        )
+        t.start()
 
     # DI: routers のスタブを実インスタンスに差し替え
     _app.dependency_overrides[browse.get_node_registry] = get_node_registry
