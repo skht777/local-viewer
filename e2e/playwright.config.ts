@@ -5,10 +5,14 @@
 
 import { defineConfig } from "@playwright/test";
 import path from "node:path";
+import { generateMountsJson } from "./fixtures/generate-mounts";
 
 const projectRoot = path.resolve(import.meta.dirname, "..");
 const testDataDir = path.resolve(import.meta.dirname, "fixtures/test-data");
 const mountsPath = path.resolve(import.meta.dirname, "fixtures/e2e-mounts.json");
+
+// webServer 起動前に mounts.json を生成 (globalSetup では webServer 起動後に実行されるため)
+generateMountsJson(mountsPath);
 
 // E2E 専用ポート（開発サーバーの 8000/5173 と競合しない）
 const BACKEND_PORT = 8001;
@@ -18,7 +22,6 @@ export default defineConfig({
   testDir: "./tests",
   timeout: 30_000,
   retries: 1,
-  globalSetup: "./global-setup.ts",
   reporter: [["html", { open: "never" }], ["list"]],
 
   webServer: [
