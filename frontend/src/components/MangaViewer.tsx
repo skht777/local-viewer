@@ -14,6 +14,7 @@ import { useFullscreen } from "../hooks/useFullscreen";
 import { useMangaScroll } from "../hooks/useMangaScroll";
 import { useMangaKeyboard } from "../hooks/useMangaKeyboard";
 import { useSetJump } from "../hooks/useSetJump";
+import { useToolbarAutoHide } from "../hooks/useToolbarAutoHide";
 import type { ViewerMode } from "../hooks/useViewerParams";
 import { MangaToolbar } from "./MangaToolbar";
 import { NavigationPrompt } from "./NavigationPrompt";
@@ -104,6 +105,10 @@ export function MangaViewer({
     }
   }, [zoomLevel, virtualizer, mangaScroll.currentIndex]);
 
+  // ツールバー自動表示/非表示
+  const viewerContainerRef = useRef<HTMLDivElement>(null);
+  const { isToolbarVisible, isTouch } = useToolbarAutoHide(viewerContainerRef);
+
   // セット間ジャンプ
   const setJump = useSetJump({ currentNodeId, parentNodeId, mode });
 
@@ -158,22 +163,30 @@ export function MangaViewer({
   return (
     <div data-testid="manga-viewer" className="fixed inset-0 z-50 flex bg-black">
       {/* メインエリア */}
-      <div className="relative flex flex-1 flex-col overflow-hidden">
-        {/* ツールバー */}
-        <MangaToolbar
-          currentIndex={mangaScroll.currentIndex}
-          totalCount={images.length}
-          zoomLevel={zoomLevel}
-          scrollSpeed={scrollSpeed}
-          setName={setName}
-          onScrollToImage={mangaScroll.scrollToImage}
-          onZoomIn={zoomIn}
-          onZoomOut={zoomOut}
-          onZoomChange={setZoomLevel}
-          onScrollSpeedChange={setScrollSpeed}
-          onToggleFullscreen={toggleFullscreen}
-          onClose={onClose}
-        />
+      <div ref={viewerContainerRef} className="relative flex flex-1 flex-col overflow-hidden">
+        {/* ツールバー（デスクトップ: 自動表示/非表示、タッチ: 常時表示・通常フロー） */}
+        <div
+          className={
+            isTouch
+              ? "relative z-10"
+              : `absolute top-0 right-0 left-0 z-10 transition-opacity duration-300 ${isToolbarVisible ? "opacity-100" : "pointer-events-none opacity-0"}`
+          }
+        >
+          <MangaToolbar
+            currentIndex={mangaScroll.currentIndex}
+            totalCount={images.length}
+            zoomLevel={zoomLevel}
+            scrollSpeed={scrollSpeed}
+            setName={setName}
+            onScrollToImage={mangaScroll.scrollToImage}
+            onZoomIn={zoomIn}
+            onZoomOut={zoomOut}
+            onZoomChange={setZoomLevel}
+            onScrollSpeedChange={setScrollSpeed}
+            onToggleFullscreen={toggleFullscreen}
+            onClose={onClose}
+          />
+        </div>
 
         {/* 仮想スクロール画像リスト */}
         <div

@@ -15,6 +15,7 @@ import { useCgKeyboard } from "../hooks/useCgKeyboard";
 import { useImagePreload } from "../hooks/useImagePreload";
 import { useSetJump } from "../hooks/useSetJump";
 import { useToast } from "../hooks/useToast";
+import { useToolbarAutoHide } from "../hooks/useToolbarAutoHide";
 import type { ViewerMode } from "../hooks/useViewerParams";
 import { CgToolbar } from "./CgToolbar";
 import { NavigationPrompt } from "./NavigationPrompt";
@@ -123,6 +124,10 @@ export function CgViewer({
     goPrevSetParent: setJump.goPrevSetParent,
   });
 
+  // ツールバー自動表示/非表示
+  const viewerContainerRef = useRef<HTMLDivElement>(null);
+  const { isToolbarVisible, isTouch } = useToolbarAutoHide(viewerContainerRef);
+
   // カーソルオートハイド
   const cursorTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
   const imageAreaRef = useRef<HTMLDivElement>(null);
@@ -165,23 +170,31 @@ export function CgViewer({
   return (
     <div data-testid="cg-viewer" className="fixed inset-0 z-50 flex bg-black">
       {/* メインエリア */}
-      <div className="relative flex flex-1 flex-col overflow-hidden">
-        {/* ツールバー */}
-        <CgToolbar
-          fitMode={fitMode}
-          spreadMode={spreadMode}
-          currentIndex={currentIndex}
-          totalCount={images.length}
-          setName={setName}
-          currentPage={firstDisplay}
-          currentPageEnd={currentEnd}
-          onFitWidth={() => setFitMode("width")}
-          onFitHeight={() => setFitMode("height")}
-          onCycleSpread={cycleSpreadMode}
-          onToggleFullscreen={toggleFullscreen}
-          onGoTo={nav.goTo}
-          onClose={onClose}
-        />
+      <div ref={viewerContainerRef} className="relative flex flex-1 flex-col overflow-hidden">
+        {/* ツールバー（デスクトップ: 自動表示/非表示、タッチ: 常時表示・通常フロー） */}
+        <div
+          className={
+            isTouch
+              ? "relative z-10"
+              : `absolute top-0 right-0 left-0 z-10 transition-opacity duration-300 ${isToolbarVisible ? "opacity-100" : "pointer-events-none opacity-0"}`
+          }
+        >
+          <CgToolbar
+            fitMode={fitMode}
+            spreadMode={spreadMode}
+            currentIndex={currentIndex}
+            totalCount={images.length}
+            setName={setName}
+            currentPage={firstDisplay}
+            currentPageEnd={currentEnd}
+            onFitWidth={() => setFitMode("width")}
+            onFitHeight={() => setFitMode("height")}
+            onCycleSpread={cycleSpreadMode}
+            onToggleFullscreen={toggleFullscreen}
+            onGoTo={nav.goTo}
+            onClose={onClose}
+          />
+        </div>
 
         {/* 画像表示エリア */}
         <div

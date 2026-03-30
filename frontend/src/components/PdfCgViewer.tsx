@@ -14,6 +14,7 @@ import { useCgNavigation } from "../hooks/useCgNavigation";
 import { useCgKeyboard } from "../hooks/useCgKeyboard";
 import { useSetJump } from "../hooks/useSetJump";
 import { useToast } from "../hooks/useToast";
+import { useToolbarAutoHide } from "../hooks/useToolbarAutoHide";
 import { usePdfDocument } from "../hooks/usePdfDocument";
 import { usePdfRenderCache } from "../hooks/usePdfRenderCache";
 import { PdfCanvas } from "./PdfCanvas";
@@ -66,6 +67,10 @@ export function PdfCgViewer({
 
   // ページナビゲーション (spread 対応)
   const nav = useCgNavigation(pageCount, currentPage, handlePageChange, spreadMode);
+
+  // ツールバー自動表示/非表示
+  const viewerContainerRef = useRef<HTMLDivElement>(null);
+  const { isToolbarVisible, isTouch } = useToolbarAutoHide(viewerContainerRef);
 
   // ページ境界トースト
   const { toastMessage, showToast, dismissToast } = useToast();
@@ -227,24 +232,32 @@ export function PdfCgViewer({
   return (
     <div data-testid="pdf-cg-viewer" className="fixed inset-0 z-50 flex bg-black">
       {/* メインエリア */}
-      <div className="relative flex flex-1 flex-col overflow-hidden">
-        {/* ツールバー (showSpread=true: 見開きボタン表示) */}
-        <CgToolbar
-          fitMode={fitMode}
-          spreadMode={spreadMode}
-          currentIndex={currentPage}
-          totalCount={pageCount}
-          showSpread={true}
-          setName={pdfName}
-          currentPage={firstDisplay}
-          currentPageEnd={currentEnd}
-          onFitWidth={() => setFitMode("width")}
-          onFitHeight={() => setFitMode("height")}
-          onCycleSpread={cycleSpreadMode}
-          onToggleFullscreen={toggleFullscreen}
-          onGoTo={nav.goTo}
-          onClose={onClose}
-        />
+      <div ref={viewerContainerRef} className="relative flex flex-1 flex-col overflow-hidden">
+        {/* ツールバー（デスクトップ: 自動表示/非表示、タッチ: 常時表示・通常フロー） */}
+        <div
+          className={
+            isTouch
+              ? "relative z-10"
+              : `absolute top-0 right-0 left-0 z-10 transition-opacity duration-300 ${isToolbarVisible ? "opacity-100" : "pointer-events-none opacity-0"}`
+          }
+        >
+          <CgToolbar
+            fitMode={fitMode}
+            spreadMode={spreadMode}
+            currentIndex={currentPage}
+            totalCount={pageCount}
+            showSpread={true}
+            setName={pdfName}
+            currentPage={firstDisplay}
+            currentPageEnd={currentEnd}
+            onFitWidth={() => setFitMode("width")}
+            onFitHeight={() => setFitMode("height")}
+            onCycleSpread={cycleSpreadMode}
+            onToggleFullscreen={toggleFullscreen}
+            onGoTo={nav.goTo}
+            onClose={onClose}
+          />
+        </div>
 
         {/* PDF ページ表示エリア */}
         <div
