@@ -26,7 +26,7 @@ describe("CgToolbar", () => {
 
   test("見開き切替ボタンが表示される", () => {
     render(<CgToolbar {...defaultProps} />);
-    expect(screen.getByRole("button", { name: /見開き/i })).toBeInTheDocument();
+    expect(screen.getByTestId("cg-spread-btn")).toBeInTheDocument();
   });
 
   test("フルスクリーンボタンが表示される", () => {
@@ -88,5 +88,17 @@ describe("CgToolbar", () => {
     render(<CgToolbar {...defaultProps} currentPage={3} currentPageEnd={4} />);
     const counter = screen.getByTestId("page-counter");
     expect(counter).toHaveTextContent("test-set 3-4 / 10");
+  });
+
+  test("見開きボタンにモード別の tooltip が表示される", () => {
+    const { rerender } = render(<CgToolbar {...defaultProps} spreadMode="single" />);
+    const btn = screen.getByTestId("cg-spread-btn");
+    expect(btn).toHaveAttribute("title", "1ページ表示 (Q)");
+
+    rerender(<CgToolbar {...defaultProps} spreadMode="spread" />);
+    expect(btn).toHaveAttribute("title", "見開き表示 (Q)");
+
+    rerender(<CgToolbar {...defaultProps} spreadMode="spread-offset" />);
+    expect(btn).toHaveAttribute("title", "見開き+1 表示 (Q)");
   });
 });

@@ -27,11 +27,23 @@ interface CgToolbarProps {
 function spreadLabel(mode: SpreadMode): string {
   switch (mode) {
     case "single":
-      return "1";
+      return "1頁";
     case "spread":
-      return "2";
+      return "見開";
     case "spread-offset":
-      return "2+";
+      return "見+1";
+  }
+}
+
+// 見開きモードの tooltip テキスト
+function spreadTooltip(mode: SpreadMode): string {
+  switch (mode) {
+    case "single":
+      return "1ページ表示 (Q)";
+    case "spread":
+      return "見開き表示 (Q)";
+    case "spread-offset":
+      return "見開き+1 表示 (Q)";
   }
 }
 
@@ -81,7 +93,8 @@ export function CgToolbar({
             type="button"
             onClick={onCycleSpread}
             className="rounded px-2 py-1 text-xs text-gray-300 hover:bg-surface-raised"
-            aria-label="見開き切替"
+            title={spreadTooltip(spreadMode)}
+            aria-label={spreadTooltip(spreadMode)}
             data-testid="cg-spread-btn"
           >
             {spreadLabel(spreadMode)}
