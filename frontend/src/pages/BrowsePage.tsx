@@ -4,7 +4,7 @@
 // - ブラウズモード: BrowseHeader + ViewerTabs + DirectoryTree + FileBrowser/VideoFeed
 // - PDF クリック → openPdfViewer で PDF ビューワーを開く
 
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { browseNodeOptions } from "../hooks/api/browseQueries";
@@ -49,6 +49,29 @@ export default function BrowsePage() {
 
   // マウントポイント一覧 (ツリー用)
   const { data: mountData } = useQuery(mountListOptions());
+
+  // タブ自動切替: filesets が空なら images > videos の優先順位で切替
+  // すべて空の場合は filesets にフォールバック（何もしない）
+  useEffect(() => {
+    if (!data || isLoading) return;
+    if (params.tab !== "filesets") return;
+
+    const hasFilesets = data.entries.some(
+      (e) => e.kind === "directory" || e.kind === "archive" || e.kind === "pdf",
+    );
+    if (hasFilesets) return;
+
+    const hasImages = data.entries.some((e) => e.kind === "image");
+    if (hasImages) {
+      setTab("images");
+      return;
+    }
+
+    const hasVideos = data.entries.some((e) => e.kind === "video");
+    if (hasVideos) {
+      setTab("videos");
+    }
+  }, [data, isLoading, params.tab, setTab]);
 
   // MountEntry → BrowseEntry に変換してツリーに渡す
   const rootEntries = useMemo(

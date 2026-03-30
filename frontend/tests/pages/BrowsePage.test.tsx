@@ -115,4 +115,79 @@ describe("BrowsePage", () => {
       expect(screen.getByText("test-directory")).toBeTruthy();
     });
   });
+
+  test("画像のみディレクトリで images タブに自動切替される", async () => {
+    const imagesOnlyData: BrowseResponse = {
+      current_node_id: "node-images",
+      current_name: "images-only",
+      parent_node_id: "node-parent",
+      entries: [
+        { node_id: "img1", name: "a.jpg", kind: "image", size_bytes: 100, mime_type: "image/jpeg", child_count: null },
+        { node_id: "img2", name: "b.png", kind: "image", size_bytes: 200, mime_type: "image/png", child_count: null },
+      ],
+    };
+    globalThis.fetch = vi.fn((url: string | URL | Request) => {
+      const urlStr = typeof url === "string" ? url : url.toString();
+      if (urlStr.startsWith("/api/browse/")) {
+        return Promise.resolve(new Response(JSON.stringify(imagesOnlyData)));
+      }
+      return Promise.resolve(new Response("{}", { status: 404 }));
+    }) as typeof fetch;
+
+    renderBrowsePage("/browse/node-images");
+
+    // images タブに自動切替され、画像が表示される
+    await waitFor(() => {
+      expect(screen.getByText("a.jpg")).toBeTruthy();
+    });
+  });
+
+  test("動画のみディレクトリで videos タブに自動切替される", async () => {
+    const videosOnlyData: BrowseResponse = {
+      current_node_id: "node-videos",
+      current_name: "videos-only",
+      parent_node_id: "node-parent",
+      entries: [
+        { node_id: "vid1", name: "clip.mp4", kind: "video", size_bytes: 5000, mime_type: "video/mp4", child_count: null },
+      ],
+    };
+    globalThis.fetch = vi.fn((url: string | URL | Request) => {
+      const urlStr = typeof url === "string" ? url : url.toString();
+      if (urlStr.startsWith("/api/browse/")) {
+        return Promise.resolve(new Response(JSON.stringify(videosOnlyData)));
+      }
+      return Promise.resolve(new Response("{}", { status: 404 }));
+    }) as typeof fetch;
+
+    renderBrowsePage("/browse/node-videos");
+
+    // videos タブに自動切替され、VideoFeed が表示される
+    await waitFor(() => {
+      expect(screen.getByText("videos-only")).toBeTruthy();
+    });
+  });
+
+  test("すべて空のディレクトリでは filesets タブのまま", async () => {
+    const emptyData: BrowseResponse = {
+      current_node_id: "node-empty",
+      current_name: "empty-dir",
+      parent_node_id: "node-parent",
+      entries: [],
+    };
+    globalThis.fetch = vi.fn((url: string | URL | Request) => {
+      const urlStr = typeof url === "string" ? url : url.toString();
+      if (urlStr.startsWith("/api/browse/")) {
+        return Promise.resolve(new Response(JSON.stringify(emptyData)));
+      }
+      return Promise.resolve(new Response("{}", { status: 404 }));
+    }) as typeof fetch;
+
+    renderBrowsePage("/browse/node-empty");
+
+    await waitFor(() => {
+      expect(screen.getByText("empty-dir")).toBeTruthy();
+    });
+    // filesets タブのまま「ファイルがありません」が表示される
+    expect(screen.getByText("ファイルがありません")).toBeTruthy();
+  });
 });
