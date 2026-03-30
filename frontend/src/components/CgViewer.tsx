@@ -6,7 +6,7 @@
 // - セット間ジャンプ（PageDown/X, Shift+X 等）
 // - Escape 優先順位: プロンプト → フルスクリーン → ビューワー閉じ
 
-import { useCallback, useRef } from "react";
+import { useCallback, useRef, useState } from "react";
 import type { BrowseEntry } from "../types/api";
 import { useViewerStore } from "../stores/viewerStore";
 import { useFullscreen } from "../hooks/useFullscreen";
@@ -18,6 +18,7 @@ import { useToast } from "../hooks/useToast";
 import { useToolbarAutoHide } from "../hooks/useToolbarAutoHide";
 import type { ViewerMode } from "../hooks/useViewerParams";
 import { CgToolbar } from "./CgToolbar";
+import { KeyboardHelp, CG_SHORTCUTS } from "./KeyboardHelp";
 import { NavigationPrompt } from "./NavigationPrompt";
 import { PageSlider } from "./PageSlider";
 import { Toast } from "./Toast";
@@ -89,11 +90,18 @@ export function CgViewer({
     nav.goPrev();
   }, [nav, showToast]);
 
+  // キーボードヘルプ
+  const [isHelpOpen, setIsHelpOpen] = useState(false);
+
   // セット間ジャンプ
   const setJump = useSetJump({ currentNodeId, parentNodeId, mode });
 
-  // Escape 優先順位: (1) プロンプト閉じ → (2) フルスクリーン解除 → (3) ビューワー閉じ
+  // Escape 優先順位: (1) ヘルプ閉じ → (2) プロンプト閉じ → (3) フルスクリーン解除 → (4) ビューワー閉じ
   const handleEscape = useCallback(() => {
+    if (isHelpOpen) {
+      setIsHelpOpen(false);
+      return;
+    }
     if (setJump.prompt) {
       setJump.dismissPrompt();
       return;
@@ -103,7 +111,7 @@ export function CgViewer({
       return;
     }
     onClose();
-  }, [setJump, isFullscreen, onClose]);
+  }, [isHelpOpen, setJump, isFullscreen, onClose]);
 
   // キーボードショートカット
   useCgKeyboard({
@@ -122,6 +130,7 @@ export function CgViewer({
     goPrevSet: setJump.prompt ? undefined : setJump.goPrevSet,
     goNextSetParent: setJump.goNextSetParent,
     goPrevSetParent: setJump.goPrevSetParent,
+    toggleHelp: () => setIsHelpOpen((prev) => !prev),
   });
 
   // ツールバー自動表示/非表示
@@ -239,6 +248,11 @@ export function CgViewer({
 
         {/* 画像境界トースト */}
         {toastMessage && <Toast message={toastMessage} onDismiss={dismissToast} />}
+
+        {/* キーボードヘルプ */}
+        {isHelpOpen && (
+          <KeyboardHelp shortcuts={CG_SHORTCUTS} onClose={() => setIsHelpOpen(false)} />
+        )}
 
         {/* セット間ジャンプの確認プロンプト */}
         {setJump.prompt && (

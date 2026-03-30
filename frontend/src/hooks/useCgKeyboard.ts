@@ -20,6 +20,7 @@ interface CgKeyboardCallbacks {
   goPrevSet?: () => void;
   goNextSetParent?: () => void;
   goPrevSetParent?: () => void;
+  toggleHelp?: () => void;
 }
 
 export function useCgKeyboard(callbacks: CgKeyboardCallbacks): void {
@@ -53,4 +54,7 @@ export function useCgKeyboard(callbacks: CgKeyboardCallbacks): void {
   useHotkeys("pageup, z", () => callbacks.goPrevSet?.(), { preventDefault: true });
   useHotkeys("shift+x", () => callbacks.goNextSetParent?.(), { preventDefault: true });
   useHotkeys("shift+z", () => callbacks.goPrevSetParent?.(), { preventDefault: true });
+
+  // ヘルプ表示切替
+  useHotkeys("shift+/", () => callbacks.toggleHelp?.());
 }

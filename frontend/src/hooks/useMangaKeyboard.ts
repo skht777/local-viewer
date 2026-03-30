@@ -16,6 +16,7 @@ interface MangaKeyboardCallbacks {
   goPrevSet?: () => void;
   goNextSetParent?: () => void;
   goPrevSetParent?: () => void;
+  toggleHelp?: () => void;
   zoomIn?: () => void;
   zoomOut?: () => void;
   zoomReset?: () => void;
@@ -41,6 +42,9 @@ export function useMangaKeyboard(callbacks: MangaKeyboardCallbacks): void {
   useHotkeys("pageup, z", () => callbacks.goPrevSet?.(), { preventDefault: true });
   useHotkeys("shift+x", () => callbacks.goNextSetParent?.(), { preventDefault: true });
   useHotkeys("shift+z", () => callbacks.goPrevSetParent?.(), { preventDefault: true });
+
+  // ヘルプ表示切替
+  useHotkeys("shift+/", () => callbacks.toggleHelp?.());
 
   // ズーム
   useHotkeys("equal, shift+equal", () => callbacks.zoomIn?.());

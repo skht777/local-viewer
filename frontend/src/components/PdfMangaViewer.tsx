@@ -15,6 +15,7 @@ import { useToolbarAutoHide } from "../hooks/useToolbarAutoHide";
 import { usePdfDocument } from "../hooks/usePdfDocument";
 import { usePdfPageSizes } from "../hooks/usePdfPageSizes";
 import { PdfCanvas } from "./PdfCanvas";
+import { KeyboardHelp, MANGA_SHORTCUTS } from "./KeyboardHelp";
 import { MangaToolbar } from "./MangaToolbar";
 import { NavigationPrompt } from "./NavigationPrompt";
 import { VerticalPageSlider } from "./VerticalPageSlider";
@@ -124,6 +125,9 @@ export function PdfMangaViewer({
 
   const { isToolbarVisible, isTouch, containerCallbackRef } = useToolbarAutoHide();
 
+  // キーボードヘルプ
+  const [isHelpOpen, setIsHelpOpen] = useState(false);
+
   // セット間ジャンプ
   const setJump = useSetJump({
     currentNodeId: pdfNodeId,
@@ -131,8 +135,12 @@ export function PdfMangaViewer({
     mode,
   });
 
-  // Escape 優先順位
+  // Escape 優先順位: (1) ヘルプ閉じ → (2) プロンプト → (3) フルスクリーン → (4) ビューワー閉じ
   const handleEscape = useCallback(() => {
+    if (isHelpOpen) {
+      setIsHelpOpen(false);
+      return;
+    }
     if (setJump.prompt) {
       setJump.dismissPrompt();
       return;
@@ -142,7 +150,7 @@ export function PdfMangaViewer({
       return;
     }
     onClose();
-  }, [setJump, isFullscreen, onClose]);
+  }, [isHelpOpen, setJump, isFullscreen, onClose]);
 
   // キーボードショートカット
   useMangaKeyboard({
@@ -159,6 +167,7 @@ export function PdfMangaViewer({
     zoomIn,
     zoomOut,
     zoomReset: () => setZoomLevel(100),
+    toggleHelp: () => setIsHelpOpen((prev) => !prev),
   });
 
   // カーソルオートハイド
@@ -281,6 +290,11 @@ export function PdfMangaViewer({
           containerRef={scrollRef}
           onSliderActivity={resetCursorTimer}
         />
+
+        {/* キーボードヘルプ */}
+        {isHelpOpen && (
+          <KeyboardHelp shortcuts={MANGA_SHORTCUTS} onClose={() => setIsHelpOpen(false)} />
+        )}
 
         {/* セット間ジャンプの確認プロンプト */}
         {setJump.prompt && (

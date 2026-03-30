@@ -19,6 +19,7 @@ import { usePdfDocument } from "../hooks/usePdfDocument";
 import { usePdfRenderCache } from "../hooks/usePdfRenderCache";
 import { PdfCanvas } from "./PdfCanvas";
 import { CgToolbar } from "./CgToolbar";
+import { KeyboardHelp, CG_SHORTCUTS } from "./KeyboardHelp";
 import { NavigationPrompt } from "./NavigationPrompt";
 import { PageSlider } from "./PageSlider";
 import { Toast } from "./Toast";
@@ -92,6 +93,9 @@ export function PdfCgViewer({
     nav.goPrev();
   }, [nav, showToast]);
 
+  // キーボードヘルプ
+  const [isHelpOpen, setIsHelpOpen] = useState(false);
+
   // セット間ジャンプ: currentNodeId = PDF 自身、parentNodeId = 親ディレクトリ
   const setJump = useSetJump({
     currentNodeId: pdfNodeId,
@@ -99,8 +103,12 @@ export function PdfCgViewer({
     mode,
   });
 
-  // Escape 優先順位: (1) プロンプト → (2) フルスクリーン → (3) ビューワー閉じ
+  // Escape 優先順位: (1) ヘルプ閉じ → (2) プロンプト → (3) フルスクリーン → (4) ビューワー閉じ
   const handleEscape = useCallback(() => {
+    if (isHelpOpen) {
+      setIsHelpOpen(false);
+      return;
+    }
     if (setJump.prompt) {
       setJump.dismissPrompt();
       return;
@@ -110,7 +118,7 @@ export function PdfCgViewer({
       return;
     }
     onClose();
-  }, [setJump, isFullscreen, onClose]);
+  }, [isHelpOpen, setJump, isFullscreen, onClose]);
 
   // キーボードショートカット (spread 有効)
   useCgKeyboard({
@@ -129,6 +137,7 @@ export function PdfCgViewer({
     goPrevSet: setJump.prompt ? undefined : setJump.goPrevSet,
     goNextSetParent: setJump.goNextSetParent,
     goPrevSetParent: setJump.goPrevSetParent,
+    toggleHelp: () => setIsHelpOpen((prev) => !prev),
   });
 
   // カーソルオートハイド
@@ -301,6 +310,11 @@ export function PdfCgViewer({
 
         {/* ページ境界トースト */}
         {toastMessage && <Toast message={toastMessage} onDismiss={dismissToast} />}
+
+        {/* キーボードヘルプ */}
+        {isHelpOpen && (
+          <KeyboardHelp shortcuts={CG_SHORTCUTS} onClose={() => setIsHelpOpen(false)} />
+        )}
 
         {/* セット間ジャンプの確認プロンプト */}
         {setJump.prompt && (
