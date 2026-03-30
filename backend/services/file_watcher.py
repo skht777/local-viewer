@@ -237,6 +237,11 @@ class FileWatcher:
 
     def start(self) -> None:
         """監視を開始する (Observer + BatchFlushWorker per mount)."""
+        if self._path_security is None:
+            msg = "path_security が未設定です"
+            raise RuntimeError(msg)
+        path_security = self._path_security
+
         actual_mode = self._detect_mode() if self._mode == "auto" else self._mode
         if actual_mode == "polling":
             self._observer = PollingObserver(timeout=self._poll_interval)
@@ -248,7 +253,7 @@ class FileWatcher:
         for mount_id, root_dir in self._mounts:
             worker = BatchFlushWorker(
                 indexer=self._indexer,
-                path_security=self._path_security,
+                path_security=path_security,
                 root_dir=root_dir,
                 interval=self._flush_interval,
             )

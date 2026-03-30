@@ -631,7 +631,7 @@ class Indexer:
             ).fetchone()
             if row is None:
                 return False
-            return row[0] == ",".join(mount_ids)
+            return bool(row[0] == ",".join(mount_ids))
         finally:
             conn.close()
 

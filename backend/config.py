@@ -29,7 +29,7 @@ class Settings:
     video_remux_timeout: int  # FFmpeg remux タイムアウト (秒)
 
     # マウントポイント設定
-    mount_base_dir: Path | None  # マウント許可親ディレクトリ (MOUNT_BASE_DIR)
+    mount_base_dir: Path  # マウント許可親ディレクトリ (MOUNT_BASE_DIR)
     mount_config_path: str  # mounts.json パス
 
     # 検索/インデックス設定
