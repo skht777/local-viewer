@@ -62,7 +62,7 @@ export const useViewerStore = create<ViewerState>()(
           return { expandedNodeIds: next };
         }),
 
-      fitMode: "width",
+      fitMode: "height",
 
       setFitMode: (mode) => set({ fitMode: mode }),
 

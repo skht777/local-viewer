@@ -8,7 +8,7 @@ describe("viewerStore", () => {
     useViewerStore.setState({
       isSidebarOpen: true,
       expandedNodeIds: new Set(),
-      fitMode: "width",
+      fitMode: "height",
       spreadMode: "single",
       zoomLevel: 100,
       scrollSpeed: 1.0,
@@ -44,9 +44,9 @@ describe("viewerStore", () => {
 
   // --- Phase 2: fitMode / spreadMode ---
 
-  test("初期状態で fitMode が width", () => {
+  test("初期状態で fitMode が height", () => {
     const state = useViewerStore.getState();
-    expect(state.fitMode).toBe("width");
+    expect(state.fitMode).toBe("height");
   });
 
   test("setFitMode で fitMode が変更される", () => {

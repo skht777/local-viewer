@@ -63,7 +63,7 @@ export function CgToolbar({
           aria-label="幅フィット"
           aria-pressed={fitMode === "width"}
         >
-          W
+          ↔
         </button>
         <button
           type="button"
@@ -72,7 +72,7 @@ export function CgToolbar({
           aria-label="高さフィット"
           aria-pressed={fitMode === "height"}
         >
-          H
+          ↕
         </button>
 
         {/* 見開き切替 */}
