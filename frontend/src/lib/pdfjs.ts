@@ -3,6 +3,7 @@
 // - テストではこのモジュールのみをモックすることで Worker 等の副作用を隔離
 
 import { GlobalWorkerOptions, getDocument } from "pdfjs-dist";
+// oxlint-disable-next-line import/default -- Vite の ?url サフィックスで default export として解決
 import workerUrl from "pdfjs-dist/build/pdf.worker.mjs?url";
 
 GlobalWorkerOptions.workerSrc = workerUrl;

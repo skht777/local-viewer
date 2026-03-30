@@ -168,13 +168,16 @@ export function PdfCanvas({
         });
     });
 
+    // cleanup 時に参照が変わっている可能性があるためローカルにコピー
+    const textLayerEl = textLayerRef.current;
+
     return () => {
       cancelled = true;
       clearTimeout(timeoutId);
       renderTask?.cancel();
       // テキストレイヤーをクリア (DOM 安全操作)
-      if (textLayerRef.current) {
-        clearChildren(textLayerRef.current);
+      if (textLayerEl) {
+        clearChildren(textLayerEl);
       }
     };
   }, [
