@@ -22,6 +22,9 @@ interface VerticalPageSliderProps {
 // 右端からの近接閾値（px）
 const PROXIMITY_THRESHOLD = 60;
 
+// 初回ヒント表示用 sessionStorage キー（PageSlider と共有）
+const HINT_KEY = "slider-hint-shown";
+
 // タッチデバイス判定
 const isTouchDevice =
   typeof window !== "undefined" &&
@@ -38,6 +41,18 @@ export function VerticalPageSlider({
   const [isNearRight, setIsNearRight] = useState(false);
   const [isFocused, setIsFocused] = useState(false);
   const isDragging = useRef(false);
+
+  // 初回表示ヒント: セッション内で初回のみ2秒間スライダーを表示
+  const [isHintVisible, setIsHintVisible] = useState(() => {
+    return !sessionStorage.getItem(HINT_KEY);
+  });
+
+  useEffect(() => {
+    if (!isHintVisible) return;
+    sessionStorage.setItem(HINT_KEY, "1");
+    const timer = setTimeout(() => setIsHintVisible(false), 2000);
+    return () => clearTimeout(timer);
+  }, [isHintVisible]);
 
   // コンテナの pointermove で右端近接を検出
   useEffect(() => {
@@ -82,7 +97,7 @@ export function VerticalPageSlider({
 
   if (totalCount <= 1) return null;
 
-  const isVisible = isTouchDevice || isNearRight || isFocused;
+  const isVisible = isTouchDevice || isNearRight || isFocused || isHintVisible;
 
   return (
     <div
