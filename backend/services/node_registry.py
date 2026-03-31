@@ -27,6 +27,7 @@ from backend.services.extensions import (
     VIDEO_EXTENSIONS,
     EntryKind,
 )
+from backend.services.natural_sort import natural_sort_key
 from backend.services.path_security import PathSecurity
 
 if TYPE_CHECKING:
@@ -229,7 +230,10 @@ class NodeRegistry:
         with os.scandir(validated) as scanner:
             dir_entries = sorted(
                 scanner,
-                key=lambda e: (not e.is_dir(follow_symlinks=False), e.name.lower()),
+                key=lambda e: (
+                    not e.is_dir(follow_symlinks=False),
+                    natural_sort_key(e.name),
+                ),
             )
 
         for de in dir_entries:

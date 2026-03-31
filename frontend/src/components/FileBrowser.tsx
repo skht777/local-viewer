@@ -35,7 +35,7 @@ function sortEntries(entries: BrowseEntry[], sort: SortOrder): BrowseEntry[] {
       const aIsDir = a.kind === "directory" ? 0 : 1;
       const bIsDir = b.kind === "directory" ? 0 : 1;
       if (aIsDir !== bIsDir) return aIsDir - bIsDir;
-      return b.name.localeCompare(a.name);
+      return b.name.localeCompare(a.name, undefined, { numeric: true, sensitivity: "base" });
     }
 
     // date ソート: null は末尾

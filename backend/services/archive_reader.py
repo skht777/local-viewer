@@ -19,6 +19,7 @@ from backend.services.archive_security import (
     ArchivePasswordError,
     ArchiveSecurityError,
 )
+from backend.services.natural_sort import natural_sort_key
 
 # extract_entry のチャンク読みサイズ (64KiB)
 _EXTRACT_CHUNK_SIZE = 64 * 1024
@@ -126,7 +127,7 @@ class ZipArchiveReader(ArchiveReader):
             self._validator.validate_total_size(total_uncompressed)
 
         # フルパスで大文字小文字無視ソート
-        entries.sort(key=lambda e: e.name.lower())
+        entries.sort(key=lambda e: natural_sort_key(e.name))
         return entries
 
     def extract_entry(self, archive_path: Path, entry_name: str) -> bytes:
@@ -241,7 +242,7 @@ class RarArchiveReader(ArchiveReader):
 
             self._validator.validate_total_size(total_uncompressed)
 
-        entries.sort(key=lambda e: e.name.lower())
+        entries.sort(key=lambda e: natural_sort_key(e.name))
         return entries
 
     def extract_entry(self, archive_path: Path, entry_name: str) -> bytes:
@@ -350,7 +351,7 @@ class SevenZipArchiveReader(ArchiveReader):
         except py7zr.PasswordRequired:
             raise ArchivePasswordError() from None
 
-        entries.sort(key=lambda e: e.name.lower())
+        entries.sort(key=lambda e: natural_sort_key(e.name))
         return entries
 
     def extract_entry(self, archive_path: Path, entry_name: str) -> bytes:
