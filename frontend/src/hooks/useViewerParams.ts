@@ -2,6 +2,7 @@
 // - useSearchParams をラップして型安全にアクセス
 // - URL が Single Source of Truth
 // - mode は browse スコープ: "manga" のみ URL に書き込み、"cg"(デフォルト) は省略
+// - sort は browse スコープ: "name-asc"(デフォルト) は省略、他は URL に書き込み
 // - index/pdf/page は viewer スコープ: ビューワー close で削除
 // - pdf と index は排他: openPdfViewer で index/tab 削除、openViewer で pdf/page 削除
 
@@ -9,11 +10,15 @@ import { useSearchParams } from "react-router-dom";
 
 export type ViewerTab = "filesets" | "images" | "videos";
 export type ViewerMode = "cg" | "manga";
+export type SortOrder = "name-asc" | "name-desc" | "date-asc" | "date-desc";
+
+const VALID_SORT_ORDERS: Set<string> = new Set(["name-asc", "name-desc", "date-asc", "date-desc"]);
 
 interface ViewerParams {
   tab: ViewerTab;
   index: number;
   mode: ViewerMode;
+  sort: SortOrder;
   pdfNodeId: string | null;
   pdfPage: number;
 }
@@ -25,6 +30,7 @@ interface UseViewerParamsReturn {
   setTab: (tab: ViewerTab) => void;
   setIndex: (index: number) => void;
   setMode: (mode: ViewerMode) => void;
+  setSort: (sort: SortOrder) => void;
   openViewer: (index: number) => void;
   closeViewer: () => void;
   openPdfViewer: (nodeId: string) => void;
@@ -42,6 +48,10 @@ export function useViewerParams(): UseViewerParamsReturn {
   // 不正値ガード: "manga" 以外はすべて "cg" に正規化
   const rawMode = searchParams.get("mode");
   const mode: ViewerMode = rawMode === "manga" ? "manga" : "cg";
+  // 不正値ガード: 有効な SortOrder 以外は "name-asc" に正規化
+  const rawSort = searchParams.get("sort");
+  const sort: SortOrder =
+    rawSort && VALID_SORT_ORDERS.has(rawSort) ? (rawSort as SortOrder) : "name-asc";
   const pdfNodeId = searchParams.get("pdf") ?? null;
   const pdfPage = parseInt(searchParams.get("page") ?? "1", 10) || 1;
 
@@ -78,6 +88,22 @@ export function useViewerParams(): UseViewerParamsReturn {
           next.set("mode", "manga");
         } else {
           next.delete("mode");
+        }
+        return next;
+      },
+      { replace: true },
+    );
+  };
+
+  // sort 正規化: "name-asc"(デフォルト) は省略、他は URL に書き込み
+  const setSort = (newSort: SortOrder) => {
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        if (newSort === "name-asc") {
+          next.delete("sort");
+        } else {
+          next.set("sort", newSort);
         }
         return next;
       },
@@ -156,16 +182,21 @@ export function useViewerParams(): UseViewerParamsReturn {
     if (currentMode === "manga") next.set("mode", "manga");
     const nextTab = overrides?.tab ?? searchParams.get("tab");
     if (nextTab && nextTab !== "filesets") next.set("tab", nextTab);
+    const currentSort = searchParams.get("sort");
+    if (currentSort && VALID_SORT_ORDERS.has(currentSort) && currentSort !== "name-asc") {
+      next.set("sort", currentSort);
+    }
     return next.toString() ? `?${next}` : "";
   };
 
   return {
-    params: { tab, index, mode, pdfNodeId, pdfPage },
+    params: { tab, index, mode, sort, pdfNodeId, pdfPage },
     isViewerOpen,
     isPdfViewerOpen,
     setTab,
     setIndex,
     setMode,
+    setSort,
     openViewer,
     closeViewer,
     openPdfViewer,

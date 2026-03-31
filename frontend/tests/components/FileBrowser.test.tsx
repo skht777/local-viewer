@@ -11,6 +11,7 @@ const mockEntries: BrowseEntry[] = [
     size_bytes: null,
     mime_type: null,
     child_count: 10,
+    modified_at: 1700000000,
   },
   {
     node_id: "file1",
@@ -19,6 +20,7 @@ const mockEntries: BrowseEntry[] = [
     size_bytes: 2048,
     mime_type: "image/jpeg",
     child_count: null,
+    modified_at: 1700000100,
   },
   {
     node_id: "file2",
@@ -27,6 +29,7 @@ const mockEntries: BrowseEntry[] = [
     size_bytes: 10240,
     mime_type: "video/mp4",
     child_count: null,
+    modified_at: 1700000200,
   },
   {
     node_id: "file3",
@@ -35,6 +38,7 @@ const mockEntries: BrowseEntry[] = [
     size_bytes: 4096,
     mime_type: "application/pdf",
     child_count: null,
+    modified_at: 1700000300,
   },
 ];
 
@@ -91,9 +95,9 @@ describe("FileBrowser", () => {
 
   test("filesetsタブでarchive/PDFがディレクトリより先に表示される", () => {
     const entries: BrowseEntry[] = [
-      { node_id: "d1", name: "aaa_dir", kind: "directory", size_bytes: null, mime_type: null, child_count: 5 },
-      { node_id: "a1", name: "bbb.zip", kind: "archive", size_bytes: 500, mime_type: "application/zip", child_count: null },
-      { node_id: "p1", name: "ccc.pdf", kind: "pdf", size_bytes: 300, mime_type: "application/pdf", child_count: null },
+      { node_id: "d1", name: "aaa_dir", kind: "directory", size_bytes: null, mime_type: null, child_count: 5, modified_at: 1700000000 },
+      { node_id: "a1", name: "bbb.zip", kind: "archive", size_bytes: 500, mime_type: "application/zip", child_count: null, modified_at: 1700000100 },
+      { node_id: "p1", name: "ccc.pdf", kind: "pdf", size_bytes: 300, mime_type: "application/pdf", child_count: null, modified_at: 1700000200 },
     ];
     render(
       <FileBrowser entries={entries} isLoading={false} onNavigate={() => {}} tab="filesets" />,
@@ -112,7 +116,7 @@ describe("FileBrowser", () => {
     const onTabChange = vi.fn();
     // images タブだが画像なし。filesets にコンテンツあり
     const entries: BrowseEntry[] = [
-      { node_id: "d1", name: "dir", kind: "directory", size_bytes: null, mime_type: null, child_count: 5 },
+      { node_id: "d1", name: "dir", kind: "directory", size_bytes: null, mime_type: null, child_count: 5, modified_at: 1700000000 },
     ];
     render(
       <FileBrowser entries={entries} isLoading={false} onNavigate={() => {}} tab="images" onTabChange={onTabChange} />,
@@ -131,7 +135,7 @@ describe("FileBrowser", () => {
   test("案内ボタンクリックで onTabChange が呼ばれる", async () => {
     const onTabChange = vi.fn();
     const entries: BrowseEntry[] = [
-      { node_id: "i1", name: "a.jpg", kind: "image", size_bytes: 100, mime_type: "image/jpeg", child_count: null },
+      { node_id: "i1", name: "a.jpg", kind: "image", size_bytes: 100, mime_type: "image/jpeg", child_count: null, modified_at: 1700000000 },
     ];
     render(
       <FileBrowser entries={entries} isLoading={false} onNavigate={() => {}} tab="filesets" onTabChange={onTabChange} />,
@@ -160,9 +164,9 @@ describe("FileBrowser", () => {
 
   test("画像クリック時に onImageClick がフィルタ済みインデックスで呼ばれる", async () => {
     const entries: BrowseEntry[] = [
-      { node_id: "d1", name: "dir", kind: "directory", size_bytes: null, mime_type: null, child_count: 5 },
-      { node_id: "i1", name: "a.jpg", kind: "image", size_bytes: 100, mime_type: "image/jpeg", child_count: null },
-      { node_id: "i2", name: "b.jpg", kind: "image", size_bytes: 200, mime_type: "image/jpeg", child_count: null },
+      { node_id: "d1", name: "dir", kind: "directory", size_bytes: null, mime_type: null, child_count: 5, modified_at: 1700000000 },
+      { node_id: "i1", name: "a.jpg", kind: "image", size_bytes: 100, mime_type: "image/jpeg", child_count: null, modified_at: 1700000100 },
+      { node_id: "i2", name: "b.jpg", kind: "image", size_bytes: 200, mime_type: "image/jpeg", child_count: null, modified_at: 1700000200 },
     ];
     const onImageClick = vi.fn();
     render(

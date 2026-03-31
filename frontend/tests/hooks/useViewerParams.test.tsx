@@ -198,4 +198,55 @@ describe("useViewerParams", () => {
     expect(result.current.isPdfViewerOpen).toBe(true);
     expect(result.current.isViewerOpen).toBe(false);
   });
+
+  // --- sort パラメータ ---
+
+  test("デフォルトのsortがname-ascである", () => {
+    const { result } = renderHook(() => useViewerParams(), {
+      wrapper: createWrapper(),
+    });
+    expect(result.current.params.sort).toBe("name-asc");
+  });
+
+  test("URLのsort=date-descが反映される", () => {
+    const { result } = renderHook(() => useViewerParams(), {
+      wrapper: createWrapper(["/?sort=date-desc"]),
+    });
+    expect(result.current.params.sort).toBe("date-desc");
+  });
+
+  test("setSortでURLが更新される", () => {
+    const { result } = renderHook(() => useViewerParams(), {
+      wrapper: createWrapper(),
+    });
+    act(() => {
+      result.current.setSort("date-desc");
+    });
+    expect(result.current.params.sort).toBe("date-desc");
+  });
+
+  test("setSort('name-asc')でURLからsortが削除される", () => {
+    const { result } = renderHook(() => useViewerParams(), {
+      wrapper: createWrapper(["/?sort=date-desc"]),
+    });
+    act(() => {
+      result.current.setSort("name-asc");
+    });
+    expect(result.current.params.sort).toBe("name-asc");
+  });
+
+  test("buildBrowseSearchでsort=date-descが引き継がれる", () => {
+    const { result } = renderHook(() => useViewerParams(), {
+      wrapper: createWrapper(["/?sort=date-desc"]),
+    });
+    const search = result.current.buildBrowseSearch();
+    expect(search).toContain("sort=date-desc");
+  });
+
+  test("不正なsort値はname-ascに正規化される", () => {
+    const { result } = renderHook(() => useViewerParams(), {
+      wrapper: createWrapper(["/?sort=invalid"]),
+    });
+    expect(result.current.params.sort).toBe("name-asc");
+  });
 });

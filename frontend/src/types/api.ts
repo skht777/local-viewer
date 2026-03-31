@@ -12,6 +12,7 @@ export interface BrowseEntry {
   size_bytes: number | null;
   mime_type: string | null;
   child_count: number | null;
+  modified_at: number | null;
 }
 
 export interface BrowseResponse {
