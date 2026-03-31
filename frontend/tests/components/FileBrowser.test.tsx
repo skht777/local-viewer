@@ -112,38 +112,6 @@ describe("FileBrowser", () => {
     expect(pdfIdx).toBeLessThan(dirIdx);
   });
 
-  test("空タブで他タブへの案内が表示される", () => {
-    const onTabChange = vi.fn();
-    // images タブだが画像なし。filesets にコンテンツあり
-    const entries: BrowseEntry[] = [
-      { node_id: "d1", name: "dir", kind: "directory", size_bytes: null, mime_type: null, child_count: 5, modified_at: 1700000000 },
-    ];
-    render(
-      <FileBrowser entries={entries} isLoading={false} onNavigate={() => {}} tab="images" sort="name-asc" onTabChange={onTabChange} />,
-    );
-    expect(screen.getByTestId("empty-tab-hint")).toBeInTheDocument();
-  });
-
-  test("全タブが空のとき案内が表示されない", () => {
-    const onTabChange = vi.fn();
-    render(
-      <FileBrowser entries={[]} isLoading={false} onNavigate={() => {}} tab="filesets" sort="name-asc" onTabChange={onTabChange} />,
-    );
-    expect(screen.queryByTestId("empty-tab-hint")).toBeNull();
-  });
-
-  test("案内ボタンクリックで onTabChange が呼ばれる", async () => {
-    const onTabChange = vi.fn();
-    const entries: BrowseEntry[] = [
-      { node_id: "i1", name: "a.jpg", kind: "image", size_bytes: 100, mime_type: "image/jpeg", child_count: null, modified_at: 1700000000 },
-    ];
-    render(
-      <FileBrowser entries={entries} isLoading={false} onNavigate={() => {}} tab="filesets" sort="name-asc" onTabChange={onTabChange} />,
-    );
-    await userEvent.click(screen.getByTestId("empty-tab-hint"));
-    expect(onTabChange).toHaveBeenCalledWith("images");
-  });
-
   // --- オートフォーカス ---
 
   test("entriesが渡された時に最初のFileCardにfocusされる", async () => {

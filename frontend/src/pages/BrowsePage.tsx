@@ -202,7 +202,6 @@ export default function BrowsePage() {
             tab={params.tab}
             sort={params.sort}
             selectedNodeId={selectedNodeId}
-            onTabChange={setTab}
           />
         )}
       </div>
