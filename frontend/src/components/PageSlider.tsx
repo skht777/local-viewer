@@ -1,7 +1,8 @@
 // 画面下部にフェードインするページスライダー（CG モード用）
 // - ビューワーコンテナの pointermove で下端との距離を閾値判定
 // - マウス: 下端に近づくとフェードイン、離れるとフェードアウト
-// - ドラッグ中: 表示維持
+// - ホバー: スライダー上にポインタがある間は表示維持（pointerenter/pointerleave）
+// - ドラッグ中: 表示維持（document レベルで pointerup を監視）
 // - キーボード: focus-within で常時表示
 // - タッチ: matchMedia("(pointer: coarse)") で常時表示
 // - 非表示時は pointer-events-none でクリックを透過
@@ -39,7 +40,9 @@ export function PageSlider({
 }: PageSliderProps) {
   const [isNearBottom, setIsNearBottom] = useState(false);
   const [isFocused, setIsFocused] = useState(false);
+  const [isHovering, setIsHovering] = useState(false);
   const isDragging = useRef(false);
+  const pointerLeftDuringDrag = useRef(false);
 
   // 初回表示ヒント: セッション内で初回のみ2秒間スライダーを表示
   const [isHintVisible, setIsHintVisible] = useState(() => {
@@ -85,20 +88,27 @@ export function PageSlider({
     };
   }, [containerRef, onSliderActivity]);
 
-  // ドラッグ開始
+  // ドラッグ開始: document レベルで pointerup を監視
+  // スライダー外でリリースしても確実に isDragging をリセットする
   const handlePointerDown = useCallback(() => {
     isDragging.current = true;
+    pointerLeftDuringDrag.current = false;
     onSliderActivity?.();
-  }, [onSliderActivity]);
 
-  // ドラッグ終了
-  const handlePointerUp = useCallback(() => {
-    isDragging.current = false;
-  }, []);
+    const onUp = () => {
+      isDragging.current = false;
+      if (pointerLeftDuringDrag.current) {
+        pointerLeftDuringDrag.current = false;
+        setIsHovering(false);
+      }
+      document.removeEventListener("pointerup", onUp);
+    };
+    document.addEventListener("pointerup", onUp);
+  }, [onSliderActivity]);
 
   if (totalCount <= 1) return null;
 
-  const isVisible = isTouchDevice || isNearBottom || isFocused || isHintVisible;
+  const isVisible = isTouchDevice || isNearBottom || isFocused || isHintVisible || isHovering;
 
   return (
     <div
@@ -106,6 +116,14 @@ export function PageSlider({
       className={`absolute right-4 bottom-4 left-4 z-20 transition-opacity duration-300 ${
         isVisible ? "opacity-100" : "pointer-events-none opacity-0"
       }`}
+      onPointerEnter={() => setIsHovering(true)}
+      onPointerLeave={() => {
+        if (isDragging.current) {
+          pointerLeftDuringDrag.current = true;
+        } else {
+          setIsHovering(false);
+        }
+      }}
     >
       <input
         type="range"
@@ -114,7 +132,6 @@ export function PageSlider({
         value={currentIndex}
         onChange={(e) => onGoTo(Number(e.target.value))}
         onPointerDown={handlePointerDown}
-        onPointerUp={handlePointerUp}
         onFocus={() => setIsFocused(true)}
         onBlur={() => setIsFocused(false)}
         aria-label="ページスライダー"

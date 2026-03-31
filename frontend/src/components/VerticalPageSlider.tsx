@@ -1,11 +1,12 @@
 // 画面右端にフェードインする縦ページスライダー（マンガモード用）
 // - ビューワーコンテナの pointermove で右端との距離を閾値判定
 // - マウス: 右端に近づくとフェードイン、離れるとフェードアウト
-// - ドラッグ中: 表示維持
+// - ホバー: スライダー上にポインタがある間は表示維持（pointerenter/pointerleave）
+// - ドラッグ中: 表示維持（document レベルで pointerup を監視）
 // - キーボード: focus-within で常時表示
 // - タッチ: matchMedia("(pointer: coarse)") で常時表示
 // - 非表示時は pointer-events-none でクリックを透過
-// - 縦方向: writing-mode + orient 属性で Firefox 対応
+// - 縦方向: writing-mode: vertical-lr で標準準拠の縦スライダー
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
@@ -40,7 +41,9 @@ export function VerticalPageSlider({
 }: VerticalPageSliderProps) {
   const [isNearRight, setIsNearRight] = useState(false);
   const [isFocused, setIsFocused] = useState(false);
+  const [isHovering, setIsHovering] = useState(false);
   const isDragging = useRef(false);
+  const pointerLeftDuringDrag = useRef(false);
 
   // 初回表示ヒント: セッション内で初回のみ2秒間スライダーを表示
   const [isHintVisible, setIsHintVisible] = useState(() => {
@@ -86,18 +89,26 @@ export function VerticalPageSlider({
     };
   }, [containerRef, onSliderActivity]);
 
+  // ドラッグ開始: document レベルで pointerup を監視
   const handlePointerDown = useCallback(() => {
     isDragging.current = true;
+    pointerLeftDuringDrag.current = false;
     onSliderActivity?.();
-  }, [onSliderActivity]);
 
-  const handlePointerUp = useCallback(() => {
-    isDragging.current = false;
-  }, []);
+    const onUp = () => {
+      isDragging.current = false;
+      if (pointerLeftDuringDrag.current) {
+        pointerLeftDuringDrag.current = false;
+        setIsHovering(false);
+      }
+      document.removeEventListener("pointerup", onUp);
+    };
+    document.addEventListener("pointerup", onUp);
+  }, [onSliderActivity]);
 
   if (totalCount <= 1) return null;
 
-  const isVisible = isTouchDevice || isNearRight || isFocused || isHintVisible;
+  const isVisible = isTouchDevice || isNearRight || isFocused || isHintVisible || isHovering;
 
   return (
     <div
@@ -105,6 +116,14 @@ export function VerticalPageSlider({
       className={`absolute top-4 right-4 bottom-4 z-20 flex items-center transition-opacity duration-300 ${
         isVisible ? "opacity-100" : "pointer-events-none opacity-0"
       }`}
+      onPointerEnter={() => setIsHovering(true)}
+      onPointerLeave={() => {
+        if (isDragging.current) {
+          pointerLeftDuringDrag.current = true;
+        } else {
+          setIsHovering(false);
+        }
+      }}
     >
       <input
         type="range"
@@ -113,15 +132,11 @@ export function VerticalPageSlider({
         value={currentIndex}
         onChange={(e) => onGoTo(Number(e.target.value))}
         onPointerDown={handlePointerDown}
-        onPointerUp={handlePointerUp}
         onFocus={() => setIsFocused(true)}
         onBlur={() => setIsFocused(false)}
-        // orient 属性は Firefox 固有（他ブラウザでは無視される）
-        // eslint-disable-next-line react/no-unknown-property
-        {...({ orient: "vertical" } as React.InputHTMLAttributes<HTMLInputElement>)}
         aria-label="ページスライダー"
         className="h-full"
-        style={{ writingMode: "vertical-lr", direction: "rtl" }}
+        style={{ writingMode: "vertical-lr" }}
       />
     </div>
   );
