@@ -159,6 +159,68 @@ async def test_アーカイブ内の非画像エントリが除外される(
     assert "readme.txt" not in names
 
 
+# --- ancestors テスト ---
+
+
+async def test_browseレスポンスにancestorsフィールドが含まれる(
+    client: AsyncClient, test_node_registry: NodeRegistry
+) -> None:
+    root = test_node_registry.path_security.root_dirs[0]
+    entries = test_node_registry.list_directory(root)
+    dir_a = next(e for e in entries if e.name == "dir_a")
+
+    response = await client.get(f"/api/browse/{dir_a.node_id}")
+    data = response.json()
+    assert "ancestors" in data
+    assert isinstance(data["ancestors"], list)
+
+
+async def test_ルートディレクトリのbrowseでancestorsが空(
+    client: AsyncClient, test_node_registry: NodeRegistry
+) -> None:
+    root = test_node_registry.path_security.root_dirs[0]
+    root_id = test_node_registry.register(root)
+
+    response = await client.get(f"/api/browse/{root_id}")
+    data = response.json()
+    assert data["ancestors"] == []
+
+
+async def test_ネストされたディレクトリのbrowseでancestorsが正しい(
+    client: AsyncClient, test_node_registry: NodeRegistry
+) -> None:
+    root = test_node_registry.path_security.root_dirs[0]
+    entries = test_node_registry.list_directory(root)
+    dir_a = next(e for e in entries if e.name == "dir_a")
+    nested_entries = test_node_registry.list_directory(root / "dir_a")
+    nested = next(e for e in nested_entries if e.name == "nested")
+
+    response = await client.get(f"/api/browse/{nested.node_id}")
+    data = response.json()
+    # nested の ancestors は [root, dir_a]
+    assert len(data["ancestors"]) == 2
+    root_id = test_node_registry.register(root)
+    assert data["ancestors"][0]["node_id"] == root_id
+    assert data["ancestors"][1]["node_id"] == dir_a.node_id
+
+
+async def test_アーカイブのbrowseでancestorsが親ディレクトリまで含まれる(
+    client: AsyncClient,
+    test_node_registry: NodeRegistry,
+    test_root: Path,
+) -> None:
+    archive = test_root / "dir_a" / "archive.zip"
+    node_id = test_node_registry.register(archive)
+    response = await client.get(f"/api/browse/{node_id}")
+    data = response.json()
+    # archive.zip の ancestors は [root, dir_a]
+    assert len(data["ancestors"]) == 2
+    root_id = test_node_registry.register(test_root)
+    dir_a_id = test_node_registry.register(test_root / "dir_a")
+    assert data["ancestors"][0]["node_id"] == root_id
+    assert data["ancestors"][1]["node_id"] == dir_a_id
+
+
 async def test_既存のディレクトリbrowseが引き続き動作する(
     client: AsyncClient,
     test_node_registry: NodeRegistry,

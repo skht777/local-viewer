@@ -92,10 +92,12 @@ async def browse_directory(
             )
 
         parent_node_id = registry.get_parent_node_id(path)
+        ancestors = await run_in_threadpool(registry.get_ancestors, path)
         response = BrowseResponse(
             current_node_id=node_id,
             current_name=path.name,
             parent_node_id=parent_node_id,
+            ancestors=ancestors,
             entries=entries,
         )
         return Response(
@@ -126,10 +128,12 @@ async def browse_directory(
         )
 
     parent_node_id = registry.get_parent_node_id(path)
+    ancestors = await run_in_threadpool(registry.get_ancestors, path)
     response = BrowseResponse(
         current_node_id=node_id,
         current_name=path.name,
         parent_node_id=parent_node_id,
+        ancestors=ancestors,
         entries=entries,
     )
     return Response(

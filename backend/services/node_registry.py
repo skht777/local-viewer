@@ -43,6 +43,13 @@ __all__ = [
 ]
 
 
+class AncestorEntry(BaseModel):
+    """パンくずリスト用の祖先エントリ."""
+
+    node_id: str
+    name: str
+
+
 class EntryMeta(BaseModel):
     """browse レスポンスの 1 エントリ.
 
@@ -68,12 +75,14 @@ class BrowseResponse(BaseModel):
     - current_node_id: 現在のディレクトリの node_id (ルートは None)
     - current_name: 現在のディレクトリ名
     - parent_node_id: 親ディレクトリの node_id (ルートは None)
+    - ancestors: 祖先エントリ (マウントルートから親まで、パンくず用)
     - entries: 子エントリ一覧
     """
 
     current_node_id: str | None = None
     current_name: str
     parent_node_id: str | None = None
+    ancestors: list[AncestorEntry] = []
     entries: list[EntryMeta]
 
 
@@ -307,6 +316,35 @@ class NodeRegistry:
         except PathSecurityError, OSError:
             return None
         return self.register(parent)
+
+    def get_ancestors(self, path: Path) -> list[AncestorEntry]:
+        """パスの祖先エントリを返す (マウントルートから親まで).
+
+        前提: resolve(node_id) で取得した validate 済みパスを受け取る。
+        パンくずリスト表示用。現在のディレクトリ自体は含まない。
+        """
+        resolved = path.resolve()
+        root = self._path_security.find_root_for(resolved)
+        if root is None:
+            return []
+        # ルート自体に ancestors はない
+        if resolved == root:
+            return []
+
+        ancestors: list[AncestorEntry] = []
+        current = resolved.parent
+        while current != root:
+            node_id = self.register(current)
+            ancestors.append(AncestorEntry(node_id=node_id, name=current.name))
+            current = current.parent
+
+        # マウントルート自体を追加
+        root_node_id = self.register(root)
+        root_name = self._mount_names.get(root, root.name)
+        ancestors.append(AncestorEntry(node_id=root_node_id, name=root_name))
+
+        ancestors.reverse()
+        return ancestors
 
     # --- アーカイブエントリ対応 ---
 
