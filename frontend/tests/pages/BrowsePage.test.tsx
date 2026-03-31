@@ -171,6 +171,109 @@ describe("BrowsePage", () => {
     });
   });
 
+  test("videos タブで画像のみディレクトリに遷移すると images タブに自動切替される", async () => {
+    const imagesOnlyData: BrowseResponse = {
+      current_node_id: "node-images",
+      current_name: "images-only",
+      parent_node_id: "node-parent",
+      ancestors: [],
+      entries: [
+        { node_id: "img1", name: "a.jpg", kind: "image", size_bytes: 100, mime_type: "image/jpeg", child_count: null, modified_at: 1700000000 },
+      ],
+    };
+    globalThis.fetch = vi.fn((url: string | URL | Request) => {
+      const urlStr = typeof url === "string" ? url : url.toString();
+      if (urlStr.startsWith("/api/browse/")) {
+        return Promise.resolve(new Response(JSON.stringify(imagesOnlyData)));
+      }
+      return Promise.resolve(new Response("{}", { status: 404 }));
+    }) as typeof fetch;
+
+    renderBrowsePage("/browse/node-images?tab=videos");
+
+    await waitFor(() => {
+      expect(screen.getByText("a.jpg")).toBeTruthy();
+    });
+  });
+
+  test("images タブでディレクトリのみの場合 filesets タブに自動切替される", async () => {
+    const dirsOnlyData: BrowseResponse = {
+      current_node_id: "node-dirs",
+      current_name: "dirs-only",
+      parent_node_id: "node-parent",
+      ancestors: [],
+      entries: [
+        { node_id: "dir1", name: "subfolder", kind: "directory", size_bytes: null, mime_type: null, child_count: 3, modified_at: 1700000000 },
+      ],
+    };
+    globalThis.fetch = vi.fn((url: string | URL | Request) => {
+      const urlStr = typeof url === "string" ? url : url.toString();
+      if (urlStr.startsWith("/api/browse/")) {
+        return Promise.resolve(new Response(JSON.stringify(dirsOnlyData)));
+      }
+      return Promise.resolve(new Response("{}", { status: 404 }));
+    }) as typeof fetch;
+
+    renderBrowsePage("/browse/node-dirs?tab=images");
+
+    await waitFor(() => {
+      expect(screen.getByText("subfolder")).toBeTruthy();
+    });
+  });
+
+  test("videos タブでディレクトリのみの場合 filesets タブに自動切替される", async () => {
+    const dirsOnlyData: BrowseResponse = {
+      current_node_id: "node-dirs",
+      current_name: "dirs-only",
+      parent_node_id: "node-parent",
+      ancestors: [],
+      entries: [
+        { node_id: "dir1", name: "subfolder", kind: "directory", size_bytes: null, mime_type: null, child_count: 3, modified_at: 1700000000 },
+      ],
+    };
+    globalThis.fetch = vi.fn((url: string | URL | Request) => {
+      const urlStr = typeof url === "string" ? url : url.toString();
+      if (urlStr.startsWith("/api/browse/")) {
+        return Promise.resolve(new Response(JSON.stringify(dirsOnlyData)));
+      }
+      return Promise.resolve(new Response("{}", { status: 404 }));
+    }) as typeof fetch;
+
+    renderBrowsePage("/browse/node-dirs?tab=videos");
+
+    await waitFor(() => {
+      expect(screen.getByText("subfolder")).toBeTruthy();
+    });
+  });
+
+  test("videos タブで動画があるディレクトリでは videos タブが維持される", async () => {
+    const videosData: BrowseResponse = {
+      current_node_id: "node-vids",
+      current_name: "has-videos",
+      parent_node_id: "node-parent",
+      ancestors: [],
+      entries: [
+        { node_id: "dir1", name: "subfolder", kind: "directory", size_bytes: null, mime_type: null, child_count: 3, modified_at: 1700000000 },
+        { node_id: "vid1", name: "clip.mp4", kind: "video", size_bytes: 5000, mime_type: "video/mp4", child_count: null, modified_at: 1700000000 },
+      ],
+    };
+    globalThis.fetch = vi.fn((url: string | URL | Request) => {
+      const urlStr = typeof url === "string" ? url : url.toString();
+      if (urlStr.startsWith("/api/browse/")) {
+        return Promise.resolve(new Response(JSON.stringify(videosData)));
+      }
+      return Promise.resolve(new Response("{}", { status: 404 }));
+    }) as typeof fetch;
+
+    renderBrowsePage("/browse/node-vids?tab=videos");
+
+    await waitFor(() => {
+      expect(screen.getByText("has-videos")).toBeTruthy();
+    });
+    // videos タブが維持され、filesets の subfolder は表示されない
+    expect(screen.queryByText("subfolder")).toBeNull();
+  });
+
   test("すべて空のディレクトリでは filesets タブのまま", async () => {
     const emptyData: BrowseResponse = {
       current_node_id: "node-empty",

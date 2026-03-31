@@ -62,4 +62,26 @@ describe("ViewerTabs", () => {
     // date-desc → 更新日ボタンに ↓ が表示される
     expect(screen.getByTestId("sort-date").textContent).toContain("↓");
   });
+
+  // --- disabled タブ ---
+
+  test("disabled タブはクリックできない", async () => {
+    const onTabChange = vi.fn();
+    const disabledTabs = new Set(["images", "videos"] as const);
+    render(
+      <ViewerTabs activeTab="filesets" onTabChange={onTabChange} disabledTabs={disabledTabs} />,
+    );
+    await userEvent.click(screen.getByTestId("tab-images"));
+    expect(onTabChange).not.toHaveBeenCalled();
+  });
+
+  test("disabled タブにグレーアウトスタイルが適用される", () => {
+    const disabledTabs = new Set(["videos"] as const);
+    render(
+      <ViewerTabs activeTab="filesets" onTabChange={() => {}} disabledTabs={disabledTabs} />,
+    );
+    const videosTab = screen.getByTestId("tab-videos");
+    expect(videosTab).toBeDisabled();
+    expect(videosTab).toHaveClass("text-gray-600");
+  });
 });
