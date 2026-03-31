@@ -160,6 +160,8 @@ export default function BrowsePage() {
     <div className="flex h-screen flex-col">
       <BrowseHeader
         currentName={data?.current_name ?? ""}
+        ancestors={data?.ancestors ?? []}
+        onBreadcrumbSelect={(id) => navigate(`/browse/${id}${buildBrowseSearch()}`)}
         mode={params.mode}
         onModeChange={setMode}
       />
