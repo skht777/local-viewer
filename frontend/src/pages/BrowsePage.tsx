@@ -29,6 +29,7 @@ export default function BrowsePage() {
     params,
     setTab,
     setMode,
+    setSort,
     isViewerOpen,
     isPdfViewerOpen,
     openViewer,
@@ -83,6 +84,7 @@ export default function BrowsePage() {
         size_bytes: null,
         mime_type: null,
         child_count: m.child_count,
+        modified_at: null,
       })),
     [mountData?.mounts],
   );
@@ -171,7 +173,12 @@ export default function BrowsePage() {
         mode={params.mode}
         onModeChange={setMode}
       />
-      <ViewerTabs activeTab={params.tab} onTabChange={setTab} />
+      <ViewerTabs
+        activeTab={params.tab}
+        onTabChange={setTab}
+        sort={params.sort}
+        onSortChange={setSort}
+      />
       <div className="flex flex-1 overflow-hidden">
         {isSidebarOpen && rootEntries.length > 0 && (
           <DirectoryTree
@@ -193,6 +200,7 @@ export default function BrowsePage() {
             onImageClick={openViewer}
             onPdfClick={openPdfViewer}
             tab={params.tab}
+            sort={params.sort}
             selectedNodeId={selectedNodeId}
             onTabChange={setTab}
           />

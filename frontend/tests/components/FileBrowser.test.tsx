@@ -45,7 +45,7 @@ const mockEntries: BrowseEntry[] = [
 describe("FileBrowser", () => {
   test("filesetsタブでディレクトリとPDFが表示される", () => {
     render(
-      <FileBrowser entries={mockEntries} isLoading={false} onNavigate={() => {}} tab="filesets" />,
+      <FileBrowser entries={mockEntries} isLoading={false} onNavigate={() => {}} tab="filesets" sort="name-asc" />,
     );
     expect(screen.getByText("photos")).toBeInTheDocument();
     expect(screen.getByText("doc.pdf")).toBeInTheDocument();
@@ -55,7 +55,7 @@ describe("FileBrowser", () => {
 
   test("imagesタブで画像のみ表示される", () => {
     render(
-      <FileBrowser entries={mockEntries} isLoading={false} onNavigate={() => {}} tab="images" />,
+      <FileBrowser entries={mockEntries} isLoading={false} onNavigate={() => {}} tab="images" sort="name-asc" />,
     );
     expect(screen.getByText("image.jpg")).toBeInTheDocument();
     expect(screen.queryByText("photos")).not.toBeInTheDocument();
@@ -64,7 +64,7 @@ describe("FileBrowser", () => {
 
   test("videosタブで動画のみ表示される", () => {
     render(
-      <FileBrowser entries={mockEntries} isLoading={false} onNavigate={() => {}} tab="videos" />,
+      <FileBrowser entries={mockEntries} isLoading={false} onNavigate={() => {}} tab="videos" sort="name-asc" />,
     );
     expect(screen.getByText("movie.mp4")).toBeInTheDocument();
     expect(screen.queryByText("photos")).not.toBeInTheDocument();
@@ -73,19 +73,19 @@ describe("FileBrowser", () => {
 
   test("ローディング中にメッセージが表示される", () => {
     render(
-      <FileBrowser entries={[]} isLoading={true} onNavigate={() => {}} tab="filesets" />,
+      <FileBrowser entries={[]} isLoading={true} onNavigate={() => {}} tab="filesets" sort="name-asc" />,
     );
     expect(screen.getByText("読み込み中...")).toBeInTheDocument();
   });
 
   test("フィルタ後0件で空状態メッセージが表示される", () => {
     render(
-      <FileBrowser entries={mockEntries} isLoading={false} onNavigate={() => {}} tab="videos" />,
+      <FileBrowser entries={mockEntries} isLoading={false} onNavigate={() => {}} tab="videos" sort="name-asc" />,
     );
     // videos タブには movie.mp4 があるので空にはならない
     // 空の entries で確認
     const { unmount } = render(
-      <FileBrowser entries={[]} isLoading={false} onNavigate={() => {}} tab="filesets" />,
+      <FileBrowser entries={[]} isLoading={false} onNavigate={() => {}} tab="filesets" sort="name-asc" />,
     );
     expect(screen.getAllByText("ファイルがありません").length).toBeGreaterThan(0);
     unmount();
@@ -100,7 +100,7 @@ describe("FileBrowser", () => {
       { node_id: "p1", name: "ccc.pdf", kind: "pdf", size_bytes: 300, mime_type: "application/pdf", child_count: null, modified_at: 1700000200 },
     ];
     render(
-      <FileBrowser entries={entries} isLoading={false} onNavigate={() => {}} tab="filesets" />,
+      <FileBrowser entries={entries} isLoading={false} onNavigate={() => {}} tab="filesets" sort="name-asc" />,
     );
     // DOM 上の順序: archive/PDF が先、directory が後
     const buttons = screen.getAllByRole("button");
@@ -119,7 +119,7 @@ describe("FileBrowser", () => {
       { node_id: "d1", name: "dir", kind: "directory", size_bytes: null, mime_type: null, child_count: 5, modified_at: 1700000000 },
     ];
     render(
-      <FileBrowser entries={entries} isLoading={false} onNavigate={() => {}} tab="images" onTabChange={onTabChange} />,
+      <FileBrowser entries={entries} isLoading={false} onNavigate={() => {}} tab="images" sort="name-asc" onTabChange={onTabChange} />,
     );
     expect(screen.getByTestId("empty-tab-hint")).toBeInTheDocument();
   });
@@ -127,7 +127,7 @@ describe("FileBrowser", () => {
   test("全タブが空のとき案内が表示されない", () => {
     const onTabChange = vi.fn();
     render(
-      <FileBrowser entries={[]} isLoading={false} onNavigate={() => {}} tab="filesets" onTabChange={onTabChange} />,
+      <FileBrowser entries={[]} isLoading={false} onNavigate={() => {}} tab="filesets" sort="name-asc" onTabChange={onTabChange} />,
     );
     expect(screen.queryByTestId("empty-tab-hint")).toBeNull();
   });
@@ -138,7 +138,7 @@ describe("FileBrowser", () => {
       { node_id: "i1", name: "a.jpg", kind: "image", size_bytes: 100, mime_type: "image/jpeg", child_count: null, modified_at: 1700000000 },
     ];
     render(
-      <FileBrowser entries={entries} isLoading={false} onNavigate={() => {}} tab="filesets" onTabChange={onTabChange} />,
+      <FileBrowser entries={entries} isLoading={false} onNavigate={() => {}} tab="filesets" sort="name-asc" onTabChange={onTabChange} />,
     );
     await userEvent.click(screen.getByTestId("empty-tab-hint"));
     expect(onTabChange).toHaveBeenCalledWith("images");
@@ -148,7 +148,7 @@ describe("FileBrowser", () => {
 
   test("entriesが渡された時に最初のFileCardにfocusされる", async () => {
     render(
-      <FileBrowser entries={mockEntries} isLoading={false} onNavigate={() => {}} tab="filesets" />,
+      <FileBrowser entries={mockEntries} isLoading={false} onNavigate={() => {}} tab="filesets" sort="name-asc" />,
     );
     // filesets タブのソート: archive/PDF 優先 → directory 後。先頭は file3(doc.pdf)
     const firstCard = screen.getByTestId("file-card-file3");
@@ -157,7 +157,7 @@ describe("FileBrowser", () => {
 
   test("entriesが空の場合focusされない", () => {
     render(
-      <FileBrowser entries={[]} isLoading={false} onNavigate={() => {}} tab="filesets" />,
+      <FileBrowser entries={[]} isLoading={false} onNavigate={() => {}} tab="filesets" sort="name-asc" />,
     );
     expect(document.activeElement).toBe(document.body);
   });
@@ -170,10 +170,83 @@ describe("FileBrowser", () => {
     ];
     const onImageClick = vi.fn();
     render(
-      <FileBrowser entries={entries} isLoading={false} onNavigate={() => {}} onImageClick={onImageClick} tab="images" />,
+      <FileBrowser entries={entries} isLoading={false} onNavigate={() => {}} onImageClick={onImageClick} tab="images" sort="name-asc" />,
     );
     // 2番目の画像 (b.jpg) をクリック → フィルタ済み画像配列での index=1
     await userEvent.click(screen.getByText("b.jpg"));
     expect(onImageClick).toHaveBeenCalledWith(1);
+  });
+
+  // --- ソート ---
+
+  test("sort=date-descで更新日時の降順にソートされる", () => {
+    const entries: BrowseEntry[] = [
+      { node_id: "i1", name: "old.jpg", kind: "image", size_bytes: 100, mime_type: "image/jpeg", child_count: null, modified_at: 1000 },
+      { node_id: "i2", name: "new.jpg", kind: "image", size_bytes: 100, mime_type: "image/jpeg", child_count: null, modified_at: 3000 },
+      { node_id: "i3", name: "mid.jpg", kind: "image", size_bytes: 100, mime_type: "image/jpeg", child_count: null, modified_at: 2000 },
+    ];
+    render(
+      <FileBrowser entries={entries} isLoading={false} onNavigate={() => {}} tab="images" sort="date-desc" />,
+    );
+    const buttons = screen.getAllByRole("button");
+    const names = buttons.map((b) => b.textContent);
+    expect(names[0]).toContain("new.jpg");
+    expect(names[1]).toContain("mid.jpg");
+    expect(names[2]).toContain("old.jpg");
+  });
+
+  test("sort=date-ascで更新日時の昇順にソートされる", () => {
+    const entries: BrowseEntry[] = [
+      { node_id: "i1", name: "new.jpg", kind: "image", size_bytes: 100, mime_type: "image/jpeg", child_count: null, modified_at: 3000 },
+      { node_id: "i2", name: "old.jpg", kind: "image", size_bytes: 100, mime_type: "image/jpeg", child_count: null, modified_at: 1000 },
+    ];
+    render(
+      <FileBrowser entries={entries} isLoading={false} onNavigate={() => {}} tab="images" sort="date-asc" />,
+    );
+    const buttons = screen.getAllByRole("button");
+    expect(buttons[0].textContent).toContain("old.jpg");
+    expect(buttons[1].textContent).toContain("new.jpg");
+  });
+
+  test("sort=name-descで名前の降順にソートされる", () => {
+    const entries: BrowseEntry[] = [
+      { node_id: "i1", name: "alpha.jpg", kind: "image", size_bytes: 100, mime_type: "image/jpeg", child_count: null, modified_at: 1000 },
+      { node_id: "i2", name: "beta.jpg", kind: "image", size_bytes: 100, mime_type: "image/jpeg", child_count: null, modified_at: 2000 },
+    ];
+    render(
+      <FileBrowser entries={entries} isLoading={false} onNavigate={() => {}} tab="images" sort="name-desc" />,
+    );
+    const buttons = screen.getAllByRole("button");
+    expect(buttons[0].textContent).toContain("beta.jpg");
+    expect(buttons[1].textContent).toContain("alpha.jpg");
+  });
+
+  test("sort=name-ascでディレクトリ優先の名前順が維持される", () => {
+    const entries: BrowseEntry[] = [
+      { node_id: "f1", name: "aaa.pdf", kind: "pdf", size_bytes: 100, mime_type: "application/pdf", child_count: null, modified_at: 1000 },
+      { node_id: "d1", name: "bbb_dir", kind: "directory", size_bytes: null, mime_type: null, child_count: 5, modified_at: 2000 },
+    ];
+    render(
+      <FileBrowser entries={entries} isLoading={false} onNavigate={() => {}} tab="filesets" sort="name-asc" />,
+    );
+    const buttons = screen.getAllByRole("button");
+    const names = buttons.map((b) => b.textContent);
+    // filesets タブ: archive/PDF 優先 → directory 後（既存動作維持）
+    const pdfIdx = names.findIndex((n) => n?.includes("aaa.pdf"));
+    const dirIdx = names.findIndex((n) => n?.includes("bbb_dir"));
+    expect(pdfIdx).toBeLessThan(dirIdx);
+  });
+
+  test("sort=date-descでmodified_atがnullのエントリが最後になる", () => {
+    const entries: BrowseEntry[] = [
+      { node_id: "i1", name: "no-date.jpg", kind: "image", size_bytes: 100, mime_type: "image/jpeg", child_count: null, modified_at: null },
+      { node_id: "i2", name: "has-date.jpg", kind: "image", size_bytes: 100, mime_type: "image/jpeg", child_count: null, modified_at: 1000 },
+    ];
+    render(
+      <FileBrowser entries={entries} isLoading={false} onNavigate={() => {}} tab="images" sort="date-desc" />,
+    );
+    const buttons = screen.getAllByRole("button");
+    expect(buttons[0].textContent).toContain("has-date.jpg");
+    expect(buttons[1].textContent).toContain("no-date.jpg");
   });
 });

@@ -1,12 +1,15 @@
 // ファイルブラウザーのタブバー
 // - ファイルセット / 画像 / 動画 の3タブ
 // - アクティブタブをハイライト表示
+// - ソートトグル（名前/更新日 + asc/desc）
 
-import type { ViewerTab } from "../hooks/useViewerParams";
+import type { SortOrder, ViewerTab } from "../hooks/useViewerParams";
 
 interface ViewerTabsProps {
   activeTab: ViewerTab;
   onTabChange: (tab: ViewerTab) => void;
+  sort?: SortOrder;
+  onSortChange?: (sort: SortOrder) => void;
 }
 
 const TABS: { key: ViewerTab; label: string }[] = [
@@ -15,9 +18,41 @@ const TABS: { key: ViewerTab; label: string }[] = [
   { key: "videos", label: "動画" },
 ];
 
-export function ViewerTabs({ activeTab, onTabChange }: ViewerTabsProps) {
+// ソートキーのデフォルト方向
+const SORT_DEFAULTS: Record<string, SortOrder> = {
+  name: "name-asc",
+  date: "date-desc",
+};
+
+// ソートキーの反転マップ
+const SORT_FLIP: Record<SortOrder, SortOrder> = {
+  "name-asc": "name-desc",
+  "name-desc": "name-asc",
+  "date-asc": "date-desc",
+  "date-desc": "date-asc",
+};
+
+export function ViewerTabs({
+  activeTab,
+  onTabChange,
+  sort = "name-asc",
+  onSortChange,
+}: ViewerTabsProps) {
+  const activeKey = sort.startsWith("name") ? "name" : "date";
+  const isAsc = sort.endsWith("asc");
+
+  // クリック時: アクティブキー再クリック → 反転、別キー → デフォルト方向
+  const handleSortClick = (key: "name" | "date") => {
+    if (!onSortChange) return;
+    if (key === activeKey) {
+      onSortChange(SORT_FLIP[sort]);
+    } else {
+      onSortChange(SORT_DEFAULTS[key]);
+    }
+  };
+
   return (
-    <nav className="flex border-b border-white/5 bg-surface-card px-4">
+    <nav className="flex items-center border-b border-white/5 bg-surface-card px-4">
       {TABS.map((tab) => (
         <button
           key={tab.key}
@@ -33,6 +68,40 @@ export function ViewerTabs({ activeTab, onTabChange }: ViewerTabsProps) {
           {tab.label}
         </button>
       ))}
+
+      {onSortChange && (
+        <>
+          <div className="ml-auto" />
+          <div role="group" aria-label="並び替え" className="flex rounded-lg bg-surface-base">
+            <button
+              type="button"
+              data-testid="sort-name"
+              onClick={() => handleSortClick("name")}
+              className={`rounded-l-lg px-3 py-1 text-xs font-medium transition-colors ${
+                activeKey === "name"
+                  ? "bg-blue-600 text-white"
+                  : "text-gray-400 hover:bg-surface-raised hover:text-gray-200"
+              }`}
+              aria-pressed={activeKey === "name"}
+            >
+              名前 {activeKey === "name" ? (isAsc ? "↑" : "↓") : ""}
+            </button>
+            <button
+              type="button"
+              data-testid="sort-date"
+              onClick={() => handleSortClick("date")}
+              className={`rounded-r-lg px-3 py-1 text-xs font-medium transition-colors ${
+                activeKey === "date"
+                  ? "bg-blue-600 text-white"
+                  : "text-gray-400 hover:bg-surface-raised hover:text-gray-200"
+              }`}
+              aria-pressed={activeKey === "date"}
+            >
+              更新日 {activeKey === "date" ? (isAsc ? "↑" : "↓") : ""}
+            </button>
+          </div>
+        </>
+      )}
     </nav>
   );
 }

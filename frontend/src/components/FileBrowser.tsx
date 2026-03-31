@@ -1,11 +1,12 @@
 // ファイル一覧をサムネイルグリッドで表示するメインエリア
+// - sort に応じてエントリをソート（name-asc/desc, date-asc/desc）
 // - tab に応じてエントリをフィルタ
 // - filesets: ディレクトリ/アーカイブ/PDF
 // - images: 画像のみ
 // - videos: 動画のみ
 
 import { useEffect, useRef } from "react";
-import type { ViewerTab } from "../hooks/useViewerParams";
+import type { SortOrder, ViewerTab } from "../hooks/useViewerParams";
 import type { BrowseEntry } from "../types/api";
 import { FileCard } from "./FileCard";
 
@@ -16,18 +17,47 @@ interface FileBrowserProps {
   onImageClick?: (imageIndex: number) => void;
   onPdfClick?: (nodeId: string) => void;
   tab: ViewerTab;
+  sort: SortOrder;
   selectedNodeId?: string;
   onTabChange?: (tab: ViewerTab) => void;
 }
 
+// ソートキーと方向に応じてエントリを並び替え
+// - name-asc: API のデフォルト順（ディレクトリ優先 + 名前昇順）をそのまま使用
+// - name-desc: 名前降順（ディレクトリ優先は維持）
+// - date-desc: 更新日時降順（最新が先頭）、null は末尾
+// - date-asc: 更新日時昇順（最古が先頭）、null は末尾
+function sortEntries(entries: BrowseEntry[], sort: SortOrder): BrowseEntry[] {
+  if (sort === "name-asc") return entries;
+
+  return [...entries].sort((a, b) => {
+    if (sort === "name-desc") {
+      // ディレクトリ優先は維持しつつ、名前は降順
+      const aIsDir = a.kind === "directory" ? 0 : 1;
+      const bIsDir = b.kind === "directory" ? 0 : 1;
+      if (aIsDir !== bIsDir) return aIsDir - bIsDir;
+      return b.name.localeCompare(a.name);
+    }
+
+    // date ソート: null は末尾
+    if (a.modified_at == null && b.modified_at == null) return 0;
+    if (a.modified_at == null) return 1;
+    if (b.modified_at == null) return -1;
+
+    return sort === "date-desc" ? b.modified_at - a.modified_at : a.modified_at - b.modified_at;
+  });
+}
+
 // タブに応じて表示する kind をフィルタ
-// filesets: archive/PDF を先、directory を後にソート
-function filterByTab(entries: BrowseEntry[], tab: ViewerTab): BrowseEntry[] {
+// filesets: name ソート時は archive/PDF を先、directory を後にサブソート
+function filterByTab(entries: BrowseEntry[], tab: ViewerTab, sort: SortOrder): BrowseEntry[] {
   switch (tab) {
     case "filesets": {
       const filesets = entries.filter(
         (e) => e.kind === "directory" || e.kind === "archive" || e.kind === "pdf",
       );
+      // date ソート時はソート済み順序を尊重し、サブソートをスキップ
+      if (sort.startsWith("date")) return filesets;
       return filesets.sort((a, b) => {
         const aIsDir = a.kind === "directory" ? 1 : 0;
         const bIsDir = b.kind === "directory" ? 1 : 0;
@@ -68,10 +98,12 @@ export function FileBrowser({
   onImageClick,
   onPdfClick,
   tab,
+  sort,
   selectedNodeId,
   onTabChange,
 }: FileBrowserProps) {
-  const filtered = filterByTab(entries, tab);
+  const sorted = sortEntries(entries, sort);
+  const filtered = filterByTab(sorted, tab, sort);
 
   // エントリ変更時（ナビゲーション・タブ切替）に先頭カードへ focus
   const firstCardRef = useRef<HTMLButtonElement>(null);
