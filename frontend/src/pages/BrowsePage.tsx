@@ -157,7 +157,7 @@ export default function BrowsePage() {
   }
 
   return (
-    <div className="flex min-h-screen flex-col">
+    <div className="flex h-screen flex-col">
       <BrowseHeader
         currentName={data?.current_name ?? ""}
         mode={params.mode}
