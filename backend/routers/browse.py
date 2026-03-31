@@ -44,7 +44,8 @@ def _compute_etag(entries: list[EntryMeta]) -> str:
     entries が変わらなければ同じ ETag を返す。
     """
     content = "|".join(
-        f"{e.node_id},{e.name},{e.kind},{e.size_bytes},{e.child_count}" for e in entries
+        f"{e.node_id},{e.name},{e.kind},{e.size_bytes},{e.child_count},{e.modified_at}"
+        for e in entries
     )
     return hashlib.md5(content.encode()).hexdigest()  # noqa: S324
 

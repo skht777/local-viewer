@@ -59,6 +59,7 @@ class EntryMeta(BaseModel):
     - size_bytes: ファイルサイズ (ディレクトリは None)
     - mime_type: MIME タイプ (ディレクトリは None)
     - child_count: ディレクトリの子エントリ数 (ファイルは None)
+    - modified_at: 更新日時 POSIX epoch 秒 (アーカイブエントリ・マウントルートは None)
     """
 
     node_id: str
@@ -67,6 +68,7 @@ class EntryMeta(BaseModel):
     size_bytes: int | None = None
     mime_type: str | None = None
     child_count: int | None = None
+    modified_at: float | None = None
 
 
 class BrowseResponse(BaseModel):
@@ -252,6 +254,7 @@ class NodeRegistry:
                         name=de.name,
                         kind=kind,
                         child_count=child_count,
+                        modified_at=de.stat().st_mtime,
                     )
                 )
             else:
@@ -267,6 +270,7 @@ class NodeRegistry:
                         kind=kind,
                         size_bytes=st.st_size,
                         mime_type=mime,
+                        modified_at=st.st_mtime,
                     )
                 )
 

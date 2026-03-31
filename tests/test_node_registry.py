@@ -242,6 +242,54 @@ def test_is_archive_entryが正しく判定する(
     assert registry.is_archive_entry(file_id) is False
 
 
+# --- modified_at テスト ---
+
+
+def test_ファイルのmodified_atが設定されている(
+    registry: NodeRegistry, root_dir: Path
+) -> None:
+    entries = registry.list_directory(root_dir)
+    entry_map = {e.name: e for e in entries}
+    assert entry_map["file.txt"].modified_at is not None
+    assert isinstance(entry_map["file.txt"].modified_at, float)
+
+
+def test_ディレクトリのmodified_atが設定されている(
+    registry: NodeRegistry, root_dir: Path
+) -> None:
+    entries = registry.list_directory(root_dir)
+    entry_map = {e.name: e for e in entries}
+    assert entry_map["dir_a"].modified_at is not None
+    assert isinstance(entry_map["dir_a"].modified_at, float)
+
+
+def test_list_archive_entriesのmodified_atがNoneである(
+    registry: NodeRegistry, root_dir: Path
+) -> None:
+    from backend.services.archive_reader import ArchiveEntry
+
+    archive = root_dir / "test.zip"
+    archive.touch()
+    arc_entries = [
+        ArchiveEntry(
+            name="img01.jpg",
+            size_compressed=100,
+            size_uncompressed=200,
+            is_dir=False,
+        ),
+    ]
+    result = registry.list_archive_entries(archive, arc_entries)
+    assert result[0].modified_at is None
+
+
+def test_list_mount_rootsのmodified_atがNoneである(
+    multi_registry: NodeRegistry,
+) -> None:
+    entries = multi_registry.list_mount_roots({})
+    for e in entries:
+        assert e.modified_at is None
+
+
 def test_list_archive_entriesでEntryMetaリストを返す(
     registry: NodeRegistry, root_dir: Path
 ) -> None:
