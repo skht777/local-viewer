@@ -193,6 +193,100 @@ test.describe("マンガモード — 縦ページスライダー", () => {
   });
 });
 
+test.describe("CG モード — スライダーホバー保持", () => {
+  test("PS-16: スライダーにマウスを乗せると表示が維持される", async ({ page }) => {
+    await openCgViewer(page);
+    const slider = page.getByTestId("page-slider");
+    const viewer = page.getByTestId("cg-viewer");
+    const box = await viewer.boundingBox();
+    if (!box) throw new Error("viewer not found");
+
+    await test.step("下端に近づいてフェードイン", async () => {
+      await page.mouse.move(box.x + box.width / 2, box.y + box.height - 20, { steps: 5 });
+      await expect(slider).toHaveCSS("opacity", "1", { timeout: 3000 });
+    });
+
+    await test.step("スライダー上に移動して表示維持を確認", async () => {
+      const sliderBox = await slider.boundingBox();
+      if (!sliderBox) throw new Error("slider not found");
+      await page.mouse.move(
+        sliderBox.x + sliderBox.width / 2,
+        sliderBox.y + sliderBox.height / 2,
+        { steps: 3 },
+      );
+      await expect(slider).toHaveCSS("opacity", "1", { timeout: 2000 });
+    });
+  });
+
+  test("PS-17: スライダー上からマウスを離すとフェードアウト", async ({ page }) => {
+    await openCgViewer(page);
+    const slider = page.getByTestId("page-slider");
+    const viewer = page.getByTestId("cg-viewer");
+    const box = await viewer.boundingBox();
+    if (!box) throw new Error("viewer not found");
+
+    // まずスライダー上に移動
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height - 20, { steps: 5 });
+    await expect(slider).toHaveCSS("opacity", "1", { timeout: 3000 });
+    const sliderBox = await slider.boundingBox();
+    if (!sliderBox) throw new Error("slider not found");
+    await page.mouse.move(
+      sliderBox.x + sliderBox.width / 2,
+      sliderBox.y + sliderBox.height / 2,
+      { steps: 3 },
+    );
+
+    // 中央に移動してフェードアウト
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2, { steps: 5 });
+    await expect(slider).toHaveCSS("opacity", "0", { timeout: 3000 });
+  });
+});
+
+test.describe("マンガモード — スライダーホバー保持 + 方向", () => {
+  test("PS-18: 縦スライダーにマウスを乗せると表示が維持される", async ({ page }) => {
+    await openMangaViewer(page);
+    const slider = page.getByTestId("page-slider");
+    const viewer = page.getByTestId("manga-viewer");
+    const box = await viewer.boundingBox();
+    if (!box) throw new Error("viewer not found");
+
+    await test.step("右端に近づいてフェードイン", async () => {
+      await page.mouse.move(box.x + box.width - 20, box.y + box.height / 2, { steps: 5 });
+      await expect(slider).toHaveCSS("opacity", "1", { timeout: 3000 });
+    });
+
+    await test.step("スライダー上に移動して表示維持を確認", async () => {
+      const sliderBox = await slider.boundingBox();
+      if (!sliderBox) throw new Error("slider not found");
+      await page.mouse.move(
+        sliderBox.x + sliderBox.width / 2,
+        sliderBox.y + sliderBox.height / 2,
+        { steps: 3 },
+      );
+      await expect(slider).toHaveCSS("opacity", "1", { timeout: 2000 });
+    });
+  });
+
+  test("PS-19: 縦スライダーの direction が ltr である", async ({ page }) => {
+    await openMangaViewer(page);
+
+    // スライダーをフェードインさせる
+    const viewer = page.getByTestId("manga-viewer");
+    const box = await viewer.boundingBox();
+    if (!box) throw new Error("viewer not found");
+    await page.mouse.move(box.x + box.width - 20, box.y + box.height / 2, { steps: 5 });
+
+    const rangeInput = page.getByTestId("page-slider").locator("input[type='range']");
+    await expect(rangeInput).toBeVisible({ timeout: 3000 });
+
+    // 1ページ目なので value=0
+    await expect(rangeInput).toHaveValue("0");
+
+    // direction: rtl が適用されていないことを確認
+    await expect(rangeInput).toHaveCSS("direction", "ltr");
+  });
+});
+
 test.describe("ツールバー — ページカウンター", () => {
   test("PS-12: CG モードのツールバーにページカウンターが表示される", async ({ page }) => {
     await openCgViewer(page);
