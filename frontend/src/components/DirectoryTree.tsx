@@ -3,7 +3,10 @@
 // - 展開時のみ子ノードを fetch (lazy loading)
 // - ディレクトリ/アーカイブのみ表示
 // - onNavigate コールバックで URL 組み立ては呼び出し元 (BrowsePage) に委譲
+// - ancestorNodeIds で現在パスの祖先を自動展開
+// - アクティブノードを scrollIntoView で表示範囲にスクロール
 
+import { useEffect, useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { browseNodeOptions } from "../hooks/api/browseQueries";
 import { useViewerStore } from "../stores/viewerStore";
@@ -12,6 +15,7 @@ import type { BrowseEntry } from "../types/api";
 interface DirectoryTreeProps {
   rootEntries: BrowseEntry[];
   activeNodeId: string;
+  ancestorNodeIds: string[];
   onNavigate: (nodeId: string) => void;
 }
 
@@ -19,13 +23,24 @@ interface TreeNodeProps {
   entry: BrowseEntry;
   depth: number;
   activeNodeId: string;
+  ancestorNodeIds: string[];
   onNavigate: (nodeId: string) => void;
 }
 
-function TreeNode({ entry, depth, activeNodeId, onNavigate }: TreeNodeProps) {
+function TreeNode({ entry, depth, activeNodeId, ancestorNodeIds, onNavigate }: TreeNodeProps) {
   const { expandedNodeIds, toggleExpanded } = useViewerStore();
-  const isExpanded = expandedNodeIds.has(entry.node_id);
+  const buttonRef = useRef<HTMLButtonElement>(null);
+
+  // 手動展開 ∪ 祖先自動展開
+  const isExpanded = expandedNodeIds.has(entry.node_id) || ancestorNodeIds.includes(entry.node_id);
   const isActive = entry.node_id === activeNodeId;
+
+  // アクティブノードを表示範囲にスクロール
+  useEffect(() => {
+    if (isActive && buttonRef.current) {
+      buttonRef.current.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    }
+  }, [isActive]);
 
   // 展開中のノードのみ子ノードを取得
   const { data: childData } = useQuery({
@@ -47,6 +62,7 @@ function TreeNode({ entry, depth, activeNodeId, onNavigate }: TreeNodeProps) {
   return (
     <div>
       <button
+        ref={buttonRef}
         type="button"
         data-testid={`tree-node-${entry.node_id}`}
         onClick={handleClick}
@@ -65,6 +81,7 @@ function TreeNode({ entry, depth, activeNodeId, onNavigate }: TreeNodeProps) {
             entry={child}
             depth={depth + 1}
             activeNodeId={activeNodeId}
+            ancestorNodeIds={ancestorNodeIds}
             onNavigate={onNavigate}
           />
         ))}
@@ -72,7 +89,12 @@ function TreeNode({ entry, depth, activeNodeId, onNavigate }: TreeNodeProps) {
   );
 }
 
-export function DirectoryTree({ rootEntries, activeNodeId, onNavigate }: DirectoryTreeProps) {
+export function DirectoryTree({
+  rootEntries,
+  activeNodeId,
+  ancestorNodeIds,
+  onNavigate,
+}: DirectoryTreeProps) {
   // ディレクトリ/アーカイブのみ表示
   const directories = rootEntries.filter(
     (e) => e.kind === "directory" || e.kind === "archive" || e.kind === "pdf",
@@ -89,6 +111,7 @@ export function DirectoryTree({ rootEntries, activeNodeId, onNavigate }: Directo
           entry={entry}
           depth={0}
           activeNodeId={activeNodeId}
+          ancestorNodeIds={ancestorNodeIds}
           onNavigate={onNavigate}
         />
       ))}

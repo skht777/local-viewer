@@ -87,6 +87,12 @@ export default function BrowsePage() {
     [mountData?.mounts],
   );
 
+  // 祖先ノード ID 配列（ツリー自動展開用）
+  const ancestorNodeIds = useMemo(
+    () => (data?.ancestors ?? []).map((a) => a.node_id),
+    [data?.ancestors],
+  );
+
   // 現在のディレクトリ内の画像エントリのみ（CgViewer の表示範囲）
   const images = useMemo(
     () => (data?.entries ?? []).filter((e) => e.kind === "image"),
@@ -171,6 +177,7 @@ export default function BrowsePage() {
           <DirectoryTree
             rootEntries={rootEntries}
             activeNodeId={nodeId ?? ""}
+            ancestorNodeIds={ancestorNodeIds}
             onNavigate={(id) => navigate(`/browse/${id}${buildBrowseSearch()}`)}
           />
         )}
