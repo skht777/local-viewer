@@ -8,6 +8,7 @@ import type { SortOrder, ViewerTab } from "../hooks/useViewerParams";
 interface ViewerTabsProps {
   activeTab: ViewerTab;
   onTabChange: (tab: ViewerTab) => void;
+  disabledTabs?: Set<ViewerTab>;
   sort?: SortOrder;
   onSortChange?: (sort: SortOrder) => void;
 }
@@ -35,6 +36,7 @@ const SORT_FLIP: Record<SortOrder, SortOrder> = {
 export function ViewerTabs({
   activeTab,
   onTabChange,
+  disabledTabs,
   sort = "name-asc",
   onSortChange,
 }: ViewerTabsProps) {
@@ -53,21 +55,27 @@ export function ViewerTabs({
 
   return (
     <nav className="flex items-center border-b border-white/5 bg-surface-card px-4">
-      {TABS.map((tab) => (
-        <button
-          key={tab.key}
-          type="button"
-          data-testid={`tab-${tab.key}`}
-          onClick={() => onTabChange(tab.key)}
-          className={`px-4 py-2 text-sm font-medium transition-colors ${
-            activeTab === tab.key
-              ? "border-b-2 border-blue-500 text-white"
-              : "text-gray-400 hover:text-gray-200"
-          }`}
-        >
-          {tab.label}
-        </button>
-      ))}
+      {TABS.map((tab) => {
+        const isDisabled = disabledTabs?.has(tab.key) ?? false;
+        return (
+          <button
+            key={tab.key}
+            type="button"
+            data-testid={`tab-${tab.key}`}
+            disabled={isDisabled}
+            onClick={() => onTabChange(tab.key)}
+            className={`px-4 py-2 text-sm font-medium transition-colors ${
+              isDisabled
+                ? "cursor-not-allowed text-gray-600"
+                : activeTab === tab.key
+                  ? "border-b-2 border-blue-500 text-white"
+                  : "text-gray-400 hover:text-gray-200"
+            }`}
+          >
+            {tab.label}
+          </button>
+        );
+      })}
 
       {onSortChange && (
         <>

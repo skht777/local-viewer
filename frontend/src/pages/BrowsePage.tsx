@@ -9,7 +9,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { browseNodeOptions } from "../hooks/api/browseQueries";
 import { mountListOptions } from "../hooks/api/mountQueries";
-import { useViewerParams } from "../hooks/useViewerParams";
+import { useViewerParams, type ViewerTab } from "../hooks/useViewerParams";
 import { useViewerStore } from "../stores/viewerStore";
 import { BrowseHeader } from "../components/BrowseHeader";
 import { CgViewer } from "../components/CgViewer";
@@ -51,25 +51,30 @@ export default function BrowsePage() {
   // マウントポイント一覧 (ツリー用)
   const { data: mountData } = useQuery(mountListOptions());
 
-  // タブ自動切替: filesets が空なら images > videos の優先順位で切替
-  // すべて空の場合は filesets にフォールバック（何もしない）
+  // タブ自動切替: 現在のタブが空なら最適なタブに切替
+  // 優先順位: filesets > images > videos
+  // 現在タブにコンテンツがあればそのまま維持
   useEffect(() => {
     if (!data || isLoading) return;
-    if (params.tab !== "filesets") return;
 
     const hasFilesets = data.entries.some(
       (e) => e.kind === "directory" || e.kind === "archive" || e.kind === "pdf",
     );
-    if (hasFilesets) return;
-
     const hasImages = data.entries.some((e) => e.kind === "image");
-    if (hasImages) {
-      setTab("images");
-      return;
-    }
-
     const hasVideos = data.entries.some((e) => e.kind === "video");
-    if (hasVideos) {
+
+    // 現在のタブにコンテンツがあればそのまま
+    if (params.tab === "filesets" && hasFilesets) return;
+    if (params.tab === "images" && hasImages) return;
+    if (params.tab === "videos" && hasVideos) return;
+
+    // 現在のタブが空 → 最適なタブに自動切替
+    // すべて空の場合は現在タブに留まる
+    if (hasFilesets) {
+      setTab("filesets");
+    } else if (hasImages) {
+      setTab("images");
+    } else if (hasVideos) {
       setTab("videos");
     }
   }, [data, isLoading, params.tab, setTab]);
@@ -106,6 +111,21 @@ export default function BrowsePage() {
     () => (data?.entries ?? []).filter((e) => e.kind === "video"),
     [data?.entries],
   );
+
+  // コンテンツのないタブを disabled にする
+  // 全て空の場合は filesets のみ有効（デフォルトタブ）
+  const disabledTabs = useMemo(() => {
+    if (!data) return new Set<ViewerTab>();
+    const disabled = new Set<ViewerTab>();
+    const hasFilesets = data.entries.some(
+      (e) => e.kind === "directory" || e.kind === "archive" || e.kind === "pdf",
+    );
+    if (!hasFilesets) disabled.add("filesets");
+    if (images.length === 0) disabled.add("images");
+    if (videos.length === 0) disabled.add("videos");
+    if (disabled.size === 3) disabled.delete("filesets");
+    return disabled;
+  }, [data, images.length, videos.length]);
 
   // PDF ファイル名を entries から取得
   const pdfEntry = useMemo(
@@ -176,6 +196,7 @@ export default function BrowsePage() {
       <ViewerTabs
         activeTab={params.tab}
         onTabChange={setTab}
+        disabledTabs={disabledTabs}
         sort={params.sort}
         onSortChange={setSort}
       />
