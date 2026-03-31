@@ -25,8 +25,10 @@ export async function openCgViewer(page: Page, mountName = "pictures") {
   // 最初の画像カードをクリック
   const firstImage = page.locator("[data-testid^='file-card-']").first();
   await expect(firstImage).toBeVisible();
-  // サムネイル読み込みによる DOM 再構築を待つ
-  await firstImage.click({ force: true });
+  // サムネイル読み込み完了を待機（レイアウトシフト回避）
+  const thumb = firstImage.locator("img");
+  await expect(thumb).toHaveJSProperty("complete", true);
+  await firstImage.click();
 
   await expect(page.locator("[data-testid='cg-viewer']")).toBeVisible();
 }
@@ -47,7 +49,10 @@ export async function openMangaViewer(page: Page, mountName = "pictures") {
   // 最初の画像カードをクリック
   const firstImage = page.locator("[data-testid^='file-card-']").first();
   await expect(firstImage).toBeVisible();
-  await firstImage.click({ force: true });
+  // サムネイル読み込み完了を待機（レイアウトシフト回避）
+  const thumb = firstImage.locator("img");
+  await expect(thumb).toHaveJSProperty("complete", true);
+  await firstImage.click();
 
   await expect(page.locator("[data-testid='manga-viewer']")).toBeVisible();
 }

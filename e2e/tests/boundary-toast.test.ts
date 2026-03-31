@@ -25,9 +25,13 @@ test.describe("画像境界トースト — CG モード", () => {
   }) => {
     await openCgViewer(page);
 
-    // End キーで最後の画像に移動し、URL が更新されるのを待つ
+    // End キーで最後の画像に移動し、URL と表示画像が更新されるのを待つ
+    const cgImg = page.locator("[data-testid='cg-image-area'] img").first();
+    const initialSrc = await cgImg.getAttribute("src");
     await page.keyboard.press("End");
     await expect(page).toHaveURL(/index=3/);
+    // React 再レンダリング完了を待機: 表示画像の src が変わるまで
+    await expect(cgImg).not.toHaveAttribute("src", initialSrc!);
 
     await page.keyboard.press("d");
 
