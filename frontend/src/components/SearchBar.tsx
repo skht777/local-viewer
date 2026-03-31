@@ -105,8 +105,8 @@ export function SearchBar() {
 
   return (
     <div ref={containerRef} className="relative">
-      <div className="flex gap-2">
-        <div className="relative flex-1">
+      <div className="flex flex-col gap-1.5">
+        <div className="relative">
           <input
             ref={inputRef}
             type="text"

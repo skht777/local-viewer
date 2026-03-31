@@ -41,7 +41,7 @@ export function BrowseHeader({ currentName, mode, onModeChange }: BrowseHeaderPr
       <span className="min-w-0 truncate text-sm text-gray-400">{currentName}</span>
       <div className="ml-auto flex items-center gap-4">
         <ModeToggle mode={mode} onModeChange={onModeChange} />
-        <div className="w-64">
+        <div className="w-80">
           <SearchBar />
         </div>
       </div>
