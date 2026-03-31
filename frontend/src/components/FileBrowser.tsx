@@ -4,6 +4,7 @@
 // - images: 画像のみ
 // - videos: 動画のみ
 
+import { useEffect, useRef } from "react";
 import type { ViewerTab } from "../hooks/useViewerParams";
 import type { BrowseEntry } from "../types/api";
 import { FileCard } from "./FileCard";
@@ -72,6 +73,16 @@ export function FileBrowser({
 }: FileBrowserProps) {
   const filtered = filterByTab(entries, tab);
 
+  // エントリ変更時（ナビゲーション・タブ切替）に先頭カードへ focus
+  const firstCardRef = useRef<HTMLButtonElement>(null);
+  const firstEntryId = filtered[0]?.node_id ?? null;
+
+  useEffect(() => {
+    if (firstEntryId) {
+      firstCardRef.current?.focus();
+    }
+  }, [firstEntryId]);
+
   const handleClick = (entry: BrowseEntry) => {
     if (entry.kind === "archive") {
       // アーカイブ遷移時は画像タブに自動切替
@@ -115,9 +126,10 @@ export function FileBrowser({
 
       {!isLoading && filtered.length > 0 && (
         <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
-          {filtered.map((entry) => (
+          {filtered.map((entry, index) => (
             <FileCard
               key={entry.node_id}
+              ref={index === 0 ? firstCardRef : undefined}
               entry={entry}
               onClick={handleClick}
               isSelected={entry.node_id === selectedNodeId}

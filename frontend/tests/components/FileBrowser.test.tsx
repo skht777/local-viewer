@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { FileBrowser } from "../../src/components/FileBrowser";
 import type { BrowseEntry } from "../../src/types/api";
@@ -138,6 +138,24 @@ describe("FileBrowser", () => {
     );
     await userEvent.click(screen.getByTestId("empty-tab-hint"));
     expect(onTabChange).toHaveBeenCalledWith("images");
+  });
+
+  // --- オートフォーカス ---
+
+  test("entriesが渡された時に最初のFileCardにfocusされる", async () => {
+    render(
+      <FileBrowser entries={mockEntries} isLoading={false} onNavigate={() => {}} tab="filesets" />,
+    );
+    // filesets タブのソート: archive/PDF 優先 → directory 後。先頭は file3(doc.pdf)
+    const firstCard = screen.getByTestId("file-card-file3");
+    await waitFor(() => expect(firstCard).toHaveFocus());
+  });
+
+  test("entriesが空の場合focusされない", () => {
+    render(
+      <FileBrowser entries={[]} isLoading={false} onNavigate={() => {}} tab="filesets" />,
+    );
+    expect(document.activeElement).toBe(document.body);
   });
 
   test("画像クリック時に onImageClick がフィルタ済みインデックスで呼ばれる", async () => {
