@@ -2,9 +2,9 @@
 // - ルートノードから再帰的にツリーを表示
 // - 展開時のみ子ノードを fetch (lazy loading)
 // - ディレクトリ/アーカイブのみ表示
+// - onNavigate コールバックで URL 組み立ては呼び出し元 (BrowsePage) に委譲
 
 import { useQuery } from "@tanstack/react-query";
-import { useNavigate } from "react-router-dom";
 import { browseNodeOptions } from "../hooks/api/browseQueries";
 import { useViewerStore } from "../stores/viewerStore";
 import type { BrowseEntry } from "../types/api";
@@ -12,16 +12,17 @@ import type { BrowseEntry } from "../types/api";
 interface DirectoryTreeProps {
   rootEntries: BrowseEntry[];
   activeNodeId: string;
+  onNavigate: (nodeId: string) => void;
 }
 
 interface TreeNodeProps {
   entry: BrowseEntry;
   depth: number;
   activeNodeId: string;
+  onNavigate: (nodeId: string) => void;
 }
 
-function TreeNode({ entry, depth, activeNodeId }: TreeNodeProps) {
-  const navigate = useNavigate();
+function TreeNode({ entry, depth, activeNodeId, onNavigate }: TreeNodeProps) {
   const { expandedNodeIds, toggleExpanded } = useViewerStore();
   const isExpanded = expandedNodeIds.has(entry.node_id);
   const isActive = entry.node_id === activeNodeId;
@@ -34,7 +35,7 @@ function TreeNode({ entry, depth, activeNodeId }: TreeNodeProps) {
 
   const handleClick = () => {
     toggleExpanded(entry.node_id);
-    navigate(`/browse/${entry.node_id}`);
+    onNavigate(entry.node_id);
   };
 
   // ディレクトリ/アーカイブのみ子ノードを表示
@@ -64,13 +65,14 @@ function TreeNode({ entry, depth, activeNodeId }: TreeNodeProps) {
             entry={child}
             depth={depth + 1}
             activeNodeId={activeNodeId}
+            onNavigate={onNavigate}
           />
         ))}
     </div>
   );
 }
 
-export function DirectoryTree({ rootEntries, activeNodeId }: DirectoryTreeProps) {
+export function DirectoryTree({ rootEntries, activeNodeId, onNavigate }: DirectoryTreeProps) {
   // ディレクトリ/アーカイブのみ表示
   const directories = rootEntries.filter(
     (e) => e.kind === "directory" || e.kind === "archive" || e.kind === "pdf",
@@ -82,7 +84,13 @@ export function DirectoryTree({ rootEntries, activeNodeId }: DirectoryTreeProps)
         ディレクトリ
       </div>
       {directories.map((entry) => (
-        <TreeNode key={entry.node_id} entry={entry} depth={0} activeNodeId={activeNodeId} />
+        <TreeNode
+          key={entry.node_id}
+          entry={entry}
+          depth={0}
+          activeNodeId={activeNodeId}
+          onNavigate={onNavigate}
+        />
       ))}
     </aside>
   );

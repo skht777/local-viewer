@@ -18,6 +18,7 @@ const mockBrowseData: BrowseResponse = {
   current_node_id: "node-abc",
   current_name: "test-directory",
   parent_node_id: "node-parent",
+  ancestors: [],
   entries: [
     {
       node_id: "img1",
@@ -50,6 +51,7 @@ const mockRootData: BrowseResponse = {
   current_node_id: "root",
   current_name: "root",
   parent_node_id: null,
+  ancestors: [],
   entries: [],
 };
 
@@ -121,6 +123,7 @@ describe("BrowsePage", () => {
       current_node_id: "node-images",
       current_name: "images-only",
       parent_node_id: "node-parent",
+      ancestors: [],
       entries: [
         { node_id: "img1", name: "a.jpg", kind: "image", size_bytes: 100, mime_type: "image/jpeg", child_count: null },
         { node_id: "img2", name: "b.png", kind: "image", size_bytes: 200, mime_type: "image/png", child_count: null },
@@ -147,6 +150,7 @@ describe("BrowsePage", () => {
       current_node_id: "node-videos",
       current_name: "videos-only",
       parent_node_id: "node-parent",
+      ancestors: [],
       entries: [
         { node_id: "vid1", name: "clip.mp4", kind: "video", size_bytes: 5000, mime_type: "video/mp4", child_count: null },
       ],
@@ -172,6 +176,7 @@ describe("BrowsePage", () => {
       current_node_id: "node-empty",
       current_name: "empty-dir",
       parent_node_id: "node-parent",
+      ancestors: [],
       entries: [],
     };
     globalThis.fetch = vi.fn((url: string | URL | Request) => {

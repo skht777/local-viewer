@@ -166,7 +166,11 @@ export default function BrowsePage() {
       <ViewerTabs activeTab={params.tab} onTabChange={setTab} />
       <div className="flex flex-1 overflow-hidden">
         {isSidebarOpen && rootEntries.length > 0 && (
-          <DirectoryTree rootEntries={rootEntries} activeNodeId={nodeId ?? ""} />
+          <DirectoryTree
+            rootEntries={rootEntries}
+            activeNodeId={nodeId ?? ""}
+            onNavigate={(id) => navigate(`/browse/${id}${buildBrowseSearch()}`)}
+          />
         )}
         {params.tab === "videos" ? (
           <VideoFeed videos={videos} />
