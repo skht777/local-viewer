@@ -2,6 +2,7 @@
 // 仕様出典: initial-architecture.md §キーバインド
 
 import { test, expect } from "@playwright/test";
+import { clickFileCard } from "./helpers/navigation";
 
 // pictures ディレクトリで CG モードを開くヘルパー
 async function openCgInPictures(page: import("@playwright/test").Page) {
@@ -20,12 +21,8 @@ async function openCgInPictures(page: import("@playwright/test").Page) {
   await expect(imagesTab).toBeVisible();
   await imagesTab.click();
 
-  // 画像カードが安定するまで待つ
-  const firstImage = page.locator("[data-testid^='file-card-']").first();
-  await expect(firstImage).toBeVisible();
-
-  // サムネイル読み込みによるDOM再構築を待つ
-  await firstImage.click({ force: true });
+  // 画像カードをクリック
+  await clickFileCard(page.locator("[data-testid^='file-card-']").first());
 
   // CGビューワーが表示される
   await expect(page.locator("[data-testid='cg-viewer']")).toBeVisible();

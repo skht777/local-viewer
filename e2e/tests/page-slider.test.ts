@@ -3,7 +3,7 @@
 // - マンガモード: 画面右端の縦スライダー（フェードイン/アウト）
 
 import { test, expect } from "@playwright/test";
-import { openCgViewer, openMangaViewer, openPdfViewer } from "./helpers/navigation";
+import { clickFileCard, openCgViewer, openMangaViewer, openPdfViewer } from "./helpers/navigation";
 
 test.describe("CG モード — 水平ページスライダー", () => {
   test("PS-1: マウスが画面下部に近づくとスライダーがフェードインする", async ({ page }) => {
@@ -95,9 +95,7 @@ test.describe("CG モード — 水平ページスライダー", () => {
       await expect(imagesTab).toBeVisible();
       await imagesTab.click();
 
-      const firstImage = page.locator("[data-testid^='file-card-']").first();
-      await expect(firstImage).toBeVisible();
-      await firstImage.click({ force: true });
+      await clickFileCard(page.locator("[data-testid^='file-card-']").first());
       await expect(page.getByTestId("cg-viewer")).toBeVisible();
     });
 

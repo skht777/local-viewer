@@ -10,6 +10,7 @@
 //   ※ root 直下は parentNodeId=null のため set-jump 不可 → zips/, dirs/ でネスト
 
 import { test, expect } from "@playwright/test";
+import { clickFileCard } from "./helpers/navigation";
 
 // archive/zips 内の images.zip で CG モードを開く
 // ※ set-jump にはルート直下でない位置が必要 (parentNodeId != null)
@@ -42,9 +43,7 @@ async function openCgInArchiveZip(page: import("@playwright/test").Page) {
   await expect(imagesTab).toBeVisible();
   await imagesTab.click();
 
-  const firstImage = page.locator("[data-testid^='file-card-']").first();
-  await expect(firstImage).toBeVisible();
-  await firstImage.click({ force: true });
+  await clickFileCard(page.locator("[data-testid^='file-card-']").first());
 
   await expect(page.locator("[data-testid='cg-viewer']")).toBeVisible();
 }
@@ -84,9 +83,7 @@ async function openCgInNestedSub1(page: import("@playwright/test").Page) {
   await imagesTab.click();
 
   // 画像をクリック → CG ビューワー
-  const firstImage = page.locator("[data-testid^='file-card-']").first();
-  await expect(firstImage).toBeVisible();
-  await firstImage.click({ force: true });
+  await clickFileCard(page.locator("[data-testid^='file-card-']").first());
 
   await expect(page.locator("[data-testid='cg-viewer']")).toBeVisible();
 }

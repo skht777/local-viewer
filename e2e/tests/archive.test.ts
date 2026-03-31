@@ -44,8 +44,7 @@ test.describe("アーカイブ", () => {
       hasText: "images.zip",
     });
     await expect(zipCard).toBeVisible();
-    // サムネイル読み込みによる DOM 再構築を待つ
-    await zipCard.click({ force: true });
+    await zipCard.click();
 
     // アーカイブ内に移動して画像タブに画像が表示される
     await expect(page).toHaveURL(/\/browse\//);
@@ -64,19 +63,17 @@ test.describe("アーカイブ", () => {
       hasText: "images.zip",
     });
     await expect(zipCard).toBeVisible();
-    // サムネイル読み込みによる DOM 再構築を待つ
-    await zipCard.click({ force: true });
+    await zipCard.click();
 
     const imagesTab = page.locator("[data-testid='tab-images']");
     if (await imagesTab.isVisible()) {
       await imagesTab.click();
     }
 
-    // 画像をクリックしてCGモードを開く
+    // 画像をクリックしてCGモードを開く（アーカイブ内はアイコン表示のためサムネイル待機不要）
     const firstImage = page.locator("[data-testid^='file-card-']").first();
     await expect(firstImage).toBeVisible();
-    // サムネイル読み込みによる DOM 再構築を待つ
-    await firstImage.click({ force: true });
+    await firstImage.click();
     await expect(page.locator("[data-testid='cg-viewer']")).toBeVisible();
   });
 
@@ -88,8 +85,7 @@ test.describe("アーカイブ", () => {
       hasText: "mixed.zip",
     });
     await expect(mixedZip).toBeVisible();
-    // サムネイル読み込みによる DOM 再構築を待つ
-    await mixedZip.click({ force: true });
+    await mixedZip.click();
     await expect(page).toHaveURL(/\/browse\//);
 
     // 画像タブに画像がある
@@ -118,8 +114,7 @@ test.describe("アーカイブ", () => {
       hasText: "images.zip",
     });
     await expect(imagesZip).toBeVisible();
-    // サムネイル読み込みによる DOM 再構築を待つ
-    await imagesZip.click({ force: true });
+    await imagesZip.click();
 
     // URL に tab=images が設定される
     await expect(page).toHaveURL(/tab=images/);

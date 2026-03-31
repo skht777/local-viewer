@@ -2,7 +2,15 @@
 // - マウントポイント遷移、ビューワー起動、検索インデックス待機
 
 import { expect } from "@playwright/test";
-import type { Page, APIRequestContext } from "@playwright/test";
+import type { Page, Locator, APIRequestContext } from "@playwright/test";
+
+// ファイルカードをクリック
+// Playwright の click() は要素の安定性（位置が動かなくなるまで）を自動で待機する
+// サムネイル読み込みによるレイアウトシフトも安定性チェックで吸収される
+export async function clickFileCard(card: Locator) {
+  await expect(card).toBeVisible();
+  await card.click();
+}
 
 // マウントポイントに遷移してブラウズ画面を開く
 export async function navigateToMount(page: Page, mountName: string) {
@@ -23,12 +31,7 @@ export async function openCgViewer(page: Page, mountName = "pictures") {
   await imagesTab.click();
 
   // 最初の画像カードをクリック
-  const firstImage = page.locator("[data-testid^='file-card-']").first();
-  await expect(firstImage).toBeVisible();
-  // サムネイル読み込み完了を待機（レイアウトシフト回避）
-  const thumb = firstImage.locator("img");
-  await expect(thumb).toHaveJSProperty("complete", true);
-  await firstImage.click();
+  await clickFileCard(page.locator("[data-testid^='file-card-']").first());
 
   await expect(page.locator("[data-testid='cg-viewer']")).toBeVisible();
 }
@@ -47,12 +50,7 @@ export async function openMangaViewer(page: Page, mountName = "pictures") {
   await imagesTab.click();
 
   // 最初の画像カードをクリック
-  const firstImage = page.locator("[data-testid^='file-card-']").first();
-  await expect(firstImage).toBeVisible();
-  // サムネイル読み込み完了を待機（レイアウトシフト回避）
-  const thumb = firstImage.locator("img");
-  await expect(thumb).toHaveJSProperty("complete", true);
-  await firstImage.click();
+  await clickFileCard(page.locator("[data-testid^='file-card-']").first());
 
   await expect(page.locator("[data-testid='manga-viewer']")).toBeVisible();
 }

@@ -2,6 +2,7 @@
 // 仕様出典: plan-phase3.md, initial-architecture.md §マンガモード
 
 import { test, expect } from "@playwright/test";
+import { clickFileCard } from "./helpers/navigation";
 
 // pictures ディレクトリでマンガモードを開くヘルパー
 async function openMangaViewer(page: import("@playwright/test").Page) {
@@ -24,12 +25,8 @@ async function openMangaViewer(page: import("@playwright/test").Page) {
   await expect(imagesTab).toBeVisible();
   await imagesTab.click();
 
-  // 画像カードが安定するまで待つ
-  const firstImage = page.locator("[data-testid^='file-card-']").first();
-  await expect(firstImage).toBeVisible();
-
-  // サムネイル読み込みによるDOM再構築を待つ
-  await firstImage.click({ force: true });
+  // 画像カードをクリック
+  await clickFileCard(page.locator("[data-testid^='file-card-']").first());
 
   // マンガビューワーが表示される
   await expect(page.locator("[data-testid='manga-viewer']")).toBeVisible();

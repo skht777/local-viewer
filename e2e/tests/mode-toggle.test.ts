@@ -2,7 +2,7 @@
 // ブラウズツールバーの CG/マンガ切替トグルの動作を検証する
 
 import { test, expect } from "@playwright/test";
-import { navigateToMount } from "./helpers/navigation";
+import { clickFileCard, navigateToMount } from "./helpers/navigation";
 
 test.describe("モード切替トグル", () => {
   test("MT-1: トグルクリックで URL と aria-pressed が更新される", async ({ page }) => {
@@ -36,9 +36,7 @@ test.describe("モード切替トグル", () => {
 
     // 画像タブに切り替えて画像クリック
     await page.getByTestId("tab-images").click();
-    const firstImage = page.locator("[data-testid^='file-card-']").first();
-    await expect(firstImage).toBeVisible();
-    await firstImage.click({ force: true });
+    await clickFileCard(page.locator("[data-testid^='file-card-']").first());
 
     // マンガビューワーが開く（CG ではない）
     await expect(page.getByTestId("manga-viewer")).toBeVisible();
@@ -66,9 +64,7 @@ test.describe("モード切替トグル", () => {
     // マンガモードを選択してビューワーを開く
     await page.getByTestId("mode-toggle-manga").click();
     await page.getByTestId("tab-images").click();
-    const firstImage = page.locator("[data-testid^='file-card-']").first();
-    await expect(firstImage).toBeVisible();
-    await firstImage.click({ force: true });
+    await clickFileCard(page.locator("[data-testid^='file-card-']").first());
     await expect(page.getByTestId("manga-viewer")).toBeVisible();
 
     // Escape で閉じる

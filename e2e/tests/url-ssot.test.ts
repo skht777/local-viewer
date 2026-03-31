@@ -2,6 +2,7 @@
 // 仕様出典: plan-phase2.md §ルーティング, plan-phase6.md §URL設計
 
 import { test, expect } from "@playwright/test";
+import { clickFileCard } from "./helpers/navigation";
 
 test.describe("URL SSOT", () => {
   test("ビューワーを閉じると index が URL から削除される", async ({
@@ -22,12 +23,8 @@ test.describe("URL SSOT", () => {
     await expect(imagesTab).toBeVisible();
     await imagesTab.click();
 
-    // 画像カードが安定するまで待つ
-    const firstImage = page.locator("[data-testid^='file-card-']").first();
-    await expect(firstImage).toBeVisible();
-
-    // サムネイル読み込みによるDOM再構築を待つ
-    await firstImage.click({ force: true });
+    // 画像カードをクリック
+    await clickFileCard(page.locator("[data-testid^='file-card-']").first());
     await expect(page).toHaveURL(/index=0/);
 
     // ビューワーを閉じる（Escape キー）
@@ -79,12 +76,8 @@ test.describe("URL SSOT", () => {
     await expect(imagesTab).toBeVisible();
     await imagesTab.click();
 
-    // 画像カードが安定するまで待つ
-    const firstImage = page.locator("[data-testid^='file-card-']").first();
-    await expect(firstImage).toBeVisible();
-
     // CG モードで 2 ページ目を開く
-    await firstImage.click({ force: true });
+    await clickFileCard(page.locator("[data-testid^='file-card-']").first());
     await expect(page.locator("[data-testid='cg-viewer']")).toBeVisible();
     await page.keyboard.press("d");
     await expect(page).toHaveURL(/index=1/);
