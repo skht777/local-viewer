@@ -176,7 +176,10 @@ export function FileBrowser({
       if (newIndex < 0 || newIndex >= filtered.length) return;
       const target = filtered[newIndex];
       setLocalSelectedId(target.node_id);
-      document.querySelector<HTMLElement>(`[data-testid="file-card-${target.node_id}"]`)?.focus();
+      // 選択カードを可視領域の先頭にスクロールし、フォーカスを移動
+      const el = document.querySelector<HTMLElement>(`[data-testid="file-card-${target.node_id}"]`);
+      el?.scrollIntoView({ block: "start", behavior: "smooth" });
+      el?.focus({ preventScroll: true });
     },
     [filtered, effectiveSelectedId],
   );
