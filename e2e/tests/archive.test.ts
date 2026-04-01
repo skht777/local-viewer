@@ -19,7 +19,7 @@ async function navigateToArchive(page: import("@playwright/test").Page) {
     hasText: "zips",
   });
   await expect(zipsDir).toBeVisible();
-  await zipsDir.click();
+  await zipsDir.dblclick();
   await expect(page).toHaveURL(/\/browse\//);
 }
 
@@ -39,12 +39,12 @@ test.describe("アーカイブ", () => {
   test("アーカイブクリックで中身が展開表示される", async ({ page }) => {
     await navigateToArchive(page);
 
-    // images.zip をクリック
+    // images.zip をダブルクリック（C2: ダブルクリック=進入）
     const zipCard = page.locator("[data-testid^='file-card-']", {
       hasText: "images.zip",
     });
     await expect(zipCard).toBeVisible();
-    await zipCard.click();
+    await zipCard.dblclick();
 
     // アーカイブ内に移動して画像タブに画像が表示される
     await expect(page).toHaveURL(/\/browse\//);
@@ -63,17 +63,17 @@ test.describe("アーカイブ", () => {
       hasText: "images.zip",
     });
     await expect(zipCard).toBeVisible();
-    await zipCard.click();
+    await zipCard.dblclick();
 
     const imagesTab = page.locator("[data-testid='tab-images']");
     if (await imagesTab.isVisible()) {
       await imagesTab.click();
     }
 
-    // 画像をクリックしてCGモードを開く（アーカイブ内はアイコン表示のためサムネイル待機不要）
+    // 画像をダブルクリックしてCGモードを開く
     const firstImage = page.locator("[data-testid^='file-card-']").first();
     await expect(firstImage).toBeVisible();
-    await firstImage.click();
+    await firstImage.dblclick();
     await expect(page.locator("[data-testid='cg-viewer']")).toBeVisible();
   });
 
@@ -85,7 +85,7 @@ test.describe("アーカイブ", () => {
       hasText: "mixed.zip",
     });
     await expect(mixedZip).toBeVisible();
-    await mixedZip.click();
+    await mixedZip.dblclick();
     await expect(page).toHaveURL(/\/browse\//);
 
     // 画像タブに画像がある
@@ -114,7 +114,7 @@ test.describe("アーカイブ", () => {
       hasText: "images.zip",
     });
     await expect(imagesZip).toBeVisible();
-    await imagesZip.click();
+    await imagesZip.dblclick();
 
     // URL に tab=images が設定される
     await expect(page).toHaveURL(/tab=images/);

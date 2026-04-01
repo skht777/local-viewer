@@ -29,14 +29,14 @@ async function openCgInArchiveZip(page: import("@playwright/test").Page) {
     hasText: "zips",
   });
   await expect(zipsDir).toBeVisible();
-  await zipsDir.click();
+  await zipsDir.dblclick();
   await expect(page).toHaveURL(/\/browse\//);
 
   const imagesZip = page.locator("[data-testid^='file-card-']", {
     hasText: "images.zip",
   });
   await expect(imagesZip).toBeVisible();
-  await imagesZip.click();
+  await imagesZip.dblclick();
   await expect(page).toHaveURL(/\/browse\//);
 
   const imagesTab = page.locator("[data-testid='tab-images']");
@@ -66,7 +66,7 @@ async function openCgInNestedSub1(page: import("@playwright/test").Page) {
     hasText: "dirs",
   });
   await expect(dirsDir).toBeVisible();
-  await dirsDir.click();
+  await dirsDir.dblclick();
   await expect(page).toHaveURL(/\/browse\//);
 
   // sub1 ディレクトリへ
@@ -74,7 +74,7 @@ async function openCgInNestedSub1(page: import("@playwright/test").Page) {
     hasText: "sub1",
   });
   await expect(sub1).toBeVisible();
-  await sub1.click();
+  await sub1.dblclick();
   await expect(page).toHaveURL(/\/browse\//);
 
   // 画像タブ

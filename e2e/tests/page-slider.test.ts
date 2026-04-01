@@ -82,12 +82,12 @@ test.describe("CG モード — 水平ページスライダー", () => {
       // dirs サブディレクトリに入る
       const dirsDir = page.locator("[data-testid^='file-card-']", { hasText: "dirs" });
       await expect(dirsDir).toBeVisible();
-      await dirsDir.click();
+      await dirsDir.dblclick();
       await expect(page).toHaveURL(/\/browse\//);
 
       const sub1 = page.locator("[data-testid^='file-card-']", { hasText: "sub1" });
       await expect(sub1).toBeVisible();
-      await sub1.click();
+      await sub1.dblclick();
     });
 
     await test.step("画像タブで1枚の画像を開く", async () => {

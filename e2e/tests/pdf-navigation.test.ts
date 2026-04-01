@@ -140,7 +140,7 @@ test.describe("PDF ナビゲーション — P3", () => {
       hasText: "corrupted.pdf",
     });
     await expect(corruptedCard).toBeVisible();
-    await corruptedCard.click();
+    await corruptedCard.dblclick();
 
     // PDF ドキュメント読み込みエラーが表示される
     await expect(page.getByTestId("pdf-error")).toBeVisible({

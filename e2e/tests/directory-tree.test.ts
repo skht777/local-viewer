@@ -13,15 +13,15 @@ test.describe("ディレクトリツリー", () => {
     // dirs サブディレクトリに入る
     const dirsCard = page.locator("[data-testid^='file-card-']", { hasText: "dirs" });
     await expect(dirsCard).toBeVisible();
-    await dirsCard.click();
+    await dirsCard.dblclick();
     await expect(page).toHaveURL(/\/browse\//);
 
     const initialUrl = page.url();
 
-    // sub1 ディレクトリカードをクリック
+    // sub1 ディレクトリカードをダブルクリック（C2: ダブルクリック=進入）
     const sub1Card = page.locator("[data-testid^='file-card-']", { hasText: "sub1" });
     await expect(sub1Card).toBeVisible();
-    await sub1Card.click();
+    await sub1Card.dblclick();
 
     // URL が変わる
     await expect(page).not.toHaveURL(initialUrl);
@@ -34,13 +34,13 @@ test.describe("ディレクトリツリー", () => {
     // dirs サブディレクトリに入る
     const dirsCard = page.locator("[data-testid^='file-card-']", { hasText: "dirs" });
     await expect(dirsCard).toBeVisible();
-    await dirsCard.click();
+    await dirsCard.dblclick();
     await expect(page).toHaveURL(/\/browse\//);
 
     // sub1 に遷移
     const sub1Card = page.locator("[data-testid^='file-card-']", { hasText: "sub1" });
     await expect(sub1Card).toBeVisible();
-    await sub1Card.click();
+    await sub1Card.dblclick();
     await expect(page).toHaveURL(/\/browse\//);
 
     // 画像タブに切り替え
