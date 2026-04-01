@@ -21,6 +21,14 @@ import { PdfMangaViewer } from "../components/PdfMangaViewer";
 import { VideoFeed } from "../components/VideoFeed";
 import { ViewerTabs } from "../components/ViewerTabs";
 
+// ソート方向反転マップ
+const SORT_FLIP = {
+  "name-asc": "name-desc",
+  "name-desc": "name-asc",
+  "date-asc": "date-desc",
+  "date-desc": "date-asc",
+} as const;
+
 export default function BrowsePage() {
   const { nodeId } = useParams<{ nodeId: string }>();
   const navigate = useNavigate();
@@ -133,13 +141,6 @@ export default function BrowsePage() {
   }, [data, images.length, videos.length]);
 
   // ソートトグルロジック（名前/更新日）
-  const SORT_FLIP = {
-    "name-asc": "name-desc",
-    "name-desc": "name-asc",
-    "date-asc": "date-desc",
-    "date-desc": "date-asc",
-  } as const;
-
   const handleSortName = useCallback(() => {
     setSort(params.sort.startsWith("name") ? SORT_FLIP[params.sort] : "name-asc");
   }, [params.sort, setSort]);
