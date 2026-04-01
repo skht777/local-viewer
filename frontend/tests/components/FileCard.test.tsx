@@ -208,7 +208,17 @@ describe("FileCard 選択・ダブルクリック・オーバーレイ", () => {
     expect(onDoubleClick).toHaveBeenCalledWith(dirEntry);
   });
 
-  test("Spaceキーで選択と同じ動作になる", async () => {
+  test("SpaceキーでonOpenが呼ばれる（onOpen指定時）", async () => {
+    const onOpen = vi.fn();
+    render(
+      <FileCard entry={dirEntry} onSelect={() => {}} onDoubleClick={() => {}} onOpen={onOpen} />,
+    );
+    screen.getByTestId("file-card-dir001").focus();
+    await userEvent.keyboard(" ");
+    expect(onOpen).toHaveBeenCalledWith(dirEntry);
+  });
+
+  test("SpaceキーでonSelectにフォールバック（onOpen未指定時）", async () => {
     const onSelect = vi.fn();
     render(
       <FileCard entry={dirEntry} onSelect={onSelect} onDoubleClick={() => {}} />,

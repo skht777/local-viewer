@@ -49,14 +49,15 @@ export function FileCard({
   const [hasImageError, setHasImageError] = useState(false);
   const isImagePreview = entry.kind === "image" && !hasImageError;
 
-  // Enter: アクション実行、Space: 選択
+  // Enter: アクション実行（進入/ビューワー起動）
+  // Space: ビューワーで開く（onOpen があれば優先、なければ onSelect にフォールバック）
   const handleKeyDown = (e: KeyboardEvent) => {
     if (e.key === "Enter") {
       e.preventDefault();
       onDoubleClick(entry);
     } else if (e.key === " ") {
       e.preventDefault();
-      onSelect(entry);
+      (onOpen ?? onSelect)(entry);
     }
   };
 
