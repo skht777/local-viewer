@@ -61,6 +61,8 @@ class EntryMeta(BaseModel):
     - mime_type: MIME タイプ (ディレクトリは None)
     - child_count: ディレクトリの子エントリ数 (ファイルは None)
     - modified_at: 更新日時 POSIX epoch 秒 (アーカイブエントリ・マウントルートは None)
+    - preview_node_ids: ディレクトリ内の先頭画像 node_id (最大3件、kind=image のみ)
+      画像がない場合は None。ファイル・アーカイブエントリ・マウントルートは常に None
     """
 
     node_id: str
@@ -70,6 +72,7 @@ class EntryMeta(BaseModel):
     mime_type: str | None = None
     child_count: int | None = None
     modified_at: float | None = None
+    preview_node_ids: list[str] | None = None
 
 
 class BrowseResponse(BaseModel):
@@ -252,6 +255,7 @@ class NodeRegistry:
 
             if is_dir:
                 child_count = self._count_children_scandir(de.path)
+                preview_ids = self._collect_preview_ids(resolved)
                 entries.append(
                     EntryMeta(
                         node_id=node_id,
@@ -259,6 +263,7 @@ class NodeRegistry:
                         kind=kind,
                         child_count=child_count,
                         modified_at=de.stat().st_mtime,
+                        preview_node_ids=preview_ids,
                     )
                 )
             else:
@@ -474,6 +479,37 @@ class NodeRegistry:
         if suffix in ARCHIVE_EXTENSIONS:
             return EntryKind.ARCHIVE
         return EntryKind.OTHER
+
+    def _collect_preview_ids(self, directory: Path, limit: int = 3) -> list[str] | None:
+        """ディレクトリ内の先頭画像ファイルの node_id を最大 limit 件返す.
+
+        画像が見つからなければ None を返す。
+        拡張子のみで判定し、追加の stat() は行わない。
+        """
+        preview_ids: list[str] = []
+        try:
+            with os.scandir(directory) as scanner:
+                for de in scanner:
+                    if de.is_dir(follow_symlinks=False):
+                        continue
+                    name = de.name
+                    dot_idx = name.rfind(".")
+                    ext = name[dot_idx:].lower() if dot_idx > 0 else ""
+                    if ext not in IMAGE_EXTENSIONS:
+                        continue
+                    child = Path(de.path)
+                    try:
+                        resolved = self._path_security.validate_child(
+                            child, is_symlink=de.is_symlink()
+                        )
+                        preview_ids.append(self.register_resolved(resolved))
+                    except PathSecurityError, OSError:
+                        continue
+                    if len(preview_ids) >= limit:
+                        break
+        except PermissionError:
+            pass
+        return preview_ids if preview_ids else None
 
     @staticmethod
     def _count_children_scandir(path: str) -> int:

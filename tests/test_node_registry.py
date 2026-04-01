@@ -460,6 +460,56 @@ def test_ancestorsの順序がルートから親へ正しい(
     assert ancestors[1].name == "dir_a"
 
 
+# --- preview_node_ids テスト ---
+
+
+def test_ディレクトリエントリのpreview_node_idsに画像node_idが含まれる(
+    registry: NodeRegistry, root_dir: Path
+) -> None:
+    # dir_a は image.jpg を含む
+    entries = registry.list_directory(root_dir)
+    dir_a = next(e for e in entries if e.name == "dir_a")
+    assert dir_a.preview_node_ids is not None
+    assert len(dir_a.preview_node_ids) >= 1
+    # preview_node_ids の各要素が有効な node_id であること
+    for nid in dir_a.preview_node_ids:
+        assert isinstance(nid, str)
+        assert len(nid) == 16
+
+
+def test_画像がないディレクトリのpreview_node_idsがNone(
+    registry: NodeRegistry, root_dir: Path
+) -> None:
+    # dir_a/sub は deep.txt のみで画像なし
+    entries = registry.list_directory(root_dir / "dir_a")
+    sub = next(e for e in entries if e.name == "sub")
+    assert sub.preview_node_ids is None
+
+
+def test_preview_node_idsは最大3件まで(
+    registry: NodeRegistry, root_dir: Path
+) -> None:
+    # 5枚の画像を含むディレクトリを作成
+    many_images_dir = root_dir / "many_images"
+    many_images_dir.mkdir()
+    minimal_jpeg = (root_dir / "dir_a" / "image.jpg").read_bytes()
+    for i in range(5):
+        (many_images_dir / f"img_{i:02d}.jpg").write_bytes(minimal_jpeg)
+
+    entries = registry.list_directory(root_dir)
+    many = next(e for e in entries if e.name == "many_images")
+    assert many.preview_node_ids is not None
+    assert len(many.preview_node_ids) == 3
+
+
+def test_ファイルエントリのpreview_node_idsがNone(
+    registry: NodeRegistry, root_dir: Path
+) -> None:
+    entries = registry.list_directory(root_dir)
+    file_entry = next(e for e in entries if e.name == "file.txt")
+    assert file_entry.preview_node_ids is None
+
+
 def test_list_archive_entriesで画像のみがkind_imageになる(
     registry: NodeRegistry, root_dir: Path
 ) -> None:

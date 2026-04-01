@@ -235,6 +235,22 @@ async def test_browseレスポンスにmodified_atフィールドが含まれる
         assert isinstance(entry["modified_at"], float)
 
 
+# --- preview_node_ids テスト ---
+
+
+async def test_browseレスポンスにpreview_node_idsフィールドが含まれる(
+    client: AsyncClient,
+    test_node_registry: NodeRegistry,
+    test_root: Path,
+) -> None:
+    root_id = test_node_registry.register(test_root)
+    response = await client.get(f"/api/browse/{root_id}")
+    data = response.json()
+    # ディレクトリエントリに preview_node_ids フィールドが存在する
+    dir_a = next(e for e in data["entries"] if e["name"] == "dir_a")
+    assert "preview_node_ids" in dir_a
+
+
 async def test_既存のディレクトリbrowseが引き続き動作する(
     client: AsyncClient,
     test_node_registry: NodeRegistry,
