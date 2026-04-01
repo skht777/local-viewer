@@ -94,7 +94,9 @@ export function useSetJump({
         if (visited.has(currentParentId)) break;
         visited.add(currentParentId);
 
-        const parentData = await queryClient.fetchQuery(browseNodeOptions(currentParentId));
+        const parentData: BrowseResponse = await queryClient.fetchQuery(
+          browseNodeOptions(currentParentId),
+        );
         if (!currentChildId) break;
 
         const sibling = finder(parentData.entries, currentChildId);
