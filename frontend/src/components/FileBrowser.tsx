@@ -86,6 +86,7 @@ export function FileBrowser({
   // エントリ変更時（ナビゲーション・タブ切替）に先頭カードへ focus
   const firstCardRef = useRef<HTMLButtonElement>(null);
   const firstEntryId = filtered[0]?.node_id ?? null;
+  const effectiveSelectedId = selectedNodeId ?? firstEntryId;
 
   useEffect(() => {
     if (firstEntryId) {
@@ -127,7 +128,7 @@ export function FileBrowser({
               ref={index === 0 ? firstCardRef : undefined}
               entry={entry}
               onClick={handleClick}
-              isSelected={entry.node_id === selectedNodeId}
+              isSelected={entry.node_id === effectiveSelectedId}
             />
           ))}
         </div>

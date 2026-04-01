@@ -205,6 +205,25 @@ describe("FileBrowser", () => {
     expect(pdfIdx).toBeLessThan(dirIdx);
   });
 
+  // --- オートセレクト ---
+
+  test("selectedNodeIdが未指定の場合、先頭のFileCardがselected状態になる", () => {
+    render(
+      <FileBrowser entries={mockEntries} isLoading={false} onNavigate={() => {}} tab="filesets" sort="name-asc" />,
+    );
+    // filesets タブ: archive/PDF 優先 → 先頭は file3(doc.pdf)
+    const firstCard = screen.getByTestId("file-card-file3");
+    expect(firstCard).toHaveAttribute("aria-current", "true");
+  });
+
+  test("selectedNodeIdが指定されている場合はそちらが優先される", () => {
+    render(
+      <FileBrowser entries={mockEntries} isLoading={false} onNavigate={() => {}} tab="filesets" sort="name-asc" selectedNodeId="dir1" />,
+    );
+    expect(screen.getByTestId("file-card-dir1")).toHaveAttribute("aria-current", "true");
+    expect(screen.getByTestId("file-card-file3")).not.toHaveAttribute("aria-current");
+  });
+
   test("sort=date-descでmodified_atがnullのエントリが最後になる", () => {
     const entries: BrowseEntry[] = [
       { node_id: "i1", name: "no-date.jpg", kind: "image", size_bytes: 100, mime_type: "image/jpeg", child_count: null, modified_at: null },
