@@ -4,7 +4,7 @@
 // - ブラウズモード: BrowseHeader + ViewerTabs + DirectoryTree + FileBrowser/VideoFeed
 // - PDF クリック → openPdfViewer で PDF ビューワーを開く
 
-import { useEffect, useMemo } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { browseNodeOptions } from "../hooks/api/browseQueries";
@@ -44,6 +44,10 @@ export default function BrowsePage() {
   // 検索結果からの遷移で select パラメータが指定されている場合のハイライト用
   const [searchParams] = useSearchParams();
   const selectedNodeId = searchParams.get("select") ?? undefined;
+
+  // ファイルブラウザー ↔ ツリーのフォーカスエリア管理
+  const [focusArea, setFocusArea] = useState<"browser" | "tree">("browser");
+  const treeRef = useRef<HTMLElement>(null);
 
   // 現在のディレクトリのデータ
   const { data, isLoading } = useQuery(browseNodeOptions(nodeId));
@@ -127,6 +131,50 @@ export default function BrowsePage() {
     return disabled;
   }, [data, images.length, videos.length]);
 
+  // ソートトグルロジック（名前/更新日）
+  const SORT_FLIP = {
+    "name-asc": "name-desc",
+    "name-desc": "name-asc",
+    "date-asc": "date-desc",
+    "date-desc": "date-asc",
+  } as const;
+
+  const handleSortName = useCallback(() => {
+    setSort(params.sort.startsWith("name") ? SORT_FLIP[params.sort] : "name-asc");
+  }, [params.sort, setSort]);
+
+  const handleSortDate = useCallback(() => {
+    setSort(params.sort.startsWith("date") ? SORT_FLIP[params.sort] : "date-desc");
+  }, [params.sort, setSort]);
+
+  // モード切替（CG ↔ マンガ）
+  const handleToggleMode = useCallback(() => {
+    setMode(params.mode === "cg" ? "manga" : "cg");
+  }, [params.mode, setMode]);
+
+  // 親ディレクトリに戻る
+  const handleGoParent = useCallback(() => {
+    if (data?.parent_node_id) {
+      navigate(`/browse/${data.parent_node_id}${buildBrowseSearch()}`);
+    }
+  }, [data?.parent_node_id, navigate, buildBrowseSearch]);
+
+  // ツリーにフォーカス移動
+  const handleFocusTree = useCallback(() => {
+    setFocusArea("tree");
+    const firstTreeItem = treeRef.current?.querySelector<HTMLElement>(
+      "[data-testid^='tree-node-']",
+    );
+    firstTreeItem?.focus();
+  }, []);
+
+  // ブラウザーにフォーカス移動（ツリーから呼ばれる）
+  const handleFocusBrowser = useCallback(() => {
+    setFocusArea("browser");
+    const selectedCard = document.querySelector<HTMLElement>("[aria-current='true']");
+    selectedCard?.focus();
+  }, []);
+
   // PDF ファイル名を entries から取得
   const pdfEntry = useMemo(
     () => (data?.entries ?? []).find((e) => e.node_id === params.pdfNodeId),
@@ -203,10 +251,12 @@ export default function BrowsePage() {
       <div className="flex flex-1 overflow-hidden">
         {isSidebarOpen && rootEntries.length > 0 && (
           <DirectoryTree
+            ref={treeRef}
             rootEntries={rootEntries}
             activeNodeId={nodeId ?? ""}
             ancestorNodeIds={ancestorNodeIds}
             onNavigate={(id) => navigate(`/browse/${id}${buildBrowseSearch()}`)}
+            onFocusBrowser={handleFocusBrowser}
           />
         )}
         {params.tab === "videos" ? (
@@ -223,9 +273,16 @@ export default function BrowsePage() {
             onOpenViewer={(id) => {
               navigate(`/browse/${id}${buildBrowseSearch({ tab: "images", index: 0 })}`);
             }}
+            onGoParent={handleGoParent}
+            onTabChange={setTab}
+            onFocusTree={handleFocusTree}
+            onToggleMode={handleToggleMode}
+            onSortName={handleSortName}
+            onSortDate={handleSortDate}
             tab={params.tab}
             sort={params.sort}
             selectedNodeId={selectedNodeId}
+            keyboardEnabled={focusArea === "browser"}
           />
         )}
       </div>

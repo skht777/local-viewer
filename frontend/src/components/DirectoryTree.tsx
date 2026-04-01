@@ -6,6 +6,7 @@
 // - ancestorNodeIds で現在パスの祖先を自動展開
 // - アクティブノードを scrollIntoView で表示範囲にスクロール
 
+import type { Ref } from "react";
 import { useEffect, useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { browseNodeOptions } from "../hooks/api/browseQueries";
@@ -17,6 +18,8 @@ interface DirectoryTreeProps {
   activeNodeId: string;
   ancestorNodeIds: string[];
   onNavigate: (nodeId: string) => void;
+  onFocusBrowser?: () => void;
+  ref?: Ref<HTMLElement>;
 }
 
 interface TreeNodeProps {
@@ -94,6 +97,8 @@ export function DirectoryTree({
   activeNodeId,
   ancestorNodeIds,
   onNavigate,
+  onFocusBrowser,
+  ref,
 }: DirectoryTreeProps) {
   // ディレクトリ/アーカイブのみ表示
   const directories = rootEntries.filter(
@@ -101,7 +106,10 @@ export function DirectoryTree({
   );
 
   return (
-    <aside className="w-64 shrink-0 overflow-y-auto border-r border-white/5 bg-surface-card">
+    <aside
+      ref={ref}
+      className="w-64 shrink-0 overflow-y-auto border-r border-white/5 bg-surface-card"
+    >
       <div className="p-2 text-xs font-medium uppercase tracking-wider text-gray-500">
         ディレクトリ
       </div>

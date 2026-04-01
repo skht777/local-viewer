@@ -1,11 +1,13 @@
 // ファイル一覧をサムネイルグリッドで表示するメインエリア
 // - シングルクリック: カード選択（ハイライト + オーバーレイ表示）
 // - ダブルクリック: アクション実行（進入/ビューワー起動）
+// - キーボード: 矢印/WASDでグリッド移動、g/Enter進入、Space開く等
 // - sort に応じてエントリをソート（name-asc/desc, date-asc/desc）
 // - tab に応じてエントリをフィルタ
 
 import type { KeyboardEvent } from "react";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { useBrowseKeyboard } from "../hooks/useBrowseKeyboard";
 import type { SortOrder, ViewerTab } from "../hooks/useViewerParams";
 import type { BrowseEntry } from "../types/api";
 import { FileCard } from "./FileCard";
@@ -17,9 +19,16 @@ interface FileBrowserProps {
   onImageClick?: (imageIndex: number) => void;
   onPdfClick?: (nodeId: string) => void;
   onOpenViewer?: (nodeId: string) => void;
+  onGoParent?: () => void;
+  onTabChange?: (tab: ViewerTab) => void;
+  onFocusTree?: () => void;
+  onToggleMode?: () => void;
+  onSortName?: () => void;
+  onSortDate?: () => void;
   tab: ViewerTab;
   sort: SortOrder;
   selectedNodeId?: string;
+  keyboardEnabled?: boolean;
 }
 
 // ソートキーと方向に応じてエントリを並び替え
@@ -78,15 +87,23 @@ export function FileBrowser({
   onImageClick,
   onPdfClick,
   onOpenViewer,
+  onGoParent,
+  onTabChange,
+  onFocusTree,
+  onToggleMode,
+  onSortName,
+  onSortDate,
   tab,
   sort,
   selectedNodeId,
+  keyboardEnabled = true,
 }: FileBrowserProps) {
   const sorted = sortEntries(entries, sort);
   const filtered = filterByTab(sorted, tab, sort);
 
   // エントリ変更時（ナビゲーション・タブ切替）に先頭カードへ focus
   const firstCardRef = useRef<HTMLDivElement>(null);
+  const gridRef = useRef<HTMLDivElement>(null);
   const firstEntryId = filtered[0]?.node_id ?? null;
 
   // ローカル選択状態（クリック選択が優先、なければ URL ?select= or 先頭カード）
@@ -109,7 +126,7 @@ export function FileBrowser({
     setLocalSelectedId(entry.node_id);
   };
 
-  // ダブルクリック / Enter: アクション実行（進入/ビューワー起動）
+  // ダブルクリック / Enter / g: アクション実行（進入/ビューワー起動）
   const handleAction = (entry: BrowseEntry) => {
     if (entry.kind === "archive") {
       onNavigate(entry.node_id, { tab: "images" });
@@ -123,7 +140,7 @@ export function FileBrowser({
     }
   };
 
-  // オーバーレイ「▶ 開く」: kind に応じて適切なアクションを呼び分け
+  // オーバーレイ「▶ 開く」/ Space: kind に応じて適切なアクションを呼び分け
   const handleOpen = (entry: BrowseEntry) => {
     if (entry.kind === "directory" || entry.kind === "archive") {
       onOpenViewer?.(entry.node_id);
@@ -143,6 +160,48 @@ export function FileBrowser({
       onNavigate(entry.node_id);
     }
   };
+
+  // グリッドの実際の列数をオンデマンド取得
+  const getColumnCount = useCallback(() => {
+    if (!gridRef.current) return 1;
+    const cols = getComputedStyle(gridRef.current).gridTemplateColumns;
+    return cols.split(" ").length;
+  }, []);
+
+  // キーボード移動: delta 分だけ選択を移動し、対応カードに focus
+  const handleMove = useCallback(
+    (delta: number) => {
+      const currentIndex = filtered.findIndex((e) => e.node_id === effectiveSelectedId);
+      const newIndex = currentIndex + delta;
+      if (newIndex < 0 || newIndex >= filtered.length) return;
+      const target = filtered[newIndex];
+      setLocalSelectedId(target.node_id);
+      document.querySelector<HTMLElement>(`[data-testid="file-card-${target.node_id}"]`)?.focus();
+    },
+    [filtered, effectiveSelectedId],
+  );
+
+  useBrowseKeyboard(
+    {
+      move: handleMove,
+      action: () => {
+        const entry = filtered.find((e) => e.node_id === effectiveSelectedId);
+        if (entry) handleAction(entry);
+      },
+      open: () => {
+        const entry = filtered.find((e) => e.node_id === effectiveSelectedId);
+        if (entry) handleOpen(entry);
+      },
+      goParent: onGoParent ?? (() => {}),
+      focusTree: onFocusTree ?? (() => {}),
+      toggleMode: onToggleMode ?? (() => {}),
+      sortName: onSortName ?? (() => {}),
+      sortDate: onSortDate ?? (() => {}),
+      tabChange: onTabChange ?? (() => {}),
+      getColumnCount,
+    },
+    keyboardEnabled,
+  );
 
   // Escape で選択解除
   const handleKeyDown = (e: KeyboardEvent) => {
@@ -193,7 +252,10 @@ export function FileBrowser({
       )}
 
       {!isLoading && filtered.length > 0 && (
-        <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+        <div
+          ref={gridRef}
+          className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5"
+        >
           {filtered.map((entry, index) => (
             <FileCard
               key={entry.node_id}

@@ -33,6 +33,22 @@ export const CG_SHORTCUTS: ShortcutEntry[] = [
   { key: "?", description: "ヘルプ表示/非表示" },
 ];
 
+export const BROWSE_SHORTCUTS: ShortcutEntry[] = [
+  { key: "→ / D", description: "右のカードに移動" },
+  { key: "← / A", description: "左のカードに移動" },
+  { key: "↓ / S", description: "下の行に移動" },
+  { key: "↑ / W", description: "上の行に移動" },
+  { key: "G / Enter", description: "進入" },
+  { key: "Space", description: "ビューワーで開く" },
+  { key: "B", description: "親ディレクトリに戻る" },
+  { key: "T", description: "ツリー ↔ ブラウザー切替" },
+  { key: "M", description: "CG / マンガ切替" },
+  { key: "N", description: "名前ソート" },
+  { key: "U", description: "更新日ソート" },
+  { key: "1 / 2 / 3", description: "タブ切替" },
+  { key: "Esc", description: "選択解除" },
+];
+
 export const MANGA_SHORTCUTS: ShortcutEntry[] = [
   { key: "↑ / W", description: "上にスクロール" },
   { key: "↓ / S", description: "下にスクロール" },
