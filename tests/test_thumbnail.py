@@ -129,6 +129,21 @@ async def test_動画ファイルのサムネイルで422を返す(
     assert response.status_code == 422
 
 
+async def test_壊れた画像のアーカイブサムネイルで422を返す(
+    client: AsyncClient,
+    test_node_registry: NodeRegistry,
+    test_root: Path,
+) -> None:
+    # 画像拡張子だが無効なデータを含む ZIP
+    bad_zip = test_root / "bad_images.zip"
+    with zipfile.ZipFile(bad_zip, "w") as zf:
+        zf.writestr("broken.jpg", b"\xff\xd8\xff\xd9")  # SOI + EOI のみ
+    node_id = test_node_registry.register(bad_zip)
+
+    response = await client.get(f"/api/thumbnail/{node_id}")
+    assert response.status_code == 422
+
+
 async def test_サムネイルが300px以内にリサイズされている(
     client: AsyncClient,
     test_node_registry: NodeRegistry,
