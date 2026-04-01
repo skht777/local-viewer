@@ -1,5 +1,10 @@
-import { findNextSet, findPrevSet } from "../../src/hooks/useSetNavigation";
-import type { BrowseEntry } from "../../src/types/api";
+import {
+  findNextSet,
+  findPrevSet,
+  resolveTopLevelDir,
+  shouldConfirm,
+} from "../../src/hooks/useSetNavigation";
+import type { AncestorEntry, BrowseEntry } from "../../src/types/api";
 
 // セット間ジャンプのロジックは純粋関数としてテスト
 // 実際の API 呼び出し（再帰降下）はフック内で行うが、
@@ -85,6 +90,70 @@ describe("findNextSet", () => {
     ];
     const result = findNextSet(siblings, "unknown");
     expect(result?.node_id).toBe("d1");
+  });
+});
+
+function ancestor(id: string, name: string): AncestorEntry {
+  return { node_id: id, name };
+}
+
+describe("resolveTopLevelDir", () => {
+  test("ancestors が2要素以上なら ancestors[1] を返す", () => {
+    const ancestors = [ancestor("root", "Root"), ancestor("topA", "TopDirA"), ancestor("sub", "SubDir")];
+    const result = resolveTopLevelDir(ancestors, "sub", entry("archive", "a1"));
+    expect(result).toBe("topA");
+  });
+
+  test("ancestors が1要素なら探索ディレクトリ自体を返す", () => {
+    const ancestors = [ancestor("root", "Root")];
+    const result = resolveTopLevelDir(ancestors, "topA", entry("archive", "a1"));
+    expect(result).toBe("topA");
+  });
+
+  test("ancestors が空でエントリがディレクトリなら自身を返す", () => {
+    const result = resolveTopLevelDir([], "root", entry("directory", "topB"));
+    expect(result).toBe("topB");
+  });
+
+  test("ancestors が空でエントリがアーカイブなら null を返す", () => {
+    const result = resolveTopLevelDir([], "root", entry("archive", "rootFile"));
+    expect(result).toBeNull();
+  });
+
+  test("ancestors が空でエントリが PDF なら null を返す", () => {
+    const result = resolveTopLevelDir([], "root", entry("pdf", "rootPdf"));
+    expect(result).toBeNull();
+  });
+});
+
+describe("shouldConfirm", () => {
+  test("levelsUp が 2 以上なら確認あり", () => {
+    expect(shouldConfirm(2, "topA", "topB")).toBe(true);
+  });
+
+  test("levelsUp が 2 以上なら topDir が同じでも確認あり", () => {
+    expect(shouldConfirm(2, "topA", "topA")).toBe(true);
+  });
+
+  test("topDir が異なれば levelsUp が 0 でも確認あり", () => {
+    expect(shouldConfirm(0, "topA", "topB")).toBe(true);
+  });
+
+  test("topDir が null から non-null に変わると確認あり", () => {
+    expect(shouldConfirm(0, null, "topC")).toBe(true);
+  });
+
+  test("topDir が non-null から null に変わると確認あり", () => {
+    expect(shouldConfirm(1, "topC", null)).toBe(true);
+  });
+
+  test("topDir が同じなら確認なし", () => {
+    expect(shouldConfirm(0, "topA", "topA")).toBe(false);
+    expect(shouldConfirm(1, "topA", "topA")).toBe(false);
+  });
+
+  test("両方 null (ルート直下ファイル間) なら確認なし", () => {
+    expect(shouldConfirm(0, null, null)).toBe(false);
   });
 });
 
