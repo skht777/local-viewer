@@ -13,6 +13,7 @@ export interface BrowseEntry {
   mime_type: string | null;
   child_count: number | null;
   modified_at: number | null;
+  preview_node_ids: string[] | null;
 }
 
 export interface BrowseResponse {
