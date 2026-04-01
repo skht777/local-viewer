@@ -47,14 +47,18 @@ test.describe("URL SSOT", () => {
     await picturesMount.click();
     await expect(page).toHaveURL(/\/browse\//);
 
+    // 画像タブに切り替え → URL に tab=images が反映される
     const imagesTab = page.locator("[data-testid='tab-images']");
-    if (await imagesTab.isVisible()) {
-      await imagesTab.click();
-      await expect(page).toHaveURL(/tab=images/);
-    }
+    await expect(imagesTab).toBeVisible();
+    await imagesTab.click();
+    await expect(page).toHaveURL(/tab=images/);
 
+    // データロード完了を待ってからファイルセットタブを確認
+    await expect(page.locator("[data-testid^='file-card-']").first()).toBeVisible();
+
+    // ファイルセットタブが有効なら切り替え確認
     const filesetsTab = page.locator("[data-testid='tab-filesets']");
-    if (await filesetsTab.isVisible()) {
+    if (await filesetsTab.isEnabled()) {
       await filesetsTab.click();
       await expect(page).toHaveURL(/tab=filesets/);
     }
