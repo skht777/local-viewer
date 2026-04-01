@@ -218,3 +218,27 @@ class TestIndexEventHandler:
         d.mkdir()
         handler.on_created(DirCreatedEvent(str(d)))
         worker.enqueue.assert_called_once_with(str(d), "add")
+
+
+class TestFileWatcher:
+    """FileWatcher の起動制御."""
+
+    def test_二重startでエラーにならない(
+        self,
+        mock_indexer: MagicMock,
+        mock_path_security: MagicMock,
+        tmp_path: Path,
+    ) -> None:
+        from backend.services.file_watcher import FileWatcher
+
+        watcher = FileWatcher(
+            indexer=mock_indexer,
+            path_security=mock_path_security,
+            root_dir=tmp_path,
+        )
+        watcher.start()
+        assert watcher.is_running
+        # 2回目の start はエラーなく無視される
+        watcher.start()
+        assert watcher.is_running
+        watcher.stop()

@@ -234,9 +234,24 @@ class FileWatcher:
         # mypy: Observer は変数として扱われるため Any を使用
         self._observer: Observer | PollingObserver | None = None  # type: ignore[valid-type]
         self._workers: list[BatchFlushWorker] = []
+        self._start_lock = threading.Lock()
 
     def start(self) -> None:
-        """監視を開始する (Observer + BatchFlushWorker per mount)."""
+        """監視を開始する (Observer + BatchFlushWorker per mount).
+
+        複数スレッドから呼ばれても1回だけ起動する。
+        """
+        if not self._start_lock.acquire(blocking=False):
+            return
+        try:
+            if self.is_running:
+                return
+            self._start_unlocked()
+        finally:
+            self._start_lock.release()
+
+    def _start_unlocked(self) -> None:
+        """ロック取得済みの状態で監視を開始する."""
         if self._path_security is None:
             msg = "path_security が未設定です"
             raise RuntimeError(msg)
