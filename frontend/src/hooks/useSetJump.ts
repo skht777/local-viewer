@@ -1,6 +1,6 @@
 // セット間ジャンプの実行オーケストレーション
-// - findNextSet/findPrevSet（純粋関数）で同階層の次/前を探索
-// - 候補がなければ親ディレクトリの browse API を呼んで兄弟を走査
+// - 再帰的に親を辿りマウントルートまで兄弟セットを探索
+// - shouldConfirm で確認ダイアログの出し分け判定
 // - NavigationPrompt の状態管理を内包
 // - CgViewer / MangaViewer / PdfCgViewer / PdfMangaViewer から共通利用
 // - PDF の場合は ?pdf= 付き URL で遷移 (browse 422 回避)
@@ -9,9 +9,9 @@ import { useCallback, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { browseNodeOptions } from "./api/browseQueries";
-import { findNextSet, findPrevSet } from "./useSetNavigation";
+import { findNextSet, findPrevSet, resolveTopLevelDir, shouldConfirm } from "./useSetNavigation";
 import type { ViewerMode } from "./useViewerParams";
-import type { AncestorEntry, BrowseEntry } from "../types/api";
+import type { AncestorEntry, BrowseEntry, BrowseResponse } from "../types/api";
 
 interface UseSetJumpProps {
   currentNodeId: string | null;
@@ -27,6 +27,14 @@ interface Prompt {
   extraConfirmKeys?: string[];
 }
 
+// 再帰探索の結果
+interface SearchResult {
+  target: BrowseEntry;
+  levelsUp: number;
+  searchDirData: BrowseResponse;
+  sourceTopDir: string | null;
+}
+
 interface UseSetJumpReturn {
   goNextSet: () => void;
   goPrevSet: () => void;
@@ -36,9 +44,12 @@ interface UseSetJumpReturn {
   dismissPrompt: () => void;
 }
 
+const MAX_DEPTH = 10;
+
 export function useSetJump({
   currentNodeId,
   parentNodeId,
+  ancestors = [],
   mode,
 }: UseSetJumpProps): UseSetJumpReturn {
   const navigate = useNavigate();
@@ -48,71 +59,142 @@ export function useSetJump({
   const dismissPrompt = useCallback(() => setPrompt(null), []);
 
   // 遷移先の kind に応じた URL で遷移
-  // - PDF: 親ディレクトリに留まり ?pdf= 付きで PDF ビューワーを開く
+  // - PDF: ターゲットの親ディレクトリに留まり ?pdf= 付きで PDF ビューワーを開く
   // - ディレクトリ/アーカイブ: 従来通り browse
   const navigateToTarget = useCallback(
-    (target: BrowseEntry) => {
+    (target: BrowseEntry, targetParentNodeId: string | null) => {
       if (target.kind === "pdf") {
-        navigate(`/browse/${parentNodeId}?pdf=${target.node_id}&page=1&mode=${mode}`);
+        navigate(`/browse/${targetParentNodeId}?pdf=${target.node_id}&page=1&mode=${mode}`);
       } else {
         navigate(`/browse/${target.node_id}?tab=images&index=0&mode=${mode}`);
       }
     },
-    [navigate, parentNodeId, mode],
+    [navigate, mode],
   );
 
-  // 親の browse データから兄弟を検索
-  const findSibling = useCallback(
-    async (direction: "next" | "prev") => {
-      if (!parentNodeId || !currentNodeId) return null;
-      const parentData = await queryClient.fetchQuery(browseNodeOptions(parentNodeId));
+  // 再帰的に親を辿って兄弟セットを探索
+  const findSiblingRecursive = useCallback(
+    async (direction: "next" | "prev"): Promise<SearchResult | null> => {
+      let currentChildId = currentNodeId;
+      let currentParentId = parentNodeId;
+      let levelsUp = 0;
+      let sourceTopDir: string | null = null;
+      let isSourceResolved = false;
+      const visited = new Set<string>();
+
+      // parentNodeId が null の場合、ancestors[0] (マウントルート) を使用
+      if (!currentParentId) {
+        if (ancestors.length === 0 || !currentNodeId) return null;
+        currentParentId = ancestors[0].node_id;
+      }
+
       const finder = direction === "next" ? findNextSet : findPrevSet;
-      return finder(parentData.entries, currentNodeId);
+
+      while (currentParentId && levelsUp < MAX_DEPTH) {
+        if (visited.has(currentParentId)) break;
+        visited.add(currentParentId);
+
+        const parentData = await queryClient.fetchQuery(browseNodeOptions(currentParentId));
+        if (!currentChildId) break;
+
+        const sibling = finder(parentData.entries, currentChildId);
+
+        // ソースの topDir を level 0 で算出
+        if (!isSourceResolved) {
+          const sourceEntry = parentData.entries.find((e) => e.node_id === currentChildId);
+          if (sourceEntry) {
+            sourceTopDir = resolveTopLevelDir(
+              parentData.ancestors,
+              parentData.current_node_id,
+              sourceEntry,
+            );
+          }
+          isSourceResolved = true;
+        }
+
+        if (sibling) {
+          return { target: sibling, levelsUp, searchDirData: parentData, sourceTopDir };
+        }
+
+        // 兄弟なし → 上に登る
+        levelsUp++;
+        currentChildId = parentData.current_node_id;
+        currentParentId = parentData.parent_node_id;
+
+        // parent_node_id が null → ancestors から mount root を取得
+        if (!currentParentId && parentData.ancestors.length > 0) {
+          currentParentId = parentData.ancestors[0].node_id;
+        }
+      }
+
+      return null;
     },
-    [parentNodeId, currentNodeId, queryClient],
+    [currentNodeId, parentNodeId, ancestors, queryClient],
   );
 
-  // PageDown/X: 確認ダイアログ付きで次のセットへ
+  // PageDown/X: 条件付き確認で次のセットへ
   const goNextSet = useCallback(async () => {
-    const sibling = await findSibling("next");
-    if (!sibling) return;
-    setPrompt({
-      message: "次のディレクトリに移動しますか？",
-      onConfirm: () => {
-        setPrompt(null);
-        navigateToTarget(sibling);
-      },
-      onCancel: () => setPrompt(null),
-      extraConfirmKeys: ["x"],
-    });
-  }, [findSibling, navigateToTarget]);
+    const result = await findSiblingRecursive("next");
+    if (!result) return;
 
-  // PageUp/Z: 確認ダイアログ付きで前のセットへ
+    const targetTopDir = resolveTopLevelDir(
+      result.searchDirData.ancestors,
+      result.searchDirData.current_node_id,
+      result.target,
+    );
+
+    if (shouldConfirm(result.levelsUp, result.sourceTopDir, targetTopDir)) {
+      setPrompt({
+        message: "次のディレクトリに移動しますか？",
+        onConfirm: () => {
+          setPrompt(null);
+          navigateToTarget(result.target, result.searchDirData.current_node_id);
+        },
+        onCancel: () => setPrompt(null),
+        extraConfirmKeys: ["x"],
+      });
+    } else {
+      navigateToTarget(result.target, result.searchDirData.current_node_id);
+    }
+  }, [findSiblingRecursive, navigateToTarget]);
+
+  // PageUp/Z: 条件付き確認で前のセットへ
   const goPrevSet = useCallback(async () => {
-    const sibling = await findSibling("prev");
-    if (!sibling) return;
-    setPrompt({
-      message: "前のディレクトリに移動しますか？",
-      onConfirm: () => {
-        setPrompt(null);
-        navigateToTarget(sibling);
-      },
-      onCancel: () => setPrompt(null),
-      extraConfirmKeys: ["z"],
-    });
-  }, [findSibling, navigateToTarget]);
+    const result = await findSiblingRecursive("prev");
+    if (!result) return;
+
+    const targetTopDir = resolveTopLevelDir(
+      result.searchDirData.ancestors,
+      result.searchDirData.current_node_id,
+      result.target,
+    );
+
+    if (shouldConfirm(result.levelsUp, result.sourceTopDir, targetTopDir)) {
+      setPrompt({
+        message: "前のディレクトリに移動しますか？",
+        onConfirm: () => {
+          setPrompt(null);
+          navigateToTarget(result.target, result.searchDirData.current_node_id);
+        },
+        onCancel: () => setPrompt(null),
+        extraConfirmKeys: ["z"],
+      });
+    } else {
+      navigateToTarget(result.target, result.searchDirData.current_node_id);
+    }
+  }, [findSiblingRecursive, navigateToTarget]);
 
   // Shift+X: 確認なしで次のセットへ
   const goNextSetParent = useCallback(async () => {
-    const sibling = await findSibling("next");
-    if (sibling) navigateToTarget(sibling);
-  }, [findSibling, navigateToTarget]);
+    const result = await findSiblingRecursive("next");
+    if (result) navigateToTarget(result.target, result.searchDirData.current_node_id);
+  }, [findSiblingRecursive, navigateToTarget]);
 
   // Shift+Z: 確認なしで前のセットへ
   const goPrevSetParent = useCallback(async () => {
-    const sibling = await findSibling("prev");
-    if (sibling) navigateToTarget(sibling);
-  }, [findSibling, navigateToTarget]);
+    const result = await findSiblingRecursive("prev");
+    if (result) navigateToTarget(result.target, result.searchDirData.current_node_id);
+  }, [findSiblingRecursive, navigateToTarget]);
 
   return { goNextSet, goPrevSet, goNextSetParent, goPrevSetParent, prompt, dismissPrompt };
 }
