@@ -257,6 +257,7 @@ export default function BrowsePage() {
             ancestorNodeIds={ancestorNodeIds}
             onNavigate={(id) => navigate(`/browse/${id}${buildBrowseSearch()}`)}
             onFocusBrowser={handleFocusBrowser}
+            keyboardEnabled={focusArea === "tree"}
           />
         )}
         {params.tab === "videos" ? (
