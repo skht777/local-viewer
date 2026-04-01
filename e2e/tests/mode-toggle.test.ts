@@ -49,10 +49,10 @@ test.describe("モード切替トグル", () => {
     // マンガモードを選択
     await page.getByTestId("mode-toggle-manga").click();
 
-    // PDF をクリック
+    // PDF をダブルクリック
     const pdfCard = page.locator("[data-testid^='file-card-']", { hasText: "sample.pdf" });
     await expect(pdfCard).toBeVisible();
-    await pdfCard.click();
+    await pdfCard.dblclick();
 
     // PDF マンガビューワーが開く
     await expect(page.getByTestId("pdf-manga-viewer")).toBeVisible();

@@ -4,12 +4,12 @@
 import { expect } from "@playwright/test";
 import type { Page, Locator, APIRequestContext } from "@playwright/test";
 
-// ファイルカードをクリック
-// Playwright の click() は要素の安定性（位置が動かなくなるまで）を自動で待機する
-// サムネイル読み込みによるレイアウトシフトも安定性チェックで吸収される
+// ファイルカードをダブルクリックしてアクションを実行
+// C2: シングルクリック=選択、ダブルクリック=進入/ビューワー起動
+// Playwright の dblclick() は要素の安定性（位置が動かなくなるまで）を自動で待機する
 export async function clickFileCard(card: Locator) {
   await expect(card).toBeVisible();
-  await card.click();
+  await card.dblclick();
 }
 
 // マウントポイントに遷移してブラウズ画面を開く
@@ -59,10 +59,10 @@ export async function openMangaViewer(page: Page, mountName = "pictures") {
 export async function openPdfViewer(page: Page) {
   await navigateToMount(page, "docs");
 
-  // sample.pdf をクリック
+  // sample.pdf をダブルクリック
   const pdfCard = page.locator("[data-testid^='file-card-']", { hasText: "sample.pdf" });
   await expect(pdfCard).toBeVisible();
-  await pdfCard.click();
+  await pdfCard.dblclick();
 
   await expect(page.locator("[data-testid='pdf-cg-viewer']")).toBeVisible();
 }

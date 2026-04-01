@@ -20,7 +20,7 @@ test.describe("PDF ビューワー", () => {
       hasText: "sample.pdf",
     });
     await expect(pdfCard).toBeVisible();
-    await pdfCard.click();
+    await pdfCard.dblclick();
 
     // PDF ビューワーが開く
     const pdfViewer = page
@@ -49,7 +49,7 @@ test.describe("PDF ビューワー", () => {
       hasText: "sample.pdf",
     });
     await expect(pdfCard).toBeVisible();
-    await pdfCard.click();
+    await pdfCard.dblclick();
 
     await expect(page).toHaveURL(/page=\d+/);
   });
@@ -69,7 +69,7 @@ test.describe("PDF ビューワー", () => {
       hasText: "sample.pdf",
     });
     await expect(pdfCard).toBeVisible();
-    await pdfCard.click();
+    await pdfCard.dblclick();
 
     const counter = page.locator("[data-testid='page-counter']");
     await expect(counter).toBeVisible();

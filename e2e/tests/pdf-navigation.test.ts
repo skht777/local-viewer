@@ -49,7 +49,7 @@ test.describe("PDF ナビゲーション — P2", () => {
 
     const pdfCard = page.locator("[data-testid^='file-card-']", { hasText: "sample.pdf" });
     await expect(pdfCard).toBeVisible();
-    await pdfCard.click();
+    await pdfCard.dblclick();
     await expect(page.getByTestId("pdf-manga-viewer")).toBeVisible();
 
     // Escape で閉じる
