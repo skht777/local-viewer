@@ -3,6 +3,11 @@ import userEvent from "@testing-library/user-event";
 import { FileBrowser } from "../../src/components/FileBrowser";
 import type { BrowseEntry } from "../../src/types/api";
 
+vi.mock("../../src/lib/pdfjs", () => ({
+  getDocument: vi.fn(),
+  GlobalWorkerOptions: { workerSrc: "" },
+}));
+
 const mockEntries: BrowseEntry[] = [
   {
     node_id: "dir1",
@@ -11,7 +16,7 @@ const mockEntries: BrowseEntry[] = [
     size_bytes: null,
     mime_type: null,
     child_count: 10,
-    modified_at: 1700000000,
+    modified_at: 1700000000, preview_node_ids: null,
   },
   {
     node_id: "file1",
@@ -20,7 +25,7 @@ const mockEntries: BrowseEntry[] = [
     size_bytes: 2048,
     mime_type: "image/jpeg",
     child_count: null,
-    modified_at: 1700000100,
+    modified_at: 1700000100, preview_node_ids: null,
   },
   {
     node_id: "file2",
@@ -29,7 +34,7 @@ const mockEntries: BrowseEntry[] = [
     size_bytes: 10240,
     mime_type: "video/mp4",
     child_count: null,
-    modified_at: 1700000200,
+    modified_at: 1700000200, preview_node_ids: null,
   },
   {
     node_id: "file3",
@@ -38,7 +43,7 @@ const mockEntries: BrowseEntry[] = [
     size_bytes: 4096,
     mime_type: "application/pdf",
     child_count: null,
-    modified_at: 1700000300,
+    modified_at: 1700000300, preview_node_ids: null,
   },
 ];
 
@@ -95,9 +100,9 @@ describe("FileBrowser", () => {
 
   test("filesetsタブでarchive/PDFがディレクトリより先に表示される", () => {
     const entries: BrowseEntry[] = [
-      { node_id: "d1", name: "aaa_dir", kind: "directory", size_bytes: null, mime_type: null, child_count: 5, modified_at: 1700000000 },
-      { node_id: "a1", name: "bbb.zip", kind: "archive", size_bytes: 500, mime_type: "application/zip", child_count: null, modified_at: 1700000100 },
-      { node_id: "p1", name: "ccc.pdf", kind: "pdf", size_bytes: 300, mime_type: "application/pdf", child_count: null, modified_at: 1700000200 },
+      { node_id: "d1", name: "aaa_dir", kind: "directory", size_bytes: null, mime_type: null, child_count: 5, modified_at: 1700000000, preview_node_ids: null },
+      { node_id: "a1", name: "bbb.zip", kind: "archive", size_bytes: 500, mime_type: "application/zip", child_count: null, modified_at: 1700000100, preview_node_ids: null },
+      { node_id: "p1", name: "ccc.pdf", kind: "pdf", size_bytes: 300, mime_type: "application/pdf", child_count: null, modified_at: 1700000200, preview_node_ids: null },
     ];
     render(
       <FileBrowser entries={entries} isLoading={false} onNavigate={() => {}} tab="filesets" sort="name-asc" />,
@@ -132,9 +137,9 @@ describe("FileBrowser", () => {
 
   test("画像ダブルクリック時に onImageClick がフィルタ済みインデックスで呼ばれる", async () => {
     const entries: BrowseEntry[] = [
-      { node_id: "d1", name: "dir", kind: "directory", size_bytes: null, mime_type: null, child_count: 5, modified_at: 1700000000 },
-      { node_id: "i1", name: "a.jpg", kind: "image", size_bytes: 100, mime_type: "image/jpeg", child_count: null, modified_at: 1700000100 },
-      { node_id: "i2", name: "b.jpg", kind: "image", size_bytes: 200, mime_type: "image/jpeg", child_count: null, modified_at: 1700000200 },
+      { node_id: "d1", name: "dir", kind: "directory", size_bytes: null, mime_type: null, child_count: 5, modified_at: 1700000000, preview_node_ids: null },
+      { node_id: "i1", name: "a.jpg", kind: "image", size_bytes: 100, mime_type: "image/jpeg", child_count: null, modified_at: 1700000100, preview_node_ids: null },
+      { node_id: "i2", name: "b.jpg", kind: "image", size_bytes: 200, mime_type: "image/jpeg", child_count: null, modified_at: 1700000200, preview_node_ids: null },
     ];
     const onImageClick = vi.fn();
     render(
@@ -149,9 +154,9 @@ describe("FileBrowser", () => {
 
   test("sort=date-descで更新日時の降順にソートされる", () => {
     const entries: BrowseEntry[] = [
-      { node_id: "i1", name: "old.jpg", kind: "image", size_bytes: 100, mime_type: "image/jpeg", child_count: null, modified_at: 1000 },
-      { node_id: "i2", name: "new.jpg", kind: "image", size_bytes: 100, mime_type: "image/jpeg", child_count: null, modified_at: 3000 },
-      { node_id: "i3", name: "mid.jpg", kind: "image", size_bytes: 100, mime_type: "image/jpeg", child_count: null, modified_at: 2000 },
+      { node_id: "i1", name: "old.jpg", kind: "image", size_bytes: 100, mime_type: "image/jpeg", child_count: null, modified_at: 1000, preview_node_ids: null },
+      { node_id: "i2", name: "new.jpg", kind: "image", size_bytes: 100, mime_type: "image/jpeg", child_count: null, modified_at: 3000, preview_node_ids: null },
+      { node_id: "i3", name: "mid.jpg", kind: "image", size_bytes: 100, mime_type: "image/jpeg", child_count: null, modified_at: 2000, preview_node_ids: null },
     ];
     render(
       <FileBrowser entries={entries} isLoading={false} onNavigate={() => {}} tab="images" sort="date-desc" />,
@@ -165,8 +170,8 @@ describe("FileBrowser", () => {
 
   test("sort=date-ascで更新日時の昇順にソートされる", () => {
     const entries: BrowseEntry[] = [
-      { node_id: "i1", name: "new.jpg", kind: "image", size_bytes: 100, mime_type: "image/jpeg", child_count: null, modified_at: 3000 },
-      { node_id: "i2", name: "old.jpg", kind: "image", size_bytes: 100, mime_type: "image/jpeg", child_count: null, modified_at: 1000 },
+      { node_id: "i1", name: "new.jpg", kind: "image", size_bytes: 100, mime_type: "image/jpeg", child_count: null, modified_at: 3000, preview_node_ids: null },
+      { node_id: "i2", name: "old.jpg", kind: "image", size_bytes: 100, mime_type: "image/jpeg", child_count: null, modified_at: 1000, preview_node_ids: null },
     ];
     render(
       <FileBrowser entries={entries} isLoading={false} onNavigate={() => {}} tab="images" sort="date-asc" />,
@@ -178,8 +183,8 @@ describe("FileBrowser", () => {
 
   test("sort=name-descで名前の降順にソートされる", () => {
     const entries: BrowseEntry[] = [
-      { node_id: "i1", name: "alpha.jpg", kind: "image", size_bytes: 100, mime_type: "image/jpeg", child_count: null, modified_at: 1000 },
-      { node_id: "i2", name: "beta.jpg", kind: "image", size_bytes: 100, mime_type: "image/jpeg", child_count: null, modified_at: 2000 },
+      { node_id: "i1", name: "alpha.jpg", kind: "image", size_bytes: 100, mime_type: "image/jpeg", child_count: null, modified_at: 1000, preview_node_ids: null },
+      { node_id: "i2", name: "beta.jpg", kind: "image", size_bytes: 100, mime_type: "image/jpeg", child_count: null, modified_at: 2000, preview_node_ids: null },
     ];
     render(
       <FileBrowser entries={entries} isLoading={false} onNavigate={() => {}} tab="images" sort="name-desc" />,
@@ -191,8 +196,8 @@ describe("FileBrowser", () => {
 
   test("sort=name-ascでディレクトリ優先の名前順が維持される", () => {
     const entries: BrowseEntry[] = [
-      { node_id: "f1", name: "aaa.pdf", kind: "pdf", size_bytes: 100, mime_type: "application/pdf", child_count: null, modified_at: 1000 },
-      { node_id: "d1", name: "bbb_dir", kind: "directory", size_bytes: null, mime_type: null, child_count: 5, modified_at: 2000 },
+      { node_id: "f1", name: "aaa.pdf", kind: "pdf", size_bytes: 100, mime_type: "application/pdf", child_count: null, modified_at: 1000, preview_node_ids: null },
+      { node_id: "d1", name: "bbb_dir", kind: "directory", size_bytes: null, mime_type: null, child_count: 5, modified_at: 2000, preview_node_ids: null },
     ];
     render(
       <FileBrowser entries={entries} isLoading={false} onNavigate={() => {}} tab="filesets" sort="name-asc" />,
@@ -226,8 +231,8 @@ describe("FileBrowser", () => {
 
   test("sort=date-descでmodified_atがnullのエントリが最後になる", () => {
     const entries: BrowseEntry[] = [
-      { node_id: "i1", name: "no-date.jpg", kind: "image", size_bytes: 100, mime_type: "image/jpeg", child_count: null, modified_at: null },
-      { node_id: "i2", name: "has-date.jpg", kind: "image", size_bytes: 100, mime_type: "image/jpeg", child_count: null, modified_at: 1000 },
+      { node_id: "i1", name: "no-date.jpg", kind: "image", size_bytes: 100, mime_type: "image/jpeg", child_count: null, modified_at: null, preview_node_ids: null },
+      { node_id: "i2", name: "has-date.jpg", kind: "image", size_bytes: 100, mime_type: "image/jpeg", child_count: null, modified_at: 1000, preview_node_ids: null },
     ];
     render(
       <FileBrowser entries={entries} isLoading={false} onNavigate={() => {}} tab="images" sort="date-desc" />,
@@ -309,7 +314,7 @@ describe("FileBrowser 選択・ダブルクリック・オーバーレイ", () =
 
   test("アーカイブの開くボタンでonOpenViewerが呼ばれる", async () => {
     const entries: BrowseEntry[] = [
-      { node_id: "a1", name: "photos.zip", kind: "archive", size_bytes: 500, mime_type: "application/zip", child_count: null, modified_at: 1700000000 },
+      { node_id: "a1", name: "photos.zip", kind: "archive", size_bytes: 500, mime_type: "application/zip", child_count: null, modified_at: 1700000000, preview_node_ids: null },
     ];
     const onOpenViewer = vi.fn();
     render(

@@ -3,6 +3,11 @@ import userEvent from "@testing-library/user-event";
 import { FileCard } from "../../src/components/FileCard";
 import type { BrowseEntry } from "../../src/types/api";
 
+vi.mock("../../src/lib/pdfjs", () => ({
+  getDocument: vi.fn(),
+  GlobalWorkerOptions: { workerSrc: "" },
+}));
+
 const imageEntry: BrowseEntry = {
   node_id: "img001",
   name: "photo.jpg",
@@ -11,6 +16,7 @@ const imageEntry: BrowseEntry = {
   mime_type: "image/jpeg",
   child_count: null,
   modified_at: null,
+  preview_node_ids: null,
 };
 
 const dirEntry: BrowseEntry = {
@@ -21,6 +27,7 @@ const dirEntry: BrowseEntry = {
   mime_type: null,
   child_count: 5,
   modified_at: null,
+  preview_node_ids: null,
 };
 
 // 既存テスト用ヘルパー（旧 onClick → 新 onSelect/onDoubleClick）
@@ -67,6 +74,7 @@ const archiveEntry: BrowseEntry = {
   mime_type: "application/zip",
   child_count: null,
   modified_at: null,
+  preview_node_ids: null,
 };
 
 const pdfEntry: BrowseEntry = {
@@ -77,6 +85,7 @@ const pdfEntry: BrowseEntry = {
   mime_type: "application/pdf",
   child_count: null,
   modified_at: null,
+  preview_node_ids: null,
 };
 
 describe("FileCard 選択・ダブルクリック・オーバーレイ", () => {
@@ -226,5 +235,47 @@ describe("FileCard 選択・ダブルクリック・オーバーレイ", () => {
     screen.getByTestId("file-card-dir001").focus();
     await userEvent.keyboard(" ");
     expect(onSelect).toHaveBeenCalledWith(dirEntry);
+  });
+});
+
+// --- A4: プレビューサムネイル表示テスト ---
+
+const dirWithPreview: BrowseEntry = {
+  ...dirEntry,
+  node_id: "dir_prev",
+  preview_node_ids: ["prev1", "prev2"],
+};
+
+describe("FileCard プレビュー表示", () => {
+  test("ディレクトリでpreview_node_idsがある場合プレビューが表示される", () => {
+    const { container } = render(
+      <FileCard entry={dirWithPreview} onSelect={noop} onDoubleClick={noop} />,
+    );
+    // PreviewGrid が表示され、サムネイル画像が存在する
+    const imgs = container.querySelectorAll("img");
+    expect(imgs.length).toBeGreaterThanOrEqual(1);
+    expect(imgs[0]).toHaveAttribute("src", "/api/thumbnail/prev1");
+  });
+
+  test("アーカイブでサムネイルプレビューが表示される", () => {
+    const { container } = render(
+      <FileCard entry={archiveEntry} onSelect={noop} onDoubleClick={noop} />,
+    );
+    const imgs = container.querySelectorAll("img");
+    expect(imgs).toHaveLength(1);
+    expect(imgs[0]).toHaveAttribute("src", "/api/thumbnail/arc001");
+  });
+
+  test("preview_node_idsがnullの場合絵文字が表示される", () => {
+    render(<FileCard entry={dirEntry} onSelect={noop} onDoubleClick={noop} />);
+    // img タグがなく、テキストコンテンツにフォルダ名が表示される
+    expect(screen.queryByRole("img")).not.toBeInTheDocument();
+    expect(screen.getByText("folder")).toBeInTheDocument();
+  });
+
+  test("画像エントリは従来どおりフルサイズプレビューが表示される", () => {
+    render(<FileCard entry={imageEntry} onSelect={noop} onDoubleClick={noop} />);
+    const img = screen.getByRole("img");
+    expect(img).toHaveAttribute("src", "/api/file/img001");
   });
 });

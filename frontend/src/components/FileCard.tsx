@@ -2,12 +2,17 @@
 // - シングルクリック: 選択（onSelect）
 // - ダブルクリック: アクション実行（onDoubleClick）
 // - 選択時: アクションオーバーレイを表示（▶ 開く / → 進入）
-// - kind === "image" の場合は /api/file/{node_id} で実画像プレビュー
+// - kind === "image": /api/file/{node_id} で実画像プレビュー
+// - kind === "directory" + preview_node_ids: PreviewGrid でサムネイル表示
+// - kind === "archive": /api/thumbnail/{node_id} でサムネイル表示
+// - kind === "pdf": usePdfThumbnail で先頭ページサムネイル表示
 
 import type { KeyboardEvent, Ref } from "react";
 import { useState } from "react";
+import { usePdfThumbnail } from "../hooks/usePdfThumbnail";
 import type { BrowseEntry } from "../types/api";
 import { formatFileSize } from "../utils/format";
+import { PreviewGrid } from "./PreviewGrid";
 
 interface FileCardProps {
   entry: BrowseEntry;
@@ -47,7 +52,22 @@ export function FileCard({
   ref,
 }: FileCardProps) {
   const [hasImageError, setHasImageError] = useState(false);
+  const [hasPreviewError, setHasPreviewError] = useState(false);
   const isImagePreview = entry.kind === "image" && !hasImageError;
+
+  // ディレクトリ: preview_node_ids があればサムネイルグリッド表示
+  const hasDirectoryPreview =
+    entry.kind === "directory" &&
+    entry.preview_node_ids != null &&
+    entry.preview_node_ids.length > 0 &&
+    !hasPreviewError;
+
+  // アーカイブ: /api/thumbnail/{node_id} でサムネイル表示
+  const hasArchivePreview = entry.kind === "archive" && !hasPreviewError;
+
+  // PDF: pdfjs-dist で先頭ページをサムネイル表示
+  const pdfThumbnail = usePdfThumbnail(entry.node_id, entry.kind === "pdf" && !hasPreviewError);
+  const hasPdfPreview = entry.kind === "pdf" && pdfThumbnail.url != null && !hasPreviewError;
 
   // Enter: アクション実行（進入/ビューワー起動）
   // Space: ビューワーで開く（onOpen があれば優先、なければ onSelect にフォールバック）
@@ -82,6 +102,27 @@ export function FileCard({
             loading="lazy"
             decoding="async"
             onError={() => setHasImageError(true)}
+          />
+        ) : hasDirectoryPreview ? (
+          <PreviewGrid
+            previewNodeIds={entry.preview_node_ids!}
+            onAllError={() => setHasPreviewError(true)}
+          />
+        ) : hasArchivePreview ? (
+          <img
+            src={`/api/thumbnail/${entry.node_id}`}
+            alt={entry.name}
+            className="h-full w-full object-cover"
+            loading="lazy"
+            decoding="async"
+            onError={() => setHasPreviewError(true)}
+          />
+        ) : hasPdfPreview ? (
+          <img
+            src={pdfThumbnail.url!}
+            alt={entry.name}
+            className="h-full w-full object-cover"
+            decoding="async"
           />
         ) : (
           kindIcon(entry.kind)
