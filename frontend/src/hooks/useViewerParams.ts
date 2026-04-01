@@ -176,7 +176,7 @@ export function useViewerParams(): UseViewerParamsReturn {
 
   // browse スコープのパラメータを維持し、viewer スコープだけ除外した search 文字列を返す
   // ディレクトリ遷移時に mode/tab を引き継ぐために使用
-  const buildBrowseSearch = (overrides?: { tab?: string }): string => {
+  const buildBrowseSearch = (overrides?: { tab?: string; index?: number }): string => {
     const next = new URLSearchParams();
     const currentMode = searchParams.get("mode");
     if (currentMode === "manga") next.set("mode", "manga");
@@ -186,6 +186,7 @@ export function useViewerParams(): UseViewerParamsReturn {
     if (currentSort && VALID_SORT_ORDERS.has(currentSort) && currentSort !== "name-asc") {
       next.set("sort", currentSort);
     }
+    if (overrides?.index != null) next.set("index", String(overrides.index));
     return next.toString() ? `?${next}` : "";
   };
 

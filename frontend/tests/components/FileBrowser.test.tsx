@@ -103,8 +103,8 @@ describe("FileBrowser", () => {
       <FileBrowser entries={entries} isLoading={false} onNavigate={() => {}} tab="filesets" sort="name-asc" />,
     );
     // DOM 上の順序: archive/PDF が先、directory が後
-    const buttons = screen.getAllByRole("button");
-    const names = buttons.map((b) => b.textContent);
+    const cards = screen.getAllByTestId(/^file-card-/);
+    const names = cards.map((c) => c.textContent);
     const zipIdx = names.findIndex((n) => n?.includes("bbb.zip"));
     const pdfIdx = names.findIndex((n) => n?.includes("ccc.pdf"));
     const dirIdx = names.findIndex((n) => n?.includes("aaa_dir"));
@@ -130,7 +130,7 @@ describe("FileBrowser", () => {
     expect(document.activeElement).toBe(document.body);
   });
 
-  test("画像クリック時に onImageClick がフィルタ済みインデックスで呼ばれる", async () => {
+  test("画像ダブルクリック時に onImageClick がフィルタ済みインデックスで呼ばれる", async () => {
     const entries: BrowseEntry[] = [
       { node_id: "d1", name: "dir", kind: "directory", size_bytes: null, mime_type: null, child_count: 5, modified_at: 1700000000 },
       { node_id: "i1", name: "a.jpg", kind: "image", size_bytes: 100, mime_type: "image/jpeg", child_count: null, modified_at: 1700000100 },
@@ -140,8 +140,8 @@ describe("FileBrowser", () => {
     render(
       <FileBrowser entries={entries} isLoading={false} onNavigate={() => {}} onImageClick={onImageClick} tab="images" sort="name-asc" />,
     );
-    // 2番目の画像 (b.jpg) をクリック → フィルタ済み画像配列での index=1
-    await userEvent.click(screen.getByText("b.jpg"));
+    // 2番目の画像 (b.jpg) をダブルクリック → フィルタ済み画像配列での index=1
+    await userEvent.dblClick(screen.getByText("b.jpg"));
     expect(onImageClick).toHaveBeenCalledWith(1);
   });
 
@@ -156,8 +156,8 @@ describe("FileBrowser", () => {
     render(
       <FileBrowser entries={entries} isLoading={false} onNavigate={() => {}} tab="images" sort="date-desc" />,
     );
-    const buttons = screen.getAllByRole("button");
-    const names = buttons.map((b) => b.textContent);
+    const cards = screen.getAllByTestId(/^file-card-/);
+    const names = cards.map((c) => c.textContent);
     expect(names[0]).toContain("new.jpg");
     expect(names[1]).toContain("mid.jpg");
     expect(names[2]).toContain("old.jpg");
@@ -171,9 +171,9 @@ describe("FileBrowser", () => {
     render(
       <FileBrowser entries={entries} isLoading={false} onNavigate={() => {}} tab="images" sort="date-asc" />,
     );
-    const buttons = screen.getAllByRole("button");
-    expect(buttons[0].textContent).toContain("old.jpg");
-    expect(buttons[1].textContent).toContain("new.jpg");
+    const cards = screen.getAllByTestId(/^file-card-/);
+    expect(cards[0].textContent).toContain("old.jpg");
+    expect(cards[1].textContent).toContain("new.jpg");
   });
 
   test("sort=name-descで名前の降順にソートされる", () => {
@@ -184,9 +184,9 @@ describe("FileBrowser", () => {
     render(
       <FileBrowser entries={entries} isLoading={false} onNavigate={() => {}} tab="images" sort="name-desc" />,
     );
-    const buttons = screen.getAllByRole("button");
-    expect(buttons[0].textContent).toContain("beta.jpg");
-    expect(buttons[1].textContent).toContain("alpha.jpg");
+    const cards = screen.getAllByTestId(/^file-card-/);
+    expect(cards[0].textContent).toContain("beta.jpg");
+    expect(cards[1].textContent).toContain("alpha.jpg");
   });
 
   test("sort=name-ascでディレクトリ優先の名前順が維持される", () => {
@@ -197,8 +197,8 @@ describe("FileBrowser", () => {
     render(
       <FileBrowser entries={entries} isLoading={false} onNavigate={() => {}} tab="filesets" sort="name-asc" />,
     );
-    const buttons = screen.getAllByRole("button");
-    const names = buttons.map((b) => b.textContent);
+    const cards = screen.getAllByTestId(/^file-card-/);
+    const names = cards.map((c) => c.textContent);
     // filesets タブ: archive/PDF 優先 → directory 後（既存動作維持）
     const pdfIdx = names.findIndex((n) => n?.includes("aaa.pdf"));
     const dirIdx = names.findIndex((n) => n?.includes("bbb_dir"));
@@ -232,9 +232,9 @@ describe("FileBrowser", () => {
     render(
       <FileBrowser entries={entries} isLoading={false} onNavigate={() => {}} tab="images" sort="date-desc" />,
     );
-    const buttons = screen.getAllByRole("button");
-    expect(buttons[0].textContent).toContain("has-date.jpg");
-    expect(buttons[1].textContent).toContain("no-date.jpg");
+    const cards = screen.getAllByTestId(/^file-card-/);
+    expect(cards[0].textContent).toContain("has-date.jpg");
+    expect(cards[1].textContent).toContain("no-date.jpg");
   });
 });
 

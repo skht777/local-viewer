@@ -220,6 +220,9 @@ export default function BrowsePage() {
             }}
             onImageClick={openViewer}
             onPdfClick={openPdfViewer}
+            onOpenViewer={(id) => {
+              navigate(`/browse/${id}${buildBrowseSearch({ tab: "images", index: 0 })}`);
+            }}
             tab={params.tab}
             sort={params.sort}
             selectedNodeId={selectedNodeId}

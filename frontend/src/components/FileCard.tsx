@@ -1,6 +1,8 @@
 // ファイル/フォルダ1件を表示するカード
+// - シングルクリック: 選択（onSelect）
+// - ダブルクリック: アクション実行（onDoubleClick）
+// - 選択時: アクションオーバーレイを表示（▶ 開く / → 進入）
 // - kind === "image" の場合は /api/file/{node_id} で実画像プレビュー
-// - その他の kind はアイコン表示
 
 import type { KeyboardEvent, Ref } from "react";
 import { useState } from "react";
@@ -9,7 +11,10 @@ import { formatFileSize } from "../utils/format";
 
 interface FileCardProps {
   entry: BrowseEntry;
-  onClick: (entry: BrowseEntry) => void;
+  onSelect: (entry: BrowseEntry) => void;
+  onDoubleClick: (entry: BrowseEntry) => void;
+  onOpen?: (entry: BrowseEntry) => void;
+  onEnter?: (entry: BrowseEntry) => void;
   isSelected?: boolean;
   ref?: Ref<HTMLDivElement>;
 }
@@ -32,15 +37,26 @@ function kindIcon(kind: BrowseEntry["kind"]): string {
   }
 }
 
-export function FileCard({ entry, onClick, isSelected, ref }: FileCardProps) {
+export function FileCard({
+  entry,
+  onSelect,
+  onDoubleClick,
+  onOpen,
+  onEnter,
+  isSelected,
+  ref,
+}: FileCardProps) {
   const [hasImageError, setHasImageError] = useState(false);
   const isImagePreview = entry.kind === "image" && !hasImageError;
 
-  // native button の Enter/Space 動作を再現
+  // Enter: アクション実行、Space: 選択
   const handleKeyDown = (e: KeyboardEvent) => {
-    if (e.key === "Enter" || e.key === " ") {
+    if (e.key === "Enter") {
       e.preventDefault();
-      onClick(entry);
+      onDoubleClick(entry);
+    } else if (e.key === " ") {
+      e.preventDefault();
+      onSelect(entry);
     }
   };
 
@@ -51,11 +67,12 @@ export function FileCard({ entry, onClick, isSelected, ref }: FileCardProps) {
       tabIndex={0}
       data-testid={`file-card-${entry.node_id}`}
       aria-current={isSelected ? "true" : undefined}
-      onClick={() => onClick(entry)}
+      onClick={() => onSelect(entry)}
+      onDoubleClick={() => onDoubleClick(entry)}
       onKeyDown={handleKeyDown}
       className={`flex cursor-pointer flex-col overflow-hidden rounded-lg transition-all duration-150 ${isSelected ? "bg-blue-600/30 ring-2 ring-blue-500" : "bg-surface-card ring-1 ring-white/5 hover:bg-surface-raised hover:scale-[1.02]"}`}
     >
-      <div className="flex aspect-square items-center justify-center bg-surface-raised text-4xl">
+      <div className="relative flex aspect-square items-center justify-center bg-surface-raised text-4xl">
         {isImagePreview ? (
           <img
             src={`/api/file/${entry.node_id}`}
@@ -67,6 +84,35 @@ export function FileCard({ entry, onClick, isSelected, ref }: FileCardProps) {
           />
         ) : (
           kindIcon(entry.kind)
+        )}
+        {isSelected && (onOpen || onEnter) && (
+          <div
+            data-testid={`action-overlay-${entry.node_id}`}
+            className="absolute inset-x-0 bottom-0 flex justify-center gap-2 bg-black/70 p-2 backdrop-blur-sm"
+            onClick={(e) => e.stopPropagation()}
+            onDoubleClick={(e) => e.stopPropagation()}
+          >
+            {onOpen && (
+              <button
+                type="button"
+                data-testid={`action-open-${entry.node_id}`}
+                onClick={() => onOpen(entry)}
+                className="rounded bg-blue-600 px-3 py-1 text-sm text-white hover:bg-blue-500"
+              >
+                ▶ 開く
+              </button>
+            )}
+            {onEnter && (
+              <button
+                type="button"
+                data-testid={`action-enter-${entry.node_id}`}
+                onClick={() => onEnter(entry)}
+                className="rounded bg-surface-raised px-3 py-1 text-sm text-white ring-1 ring-white/10 hover:bg-surface-overlay"
+              >
+                → 進入
+              </button>
+            )}
+          </div>
         )}
       </div>
       <div className="p-2">

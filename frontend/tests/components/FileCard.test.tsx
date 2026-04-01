@@ -23,34 +23,37 @@ const dirEntry: BrowseEntry = {
   modified_at: null,
 };
 
+// 既存テスト用ヘルパー（旧 onClick → 新 onSelect/onDoubleClick）
+const noop = () => {};
+
 describe("FileCard", () => {
   test("画像エントリでimgタグが表示される", () => {
-    render(<FileCard entry={imageEntry} onClick={() => {}} />);
+    render(<FileCard entry={imageEntry} onSelect={noop} onDoubleClick={noop} />);
     const img = screen.getByRole("img");
     expect(img).toHaveAttribute("src", "/api/file/img001");
   });
 
   test("ディレクトリエントリでアイコンが表示される", () => {
-    render(<FileCard entry={dirEntry} onClick={() => {}} />);
+    render(<FileCard entry={dirEntry} onSelect={noop} onDoubleClick={noop} />);
     expect(screen.queryByRole("img")).not.toBeInTheDocument();
     expect(screen.getByText("folder")).toBeInTheDocument();
   });
 
   test("ファイルサイズが表示される", () => {
-    render(<FileCard entry={imageEntry} onClick={() => {}} />);
+    render(<FileCard entry={imageEntry} onSelect={noop} onDoubleClick={noop} />);
     expect(screen.getByText("2.0 KB")).toBeInTheDocument();
   });
 
   test("isSelected=true で aria-current='true' が設定される", () => {
-    render(<FileCard entry={imageEntry} onClick={() => {}} isSelected />);
-    const button = screen.getByTestId("file-card-img001");
-    expect(button).toHaveAttribute("aria-current", "true");
+    render(<FileCard entry={imageEntry} onSelect={noop} onDoubleClick={noop} isSelected />);
+    const card = screen.getByTestId("file-card-img001");
+    expect(card).toHaveAttribute("aria-current", "true");
   });
 
   test("isSelected=false で aria-current が設定されない", () => {
-    render(<FileCard entry={imageEntry} onClick={() => {}} />);
-    const button = screen.getByTestId("file-card-img001");
-    expect(button).not.toHaveAttribute("aria-current");
+    render(<FileCard entry={imageEntry} onSelect={noop} onDoubleClick={noop} />);
+    const card = screen.getByTestId("file-card-img001");
+    expect(card).not.toHaveAttribute("aria-current");
   });
 });
 
@@ -198,7 +201,7 @@ describe("FileCard 選択・ダブルクリック・オーバーレイ", () => {
   test("Enterキーでダブルクリックと同じ動作になる", async () => {
     const onDoubleClick = vi.fn();
     render(
-      <FileCard entry={dirEntry} onSelect={() => {}} onDoubleClick={onDoubleClick} onClick={() => {}} />,
+      <FileCard entry={dirEntry} onSelect={() => {}} onDoubleClick={onDoubleClick} />,
     );
     screen.getByTestId("file-card-dir001").focus();
     await userEvent.keyboard("{Enter}");
@@ -208,7 +211,7 @@ describe("FileCard 選択・ダブルクリック・オーバーレイ", () => {
   test("Spaceキーで選択と同じ動作になる", async () => {
     const onSelect = vi.fn();
     render(
-      <FileCard entry={dirEntry} onSelect={onSelect} onDoubleClick={() => {}} onClick={() => {}} />,
+      <FileCard entry={dirEntry} onSelect={onSelect} onDoubleClick={() => {}} />,
     );
     screen.getByTestId("file-card-dir001").focus();
     await userEvent.keyboard(" ");

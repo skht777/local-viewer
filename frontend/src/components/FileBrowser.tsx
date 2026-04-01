@@ -1,11 +1,11 @@
 // ファイル一覧をサムネイルグリッドで表示するメインエリア
+// - シングルクリック: カード選択（ハイライト + オーバーレイ表示）
+// - ダブルクリック: アクション実行（進入/ビューワー起動）
 // - sort に応じてエントリをソート（name-asc/desc, date-asc/desc）
 // - tab に応じてエントリをフィルタ
-// - filesets: ディレクトリ/アーカイブ/PDF
-// - images: 画像のみ
-// - videos: 動画のみ
 
-import { useEffect, useRef } from "react";
+import type { KeyboardEvent } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { SortOrder, ViewerTab } from "../hooks/useViewerParams";
 import type { BrowseEntry } from "../types/api";
 import { FileCard } from "./FileCard";
@@ -16,6 +16,7 @@ interface FileBrowserProps {
   onNavigate: (nodeId: string, options?: { tab?: ViewerTab }) => void;
   onImageClick?: (imageIndex: number) => void;
   onPdfClick?: (nodeId: string) => void;
+  onOpenViewer?: (nodeId: string) => void;
   tab: ViewerTab;
   sort: SortOrder;
   selectedNodeId?: string;
@@ -76,6 +77,7 @@ export function FileBrowser({
   onNavigate,
   onImageClick,
   onPdfClick,
+  onOpenViewer,
   tab,
   sort,
   selectedNodeId,
@@ -86,7 +88,15 @@ export function FileBrowser({
   // エントリ変更時（ナビゲーション・タブ切替）に先頭カードへ focus
   const firstCardRef = useRef<HTMLDivElement>(null);
   const firstEntryId = filtered[0]?.node_id ?? null;
-  const effectiveSelectedId = selectedNodeId ?? firstEntryId;
+
+  // ローカル選択状態（クリック選択が優先、なければ URL ?select= or 先頭カード）
+  const [localSelectedId, setLocalSelectedId] = useState<string | null>(null);
+  const effectiveSelectedId = localSelectedId ?? selectedNodeId ?? firstEntryId;
+
+  // entries 変更時にローカル選択をリセット
+  useEffect(() => {
+    setLocalSelectedId(null);
+  }, [firstEntryId]);
 
   useEffect(() => {
     if (firstEntryId) {
@@ -94,24 +104,86 @@ export function FileBrowser({
     }
   }, [firstEntryId]);
 
-  const handleClick = (entry: BrowseEntry) => {
+  // シングルクリック: カード選択
+  const handleSelect = (entry: BrowseEntry) => {
+    setLocalSelectedId(entry.node_id);
+  };
+
+  // ダブルクリック / Enter: アクション実行（進入/ビューワー起動）
+  const handleAction = (entry: BrowseEntry) => {
     if (entry.kind === "archive") {
-      // アーカイブ遷移時は画像タブに自動切替
-      // (アーカイブ内は画像のみなので filesets タブでは空表示になる)
       onNavigate(entry.node_id, { tab: "images" });
     } else if (entry.kind === "directory") {
       onNavigate(entry.node_id);
     } else if (entry.kind === "pdf") {
       onPdfClick?.(entry.node_id);
     } else if (entry.kind === "image" && onImageClick) {
-      // フィルタ済み画像配列内でのインデックスを算出
       const imageIndex = filtered.findIndex((e) => e.node_id === entry.node_id);
       if (imageIndex >= 0) onImageClick(imageIndex);
     }
   };
 
+  // オーバーレイ「▶ 開く」: kind に応じて適切なアクションを呼び分け
+  const handleOpen = (entry: BrowseEntry) => {
+    if (entry.kind === "directory" || entry.kind === "archive") {
+      onOpenViewer?.(entry.node_id);
+    } else if (entry.kind === "image" && onImageClick) {
+      const imageIndex = filtered.findIndex((e) => e.node_id === entry.node_id);
+      if (imageIndex >= 0) onImageClick(imageIndex);
+    } else if (entry.kind === "pdf") {
+      onPdfClick?.(entry.node_id);
+    }
+  };
+
+  // オーバーレイ「→ 進入」: directory/archive のナビゲーション
+  const handleEnter = (entry: BrowseEntry) => {
+    if (entry.kind === "archive") {
+      onNavigate(entry.node_id, { tab: "images" });
+    } else if (entry.kind === "directory") {
+      onNavigate(entry.node_id);
+    }
+  };
+
+  // Escape で選択解除
+  const handleKeyDown = (e: KeyboardEvent) => {
+    if (e.key === "Escape") {
+      setLocalSelectedId(null);
+    }
+  };
+
+  // カード外クリックで選択解除
+  const handleMainClick = (e: React.MouseEvent) => {
+    if (e.target === e.currentTarget) {
+      setLocalSelectedId(null);
+    }
+  };
+
+  // entry の kind に応じてオーバーレイの onOpen / onEnter コールバックを決定
+  const getOpenHandler = (entry: BrowseEntry) => {
+    if (
+      entry.kind === "directory" ||
+      entry.kind === "archive" ||
+      entry.kind === "image" ||
+      entry.kind === "pdf"
+    ) {
+      return handleOpen;
+    }
+    return undefined;
+  };
+
+  const getEnterHandler = (entry: BrowseEntry) => {
+    if (entry.kind === "directory" || entry.kind === "archive") {
+      return handleEnter;
+    }
+    return undefined;
+  };
+
   return (
-    <main className="flex-1 overflow-y-auto p-4">
+    <main
+      className="flex-1 overflow-y-auto p-4"
+      onClick={handleMainClick}
+      onKeyDown={handleKeyDown}
+    >
       {isLoading && <p className="text-gray-400">読み込み中...</p>}
 
       {!isLoading && filtered.length === 0 && (
@@ -127,7 +199,10 @@ export function FileBrowser({
               key={entry.node_id}
               ref={index === 0 ? firstCardRef : undefined}
               entry={entry}
-              onClick={handleClick}
+              onSelect={handleSelect}
+              onDoubleClick={handleAction}
+              onOpen={getOpenHandler(entry)}
+              onEnter={getEnterHandler(entry)}
               isSelected={entry.node_id === effectiveSelectedId}
             />
           ))}
