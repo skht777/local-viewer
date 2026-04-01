@@ -1,5 +1,6 @@
 """ファイル配信 API のテスト."""
 
+import io
 import os
 import zipfile
 from collections.abc import AsyncGenerator
@@ -7,6 +8,7 @@ from pathlib import Path
 
 import pytest
 from httpx import ASGITransport, AsyncClient
+from PIL import Image
 
 from backend.config import Settings
 from backend.errors import (
@@ -150,33 +152,11 @@ async def test_Rangeリクエストで206を返す(
 
 # --- アーカイブエントリ配信テスト ---
 
-# 最小 JPEG (conftest.py と同一)
-_MINIMAL_JPEG = bytes(
-    [
-        0xFF,
-        0xD8,
-        0xFF,
-        0xE0,
-        0x00,
-        0x10,
-        0x4A,
-        0x46,
-        0x49,
-        0x46,
-        0x00,
-        0x01,
-        0x01,
-        0x00,
-        0x00,
-        0x01,
-        0x00,
-        0x01,
-        0x00,
-        0x00,
-        0xFF,
-        0xD9,
-    ]
-)
+# Pillow で生成した有効な最小 JPEG (conftest.py と同一)
+_img = Image.new("RGB", (1, 1), color="red")
+_buf = io.BytesIO()
+_img.save(_buf, format="JPEG")
+_MINIMAL_JPEG = _buf.getvalue()
 
 
 async def test_アーカイブエントリのnode_idでファイル配信される(

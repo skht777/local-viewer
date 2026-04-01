@@ -1,5 +1,6 @@
 """テスト共通フィクスチャ."""
 
+import io
 import os
 import zipfile
 from collections.abc import AsyncGenerator, Generator
@@ -7,6 +8,7 @@ from pathlib import Path
 
 import pytest
 from httpx import ASGITransport, AsyncClient
+from PIL import Image
 
 from backend.config import Settings
 from backend.errors import (
@@ -18,7 +20,7 @@ from backend.errors import (
     path_security_error_handler,
 )
 from backend.main import app
-from backend.routers import browse, file, mounts, search
+from backend.routers import browse, file, mounts, search, thumbnail
 from backend.services.archive_security import (
     ArchiveEntryValidator,
     ArchivePasswordError,
@@ -51,33 +53,11 @@ def test_root(tmp_path: Path) -> Path:
     (tmp_path / "file.txt").write_text("hello")
     (tmp_path / "dir_a" / "nested" / "deep.txt").write_text("deep content")
 
-    # 最小 JPEG
-    minimal_jpeg = bytes(
-        [
-            0xFF,
-            0xD8,
-            0xFF,
-            0xE0,
-            0x00,
-            0x10,
-            0x4A,
-            0x46,
-            0x49,
-            0x46,
-            0x00,
-            0x01,
-            0x01,
-            0x00,
-            0x00,
-            0x01,
-            0x00,
-            0x01,
-            0x00,
-            0x00,
-            0xFF,
-            0xD9,
-        ]
-    )
+    # Pillow で生成した有効な最小 JPEG (1x1 ピクセル)
+    _img = Image.new("RGB", (1, 1), color="red")
+    _buf = io.BytesIO()
+    _img.save(_buf, format="JPEG")
+    minimal_jpeg = _buf.getvalue()
     (tmp_path / "dir_a" / "image.jpg").write_bytes(minimal_jpeg)
     (tmp_path / "dir_b" / "video.mp4").write_bytes(b"\x00" * 1024)
     (tmp_path / "photo.png").write_bytes(b"\x89PNG\r\n\x1a\n" + b"\x00" * 100)
@@ -165,6 +145,18 @@ async def client(
 
     test_converter = VideoConverter(temp_cache=test_temp_cache, timeout=30)
     app.dependency_overrides[file.get_video_converter] = lambda: test_converter
+
+    # ThumbnailService (テスト用)
+    from backend.services.thumbnail_service import ThumbnailService
+
+    test_thumb_service = ThumbnailService(temp_cache=test_temp_cache)
+    app.dependency_overrides[thumbnail.get_node_registry] = lambda: test_node_registry
+    app.dependency_overrides[thumbnail.get_archive_service] = (
+        lambda: test_archive_service
+    )
+    app.dependency_overrides[thumbnail.get_thumbnail_service] = (
+        lambda: test_thumb_service
+    )
 
     # 例外ハンドラ登録 (lifespan が動かないテスト用)
     app.add_exception_handler(

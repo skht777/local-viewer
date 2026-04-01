@@ -24,7 +24,7 @@ from backend.errors import (
     node_not_found_error_handler,
     path_security_error_handler,
 )
-from backend.routers import browse, file, mounts, search
+from backend.routers import browse, file, mounts, search, thumbnail
 from backend.services.archive_security import (
     ArchivePasswordError,
     ArchiveSecurityError,
@@ -33,6 +33,7 @@ from backend.services.archive_service import ArchiveService
 from backend.services.node_registry import NodeRegistry
 from backend.services.path_security import PathSecurity
 from backend.services.temp_file_cache import TempFileCache
+from backend.services.thumbnail_service import ThumbnailService
 from backend.services.video_converter import VideoConverter
 
 if TYPE_CHECKING:
@@ -46,6 +47,7 @@ _node_registry: NodeRegistry | None = None
 _archive_service: ArchiveService | None = None
 _temp_file_cache: TempFileCache | None = None
 _video_converter: VideoConverter | None = None
+_thumbnail_service: ThumbnailService | None = None
 _indexer: Indexer | None = None
 _file_watcher: FileWatcher | None = None
 
@@ -82,6 +84,14 @@ def get_video_converter() -> VideoConverter:
     return _video_converter
 
 
+def get_thumbnail_service() -> ThumbnailService:
+    """ThumbnailService の DI 用依存関数."""
+    if _thumbnail_service is None:
+        msg = "ThumbnailService が初期化されていません"
+        raise RuntimeError(msg)
+    return _thumbnail_service
+
+
 def get_indexer() -> Indexer:
     """Indexer の DI 用依存関数."""
     if _indexer is None:
@@ -105,7 +115,7 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
     起動時: Settings → PathSecurity → NodeRegistry → ArchiveService を初期化。
     """
     global _node_registry, _archive_service, _temp_file_cache
-    global _video_converter, _indexer, _file_watcher
+    global _video_converter, _thumbnail_service, _indexer, _file_watcher
 
     # アプリケーションロガーを uvicorn のハンドラに接続
     # uvicorn はルートロガーを設定しないため、backend.* の出力先がない
@@ -172,6 +182,9 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
         logger.info("Video remux: FFmpeg available")
     else:
         logger.warning("Video remux: FFmpeg not found, MKV files will not be remuxed")
+
+    # サムネイルサービス初期化
+    _thumbnail_service = ThumbnailService(temp_cache=_temp_file_cache)
 
     # 起動時診断: 各アーカイブ形式の利用可否
     diag = _archive_service.get_diagnostics()
@@ -257,6 +270,9 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
     _app.dependency_overrides[search.get_node_registry] = get_node_registry
     _app.dependency_overrides[search.get_path_security] = _get_path_security
     _app.dependency_overrides[mounts.get_node_registry] = get_node_registry
+    _app.dependency_overrides[thumbnail.get_node_registry] = get_node_registry
+    _app.dependency_overrides[thumbnail.get_archive_service] = get_archive_service
+    _app.dependency_overrides[thumbnail.get_thumbnail_service] = get_thumbnail_service
 
     yield
 
@@ -268,6 +284,7 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
     _node_registry = None
     _archive_service = None
     _video_converter = None
+    _thumbnail_service = None
     _temp_file_cache = None
 
 
@@ -349,6 +366,7 @@ app.add_exception_handler(ArchivePasswordError, archive_password_error_handler)
 app.include_router(mounts.router)
 app.include_router(browse.router)
 app.include_router(file.router)
+app.include_router(thumbnail.router)
 app.include_router(search.router)
 
 
