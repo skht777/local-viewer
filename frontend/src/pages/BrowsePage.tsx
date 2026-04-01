@@ -189,6 +189,7 @@ export default function BrowsePage() {
       pdfNodeId: params.pdfNodeId,
       pdfName,
       parentNodeId: data?.current_node_id ?? nodeId ?? null,
+      ancestors: data?.ancestors,
       initialPage: params.pdfPage,
       mode: params.mode,
       onPageChange: setPdfPage,
@@ -212,6 +213,7 @@ export default function BrowsePage() {
           setName={data?.current_name ?? ""}
           parentNodeId={data?.parent_node_id ?? null}
           currentNodeId={data?.current_node_id ?? null}
+          ancestors={data?.ancestors}
           mode={params.mode}
           onIndexChange={setIndex}
           onClose={closeViewer}
@@ -226,6 +228,7 @@ export default function BrowsePage() {
         setName={data?.current_name ?? ""}
         parentNodeId={data?.parent_node_id ?? null}
         currentNodeId={data?.current_node_id ?? null}
+        ancestors={data?.ancestors}
         mode={params.mode}
         onIndexChange={setIndex}
         onClose={closeViewer}

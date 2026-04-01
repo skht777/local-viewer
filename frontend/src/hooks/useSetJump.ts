@@ -11,11 +11,12 @@ import { useQueryClient } from "@tanstack/react-query";
 import { browseNodeOptions } from "./api/browseQueries";
 import { findNextSet, findPrevSet } from "./useSetNavigation";
 import type { ViewerMode } from "./useViewerParams";
-import type { BrowseEntry } from "../types/api";
+import type { AncestorEntry, BrowseEntry } from "../types/api";
 
 interface UseSetJumpProps {
   currentNodeId: string | null;
   parentNodeId: string | null;
+  ancestors?: AncestorEntry[];
   mode: ViewerMode;
 }
 

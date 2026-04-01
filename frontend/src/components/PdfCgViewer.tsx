@@ -7,6 +7,7 @@
 // - useSetJump: currentNodeId = pdfNodeId (PDF 自身)
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import type { AncestorEntry } from "../types/api";
 import type { ViewerMode } from "../hooks/useViewerParams";
 import { useViewerStore } from "../stores/viewerStore";
 import { useFullscreen } from "../hooks/useFullscreen";
@@ -28,6 +29,7 @@ interface PdfCgViewerProps {
   pdfNodeId: string;
   pdfName: string;
   parentNodeId: string | null;
+  ancestors?: AncestorEntry[];
   initialPage: number;
   mode: ViewerMode;
   onPageChange: (page: number) => void;
@@ -38,6 +40,7 @@ export function PdfCgViewer({
   pdfNodeId,
   pdfName,
   parentNodeId,
+  ancestors,
   initialPage,
   mode,
   onPageChange,
@@ -100,6 +103,7 @@ export function PdfCgViewer({
   const setJump = useSetJump({
     currentNodeId: pdfNodeId,
     parentNodeId,
+    ancestors,
     mode,
   });
 

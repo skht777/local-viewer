@@ -7,7 +7,7 @@
 // - Escape 優先順位: プロンプト → フルスクリーン → ビューワー閉じ
 
 import { useCallback, useRef, useState } from "react";
-import type { BrowseEntry } from "../types/api";
+import type { AncestorEntry, BrowseEntry } from "../types/api";
 import { useViewerStore } from "../stores/viewerStore";
 import { useFullscreen } from "../hooks/useFullscreen";
 import { useCgNavigation } from "../hooks/useCgNavigation";
@@ -29,6 +29,7 @@ interface CgViewerProps {
   setName: string;
   parentNodeId: string | null;
   currentNodeId: string | null;
+  ancestors?: AncestorEntry[];
   mode: ViewerMode;
   onIndexChange: (index: number) => void;
   onClose: () => void;
@@ -55,6 +56,7 @@ export function CgViewer({
   setName,
   parentNodeId,
   currentNodeId,
+  ancestors,
   mode,
   onIndexChange,
   onClose,
@@ -94,7 +96,7 @@ export function CgViewer({
   const [isHelpOpen, setIsHelpOpen] = useState(false);
 
   // セット間ジャンプ
-  const setJump = useSetJump({ currentNodeId, parentNodeId, mode });
+  const setJump = useSetJump({ currentNodeId, parentNodeId, ancestors, mode });
 
   // Escape 優先順位: (1) ヘルプ閉じ → (2) プロンプト閉じ → (3) フルスクリーン解除 → (4) ビューワー閉じ
   const handleEscape = useCallback(() => {
