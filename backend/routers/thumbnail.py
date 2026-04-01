@@ -126,7 +126,16 @@ async def serve_thumbnail(
             },
         )
 
-    return await run_in_threadpool(_generate)
+    try:
+        return await run_in_threadpool(_generate)
+    except UnidentifiedImageError:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "error": "画像として認識できないデータです",
+                "code": "INVALID_IMAGE",
+            },
+        ) from None
 
 
 async def _serve_archive_entry_thumbnail(
