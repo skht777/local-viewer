@@ -2,7 +2,7 @@
 // - kind === "image" の場合は /api/file/{node_id} で実画像プレビュー
 // - その他の kind はアイコン表示
 
-import type { Ref } from "react";
+import type { KeyboardEvent, Ref } from "react";
 import { useState } from "react";
 import type { BrowseEntry } from "../types/api";
 import { formatFileSize } from "../utils/format";
@@ -11,7 +11,7 @@ interface FileCardProps {
   entry: BrowseEntry;
   onClick: (entry: BrowseEntry) => void;
   isSelected?: boolean;
-  ref?: Ref<HTMLButtonElement>;
+  ref?: Ref<HTMLDivElement>;
 }
 
 // kind に応じたアイコン
@@ -36,13 +36,23 @@ export function FileCard({ entry, onClick, isSelected, ref }: FileCardProps) {
   const [hasImageError, setHasImageError] = useState(false);
   const isImagePreview = entry.kind === "image" && !hasImageError;
 
+  // native button の Enter/Space 動作を再現
+  const handleKeyDown = (e: KeyboardEvent) => {
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      onClick(entry);
+    }
+  };
+
   return (
-    <button
+    <div
       ref={ref}
-      type="button"
+      role="button"
+      tabIndex={0}
       data-testid={`file-card-${entry.node_id}`}
       aria-current={isSelected ? "true" : undefined}
       onClick={() => onClick(entry)}
+      onKeyDown={handleKeyDown}
       className={`flex cursor-pointer flex-col overflow-hidden rounded-lg transition-all duration-150 ${isSelected ? "bg-blue-600/30 ring-2 ring-blue-500" : "bg-surface-card ring-1 ring-white/5 hover:bg-surface-raised hover:scale-[1.02]"}`}
     >
       <div className="flex aspect-square items-center justify-center bg-surface-raised text-4xl">
@@ -72,6 +82,6 @@ export function FileCard({ entry, onClick, isSelected, ref }: FileCardProps) {
           </span>
         )}
       </div>
-    </button>
+    </div>
   );
 }

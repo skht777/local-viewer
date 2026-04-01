@@ -84,7 +84,7 @@ export function FileBrowser({
   const filtered = filterByTab(sorted, tab, sort);
 
   // エントリ変更時（ナビゲーション・タブ切替）に先頭カードへ focus
-  const firstCardRef = useRef<HTMLButtonElement>(null);
+  const firstCardRef = useRef<HTMLDivElement>(null);
   const firstEntryId = filtered[0]?.node_id ?? null;
   const effectiveSelectedId = selectedNodeId ?? firstEntryId;
 

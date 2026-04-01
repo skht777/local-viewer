@@ -9,6 +9,7 @@ const imageEntry: BrowseEntry = {
   size_bytes: 2048,
   mime_type: "image/jpeg",
   child_count: null,
+  modified_at: null,
 };
 
 const dirEntry: BrowseEntry = {
@@ -18,6 +19,7 @@ const dirEntry: BrowseEntry = {
   size_bytes: null,
   mime_type: null,
   child_count: 5,
+  modified_at: null,
 };
 
 describe("FileCard", () => {
