@@ -2,7 +2,7 @@
 // P1: PN-1(D次ページ), PN-2(A前ページ), PN-3(Mマンガ), PN-4(MCG復帰), PN-5(Escape閉じ)
 // P2: PN-6(Escapeマンガ閉じ), PN-7(ページセレクト), PN-8(Home/End),
 //     PN-9(V幅フィット), PN-10(H高さフィット), PN-11(Q無効),
-//     PN-12(PageDown セット間), PN-13(PdfPageSidebar クリック)
+//     PN-12(X セット間ジャンプ確認なし), PN-13(PdfPageSidebar クリック)
 // P3: PN-14(破損PDF エラー表示)
 
 import { test, expect } from "@playwright/test";
@@ -118,13 +118,17 @@ test.describe("PDF ナビゲーション — P2", () => {
     await expect(spreadBtn).toHaveText("見開");
   });
 
-  test("PN-12: X キーでセット間ジャンプの NavigationPrompt が表示される", async ({ page }) => {
+  test("PN-12: X キーで同親 PDF に確認なしでセット間ジャンプする", async ({ page }) => {
     await openPdfViewer(page);
+    const initialUrl = page.url();
 
     await page.keyboard.press("x");
 
+    // 同一ディレクトリ内ジャンプ（sample.pdf → zzz_next.pdf）は確認なし
     const prompt = page.locator("[data-testid='navigation-prompt']");
-    await expect(prompt).toBeVisible({ timeout: 5000 });
+    await expect(prompt).not.toBeVisible();
+    await expect(page).not.toHaveURL(initialUrl, { timeout: 5000 });
+    await expect(page).toHaveURL(/\/browse\//);
   });
 
 
