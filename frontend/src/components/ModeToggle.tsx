@@ -16,7 +16,7 @@ export function ModeToggle({ mode, onModeChange }: ModeToggleProps) {
         type="button"
         data-testid="mode-toggle-cg"
         onClick={() => onModeChange("cg")}
-        className={`rounded-l-lg px-3 py-1 text-xs font-medium transition-colors ${
+        className={`rounded-l-lg px-3 py-1.5 text-sm font-medium transition-colors ${
           mode === "cg"
             ? "bg-blue-600 text-white"
             : "text-gray-400 hover:bg-surface-raised hover:text-gray-200"
@@ -29,7 +29,7 @@ export function ModeToggle({ mode, onModeChange }: ModeToggleProps) {
         type="button"
         data-testid="mode-toggle-manga"
         onClick={() => onModeChange("manga")}
-        className={`rounded-r-lg px-3 py-1 text-xs font-medium transition-colors ${
+        className={`rounded-r-lg px-3 py-1.5 text-sm font-medium transition-colors ${
           mode === "manga"
             ? "bg-blue-600 text-white"
             : "text-gray-400 hover:bg-surface-raised hover:text-gray-200"

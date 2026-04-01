@@ -129,7 +129,7 @@ export function SearchBar() {
               type="button"
               onClick={() => setKind(filter.value)}
               data-testid={`kind-filter-${filter.value ?? "all"}`}
-              className={`rounded px-2 py-1 text-sm ${
+              className={`rounded px-2.5 py-1 text-sm ${
                 kind === filter.value
                   ? "bg-blue-600 text-white"
                   : "bg-surface-raised text-gray-400 hover:bg-surface-overlay"

@@ -35,14 +35,14 @@ export function MangaToolbar({
   onClose,
 }: MangaToolbarProps) {
   return (
-    <div className="flex items-center bg-black/50 backdrop-blur-md px-3 py-2">
+    <div className="flex items-center bg-black/50 backdrop-blur-md px-4 py-2.5">
       {/* 左: コントロール群 */}
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-3">
         {/* ページセレクト */}
         <select
           value={currentIndex}
           onChange={(e) => onScrollToImage(Number(e.target.value))}
-          className="rounded bg-surface-raised px-2 py-1 text-xs text-white"
+          className="rounded bg-surface-raised px-3 py-1.5 text-sm text-white"
           aria-label="ページ選択"
         >
           {Array.from({ length: totalCount }, (_, i) => (
@@ -56,7 +56,7 @@ export function MangaToolbar({
         <button
           type="button"
           onClick={onZoomOut}
-          className="rounded px-2 py-1 text-xs text-gray-300 hover:bg-surface-raised"
+          className="rounded px-3 py-1.5 text-sm text-gray-300 hover:bg-surface-raised"
           aria-label="ズームアウト"
         >
           -
@@ -68,11 +68,11 @@ export function MangaToolbar({
           step={25}
           value={zoomLevel}
           onChange={(e) => onZoomChange(Number(e.target.value))}
-          className="w-24"
+          className="w-28"
           aria-label="ズーム"
         />
         <span
-          className="min-w-[3rem] text-center text-xs font-mono tabular-nums text-gray-300"
+          className="min-w-[3.5rem] text-center text-sm font-mono tabular-nums text-gray-300"
           data-testid="manga-zoom-level"
         >
           {zoomLevel}%
@@ -80,7 +80,7 @@ export function MangaToolbar({
         <button
           type="button"
           onClick={onZoomIn}
-          className="rounded px-2 py-1 text-xs text-gray-300 hover:bg-surface-raised"
+          className="rounded px-3 py-1.5 text-sm text-gray-300 hover:bg-surface-raised"
           aria-label="ズームイン"
         >
           +
@@ -94,11 +94,11 @@ export function MangaToolbar({
           step={0.5}
           value={scrollSpeed}
           onChange={(e) => onScrollSpeedChange(Number(e.target.value))}
-          className="w-16"
+          className="w-20"
           aria-label="スクロール速度"
         />
         <span
-          className="text-xs font-mono tabular-nums text-gray-300"
+          className="text-sm font-mono tabular-nums text-gray-300"
           data-testid="manga-scroll-speed-label"
         >
           {scrollSpeed}x
@@ -108,17 +108,17 @@ export function MangaToolbar({
       {/* 中央: ページカウンター */}
       <span
         data-testid="page-counter"
-        className="flex-1 truncate text-center text-xs font-mono tabular-nums text-gray-300"
+        className="flex-1 truncate text-center text-sm font-mono tabular-nums text-gray-300"
       >
         {formatPageLabel(setName, currentIndex + 1, totalCount)}
       </span>
 
       {/* 右: フルスクリーン + 閉じる */}
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-3">
         <button
           type="button"
           onClick={onToggleFullscreen}
-          className="rounded px-2 py-1 text-xs text-gray-300 hover:bg-surface-raised"
+          className="rounded px-3 py-1.5 text-sm text-gray-300 hover:bg-surface-raised"
           aria-label="フルスクリーン"
         >
           F
@@ -126,7 +126,7 @@ export function MangaToolbar({
         <button
           type="button"
           onClick={onClose}
-          className="rounded px-2 py-1 text-xs text-gray-300 hover:bg-surface-raised"
+          className="rounded px-3 py-1.5 text-sm text-gray-300 hover:bg-surface-raised"
           aria-label="閉じる"
         >
           ✕
