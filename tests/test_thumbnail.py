@@ -103,6 +103,32 @@ async def test_不正なnode_idフォーマットで404を返す(client: AsyncCl
     assert response.status_code == 404
 
 
+async def test_PDFファイルのサムネイルで422を返す(
+    client: AsyncClient,
+    test_node_registry: NodeRegistry,
+    test_root: Path,
+) -> None:
+    # PDF はサムネイル非対応
+    pdf_path = test_root / "document.pdf"
+    pdf_path.write_bytes(b"%PDF-1.4 dummy")
+    node_id = test_node_registry.register(pdf_path)
+
+    response = await client.get(f"/api/thumbnail/{node_id}")
+    assert response.status_code == 422
+
+
+async def test_動画ファイルのサムネイルで422を返す(
+    client: AsyncClient,
+    test_node_registry: NodeRegistry,
+    test_root: Path,
+) -> None:
+    entries = test_node_registry.list_directory(test_root / "dir_b")
+    video_entry = next(e for e in entries if e.name == "video.mp4")
+
+    response = await client.get(f"/api/thumbnail/{video_entry.node_id}")
+    assert response.status_code == 422
+
+
 async def test_サムネイルが300px以内にリサイズされている(
     client: AsyncClient,
     test_node_registry: NodeRegistry,

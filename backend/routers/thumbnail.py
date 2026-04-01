@@ -92,6 +92,17 @@ async def serve_thumbnail(
             path, node_id, request, registry, archive_service, thumb_service
         )
 
+    # 画像以外 (PDF/動画等) はサムネイル非対応
+    ext = path.suffix.lower()
+    if ext not in IMAGE_EXTENSIONS:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "error": "サムネイル非対応のファイル形式です",
+                "code": "NOT_SUPPORTED",
+            },
+        )
+
     # 通常の画像ファイル → サムネイル
     st = path.stat()
     etag = _compute_etag(st.st_mtime_ns, node_id)
