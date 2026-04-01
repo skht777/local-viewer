@@ -1,4 +1,5 @@
 import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { FileCard } from "../../src/components/FileCard";
 import type { BrowseEntry } from "../../src/types/api";
 
@@ -50,5 +51,167 @@ describe("FileCard", () => {
     render(<FileCard entry={imageEntry} onClick={() => {}} />);
     const button = screen.getByTestId("file-card-img001");
     expect(button).not.toHaveAttribute("aria-current");
+  });
+});
+
+// --- C2: 新しい操作モデルのテスト ---
+
+const archiveEntry: BrowseEntry = {
+  node_id: "arc001",
+  name: "photos.zip",
+  kind: "archive",
+  size_bytes: 10240,
+  mime_type: "application/zip",
+  child_count: null,
+  modified_at: null,
+};
+
+const pdfEntry: BrowseEntry = {
+  node_id: "pdf001",
+  name: "doc.pdf",
+  kind: "pdf",
+  size_bytes: 4096,
+  mime_type: "application/pdf",
+  child_count: null,
+  modified_at: null,
+};
+
+describe("FileCard 選択・ダブルクリック・オーバーレイ", () => {
+  test("シングルクリックでonSelectが呼ばれる", async () => {
+    const onSelect = vi.fn();
+    render(
+      <FileCard entry={dirEntry} onSelect={onSelect} onDoubleClick={() => {}} />,
+    );
+    await userEvent.click(screen.getByTestId("file-card-dir001"));
+    expect(onSelect).toHaveBeenCalledWith(dirEntry);
+  });
+
+  test("ダブルクリックでonDoubleClickが呼ばれる", async () => {
+    const onDoubleClick = vi.fn();
+    render(
+      <FileCard entry={dirEntry} onSelect={() => {}} onDoubleClick={onDoubleClick} />,
+    );
+    await userEvent.dblClick(screen.getByTestId("file-card-dir001"));
+    expect(onDoubleClick).toHaveBeenCalledWith(dirEntry);
+  });
+
+  test("isSelected=trueでアクションオーバーレイが表示される", () => {
+    render(
+      <FileCard
+        entry={dirEntry}
+        onSelect={() => {}}
+        onDoubleClick={() => {}}
+        onOpen={() => {}}
+        isSelected
+      />,
+    );
+    expect(screen.getByTestId("action-overlay-dir001")).toBeInTheDocument();
+  });
+
+  test("ディレクトリ選択時にオーバーレイに開くと進入ボタンが表示される", () => {
+    render(
+      <FileCard
+        entry={dirEntry}
+        onSelect={() => {}}
+        onDoubleClick={() => {}}
+        onOpen={() => {}}
+        onEnter={() => {}}
+        isSelected
+      />,
+    );
+    expect(screen.getByTestId("action-open-dir001")).toBeInTheDocument();
+    expect(screen.getByTestId("action-enter-dir001")).toBeInTheDocument();
+  });
+
+  test("画像選択時にオーバーレイに開くボタンのみ表示される", () => {
+    render(
+      <FileCard
+        entry={imageEntry}
+        onSelect={() => {}}
+        onDoubleClick={() => {}}
+        onOpen={() => {}}
+        isSelected
+      />,
+    );
+    expect(screen.getByTestId("action-open-img001")).toBeInTheDocument();
+    expect(screen.queryByTestId("action-enter-img001")).not.toBeInTheDocument();
+  });
+
+  test("PDF選択時にオーバーレイに開くボタンのみ表示される", () => {
+    render(
+      <FileCard
+        entry={pdfEntry}
+        onSelect={() => {}}
+        onDoubleClick={() => {}}
+        onOpen={() => {}}
+        isSelected
+      />,
+    );
+    expect(screen.getByTestId("action-open-pdf001")).toBeInTheDocument();
+    expect(screen.queryByTestId("action-enter-pdf001")).not.toBeInTheDocument();
+  });
+
+  test("オーバーレイの開くボタンクリックでonOpenが呼ばれる", async () => {
+    const onOpen = vi.fn();
+    render(
+      <FileCard
+        entry={dirEntry}
+        onSelect={() => {}}
+        onDoubleClick={() => {}}
+        onOpen={onOpen}
+        isSelected
+      />,
+    );
+    await userEvent.click(screen.getByTestId("action-open-dir001"));
+    expect(onOpen).toHaveBeenCalledWith(dirEntry);
+  });
+
+  test("オーバーレイの進入ボタンクリックでonEnterが呼ばれる", async () => {
+    const onEnter = vi.fn();
+    render(
+      <FileCard
+        entry={dirEntry}
+        onSelect={() => {}}
+        onDoubleClick={() => {}}
+        onOpen={() => {}}
+        onEnter={onEnter}
+        isSelected
+      />,
+    );
+    await userEvent.click(screen.getByTestId("action-enter-dir001"));
+    expect(onEnter).toHaveBeenCalledWith(dirEntry);
+  });
+
+  test("isSelected=falseでオーバーレイが表示されない", () => {
+    render(
+      <FileCard
+        entry={dirEntry}
+        onSelect={() => {}}
+        onDoubleClick={() => {}}
+        onOpen={() => {}}
+        onEnter={() => {}}
+      />,
+    );
+    expect(screen.queryByTestId("action-overlay-dir001")).not.toBeInTheDocument();
+  });
+
+  test("Enterキーでダブルクリックと同じ動作になる", async () => {
+    const onDoubleClick = vi.fn();
+    render(
+      <FileCard entry={dirEntry} onSelect={() => {}} onDoubleClick={onDoubleClick} onClick={() => {}} />,
+    );
+    screen.getByTestId("file-card-dir001").focus();
+    await userEvent.keyboard("{Enter}");
+    expect(onDoubleClick).toHaveBeenCalledWith(dirEntry);
+  });
+
+  test("Spaceキーで選択と同じ動作になる", async () => {
+    const onSelect = vi.fn();
+    render(
+      <FileCard entry={dirEntry} onSelect={onSelect} onDoubleClick={() => {}} onClick={() => {}} />,
+    );
+    screen.getByTestId("file-card-dir001").focus();
+    await userEvent.keyboard(" ");
+    expect(onSelect).toHaveBeenCalledWith(dirEntry);
   });
 });

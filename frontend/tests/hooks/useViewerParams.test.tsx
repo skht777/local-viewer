@@ -249,4 +249,23 @@ describe("useViewerParams", () => {
     });
     expect(result.current.params.sort).toBe("name-asc");
   });
+
+  // --- buildBrowseSearch index オプション ---
+
+  test("buildBrowseSearchでindex指定時にURLにindexが含まれる", () => {
+    const { result } = renderHook(() => useViewerParams(), {
+      wrapper: createWrapper(["/?mode=manga"]),
+    });
+    const search = result.current.buildBrowseSearch({ tab: "images", index: 0 });
+    expect(search).toContain("index=0");
+    expect(search).toContain("tab=images");
+  });
+
+  test("buildBrowseSearchでindex未指定時にURLにindexが含まれない", () => {
+    const { result } = renderHook(() => useViewerParams(), {
+      wrapper: createWrapper(),
+    });
+    const search = result.current.buildBrowseSearch();
+    expect(search).not.toContain("index");
+  });
 });
