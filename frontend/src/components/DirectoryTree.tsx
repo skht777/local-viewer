@@ -123,7 +123,7 @@ export function DirectoryTree({
 }: DirectoryTreeProps) {
   const internalRef = useRef<HTMLElement>(null);
   const treeRef = ref ?? internalRef;
-  const { toggleExpanded, expandedNodeIds } = useViewerStore();
+  const { toggleExpanded } = useViewerStore();
 
   // ディレクトリ/アーカイブ/PDFのみ表示
   const directories = rootEntries.filter(

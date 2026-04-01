@@ -51,7 +51,7 @@ export function usePdfThumbnail(nodeId: string, enabled: boolean): PdfThumbnailR
         const ctx = canvas.getContext("2d");
         if (!ctx) throw new Error("Canvas 2D context not available");
 
-        await page.render({ canvasContext: ctx, viewport }).promise;
+        await page.render({ canvasContext: ctx, viewport, canvas }).promise;
         if (cancelled) return;
 
         // Canvas → blob → URL

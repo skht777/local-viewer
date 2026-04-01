@@ -94,6 +94,7 @@ export default function BrowsePage() {
         mime_type: null,
         child_count: m.child_count,
         modified_at: null,
+        preview_node_ids: null,
       })),
     [mountData?.mounts],
   );

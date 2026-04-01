@@ -36,7 +36,7 @@ interface UseViewerParamsReturn {
   openPdfViewer: (nodeId: string) => void;
   closePdfViewer: () => void;
   setPdfPage: (page: number) => void;
-  buildBrowseSearch: (overrides?: { tab?: string }) => string;
+  buildBrowseSearch: (overrides?: { tab?: string; index?: number }) => string;
 }
 
 export function useViewerParams(): UseViewerParamsReturn {
