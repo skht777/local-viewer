@@ -8,6 +8,7 @@
 // - 非表示時は pointer-events-none でクリックを透過
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { SliderTooltip } from "./SliderTooltip";
 
 interface PageSliderProps {
   currentIndex: number;
@@ -43,6 +44,7 @@ export function PageSlider({
   const [isHovering, setIsHovering] = useState(false);
   const isDragging = useRef(false);
   const pointerLeftDuringDrag = useRef(false);
+  const inputRef = useRef<HTMLInputElement>(null);
 
   // 初回表示ヒント: セッション内で初回のみ2秒間スライダーを表示
   const [isHintVisible, setIsHintVisible] = useState(() => {
@@ -110,6 +112,13 @@ export function PageSlider({
 
   const isVisible = isTouchDevice || isNearBottom || isFocused || isHintVisible || isHovering;
 
+  // サム位置の計算（inputの幅に対する割合で算出）
+  const thumbPosition = (() => {
+    if (!inputRef.current || totalCount <= 1) return 0;
+    const ratio = currentIndex / (totalCount - 1);
+    return ratio * inputRef.current.offsetWidth;
+  })();
+
   return (
     <div
       data-testid="page-slider"
@@ -125,18 +134,28 @@ export function PageSlider({
         }
       }}
     >
-      <input
-        type="range"
-        min={0}
-        max={totalCount - 1}
-        value={currentIndex}
-        onChange={(e) => onGoTo(Number(e.target.value))}
-        onPointerDown={handlePointerDown}
-        onFocus={() => setIsFocused(true)}
-        onBlur={() => setIsFocused(false)}
-        aria-label="ページスライダー"
-        className="w-full"
-      />
+      <div className="relative">
+        <SliderTooltip
+          currentIndex={currentIndex}
+          totalCount={totalCount}
+          position={thumbPosition}
+          orientation="horizontal"
+          visible={isHovering}
+        />
+        <input
+          ref={inputRef}
+          type="range"
+          min={0}
+          max={totalCount - 1}
+          value={currentIndex}
+          onChange={(e) => onGoTo(Number(e.target.value))}
+          onPointerDown={handlePointerDown}
+          onFocus={() => setIsFocused(true)}
+          onBlur={() => setIsFocused(false)}
+          aria-label="ページスライダー"
+          className="w-full"
+        />
+      </div>
     </div>
   );
 }

@@ -128,4 +128,34 @@ describe("PageSlider", () => {
 
     expect(slider.className).toContain("opacity-100");
   });
+
+  test("ホバー時にツールチップが表示される", () => {
+    render(<TestWrapper currentIndex={2} totalCount={10} />);
+    const slider = screen.getByTestId("page-slider");
+
+    fireEvent.pointerEnter(slider);
+
+    const tooltip = screen.getByTestId("slider-tooltip");
+    expect(tooltip.className).toContain("opacity-100");
+  });
+
+  test("ツールチップにページ番号が表示される", () => {
+    render(<TestWrapper currentIndex={2} totalCount={10} />);
+    const slider = screen.getByTestId("page-slider");
+
+    fireEvent.pointerEnter(slider);
+
+    expect(screen.getByTestId("slider-tooltip")).toHaveTextContent("3 / 10");
+  });
+
+  test("ホバー解除でツールチップが非表示になる", () => {
+    render(<TestWrapper currentIndex={0} totalCount={5} />);
+    const slider = screen.getByTestId("page-slider");
+
+    fireEvent.pointerEnter(slider);
+    fireEvent.pointerLeave(slider);
+
+    const tooltip = screen.getByTestId("slider-tooltip");
+    expect(tooltip.className).toContain("opacity-0");
+  });
 });

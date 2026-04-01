@@ -9,6 +9,7 @@
 // - 縦方向: writing-mode: vertical-lr で標準準拠の縦スライダー
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { SliderTooltip } from "./SliderTooltip";
 
 interface VerticalPageSliderProps {
   currentIndex: number;
@@ -44,6 +45,7 @@ export function VerticalPageSlider({
   const [isHovering, setIsHovering] = useState(false);
   const isDragging = useRef(false);
   const pointerLeftDuringDrag = useRef(false);
+  const inputRef = useRef<HTMLInputElement>(null);
 
   // 初回表示ヒント: セッション内で初回のみ2秒間スライダーを表示
   const [isHintVisible, setIsHintVisible] = useState(() => {
@@ -110,6 +112,13 @@ export function VerticalPageSlider({
 
   const isVisible = isTouchDevice || isNearRight || isFocused || isHintVisible || isHovering;
 
+  // サム位置の計算（inputの高さに対する割合で算出）
+  const thumbPosition = (() => {
+    if (!inputRef.current || totalCount <= 1) return 0;
+    const ratio = currentIndex / (totalCount - 1);
+    return ratio * inputRef.current.offsetHeight;
+  })();
+
   return (
     <div
       data-testid="page-slider"
@@ -125,19 +134,29 @@ export function VerticalPageSlider({
         }
       }}
     >
-      <input
-        type="range"
-        min={0}
-        max={totalCount - 1}
-        value={currentIndex}
-        onChange={(e) => onGoTo(Number(e.target.value))}
-        onPointerDown={handlePointerDown}
-        onFocus={() => setIsFocused(true)}
-        onBlur={() => setIsFocused(false)}
-        aria-label="ページスライダー"
-        className="h-full"
-        style={{ writingMode: "vertical-lr" }}
-      />
+      <div className="relative h-full">
+        <SliderTooltip
+          currentIndex={currentIndex}
+          totalCount={totalCount}
+          position={thumbPosition}
+          orientation="vertical"
+          visible={isHovering}
+        />
+        <input
+          ref={inputRef}
+          type="range"
+          min={0}
+          max={totalCount - 1}
+          value={currentIndex}
+          onChange={(e) => onGoTo(Number(e.target.value))}
+          onPointerDown={handlePointerDown}
+          onFocus={() => setIsFocused(true)}
+          onBlur={() => setIsFocused(false)}
+          aria-label="ページスライダー"
+          className="h-full"
+          style={{ writingMode: "vertical-lr" }}
+        />
+      </div>
     </div>
   );
 }
