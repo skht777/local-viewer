@@ -43,7 +43,9 @@ class ThumbnailService:
         # JPEG 非互換モードを RGB に変換
         if img.mode in ("RGBA", "P", "LA"):
             img = img.convert("RGB")
-        img.thumbnail((width, width), Image.Resampling.LANCZOS)
+        # reducing_gap=2.0: libjpeg 整数ダウンスケールを活用して高速化
+        # BILINEAR: 300px では LANCZOS との差は視認不可能
+        img.thumbnail((width, width), Image.Resampling.BILINEAR, reducing_gap=2.0)
         buf = io.BytesIO()
         img.save(buf, format="JPEG", quality=JPEG_QUALITY, optimize=True)
         return buf.getvalue()
