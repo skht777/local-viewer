@@ -12,6 +12,7 @@ import { useState } from "react";
 import { usePdfThumbnail } from "../hooks/usePdfThumbnail";
 import type { BrowseEntry } from "../types/api";
 import { formatFileSize } from "../utils/format";
+import { thumbnailUrl } from "../utils/thumbnailUrl";
 import { PreviewGrid } from "./PreviewGrid";
 
 interface FileCardProps {
@@ -96,7 +97,7 @@ export function FileCard({
       <div className="relative flex aspect-square items-center justify-center bg-surface-raised text-4xl">
         {isImagePreview ? (
           <img
-            src={`/api/thumbnail/${entry.node_id}`}
+            src={thumbnailUrl(entry.node_id)}
             alt={entry.name}
             className="h-full w-full object-cover"
             loading="lazy"
@@ -110,7 +111,7 @@ export function FileCard({
           />
         ) : hasArchivePreview ? (
           <img
-            src={`/api/thumbnail/${entry.node_id}`}
+            src={thumbnailUrl(entry.node_id)}
             alt={entry.name}
             className="h-full w-full object-cover"
             loading="lazy"

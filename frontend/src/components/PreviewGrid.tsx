@@ -5,6 +5,7 @@
 // - 全画像エラー時に onAllError コールバックで通知
 
 import { useState } from "react";
+import { thumbnailUrl } from "../utils/thumbnailUrl";
 
 interface PreviewGridProps {
   previewNodeIds: string[];
@@ -36,7 +37,7 @@ export function PreviewGrid({ previewNodeIds, onAllError }: PreviewGridProps) {
   if (validIds.length === 1) {
     return (
       <img
-        src={`/api/thumbnail/${validIds[0]}`}
+        src={thumbnailUrl(validIds[0])}
         alt=""
         className="h-full w-full object-cover"
         loading="lazy"
@@ -52,7 +53,7 @@ export function PreviewGrid({ previewNodeIds, onAllError }: PreviewGridProps) {
         {validIds.map((id) => (
           <img
             key={id}
-            src={`/api/thumbnail/${id}`}
+            src={thumbnailUrl(id)}
             alt=""
             className="h-full w-full object-cover"
             loading="lazy"
@@ -68,7 +69,7 @@ export function PreviewGrid({ previewNodeIds, onAllError }: PreviewGridProps) {
   return (
     <div className="grid h-full w-full grid-cols-2 grid-rows-2 gap-0.5">
       <img
-        src={`/api/thumbnail/${validIds[0]}`}
+        src={thumbnailUrl(validIds[0])}
         alt=""
         className="row-span-2 h-full w-full object-cover"
         loading="lazy"
@@ -76,7 +77,7 @@ export function PreviewGrid({ previewNodeIds, onAllError }: PreviewGridProps) {
         onError={() => handleError(validIds[0])}
       />
       <img
-        src={`/api/thumbnail/${validIds[1]}`}
+        src={thumbnailUrl(validIds[1])}
         alt=""
         className="h-full w-full object-cover"
         loading="lazy"
@@ -84,7 +85,7 @@ export function PreviewGrid({ previewNodeIds, onAllError }: PreviewGridProps) {
         onError={() => handleError(validIds[1])}
       />
       <img
-        src={`/api/thumbnail/${validIds[2]}`}
+        src={thumbnailUrl(validIds[2])}
         alt=""
         className="h-full w-full object-cover"
         loading="lazy"
