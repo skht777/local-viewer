@@ -444,6 +444,26 @@ if _static_dir.exists():
             response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
         return response
 
+    # Service Worker ファイル — SPA フォールバックより先に登録
+    # no-cache でブラウザが常に最新版をチェックする
+    @app.get("/sw.js")
+    async def serve_sw() -> FileResponse:
+        """Service Worker スクリプトを配信する."""
+        return FileResponse(
+            _static_dir / "sw.js",
+            media_type="application/javascript",
+            headers={"Cache-Control": "no-cache"},
+        )
+
+    @app.get("/workbox-{rest:path}")
+    async def serve_workbox(rest: str) -> FileResponse:
+        """Workbox ランタイムスクリプトを配信する."""
+        return FileResponse(
+            _static_dir / f"workbox-{rest}",
+            media_type="application/javascript",
+            headers={"Cache-Control": "public, max-age=31536000, immutable"},
+        )
+
     # SPA フォールバック — /api 以外の全パスで index.html を返す
     @app.get("/{full_path:path}")
     async def spa_fallback(full_path: str) -> FileResponse:
