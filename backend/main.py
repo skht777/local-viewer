@@ -9,7 +9,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path as FilePath
 from typing import TYPE_CHECKING
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import FileResponse
@@ -381,15 +381,27 @@ async def health() -> dict[str, str]:
 _static_dir = FilePath(__file__).parent.parent / "static"
 
 if _static_dir.exists():
-    # ハッシュ付きアセット (JS/CSS) — 長期キャッシュ可能
+    # ハッシュ付きアセット (JS/CSS) — immutable 長期キャッシュ
+    # Vite はファイル名にコンテンツハッシュを含むため安全にキャッシュ可能
     app.mount(
         "/assets",
         StaticFiles(directory=_static_dir / "assets"),
         name="assets",
     )
 
+    @app.middleware("http")
+    async def assets_cache_control(request: Request, call_next):  # type: ignore[no-untyped-def]
+        """Vite ハッシュ付きアセットに immutable キャッシュヘッダーを付与."""
+        response = await call_next(request)
+        if request.url.path.startswith("/assets/"):
+            response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+        return response
+
     # SPA フォールバック — /api 以外の全パスで index.html を返す
     @app.get("/{full_path:path}")
     async def spa_fallback(full_path: str) -> FileResponse:
         """SPA のクライアントサイドルーティング対応."""
-        return FileResponse(_static_dir / "index.html")
+        return FileResponse(
+            _static_dir / "index.html",
+            headers={"Cache-Control": "no-cache"},
+        )
