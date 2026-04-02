@@ -74,6 +74,15 @@ export async function showToolbar(page: Page) {
   await expect(wrapper).toHaveCSS("opacity", "1");
 }
 
+// スクロールエリアがスクロール可能になるまで待機する
+// 画像の読み込みや仮想スクロールの測定完了を待つ
+export async function waitForScrollable(scrollArea: Locator, timeout = 10_000) {
+  await expect.poll(
+    () => scrollArea.evaluate((el) => el.scrollHeight > el.clientHeight),
+    { message: "スクロール可能になるまで待機", timeout },
+  ).toBeTruthy();
+}
+
 // 検索インデックス構築完了を待機する
 // バックエンド起動直後はインデックス未構築で 503 を返すか、200 でも結果が空の場合がある
 // ※ 画像はインデックス対象外のため、動画ファイル名 (clip) で確認する

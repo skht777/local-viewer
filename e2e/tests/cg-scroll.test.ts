@@ -1,18 +1,17 @@
 // CG スクロールテスト
 // P1: CS-1(S下スクロール), CS-2(W上スクロール)
 // P2: CS-3(↓下スクロール), CS-4(↑上スクロール), CS-5(ページスライダー)
-// CgViewer の scrollUp/scrollDown が空関数のため、CS-1〜4 は fixme
 
 import { test, expect } from "@playwright/test";
-import { openCgViewer } from "./helpers/navigation";
+import { openCgViewer, waitForScrollable } from "./helpers/navigation";
 
 test.use({ viewport: { width: 1024, height: 200 } });
 
 test.describe("CG スクロール", () => {
-  // CgViewer.tsx L100-101: scrollUp/scrollDown が空関数で未実装
   test("CS-1: S キーで下にスクロールする", async ({ page }) => {
     await openCgViewer(page);
     const imageArea = page.getByTestId("cg-image-area");
+    await waitForScrollable(imageArea);
 
     await page.keyboard.press("s");
 
@@ -25,6 +24,7 @@ test.describe("CG スクロール", () => {
   test("CS-2: W キーで上にスクロールする", async ({ page }) => {
     await openCgViewer(page);
     const imageArea = page.getByTestId("cg-image-area");
+    await waitForScrollable(imageArea);
 
     await page.keyboard.press("s");
     await expect.poll(
@@ -41,10 +41,10 @@ test.describe("CG スクロール", () => {
     ).toBeLessThan(scrollAfterS);
   });
 
-  // CS-3, CS-4: ↓↑ キーも scrollUp/scrollDown と同じ空関数を呼ぶため fixme
   test("CS-3: ↓キーで下にスクロールする", async ({ page }) => {
     await openCgViewer(page);
     const imageArea = page.getByTestId("cg-image-area");
+    await waitForScrollable(imageArea);
 
     await page.keyboard.press("ArrowDown");
 
@@ -57,6 +57,7 @@ test.describe("CG スクロール", () => {
   test("CS-4: ↑キーで上にスクロールする", async ({ page }) => {
     await openCgViewer(page);
     const imageArea = page.getByTestId("cg-image-area");
+    await waitForScrollable(imageArea);
 
     await page.keyboard.press("ArrowDown");
     await expect.poll(

@@ -5,7 +5,7 @@
 // P3: MC-9(スクロール速度スライダー)
 
 import { test, expect } from "@playwright/test";
-import { openMangaViewer, showToolbar } from "./helpers/navigation";
+import { openMangaViewer, showToolbar, waitForScrollable } from "./helpers/navigation";
 
 test.describe("マンガモード — キーバインド", () => {
   test("MC-1: + キーでズームインする", async ({ page }) => {
@@ -162,6 +162,9 @@ test.describe("マンガモード — 速度・ズーム効果", () => {
   test("MC-11: 速度変更が S キーのスクロール量に反映される", async ({ page }) => {
     await openMangaViewer(page);
     const scrollArea = page.getByTestId("manga-scroll-area");
+
+    // 仮想スクロールの測定完了を待機してからスクロール操作を行う
+    await waitForScrollable(scrollArea);
 
     // デフォルト速度 (1.0x) で S キー → スクロール量計測
     await page.keyboard.press("s");
