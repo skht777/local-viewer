@@ -223,6 +223,29 @@ def test_is_archive_entryが正しく判定する(
     assert registry.is_archive_entry(file_id) is False
 
 
+def test_アーカイブエントリ上限超過で最古エントリがevictされる(
+    root_dir: Path,
+) -> None:
+    """archive_registry_max_entries=3 で4件登録すると最古が消える."""
+    os.environ["MOUNT_BASE_DIR"] = str(root_dir)
+    os.environ.pop("ALLOW_SYMLINKS", None)
+    settings = Settings()
+    security = PathSecurity(settings)
+    reg = NodeRegistry(security, archive_registry_max_entries=3)
+
+    archive = root_dir / "test.zip"
+    archive.touch()
+    id1 = reg.register_archive_entry(archive, "a.jpg")
+    reg.register_archive_entry(archive, "b.jpg")
+    reg.register_archive_entry(archive, "c.jpg")
+
+    # 4件目の登録で最古 (a.jpg) がevict
+    reg.register_archive_entry(archive, "d.jpg")
+    assert reg.resolve_archive_entry(id1) is None
+
+    os.environ.pop("MOUNT_BASE_DIR", None)
+
+
 # --- modified_at テスト ---
 
 

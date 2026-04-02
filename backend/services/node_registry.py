@@ -123,6 +123,7 @@ class NodeRegistry:
         # アーカイブエントリ用マッピング (LRU, 上限管理)
         self._id_to_archive_entry: OrderedDict[str, tuple[Path, str]] = OrderedDict()
         self._archive_entry_to_id: dict[str, str] = {}
+        self._id_to_composite_key: dict[str, str] = {}  # eviction O(1) 用逆引き
         self._archive_registry_max = archive_registry_max_entries
 
     @property
@@ -254,8 +255,7 @@ class NodeRegistry:
             kind = self._classify_entry(de)
 
             if is_dir:
-                child_count = self._count_children_scandir(de.path)
-                preview_ids = self._collect_preview_ids(resolved)
+                child_count, preview_ids = self._scan_child_meta(resolved)
                 entries.append(
                     EntryMeta(
                         node_id=node_id,
@@ -299,7 +299,7 @@ class NodeRegistry:
         for _, _, root in self._root_entries:
             node_id = self.register(root)
             name = names.get(root, root.name)
-            child_count = self._count_children_scandir(str(root))
+            child_count, _ = self._scan_child_meta(root)
             entries.append(
                 EntryMeta(
                     node_id=node_id,
@@ -344,15 +344,16 @@ class NodeRegistry:
         if resolved == root:
             return []
 
+        # resolved 済みパスの .parent も resolved なので register_resolved で高速化
         ancestors: list[AncestorEntry] = []
         current = resolved.parent
         while current != root:
-            node_id = self.register(current)
+            node_id = self.register_resolved(current)
             ancestors.append(AncestorEntry(node_id=node_id, name=current.name))
             current = current.parent
 
         # マウントルート自体を追加
-        root_node_id = self.register(root)
+        root_node_id = self.register_resolved(root)
         root_name = self._mount_names.get(root, root.name)
         ancestors.append(AncestorEntry(node_id=root_node_id, name=root_name))
 
@@ -388,17 +389,16 @@ class NodeRegistry:
         ).hexdigest()
         node_id = digest[:16]
 
-        # LRU 上限管理
+        # LRU 上限管理 (O(1) eviction)
         while len(self._id_to_archive_entry) >= self._archive_registry_max:
             evicted_id, _ = self._id_to_archive_entry.popitem(last=False)
-            # 逆引きからも削除 (値からキー検索は重いので skip)
-            for k, v in list(self._archive_entry_to_id.items()):
-                if v == evicted_id:
-                    del self._archive_entry_to_id[k]
-                    break
+            evicted_key = self._id_to_composite_key.pop(evicted_id, None)
+            if evicted_key is not None:
+                self._archive_entry_to_id.pop(evicted_key, None)
 
         self._id_to_archive_entry[node_id] = (resolved, entry_name)
         self._archive_entry_to_id[composite_key] = node_id
+        self._id_to_composite_key[node_id] = composite_key
         return node_id
 
     def resolve_archive_entry(self, node_id: str) -> tuple[Path, str] | None:
@@ -480,16 +480,22 @@ class NodeRegistry:
             return EntryKind.ARCHIVE
         return EntryKind.OTHER
 
-    def _collect_preview_ids(self, directory: Path, limit: int = 3) -> list[str] | None:
-        """ディレクトリ内の先頭画像ファイルの node_id を最大 limit 件返す.
+    def _scan_child_meta(
+        self, directory: Path, preview_limit: int = 3
+    ) -> tuple[int, list[str] | None]:
+        """子ディレクトリの child_count と preview_ids を1回の scandir で取得する.
 
-        画像が見つからなければ None を返す。
-        拡張子のみで判定し、追加の stat() は行わない。
+        戻り値: (child_count, preview_ids)
+        画像が見つからなければ preview_ids は None。
         """
+        count = 0
         preview_ids: list[str] = []
         try:
             with os.scandir(directory) as scanner:
                 for de in scanner:
+                    count += 1
+                    if len(preview_ids) >= preview_limit:
+                        continue
                     if de.is_dir(follow_symlinks=False):
                         continue
                     name = de.name
@@ -505,17 +511,6 @@ class NodeRegistry:
                         preview_ids.append(self.register_resolved(resolved))
                     except PathSecurityError, OSError:
                         continue
-                    if len(preview_ids) >= limit:
-                        break
         except PermissionError:
             pass
-        return preview_ids if preview_ids else None
-
-    @staticmethod
-    def _count_children_scandir(path: str) -> int:
-        """os.scandir() でディレクトリの子エントリ数を返す."""
-        try:
-            with os.scandir(path) as it:
-                return sum(1 for _ in it)
-        except PermissionError:
-            return 0
+        return count, preview_ids if preview_ids else None
