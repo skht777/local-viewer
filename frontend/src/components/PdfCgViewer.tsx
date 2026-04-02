@@ -14,6 +14,7 @@ import { useFullscreen } from "../hooks/useFullscreen";
 import { useCgNavigation } from "../hooks/useCgNavigation";
 import { useCgKeyboard } from "../hooks/useCgKeyboard";
 import { useSetJump } from "../hooks/useSetJump";
+import { useSiblingPrefetch } from "../hooks/useSiblingPrefetch";
 import { useToast } from "../hooks/useToast";
 import { useToolbarAutoHide } from "../hooks/useToolbarAutoHide";
 import { usePdfDocument } from "../hooks/usePdfDocument";
@@ -99,13 +100,14 @@ export function PdfCgViewer({
   // キーボードヘルプ
   const [isHelpOpen, setIsHelpOpen] = useState(false);
 
-  // セット間ジャンプ: currentNodeId = PDF 自身、parentNodeId = 親ディレクトリ
+  // セット間ジャンプ + バックグラウンドプリフェッチ
   const setJump = useSetJump({
     currentNodeId: pdfNodeId,
     parentNodeId,
     ancestors,
     mode,
   });
+  useSiblingPrefetch({ currentNodeId: pdfNodeId, parentNodeId, ancestors });
 
   // Escape 優先順位: (1) ヘルプ閉じ → (2) プロンプト → (3) フルスクリーン → (4) ビューワー閉じ
   const handleEscape = useCallback(() => {

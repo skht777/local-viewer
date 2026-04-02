@@ -14,6 +14,7 @@ import { useCgNavigation } from "../hooks/useCgNavigation";
 import { useCgKeyboard } from "../hooks/useCgKeyboard";
 import { useImagePreload } from "../hooks/useImagePreload";
 import { useSetJump } from "../hooks/useSetJump";
+import { useSiblingPrefetch } from "../hooks/useSiblingPrefetch";
 import { useToast } from "../hooks/useToast";
 import { useToolbarAutoHide } from "../hooks/useToolbarAutoHide";
 import type { ViewerMode } from "../hooks/useViewerParams";
@@ -95,8 +96,9 @@ export function CgViewer({
   // キーボードヘルプ
   const [isHelpOpen, setIsHelpOpen] = useState(false);
 
-  // セット間ジャンプ
+  // セット間ジャンプ + バックグラウンドプリフェッチ
   const setJump = useSetJump({ currentNodeId, parentNodeId, ancestors, mode });
+  useSiblingPrefetch({ currentNodeId, parentNodeId, ancestors });
 
   // Escape 優先順位: (1) ヘルプ閉じ → (2) プロンプト閉じ → (3) フルスクリーン解除 → (4) ビューワー閉じ
   const handleEscape = useCallback(() => {

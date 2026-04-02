@@ -12,6 +12,7 @@ import { useFullscreen } from "../hooks/useFullscreen";
 import { useMangaScroll } from "../hooks/useMangaScroll";
 import { useMangaKeyboard } from "../hooks/useMangaKeyboard";
 import { useSetJump } from "../hooks/useSetJump";
+import { useSiblingPrefetch } from "../hooks/useSiblingPrefetch";
 import { useToolbarAutoHide } from "../hooks/useToolbarAutoHide";
 import { usePdfDocument } from "../hooks/usePdfDocument";
 import { usePdfPageSizes } from "../hooks/usePdfPageSizes";
@@ -131,13 +132,14 @@ export function PdfMangaViewer({
   // キーボードヘルプ
   const [isHelpOpen, setIsHelpOpen] = useState(false);
 
-  // セット間ジャンプ
+  // セット間ジャンプ + バックグラウンドプリフェッチ
   const setJump = useSetJump({
     currentNodeId: pdfNodeId,
     parentNodeId,
     ancestors,
     mode,
   });
+  useSiblingPrefetch({ currentNodeId: pdfNodeId, parentNodeId, ancestors });
 
   // Escape 優先順位: (1) ヘルプ閉じ → (2) プロンプト → (3) フルスクリーン → (4) ビューワー閉じ
   const handleEscape = useCallback(() => {
