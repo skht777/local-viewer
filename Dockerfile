@@ -11,11 +11,12 @@ FROM python:3.14-slim AS runtime
 
 ENV PYTHONUNBUFFERED=1
 
-# curl: HEALTHCHECK, unrar-free: RAR archives, libjemalloc2: メモリアロケータ
+# curl: HEALTHCHECK, unrar-free: RAR, p7zip-full: 7z, libjemalloc2: メモリアロケータ
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     ffmpeg \
     unrar-free \
+    p7zip-full \
     libjemalloc2 \
     && rm -rf /var/lib/apt/lists/*
 
