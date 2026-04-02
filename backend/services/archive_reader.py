@@ -3,7 +3,7 @@
 - ArchiveReader ABC: list_entries, extract_entry, supports
 - ZipArchiveReader: zipfile.ZipFile でダイレクト読み取り
 - RarArchiveReader: rarfile.RarFile + unrar-free
-- SevenZipArchiveReader: py7zr.SevenZipFile (Pure Python)
+- SevenZipArchiveReader: p7zip CLI (subprocess)
 - エントリのフィルタ/ソート/セキュリティ検証を内包
 """
 
@@ -289,7 +289,7 @@ class RarArchiveReader(ArchiveReader):
 class SevenZipArchiveReader(ArchiveReader):
     """7z アーカイブリーダー.
 
-    py7zr (Pure Python) を使用。システムパッケージ不要。
+    p7zip CLI (7z コマンド) を使用。py7zr (Pure Python) より 5-20x 高速。
     """
 
     _EXTENSIONS = frozenset({".7z"})
@@ -297,103 +297,155 @@ class SevenZipArchiveReader(ArchiveReader):
     def __init__(self, validator: ArchiveEntryValidator) -> None:
         self._validator = validator
 
+    @property
+    def is_available(self) -> bool:
+        """7z コマンドが利用可能かを返す."""
+        import shutil
+
+        return shutil.which("7z") is not None
+
     def supports(self, path: Path) -> bool:
-        return path.suffix.lower() in self._EXTENSIONS
+        return self.is_available and path.suffix.lower() in self._EXTENSIONS
 
     def list_entries(self, archive_path: Path) -> list[ArchiveEntry]:
-        import py7zr
+        """7z l -slt で Key=Value 形式のエントリ情報を取得する."""
+        import subprocess
 
-        try:
-            with py7zr.SevenZipFile(archive_path, "r") as sz:
-                # パスワード付き検出
-                if sz.needs_password():
-                    raise ArchivePasswordError()
+        # パスワード検出: 7z t で事前チェック
+        self._check_password(archive_path)
 
-                entries: list[ArchiveEntry] = []
-                total_uncompressed = 0
+        # archive_path は PathSecurity 検証済み
+        result = subprocess.run(  # noqa: S603
+            ["7z", "l", "-slt", str(archive_path)],  # noqa: S607
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        if result.returncode != 0:
+            msg = f"7z l failed: {result.stderr.strip()}"
+            raise OSError(msg)
 
-                for entry in sz.list():
-                    if entry.is_directory:
-                        continue
+        entries: list[ArchiveEntry] = []
+        total_uncompressed = 0
 
-                    name = entry.filename.replace("\\", "/")
-                    try:
-                        self._validator.validate_entry_name(name)
-                    except ArchiveSecurityError:
-                        continue
+        # -slt 出力をパース: 空行でブロック区切り、各行が Key = Value
+        for block in self._parse_slt_blocks(result.stdout):
+            path = block.get("Path", "")
+            if not path:
+                continue
+            # ディレクトリをスキップ
+            if block.get("Folder", "") == "+":
+                continue
 
-                    if not self._validator.is_allowed_extension(name):
-                        continue
+            name = path.replace("\\", "/")
+            try:
+                self._validator.validate_entry_name(name)
+            except ArchiveSecurityError:
+                continue
 
-                    compressed = entry.compressed or 0
-                    uncompressed = entry.uncompressed or 0
+            if not self._validator.is_allowed_extension(name):
+                continue
 
-                    try:
-                        self._validator.validate_entry_size(
-                            compressed=compressed,
-                            uncompressed=uncompressed,
-                            name=name,
-                        )
-                    except ArchiveSecurityError:
-                        continue
-                    total_uncompressed += uncompressed
+            # ソリッドアーカイブでは Packed Size が空文字列
+            compressed = int(block.get("Packed Size") or "0")
+            uncompressed = int(block.get("Size") or "0")
 
-                    entries.append(
-                        ArchiveEntry(
-                            name=name,
-                            size_compressed=compressed,
-                            size_uncompressed=uncompressed,
-                            is_dir=False,
-                        )
-                    )
+            try:
+                self._validator.validate_entry_size(
+                    compressed=compressed,
+                    uncompressed=uncompressed,
+                    name=name,
+                )
+            except ArchiveSecurityError:
+                continue
+            total_uncompressed += uncompressed
 
-                self._validator.validate_total_size(total_uncompressed)
-        except py7zr.PasswordRequired:
-            raise ArchivePasswordError() from None
+            entries.append(
+                ArchiveEntry(
+                    name=name,
+                    size_compressed=compressed,
+                    size_uncompressed=uncompressed,
+                    is_dir=False,
+                )
+            )
 
+        self._validator.validate_total_size(total_uncompressed)
         entries.sort(key=lambda e: natural_sort_key(e.name))
         return entries
 
     def extract_entry(self, archive_path: Path, entry_name: str) -> bytes:
-        """メモリ上に単一エントリを展開する.
+        """stdout ストリーミングで単一エントリを展開する.
 
-        BytesIOFactory でディスク I/O を回避し、
-        limit で max_entry_size を強制する。
+        チャンク読みでサイズ上限を強制し、超過時は即座に kill する。
         """
-        import py7zr
-        import py7zr.io
+        import subprocess
 
-        factory = py7zr.io.BytesIOFactory(
-            limit=self._validator.max_entry_size_for(entry_name),
+        max_size = self._validator.max_entry_size_for(entry_name)
+
+        # archive_path: PathSecurity 検証済み, entry_name: Validator 検証済み
+        proc = subprocess.Popen(  # noqa: S603
+            ["7z", "x", "-so", str(archive_path), entry_name],  # noqa: S607
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
         )
-        with py7zr.SevenZipFile(archive_path, "r") as sz:
-            sz.extract(targets=[entry_name], factory=factory)
+        try:
+            chunks: list[bytes] = []
+            total = 0
+            while True:
+                chunk = proc.stdout.read(_EXTRACT_CHUNK_SIZE)  # type: ignore[union-attr]
+                if not chunk:
+                    break
+                total += len(chunk)
+                if total > max_size:
+                    proc.kill()
+                    msg = f"抽出時にサイズ上限を超えました: {entry_name}"
+                    raise ArchiveSecurityError(msg)
+                chunks.append(chunk)
 
-        if entry_name not in factory.products:
+            proc.wait(timeout=60)
+            if proc.returncode != 0:
+                stderr = proc.stderr.read().decode(errors="replace")  # type: ignore[union-attr]
+                # エントリが見つからない場合
+                msg = entry_name
+                raise (
+                    KeyError(msg)
+                    if "cannot find" in stderr.lower()
+                    else OSError(f"7z x failed: {stderr.strip()}")
+                )
+        finally:
+            proc.stdout.close()  # type: ignore[union-attr]
+            proc.stderr.close()  # type: ignore[union-attr]
+
+        data = b"".join(chunks)
+        if not data:
             msg = entry_name
             raise KeyError(msg)
-
-        bio = factory.products[entry_name]
-        bio.seek(0)
-        return bio.read()
+        return data
 
     def extract_entry_to_file(
         self, archive_path: Path, entry_name: str, dest: Path
     ) -> None:
-        """7z エントリをディレクトリに展開し dest に移動する (メモリ節約).
+        """7z エントリをディレクトリに展開し dest に移動する.
 
         - dest.parent 配下に一時ディレクトリを作成し同一 filesystem を保証
         - os.replace() でアトミックに配置
         """
-        import py7zr
+        import shutil
+        import subprocess
 
         max_size = self._validator.max_entry_size_for(entry_name)
 
         # dest.parent 配下に一時ディレクトリを作成
         tmp_dir = Path(tempfile.mkdtemp(dir=dest.parent, prefix=".tmp_7z_"))
         try:
-            with py7zr.SevenZipFile(archive_path, "r") as sz:
-                sz.extract(targets=[entry_name], path=tmp_dir)
+            # -o と tmp_dir の間にスペースなし (7z の仕様)
+            # archive_path: PathSecurity 検証済み, entry_name: Validator 検証済み
+            subprocess.run(  # noqa: S603
+                ["7z", "x", "-o" + str(tmp_dir), str(archive_path), entry_name],  # noqa: S607
+                capture_output=True,
+                check=True,
+                timeout=60,
+            )
 
             extracted = tmp_dir / entry_name
             if not extracted.exists():
@@ -407,10 +459,44 @@ class SevenZipArchiveReader(ArchiveReader):
                 raise ArchiveSecurityError(msg)
 
             os.replace(str(extracted), str(dest))
-            # py7zr は元のファイル権限を復元するため、読み取り権限を保証
             dest.chmod(0o644)
         finally:
-            # 一時ディレクトリを掃除 (残ったファイルがあれば削除)
-            import shutil
-
             shutil.rmtree(tmp_dir, ignore_errors=True)
+
+    @staticmethod
+    def _check_password(archive_path: Path) -> None:
+        """7z t でパスワード保護を検出する."""
+        import subprocess
+
+        # archive_path は PathSecurity 検証済み
+        result = subprocess.run(  # noqa: S603
+            ["7z", "t", str(archive_path)],  # noqa: S607
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        if result.returncode != 0:
+            stderr = result.stderr.lower()
+            if "wrong password" in stderr or "cannot open encrypted" in stderr:
+                raise ArchivePasswordError()
+
+    @staticmethod
+    def _parse_slt_blocks(output: str) -> list[dict[str, str]]:
+        """7z l -slt の出力を Key=Value ブロックのリストにパースする."""
+        blocks: list[dict[str, str]] = []
+        current: dict[str, str] = {}
+
+        for line in output.splitlines():
+            line = line.strip()
+            if not line:
+                if current:
+                    blocks.append(current)
+                    current = {}
+                continue
+            if " = " in line:
+                key, _, value = line.partition(" = ")
+                current[key] = value
+
+        if current:
+            blocks.append(current)
+        return blocks
