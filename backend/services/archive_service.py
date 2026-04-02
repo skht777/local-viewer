@@ -184,11 +184,5 @@ class ArchiveService:
             elif isinstance(reader, RarArchiveReader):
                 diag["rar"] = reader.is_available
             elif isinstance(reader, SevenZipArchiveReader):
-                # py7zr は Pure Python だが _zstd 問題がありうる
-                try:
-                    import py7zr  # noqa: F401
-
-                    diag["7z"] = True
-                except ImportError:
-                    diag["7z"] = False
+                diag["7z"] = reader.is_available
         return diag
