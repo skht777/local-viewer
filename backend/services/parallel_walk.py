@@ -21,6 +21,7 @@ class WalkEntry:
     """1 ディレクトリの走査結果."""
 
     path: Path
+    mtime_ns: int = 0  # ディレクトリ自体の mtime (ナノ秒)
     subdirs: list[tuple[str, int]] = field(default_factory=list)  # (name, mtime_ns)
     files: list[tuple[str, int, int]] = field(
         default_factory=list
@@ -65,7 +66,13 @@ def _scan_one(
     except PermissionError, OSError:
         logger.debug("走査スキップ: %s", dir_path)
 
-    return WalkEntry(path=dir_path, subdirs=subdirs, files=files)
+    # ディレクトリ自体の mtime を取得
+    try:
+        dir_mtime_ns = dir_path.stat().st_mtime_ns
+    except OSError:
+        dir_mtime_ns = 0
+
+    return WalkEntry(path=dir_path, mtime_ns=dir_mtime_ns, subdirs=subdirs, files=files)
 
 
 def parallel_walk(

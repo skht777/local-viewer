@@ -46,6 +46,12 @@ class TestParallelWalk:
             all_files.extend(name for name, _, _ in entry.files)
         assert sorted(all_files) == ["f1.txt", "f2.mp4", "f3.zip", "f4.pdf"]
 
+    def test_WalkEntryにディレクトリ自体のmtime_nsが含まれる(self, tree: Path) -> None:
+        entries = list(parallel_walk(tree, workers=2))
+        for entry in entries:
+            assert isinstance(entry.mtime_ns, int)
+            assert entry.mtime_ns > 0
+
     def test_subdirsにmtime_nsが含まれる(self, tree: Path) -> None:
         root_entry = next(e for e in parallel_walk(tree) if e.path == tree)
         for name, mtime_ns in root_entry.subdirs:
