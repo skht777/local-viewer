@@ -1,10 +1,13 @@
 """ArchiveReader (ZIP/7z) のテスト."""
 
+import shutil
+import subprocess
 import zipfile
 from pathlib import Path
 
-import py7zr
 import pytest
+
+_has_7z = shutil.which("7z") is not None
 
 from backend.services.archive_reader import (
     RarArchiveReader,
@@ -177,12 +180,24 @@ def test_ZIP_supportsが正しい拡張子で真を返す(
 
 @pytest.fixture
 def sevenz_archive(tmp_path: Path) -> Path:
-    """テスト用 7z を動的生成する."""
+    """テスト用 7z を p7zip CLI で動的生成する."""
+    pytest.importorskip("subprocess")
+    if not _has_7z:
+        pytest.skip("p7zip (7z) が未インストール")
+
+    # 一時ディレクトリにファイルを配置して 7z a で圧縮
+    src_dir = tmp_path / "sevenz_src"
+    src_dir.mkdir()
+    (src_dir / "image01.jpg").write_bytes(MINIMAL_JPEG)
+    (src_dir / "image02.png").write_bytes(MINIMAL_PNG)
+    (src_dir / "readme.txt").write_text("text content")
+
     archive = tmp_path / "test.7z"
-    with py7zr.SevenZipFile(archive, "w") as sz:
-        sz.writestr(MINIMAL_JPEG, "image01.jpg")
-        sz.writestr(MINIMAL_PNG, "image02.png")
-        sz.writestr(b"text content", "readme.txt")
+    subprocess.run(
+        ["7z", "a", str(archive), str(src_dir / "*")],
+        capture_output=True,
+        check=True,
+    )
     return archive
 
 
