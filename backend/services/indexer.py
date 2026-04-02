@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import bisect
 import logging
-import os
 import re
 import sqlite3
 from dataclasses import dataclass
@@ -475,11 +474,13 @@ class Indexer:
         root_dir: Path,
         path_security: PathSecurity,
         mount_id: str = "",
+        workers: int = 8,
     ) -> tuple[int, int, int]:
         """差分スキャン (追加, 更新, 削除) の件数を返す.
 
+        - parallel_walk で stat() を並列実行 (WSL2 drvfs 高速化)
         - mtime_ns で変更を検出
-        - ディレクトリ mtime が未変更なら配下を枝刈り (mlocate 方式)
+        - dir_filter でディレクトリ mtime 未変更なら配下を枝刈り (mlocate 方式)
         - 既存パスが見つからなければ削除
         """
         conn = self._connect()
@@ -509,61 +510,69 @@ class Indexer:
             # 枝刈り用: ソート済みキーで子孫エントリを高速に seen マーク
             sorted_existing_keys = sorted(existing.keys())
 
-            for dirpath, dirnames, filenames in os.walk(root_dir):
-                dp = Path(dirpath)
+            # PathSecurity.validate() の bool ラッパー
+            def _safe_validate(p: Path) -> bool:
+                try:
+                    path_security.validate(p)
+                    return True
+                except Exception:
+                    return False
+
+            # mtime 枝刈り: ディレクトリの mtime が未変更なら子孫を走査しない
+            def _dir_mtime_filter(subdir_path: Path, mtime_ns: int) -> bool:
+                rel = prefix + str(subdir_path.relative_to(root_dir))
+                seen.add(rel)
+                if rel in existing and existing[rel] == mtime_ns:
+                    # mtime 未変更: 子孫を seen に追加して枝刈り
+                    _mark_descendants_seen(sorted_existing_keys, rel, seen)
+                    return False
+                # 新規 or 変更あり → ディレクトリを登録して子孫を走査
+                if rel not in existing:
+                    self.add_entry(
+                        IndexEntry(rel, subdir_path.name, "directory", None, mtime_ns)
+                    )
+                    return True
+                # mtime 変更
+                self.add_entry(
+                    IndexEntry(rel, subdir_path.name, "directory", None, mtime_ns)
+                )
+                return True
+
+            for walk_entry in parallel_walk(
+                root_dir,
+                workers=workers,
+                skip_hidden=True,
+                path_validator=_safe_validate,
+                dir_filter=_dir_mtime_filter,
+            ):
+                dp = walk_entry.path
+
+                # ルートは dir_filter を通らないためここで処理
                 if dp != root_dir:
-                    try:
-                        path_security.validate(dp)
-                    except Exception:
-                        dirnames.clear()
-                        continue
                     rel = prefix + str(dp.relative_to(root_dir))
-                    seen.add(rel)
-                    mtime = dp.stat().st_mtime_ns
+                    # dir_filter で既に登録済みだが、seen には追加済み
+                    # updated/added カウントは dir_filter 内で add_entry 済み
+                    # → ここではカウントのみ
                     if rel not in existing:
-                        self.add_entry(
-                            IndexEntry(rel, dp.name, "directory", None, mtime)
-                        )
                         added += 1
-                    elif existing[rel] != mtime:
-                        self.add_entry(
-                            IndexEntry(rel, dp.name, "directory", None, mtime)
-                        )
+                    elif existing[rel] != walk_entry.mtime_ns:
                         updated += 1
-                    else:
-                        # mtime 未変更: 配下のファイルは追加/削除されていない
-                        # DB 上の子孫エントリを seen に追加して削除検出から除外
-                        _mark_descendants_seen(sorted_existing_keys, rel, seen)
-                        dirnames.clear()
-                        continue
 
-                dirnames[:] = [d for d in dirnames if not d.startswith(".")]
-
-                for fname in filenames:
-                    if fname.startswith("."):
-                        continue
+                # ファイル処理 (parallel_walk が stat() 済み)
+                for fname, size_bytes, mtime_ns in walk_entry.files:
                     kind = _classify_by_extension(fname)
                     if kind not in INDEXABLE_KINDS:
                         continue
-                    fp = dp / fname
-                    try:
-                        path_security.validate(fp)
-                    except Exception:  # noqa: S112
-                        continue
-                    try:
-                        st = fp.stat()
-                    except OSError:
-                        continue
-                    rel = prefix + str(fp.relative_to(root_dir))
+                    rel = prefix + str(dp.relative_to(root_dir) / fname)
                     seen.add(rel)
                     if rel not in existing:
                         self.add_entry(
-                            IndexEntry(rel, fname, kind, st.st_size, st.st_mtime_ns)
+                            IndexEntry(rel, fname, kind, size_bytes, mtime_ns)
                         )
                         added += 1
-                    elif existing[rel] != st.st_mtime_ns:
+                    elif existing[rel] != mtime_ns:
                         self.add_entry(
-                            IndexEntry(rel, fname, kind, st.st_size, st.st_mtime_ns)
+                            IndexEntry(rel, fname, kind, size_bytes, mtime_ns)
                         )
                         updated += 1
 
