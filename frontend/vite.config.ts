@@ -2,9 +2,47 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
+import { VitePWA } from "vite-plugin-pwa";
 
 export default defineConfig({
-  plugins: [react(), tailwindcss()],
+  plugins: [
+    react(),
+    tailwindcss(),
+    VitePWA({
+      registerType: "autoUpdate",
+      workbox: {
+        runtimeCaching: [
+          // サムネイル: CacheFirst (immutable URL でキャッシュ自動更新)
+          {
+            urlPattern: /^\/api\/thumbnail\//,
+            handler: "CacheFirst",
+            options: {
+              cacheName: "thumbnails",
+              expiration: {
+                maxEntries: 2000,
+                maxAgeSeconds: 30 * 24 * 60 * 60, // 30日
+              },
+              cacheableResponse: { statuses: [0, 200] },
+            },
+          },
+          // その他 API: NetworkFirst (動的データ)
+          {
+            urlPattern: /^\/api\//,
+            handler: "NetworkFirst",
+            options: {
+              cacheName: "api",
+              expiration: { maxAgeSeconds: 5 * 60 },
+              cacheableResponse: { statuses: [0, 200] },
+            },
+          },
+        ],
+        navigateFallback: "/index.html",
+        navigateFallbackDenylist: [/^\/api\//],
+      },
+      // PWA インストール不要、キャッシュのみが目的
+      manifest: false,
+    }),
+  ],
   server: {
     host: true,
     proxy: {
@@ -18,5 +56,9 @@ export default defineConfig({
     globals: true,
     environment: "jsdom",
     setupFiles: "./tests/setup.ts",
+    alias: {
+      // テスト環境では virtual:pwa-register をスタブに差し替え
+      "virtual:pwa-register": "./tests/__mocks__/pwa-register.ts",
+    },
   },
 });
