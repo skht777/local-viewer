@@ -126,6 +126,13 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
         app_logger.addHandler(logging.getLogger("uvicorn").handlers[0])
         app_logger.setLevel(logging.INFO)
 
+    # スレッドプール上限を制御
+    # anyio デフォルト 40 トークンは GIL 制約下で CPU スラッシングを招くため、
+    # CPU コア数と GIL の実効並列度を考慮して 12 に制限する
+    import anyio
+
+    anyio.to_thread.current_default_thread_limiter().total_tokens = 12
+
     settings = init_settings()
 
     # マウントポイント設定の読み込み
