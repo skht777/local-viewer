@@ -158,6 +158,38 @@ async def test_壊れた画像のアーカイブサムネイルで422を返す(
     assert response.status_code == 422
 
 
+async def test_vパラメータ付きリクエストでimmutableヘッダが返る(
+    client: AsyncClient,
+    test_node_registry: NodeRegistry,
+    test_root: Path,
+) -> None:
+    entries = test_node_registry.list_directory(test_root / "dir_a")
+    image_entry = next(e for e in entries if e.name == "image.jpg")
+
+    response = await client.get(f"/api/thumbnail/{image_entry.node_id}?v=12345")
+    assert response.status_code == 200
+    cc = response.headers["cache-control"]
+    assert "immutable" in cc
+    assert "max-age=31536000" in cc
+    assert "public" in cc
+
+
+async def test_vパラメータなしリクエストで従来のキャッシュヘッダが返る(
+    client: AsyncClient,
+    test_node_registry: NodeRegistry,
+    test_root: Path,
+) -> None:
+    entries = test_node_registry.list_directory(test_root / "dir_a")
+    image_entry = next(e for e in entries if e.name == "image.jpg")
+
+    response = await client.get(f"/api/thumbnail/{image_entry.node_id}")
+    assert response.status_code == 200
+    cc = response.headers["cache-control"]
+    assert "private" in cc
+    assert "max-age=3600" in cc
+    assert "immutable" not in cc
+
+
 async def test_サムネイルが300px以内にリサイズされている(
     client: AsyncClient,
     test_node_registry: NodeRegistry,

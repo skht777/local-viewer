@@ -49,6 +49,17 @@ def _compute_etag(mtime_ns: int, node_id: str) -> str:
     return hashlib.md5(raw.encode()).hexdigest()  # noqa: S324
 
 
+# ?v= パラメータ付き → immutable 長期キャッシュ
+# ?v= なし → 従来の ETag ベース短期キャッシュ (後方互換)
+_CACHE_IMMUTABLE = "public, max-age=31536000, immutable"
+_CACHE_DEFAULT = "private, max-age=3600"
+
+
+def _cache_control(request: Request) -> str:
+    """リクエストの ?v= パラメータ有無で Cache-Control を決定する."""
+    return _CACHE_IMMUTABLE if request.query_params.get("v") else _CACHE_DEFAULT
+
+
 @router.get("/thumbnail/{node_id}")
 async def serve_thumbnail(
     node_id: str,
@@ -122,7 +133,7 @@ async def serve_thumbnail(
             media_type="image/jpeg",
             headers={
                 "ETag": f'"{etag}"',
-                "Cache-Control": "private, max-age=3600",
+                "Cache-Control": _cache_control(request),
             },
         )
 
@@ -164,7 +175,7 @@ async def _serve_archive_entry_thumbnail(
             media_type="image/jpeg",
             headers={
                 "ETag": f'"{etag}"',
-                "Cache-Control": "private, max-age=3600",
+                "Cache-Control": _cache_control(request),
             },
         )
 
@@ -238,7 +249,7 @@ async def _serve_archive_thumbnail(
             media_type="image/jpeg",
             headers={
                 "ETag": f'"{etag}"',
-                "Cache-Control": "private, max-age=3600",
+                "Cache-Control": _cache_control(request),
             },
         )
 
