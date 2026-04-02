@@ -104,6 +104,15 @@ def test_パスからサムネイルが生成される(
     assert max(img.size) <= 300
 
 
+def test_サムネイルがprogressive_JPEGで出力される(
+    service: ThumbnailService,
+) -> None:
+    source = _make_jpeg(800, 600)
+    result = service.generate_thumbnail(source)
+    img = Image.open(io.BytesIO(result))
+    assert img.info.get("progressive") or img.info.get("progression")
+
+
 def test_パスベース生成とバイト版が同サイズのサムネイルを返す(
     service: ThumbnailService, tmp_path: Path
 ) -> None:
