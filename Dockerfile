@@ -9,15 +9,18 @@ RUN npm run build
 # Stage 2: Production runtime
 FROM python:3.14-slim AS runtime
 
-ENV PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1
+ENV PYTHONUNBUFFERED=1
 
-# curl for HEALTHCHECK, unrar-free for RAR archives
+# curl: HEALTHCHECK, unrar-free: RAR archives, libjemalloc2: メモリアロケータ
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     ffmpeg \
     unrar-free \
+    libjemalloc2 \
     && rm -rf /var/lib/apt/lists/*
+
+# jemalloc: 長時間稼働でのメモリ断片化を抑制
+ENV LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libjemalloc.so.2
 
 # Non-root user
 RUN useradd -m -r -s /bin/bash viewer
@@ -30,6 +33,9 @@ RUN pip install --no-cache-dir -r backend/requirements.txt
 
 # Backend code
 COPY backend/ ./backend/
+
+# バイトコード事前コンパイル (起動時 import 高速化)
+RUN python -m compileall -q backend/
 
 # Frontend static assets from Stage 1
 COPY --from=frontend /app/frontend/dist ./static/
