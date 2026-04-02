@@ -94,3 +94,33 @@ def test_diagnosticsで各形式の利用可否を返す(
     assert diag["zip"] is True
     assert "rar" in diag
     assert "7z" in diag
+
+
+def test_list_entriesの2回目がキャッシュヒットする(
+    archive_service: ArchiveService, zip_archive: Path
+) -> None:
+    entries1 = archive_service.list_entries(zip_archive)
+    entries2 = archive_service.list_entries(zip_archive)
+    # 同一オブジェクト (キャッシュヒット) であること
+    assert entries1 is entries2
+
+
+def test_list_entriesがmtime変更でキャッシュ無効化される(
+    archive_service: ArchiveService, zip_archive: Path, tmp_path: Path
+) -> None:
+    import os
+    import time
+
+    entries1 = archive_service.list_entries(zip_archive)
+
+    # mtime を更新してキャッシュを無効化
+    time.sleep(0.01)
+    with zipfile.ZipFile(zip_archive, "a") as zf:
+        zf.writestr("img03.jpg", MINIMAL_JPEG)
+    # mtime_ns が変わるように明示的にタイムスタンプを変更
+    os.utime(zip_archive, (time.time(), time.time()))
+
+    entries2 = archive_service.list_entries(zip_archive)
+    # キャッシュミスで新しいリストが返る
+    assert entries2 is not entries1
+    assert len(entries2) == len(entries1) + 1

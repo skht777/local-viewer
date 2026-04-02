@@ -2,7 +2,7 @@
 
 - 複数の ArchiveReader を保持し、拡張子に応じて適切なリーダーを選択
 - メモリ LRU キャッシュでエントリデータをバイト上限管理
-- list_entries はキャッシュしない (毎回最新を読む)
+- list_entries は mtime_ns ベースの LRU キャッシュで高速化
 - extract_entry の結果をキャッシュ
 """
 
@@ -63,11 +63,16 @@ class ByteLRUCache:
         return self._current_bytes
 
 
+# list_entries キャッシュの最大エントリ数
+_LIST_CACHE_MAX = 32
+
+
 class ArchiveService:
     """アーカイブ操作の統合サービス.
 
     - 複数の ArchiveReader を保持し、拡張子に応じて選択
     - extract_entry の結果を ByteLRUCache でキャッシュ
+    - list_entries の結果を mtime_ns ベースの LRU キャッシュで保持
     """
 
     def __init__(
@@ -81,6 +86,9 @@ class ArchiveService:
             SevenZipArchiveReader(validator),
         ]
         self._cache = ByteLRUCache(max_bytes=cache_max_bytes)
+        # list_entries キャッシュ (mtime_ns で無効化)
+        self._list_cache: OrderedDict[str, list[ArchiveEntry]] = OrderedDict()
+        self._list_cache_lock = threading.Lock()
 
     def get_reader(self, path: Path) -> ArchiveReader | None:
         """パスに対応するリーダーを返す."""
@@ -90,12 +98,26 @@ class ArchiveService:
         return None
 
     def list_entries(self, archive_path: Path) -> list[ArchiveEntry]:
-        """アーカイブのエントリ一覧を返す."""
+        """アーカイブのエントリ一覧を返す (mtime_ns キャッシュ付き)."""
+        stat = archive_path.stat()
+        cache_key = f"{archive_path}:{stat.st_mtime_ns}"
+
+        with self._list_cache_lock:
+            if cache_key in self._list_cache:
+                self._list_cache.move_to_end(cache_key)
+                return self._list_cache[cache_key]
+
         reader = self.get_reader(archive_path)
         if reader is None:
             msg = f"サポートされていないアーカイブ形式です: {archive_path.suffix}"
             raise ValueError(msg)
-        return reader.list_entries(archive_path)
+        entries = reader.list_entries(archive_path)
+
+        with self._list_cache_lock:
+            if len(self._list_cache) >= _LIST_CACHE_MAX:
+                self._list_cache.popitem(last=False)
+            self._list_cache[cache_key] = entries
+        return entries
 
     def extract_entry(self, archive_path: Path, entry_name: str) -> bytes:
         """エントリを抽出する (キャッシュ付き).
