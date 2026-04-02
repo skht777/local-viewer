@@ -23,6 +23,7 @@ from backend.services.extensions import (
     PDF_EXTENSIONS,
     VIDEO_EXTENSIONS,
 )
+from backend.services.parallel_walk import parallel_walk
 
 if TYPE_CHECKING:
     from backend.services.path_security import PathSecurity
@@ -405,9 +406,11 @@ class Indexer:
         root_dir: Path,
         path_security: PathSecurity,
         mount_id: str = "",
+        workers: int = 8,
     ) -> int:
         """ルートディレクトリ以下を再帰走査してインデックスに追加する.
 
+        - parallel_walk で stat() を並列実行 (WSL2 drvfs 高速化)
         - PathSecurity チェックを通過したエントリのみ登録
         - 1000 エントリごとにバッチ INSERT
         - スキャン完了後 _is_ready = True
@@ -418,45 +421,40 @@ class Indexer:
         batch: list[tuple[str, str, str, int | None, int]] = []
         prefix = f"{mount_id}/" if mount_id else ""
 
+        # PathSecurity.validate() は例外を投げるため、bool ラッパーで包む
+        def _safe_validate(p: Path) -> bool:
+            try:
+                path_security.validate(p)
+                return True
+            except Exception:
+                return False
+
         try:
-            for dirpath, dirnames, filenames in os.walk(root_dir):
-                dp = Path(dirpath)
+            for walk_entry in parallel_walk(
+                root_dir,
+                workers=workers,
+                skip_hidden=True,
+                path_validator=_safe_validate,
+            ):
+                dp = walk_entry.path
 
                 # ディレクトリ自体を登録 (ルートは除く)
+                # mtime_ns は parallel_walk が取得済み
                 if dp != root_dir:
-                    try:
-                        path_security.validate(dp)
-                    except Exception:
-                        dirnames.clear()
-                        continue
                     rel = prefix + str(dp.relative_to(root_dir))
-                    mtime = dp.stat().st_mtime_ns
-                    batch.append((rel, dp.name, "directory", None, mtime))
+                    batch.append((rel, dp.name, "directory", None, walk_entry.mtime_ns))
                     count += 1
 
-                # 隠しディレクトリをスキップ
-                dirnames[:] = [d for d in dirnames if not d.startswith(".")]
-
-                # 拡張子チェックを validate() の前に実行
+                # 拡張子チェックを先に実行
                 # (drvfs 上では resolve() が 0.43ms/call のため、
                 #  indexable でない 96% のファイルの validate() をスキップ)
-                for fname in filenames:
-                    if fname.startswith("."):
-                        continue
+                # parallel_walk が stat() を済ませているため個別 stat() 不要
+                for fname, size_bytes, mtime_ns in walk_entry.files:
                     kind = _classify_by_extension(fname)
                     if kind not in INDEXABLE_KINDS:
                         continue
-                    fp = dp / fname
-                    try:
-                        path_security.validate(fp)
-                    except Exception:  # noqa: S112
-                        continue
-                    try:
-                        st = fp.stat()
-                    except OSError:
-                        continue
-                    rel = prefix + str(fp.relative_to(root_dir))
-                    batch.append((rel, fname, kind, st.st_size, st.st_mtime_ns))
+                    rel = prefix + str(dp.relative_to(root_dir) / fname)
+                    batch.append((rel, fname, kind, size_bytes, mtime_ns))
                     count += 1
 
                     if len(batch) >= _BATCH_SIZE:
