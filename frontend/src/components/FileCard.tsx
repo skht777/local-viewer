@@ -97,7 +97,7 @@ export function FileCard({
       <div className="relative flex aspect-square items-center justify-center bg-surface-raised text-4xl">
         {isImagePreview ? (
           <img
-            src={thumbnailUrl(entry.node_id)}
+            src={thumbnailUrl(entry.node_id, entry.modified_at)}
             alt={entry.name}
             className="h-full w-full object-cover"
             loading="lazy"
@@ -107,11 +107,12 @@ export function FileCard({
         ) : hasDirectoryPreview ? (
           <PreviewGrid
             previewNodeIds={entry.preview_node_ids!}
+            modifiedAt={entry.modified_at}
             onAllError={() => setHasPreviewError(true)}
           />
         ) : hasArchivePreview ? (
           <img
-            src={thumbnailUrl(entry.node_id)}
+            src={thumbnailUrl(entry.node_id, entry.modified_at)}
             alt={entry.name}
             className="h-full w-full object-cover"
             loading="lazy"

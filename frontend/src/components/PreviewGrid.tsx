@@ -9,10 +9,11 @@ import { thumbnailUrl } from "../utils/thumbnailUrl";
 
 interface PreviewGridProps {
   previewNodeIds: string[];
+  modifiedAt?: number | null;
   onAllError?: () => void;
 }
 
-export function PreviewGrid({ previewNodeIds, onAllError }: PreviewGridProps) {
+export function PreviewGrid({ previewNodeIds, modifiedAt, onAllError }: PreviewGridProps) {
   const [errorSet, setErrorSet] = useState<Set<string>>(new Set());
 
   const handleError = (nodeId: string) => {
@@ -37,7 +38,7 @@ export function PreviewGrid({ previewNodeIds, onAllError }: PreviewGridProps) {
   if (validIds.length === 1) {
     return (
       <img
-        src={thumbnailUrl(validIds[0])}
+        src={thumbnailUrl(validIds[0], modifiedAt)}
         alt=""
         className="h-full w-full object-cover"
         loading="lazy"
@@ -53,7 +54,7 @@ export function PreviewGrid({ previewNodeIds, onAllError }: PreviewGridProps) {
         {validIds.map((id) => (
           <img
             key={id}
-            src={thumbnailUrl(id)}
+            src={thumbnailUrl(id, modifiedAt)}
             alt=""
             className="h-full w-full object-cover"
             loading="lazy"
@@ -69,7 +70,7 @@ export function PreviewGrid({ previewNodeIds, onAllError }: PreviewGridProps) {
   return (
     <div className="grid h-full w-full grid-cols-2 grid-rows-2 gap-0.5">
       <img
-        src={thumbnailUrl(validIds[0])}
+        src={thumbnailUrl(validIds[0], modifiedAt)}
         alt=""
         className="row-span-2 h-full w-full object-cover"
         loading="lazy"
@@ -77,7 +78,7 @@ export function PreviewGrid({ previewNodeIds, onAllError }: PreviewGridProps) {
         onError={() => handleError(validIds[0])}
       />
       <img
-        src={thumbnailUrl(validIds[1])}
+        src={thumbnailUrl(validIds[1], modifiedAt)}
         alt=""
         className="h-full w-full object-cover"
         loading="lazy"
@@ -85,7 +86,7 @@ export function PreviewGrid({ previewNodeIds, onAllError }: PreviewGridProps) {
         onError={() => handleError(validIds[1])}
       />
       <img
-        src={thumbnailUrl(validIds[2])}
+        src={thumbnailUrl(validIds[2], modifiedAt)}
         alt=""
         className="h-full w-full object-cover"
         loading="lazy"
