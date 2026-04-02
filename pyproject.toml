@@ -47,6 +47,14 @@ ignore_missing_imports = true
 module = "rarfile.*"
 ignore_missing_imports = true
 
+[[tool.mypy.overrides]]
+module = ["pyvips", "pyvips.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["backend.services.thumbnail_service", "backend.routers.thumbnail"]
+disallow_untyped_calls = false
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]

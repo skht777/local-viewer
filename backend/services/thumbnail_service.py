@@ -1,16 +1,15 @@
 """サムネイル生成サービス.
 
-Pillow で画像をリサイズし、TempFileCache にキャッシュする。
+pyvips で画像をリサイズし、TempFileCache にキャッシュする。
 - 画像 → JPEG サムネイル (300px 以内、quality=80)
-- RGBA/P/LA → RGB 変換 (JPEG 互換)
+- アルファチャネル → 白背景で合成 (JPEG 互換)
 - CPU-bound のため run_in_threadpool で呼び出すこと
 """
 
 import hashlib
-import io
 from pathlib import Path
 
-from PIL import Image
+import pyvips
 
 from backend.services.temp_file_cache import TempFileCache
 
@@ -20,7 +19,7 @@ JPEG_QUALITY = 80
 
 
 class ThumbnailService:
-    """Pillow ベースのサムネイル生成 + ディスクキャッシュ."""
+    """pyvips ベースのサムネイル生成 + ディスクキャッシュ."""
 
     def __init__(self, temp_cache: TempFileCache) -> None:
         self._cache = temp_cache
@@ -37,9 +36,9 @@ class ThumbnailService:
         """画像バイト列からサムネイル JPEG を生成する.
 
         Raises:
-            PIL.UnidentifiedImageError: 画像として認識できないデータ
+            pyvips.Error: 画像として認識できないデータ
         """
-        img: Image.Image = Image.open(io.BytesIO(source_bytes))
+        img = pyvips.Image.new_from_buffer(source_bytes, "")
         return self._resize_and_encode(img, width)
 
     def generate_thumbnail_from_path(
@@ -47,29 +46,25 @@ class ThumbnailService:
     ) -> bytes:
         """ファイルパスからサムネイル JPEG を生成する.
 
-        Image.open(path) で遅延読み込みを利用し、メモリ効率を向上させる。
         path_security 検証済みパスのみ渡すこと。
 
         Raises:
-            PIL.UnidentifiedImageError: 画像として認識できないデータ
+            pyvips.Error: 画像として認識できないデータ
         """
-        img: Image.Image = Image.open(path)
+        img = pyvips.Image.new_from_file(str(path))
         return self._resize_and_encode(img, width)
 
     @staticmethod
-    def _resize_and_encode(img: Image.Image, width: int) -> bytes:
+    def _resize_and_encode(img: pyvips.Image, width: int) -> bytes:
         """画像をリサイズして JPEG エンコードする."""
-        # JPEG 非互換モードを RGB に変換
-        if img.mode in ("RGBA", "P", "LA"):
-            img = img.convert("RGB")
-        # reducing_gap=2.0: libjpeg 整数ダウンスケールを活用して高速化
-        # BILINEAR: 300px では LANCZOS との差は視認不可能
-        img.thumbnail((width, width), Image.Resampling.BILINEAR, reducing_gap=2.0)
-        buf = io.BytesIO()
-        # optimize を無効化: 300px サムネイルでは Huffman 2パス最適化の
-        # CPU コスト (20-30%) に対してファイルサイズ削減 (~5%) が見合わない
-        img.save(buf, format="JPEG", quality=JPEG_QUALITY, progressive=True)
-        return buf.getvalue()
+        # アルファチャネルがあれば白背景で合成 (JPEG 互換)
+        if img.hasalpha():
+            img = img.flatten(background=[255, 255, 255])
+        # thumbnail_image: アスペクト比を保持してリサイズ
+        img = img.thumbnail_image(width, height=width)
+        # progressive JPEG (interlace=True) でクライアント側の段階的表示を実現
+        result: bytes = img.write_to_buffer(".jpg", Q=JPEG_QUALITY, interlace=True)
+        return result
 
     def get_or_generate(
         self,

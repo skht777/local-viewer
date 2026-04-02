@@ -10,9 +10,9 @@ import hashlib
 import logging
 from pathlib import Path
 
+import pyvips
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import FileResponse, Response
-from PIL import UnidentifiedImageError
 from starlette.concurrency import run_in_threadpool
 
 from backend.services.archive_service import ArchiveService
@@ -139,7 +139,7 @@ async def serve_thumbnail(
 
     try:
         return await run_in_threadpool(_generate)
-    except UnidentifiedImageError:
+    except pyvips.Error:
         raise HTTPException(
             status_code=422,
             detail={
@@ -181,7 +181,7 @@ async def _serve_archive_entry_thumbnail(
 
     try:
         return await run_in_threadpool(_generate)
-    except UnidentifiedImageError:
+    except pyvips.Error:
         raise HTTPException(
             status_code=422,
             detail={
@@ -255,7 +255,7 @@ async def _serve_archive_thumbnail(
 
     try:
         return await run_in_threadpool(_generate)
-    except UnidentifiedImageError:
+    except pyvips.Error:
         raise HTTPException(
             status_code=422,
             detail={
