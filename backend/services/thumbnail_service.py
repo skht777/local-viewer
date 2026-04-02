@@ -40,6 +40,25 @@ class ThumbnailService:
             PIL.UnidentifiedImageError: 画像として認識できないデータ
         """
         img: Image.Image = Image.open(io.BytesIO(source_bytes))
+        return self._resize_and_encode(img, width)
+
+    def generate_thumbnail_from_path(
+        self, path: Path, width: int = DEFAULT_WIDTH
+    ) -> bytes:
+        """ファイルパスからサムネイル JPEG を生成する.
+
+        Image.open(path) で遅延読み込みを利用し、メモリ効率を向上させる。
+        path_security 検証済みパスのみ渡すこと。
+
+        Raises:
+            PIL.UnidentifiedImageError: 画像として認識できないデータ
+        """
+        img: Image.Image = Image.open(path)
+        return self._resize_and_encode(img, width)
+
+    @staticmethod
+    def _resize_and_encode(img: Image.Image, width: int) -> bytes:
+        """画像をリサイズして JPEG エンコードする."""
         # JPEG 非互換モードを RGB に変換
         if img.mode in ("RGBA", "P", "LA"):
             img = img.convert("RGB")
@@ -56,10 +75,27 @@ class ThumbnailService:
         cache_key: str,
         width: int = DEFAULT_WIDTH,
     ) -> Path:
-        """キャッシュから取得、なければ生成してキャッシュする."""
+        """キャッシュから取得、なければバイト列から生成してキャッシュする."""
         cached = self._cache.get(cache_key)
         if cached is not None:
             return cached
 
         thumb_bytes = self.generate_thumbnail(source_bytes, width)
+        return self._cache.put(cache_key, thumb_bytes, suffix=".jpg")
+
+    def get_or_generate_from_path(
+        self,
+        source_path: Path,
+        cache_key: str,
+        width: int = DEFAULT_WIDTH,
+    ) -> Path:
+        """キャッシュから取得、なければファイルパスから生成してキャッシュする.
+
+        path_security 検証済みパスのみ渡すこと。
+        """
+        cached = self._cache.get(cache_key)
+        if cached is not None:
+            return cached
+
+        thumb_bytes = self.generate_thumbnail_from_path(source_path, width)
         return self._cache.put(cache_key, thumb_bytes, suffix=".jpg")

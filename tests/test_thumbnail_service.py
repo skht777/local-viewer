@@ -89,3 +89,32 @@ def test_キャッシュキーにmtimeが含まれる(service: ThumbnailService)
 def test_破損画像でエラーが発生する(service: ThumbnailService) -> None:
     with pytest.raises(Exception):
         service.generate_thumbnail(b"not an image")
+
+
+def test_パスからサムネイルが生成される(
+    service: ThumbnailService, tmp_path: Path
+) -> None:
+    # テスト用 JPEG ファイルを作成
+    img_path = tmp_path / "test.jpg"
+    img_path.write_bytes(_make_jpeg(1000, 800))
+
+    result = service.generate_thumbnail_from_path(img_path)
+    assert result[:2] == b"\xff\xd8"
+    img = Image.open(io.BytesIO(result))
+    assert max(img.size) <= 300
+
+
+def test_パスベース生成とバイト版が同サイズのサムネイルを返す(
+    service: ThumbnailService, tmp_path: Path
+) -> None:
+    source_bytes = _make_jpeg(600, 400)
+    img_path = tmp_path / "test.jpg"
+    img_path.write_bytes(source_bytes)
+
+    result_bytes = service.generate_thumbnail(source_bytes)
+    result_path = service.generate_thumbnail_from_path(img_path)
+
+    # 出力サイズが同一であること
+    img_b = Image.open(io.BytesIO(result_bytes))
+    img_p = Image.open(io.BytesIO(result_path))
+    assert img_b.size == img_p.size

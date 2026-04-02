@@ -115,8 +115,8 @@ async def serve_thumbnail(
     cache_key = ThumbnailService.make_cache_key(node_id, st.st_mtime_ns)
 
     def _generate() -> FileResponse:
-        source_bytes = path.read_bytes()
-        thumb_path = thumb_service.get_or_generate(source_bytes, cache_key)
+        # パスベース読み込みで遅延デコード (メモリ効率向上)
+        thumb_path = thumb_service.get_or_generate_from_path(path, cache_key)
         return FileResponse(
             path=thumb_path,
             media_type="image/jpeg",
