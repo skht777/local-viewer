@@ -169,6 +169,13 @@ class Indexer:
         conn = sqlite3.connect(self._db_path)
         conn.execute("PRAGMA journal_mode=WAL")
         conn.execute("PRAGMA busy_timeout=5000")
+        # インデックス DB はファイルシステムから復元可能なキャッシュのため、
+        # fsync を緩和して書き込み性能を優先する
+        conn.execute("PRAGMA synchronous=NORMAL")
+        # FTS5 検索のページキャッシュを 8MB に拡大 (デフォルト 2MB)
+        conn.execute("PRAGMA cache_size=-8192")
+        # FTS5 の一時テーブルをメモリに配置して I/O を削減
+        conn.execute("PRAGMA temp_store=MEMORY")
         return conn
 
     def init_db(self) -> None:

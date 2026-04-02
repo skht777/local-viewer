@@ -828,3 +828,36 @@ class TestIndexerMtimePruning:
         added, updated, deleted = indexer.incremental_scan(root, security)
         assert added == 0
         assert deleted == 0
+
+
+class TestIndexerPragma:
+    """SQLite PRAGMA 設定の検証."""
+
+    def test_synchronousがNORMALに設定される(self, indexer: Indexer) -> None:
+        conn = indexer._connect()
+        try:
+            result = conn.execute("PRAGMA synchronous").fetchone()
+            # NORMAL = 1
+            assert result is not None
+            assert result[0] == 1
+        finally:
+            conn.close()
+
+    def test_cache_sizeが8MBに設定される(self, indexer: Indexer) -> None:
+        conn = indexer._connect()
+        try:
+            result = conn.execute("PRAGMA cache_size").fetchone()
+            assert result is not None
+            assert result[0] == -8192
+        finally:
+            conn.close()
+
+    def test_temp_storeがMEMORYに設定される(self, indexer: Indexer) -> None:
+        conn = indexer._connect()
+        try:
+            result = conn.execute("PRAGMA temp_store").fetchone()
+            # MEMORY = 2
+            assert result is not None
+            assert result[0] == 2
+        finally:
+            conn.close()
