@@ -2,7 +2,7 @@
 // - シングルクリック: 選択（onSelect）
 // - ダブルクリック: アクション実行（onDoubleClick）
 // - 選択時: アクションオーバーレイを表示（▶ 開く / → 進入）
-// - kind === "image": /api/file/{node_id} で実画像プレビュー
+// - kind === "image": /api/thumbnail/{node_id} でサムネイルプレビュー
 // - kind === "directory" + preview_node_ids: PreviewGrid でサムネイル表示
 // - kind === "archive": /api/thumbnail/{node_id} でサムネイル表示
 // - kind === "pdf": usePdfThumbnail で先頭ページサムネイル表示
@@ -96,7 +96,7 @@ export function FileCard({
       <div className="relative flex aspect-square items-center justify-center bg-surface-raised text-4xl">
         {isImagePreview ? (
           <img
-            src={`/api/file/${entry.node_id}`}
+            src={`/api/thumbnail/${entry.node_id}`}
             alt={entry.name}
             className="h-full w-full object-cover"
             loading="lazy"

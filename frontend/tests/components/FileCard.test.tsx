@@ -34,10 +34,10 @@ const dirEntry: BrowseEntry = {
 const noop = () => {};
 
 describe("FileCard", () => {
-  test("画像エントリでimgタグが表示される", () => {
+  test("画像エントリでサムネイルURLのimgタグが表示される", () => {
     render(<FileCard entry={imageEntry} onSelect={noop} onDoubleClick={noop} />);
     const img = screen.getByRole("img");
-    expect(img).toHaveAttribute("src", "/api/file/img001");
+    expect(img).toHaveAttribute("src", "/api/thumbnail/img001");
   });
 
   test("ディレクトリエントリでアイコンが表示される", () => {
@@ -273,9 +273,9 @@ describe("FileCard プレビュー表示", () => {
     expect(screen.getByText("folder")).toBeInTheDocument();
   });
 
-  test("画像エントリは従来どおりフルサイズプレビューが表示される", () => {
+  test("画像エントリはサムネイルプレビューが表示される", () => {
     render(<FileCard entry={imageEntry} onSelect={noop} onDoubleClick={noop} />);
     const img = screen.getByRole("img");
-    expect(img).toHaveAttribute("src", "/api/file/img001");
+    expect(img).toHaveAttribute("src", "/api/thumbnail/img001");
   });
 });
