@@ -66,9 +66,9 @@ class ThumbnailService:
         # BILINEAR: 300px では LANCZOS との差は視認不可能
         img.thumbnail((width, width), Image.Resampling.BILINEAR, reducing_gap=2.0)
         buf = io.BytesIO()
-        img.save(
-            buf, format="JPEG", quality=JPEG_QUALITY, optimize=True, progressive=True
-        )
+        # optimize を無効化: 300px サムネイルでは Huffman 2パス最適化の
+        # CPU コスト (20-30%) に対してファイルサイズ削減 (~5%) が見合わない
+        img.save(buf, format="JPEG", quality=JPEG_QUALITY, progressive=True)
         return buf.getvalue()
 
     def get_or_generate(
