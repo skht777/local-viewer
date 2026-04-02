@@ -122,3 +122,44 @@ class TestParallelWalk:
         visited_dirs = {e.path for e in entries}
         assert root / "allowed" in visited_dirs
         assert root / "denied" not in visited_dirs
+
+    def test_dir_filterでサブディレクトリをスキップできる(
+        self, tmp_path: Path
+    ) -> None:
+        root = tmp_path / "root"
+        root.mkdir()
+        (root / "keep").mkdir()
+        (root / "keep" / "child").mkdir()
+        (root / "keep" / "child" / "deep.txt").write_bytes(b"d")
+        (root / "skip").mkdir()
+        (root / "skip" / "child").mkdir()
+        (root / "skip" / "child" / "hidden.txt").write_bytes(b"h")
+
+        # skip ディレクトリを次レベルに追加しない
+        # → skip 自体もその子孫も走査されない
+        def dir_filter(path: Path, mtime_ns: int) -> bool:
+            return "skip" not in path.name
+
+        entries = list(parallel_walk(root, dir_filter=dir_filter))
+        visited = {e.path for e in entries}
+        assert root / "keep" in visited
+        assert root / "keep" / "child" in visited
+        # skip は dir_filter で除外されるため走査されない
+        assert root / "skip" not in visited
+        assert root / "skip" / "child" not in visited
+
+    def test_dir_filterがmtime_nsを受け取る(self, tmp_path: Path) -> None:
+        root = tmp_path / "root"
+        root.mkdir()
+        (root / "sub").mkdir()
+
+        received: list[tuple[Path, int]] = []
+
+        def dir_filter(path: Path, mtime_ns: int) -> bool:
+            received.append((path, mtime_ns))
+            return True
+
+        list(parallel_walk(root, dir_filter=dir_filter))
+        assert len(received) == 1
+        assert received[0][0] == root / "sub"
+        assert received[0][1] > 0

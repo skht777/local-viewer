@@ -81,12 +81,15 @@ def parallel_walk(
     workers: int = 8,
     skip_hidden: bool = True,
     path_validator: Callable[[Path], bool] | None = None,
+    dir_filter: Callable[[Path, int], bool] | None = None,
 ) -> Iterator[WalkEntry]:
     """BFS レベル単位でディレクトリを並列走査する.
 
     - 各レベルのディレクトリを ThreadPoolExecutor で並列に os.scandir
     - stat() はワーカースレッド内で実行 (I/O レイテンシを並列化)
     - path_validator: stat() 前にパスを検証するコールバック (PathSecurity 連携用)
+    - dir_filter: サブディレクトリを次レベルに追加するか判定するコールバック
+      (メインスレッドで呼ばれる。False → そのサブディレクトリの子孫は走査しない)
     """
     current_level = [root]
 
@@ -110,7 +113,11 @@ def parallel_walk(
                 yield entry
 
                 # サブディレクトリを次のレベルに追加
-                for name, _mtime_ns in entry.subdirs:
-                    next_level.append(entry.path / name)
+                # dir_filter が指定されていれば、メインスレッドで枝刈り判定
+                for name, mtime_ns in entry.subdirs:
+                    subdir_path = entry.path / name
+                    if dir_filter and not dir_filter(subdir_path, mtime_ns):
+                        continue
+                    next_level.append(subdir_path)
 
             current_level = next_level
