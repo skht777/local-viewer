@@ -14,6 +14,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.datastructures import MutableHeaders
+from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from backend.config import init_settings
 from backend.errors import (
@@ -351,10 +353,48 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# JSON レスポンス圧縮 (browse API 等)
-# minimum_size=500: 500B 以上で gzip 適用
-# compresslevel=5: 圧縮率と速度のバランス
-app.add_middleware(GZipMiddleware, minimum_size=500, compresslevel=5)
+# バイナリレスポンス (画像/動画/PDF) の gzip 圧縮をスキップする ASGI ミドルウェア
+# GZipMiddleware は Content-Encoding が設定済みのレスポンスをスキップする性質を利用し、
+# バイナリ Content-Type に identity を設定して無駄な圧縮を防止する
+_BINARY_CONTENT_PREFIXES = (
+    "image/",
+    "video/",
+    "audio/",
+    "application/pdf",
+    "application/zip",
+    "application/x-rar",
+    "application/x-7z",
+    "application/octet-stream",
+)
+
+
+class _SkipGzipForBinaryMiddleware:
+    """バイナリレスポンスに identity を付与して gzip をバイパス."""
+
+    def __init__(self, app: ASGIApp) -> None:
+        self.app = app
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        async def _send_with_identity(message: Message) -> None:
+            if message["type"] == "http.response.start":
+                headers = MutableHeaders(scope=message)
+                content_type = headers.get("content-type", "")
+                if any(content_type.startswith(p) for p in _BINARY_CONTENT_PREFIXES):
+                    headers["content-encoding"] = "identity"
+            await send(message)
+
+        await self.app(scope, receive, _send_with_identity)
+
+
+# 内側: バイナリレスポンスに identity を設定
+app.add_middleware(_SkipGzipForBinaryMiddleware)
+# 外側: JSON レスポンスを gzip 圧縮
+# compresslevel=1: ローカル環境では帯域より CPU 優先
+app.add_middleware(GZipMiddleware, minimum_size=500, compresslevel=1)
 
 # 例外ハンドラ登録
 app.add_exception_handler(PathSecurityError, path_security_error_handler)  # type: ignore[arg-type]
