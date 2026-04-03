@@ -5,7 +5,7 @@
 // - PDF クリック → openPdfViewer で PDF ビューワーを開く
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { browseNodeOptions } from "../hooks/api/browseQueries";
 import { mountListOptions } from "../hooks/api/mountQueries";
@@ -20,6 +20,7 @@ import { PdfCgViewer } from "../components/PdfCgViewer";
 import { PdfMangaViewer } from "../components/PdfMangaViewer";
 import { VideoFeed } from "../components/VideoFeed";
 import { ViewerTabs } from "../components/ViewerTabs";
+import { resolveFirstViewable } from "../utils/resolveFirstViewable";
 
 // ソート方向反転マップ
 const SORT_FLIP = {
@@ -32,6 +33,7 @@ const SORT_FLIP = {
 export default function BrowsePage() {
   const { nodeId } = useParams<{ nodeId: string }>();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const isSidebarOpen = useViewerStore((s) => s.isSidebarOpen);
   const {
     params,
@@ -276,8 +278,36 @@ export default function BrowsePage() {
             }}
             onImageClick={openViewer}
             onPdfClick={openPdfViewer}
-            onOpenViewer={(id) => {
-              navigate(`/browse/${id}${buildBrowseSearch({ tab: "images", index: 0 })}`);
+            onOpenViewer={async (id) => {
+              // ディレクトリ内を再帰探索し、最初の閲覧対象を見つけてビューワーを開く
+              try {
+                const target = await resolveFirstViewable(id, queryClient);
+                if (!target) {
+                  navigate(`/browse/${id}${buildBrowseSearch()}`);
+                  return;
+                }
+
+                if (target.entry.kind === "pdf") {
+                  // PDF: 親ディレクトリでPDFビューワーを開く
+                  const modeParam = params.mode === "manga" ? "&mode=manga" : "";
+                  navigate(
+                    `/browse/${target.parentNodeId}?pdf=${target.entry.node_id}&page=1${modeParam}`,
+                  );
+                } else if (target.entry.kind === "image") {
+                  // 画像: 親ディレクトリでビューワーを開く
+                  navigate(
+                    `/browse/${target.parentNodeId}${buildBrowseSearch({ tab: "images", index: 0 })}`,
+                  );
+                } else {
+                  // アーカイブ: アーカイブに進入してビューワーを開く
+                  navigate(
+                    `/browse/${target.entry.node_id}${buildBrowseSearch({ tab: "images", index: 0 })}`,
+                  );
+                }
+              } catch {
+                // エラー時は進入にフォールバック
+                navigate(`/browse/${id}${buildBrowseSearch()}`);
+              }
             }}
             onGoParent={handleGoParent}
             onTabChange={setTab}
