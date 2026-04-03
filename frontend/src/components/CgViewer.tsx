@@ -221,12 +221,12 @@ export function CgViewer({
           onClick={handleImageClick}
           onMouseMove={resetCursorTimer}
         >
-          {displayIndices.map((idx) => {
+          {displayIndices.map((idx, position) => {
             const img = images[idx];
             if (!img) return null;
             return (
               <div
-                key={img.node_id}
+                key={`page-${position}`}
                 className={
                   displayIndices.length > 1
                     ? "flex min-w-0 flex-1 h-full items-center justify-center"
