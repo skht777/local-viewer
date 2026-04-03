@@ -3,8 +3,8 @@
 ## バックエンド
 - Python 3.14
 - FastAPI + uvicorn
-- Pillow (画像処理)
-- zipfile (標準), rarfile + unrar (RAR), py7zr (7z)
+- pyvips (サムネイル生成)
+- zipfile (標準), rarfile + unrar-free (RAR), p7zip CLI (7z, subprocess)
 - SQLite FTS5 (検索インデックス)
 - watchdog (ファイル監視)
 

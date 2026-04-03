@@ -83,5 +83,7 @@ cd e2e && npx playwright test --ui   # UI モード
 - リファクタリングと機能追加は別コミット（Tidy First）
 - 作業完了時にコミットを忘れずに行う
 
-### 計画書の保管
-- 実装計画は `docs/plan-*.md` に保存（gitignored、ローカル保全のみ）
+### ドキュメント
+- 仕様書: `docs/spec-*.md`（アーキテクチャ、UI、パフォーマンス）
+- 実装計画: `docs/plan-*.md` に保存（gitignored、ローカル保全のみ）
+- 完了済み計画: `docs/archive/` に移動済み

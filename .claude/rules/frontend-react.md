@@ -25,4 +25,4 @@ paths:
 ## Styling
 - Tailwind CSS v4 utility classes exclusively
 - No inline styles, no CSS modules
-- Dark theme as default (bg-gray-900, text-white base)
+- Dark theme fixed (bg-surface-base, text-white base, @theme tokens)
