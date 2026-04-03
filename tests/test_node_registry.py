@@ -166,9 +166,9 @@ def test_親のnode_idが取得できる(registry: NodeRegistry, root_dir: Path)
     # dir_a を登録して親 ID を取得
     registry.register(root_dir / "dir_a")
     parent_id = registry.get_parent_node_id(root_dir / "dir_a")
-    # 親は root_dir なので None (ルート直下の場合)
-    # root_dir の1階層下なので parent は root → None
-    assert parent_id is None
+    # ルート直下 → 親はルート自身の node_id
+    root_id = registry.register(root_dir)
+    assert parent_id == root_id
 
 
 def test_ROOT_DIRの親はNone(registry: NodeRegistry, root_dir: Path) -> None:

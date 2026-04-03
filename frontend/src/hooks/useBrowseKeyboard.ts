@@ -43,7 +43,7 @@ export function useBrowseKeyboard(callbacks: BrowseKeyboardCallbacks, enabled: b
   useHotkeys("space", () => callbacks.open(), { preventDefault: true, enabled });
 
   // 親ディレクトリに戻る
-  useHotkeys("b", () => callbacks.goParent(), { enabled });
+  useHotkeys("b, backspace", () => callbacks.goParent(), { preventDefault: true, enabled });
 
   // ツリーにフォーカス移動
   useHotkeys("t", () => callbacks.focusTree(), { enabled });

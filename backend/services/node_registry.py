@@ -313,17 +313,15 @@ class NodeRegistry:
     def get_parent_node_id(self, path: Path) -> str | None:
         """パスの親ディレクトリの node_id を返す.
 
-        ルートディレクトリまたはルート直下のディレクトリの場合は None。
+        ルートディレクトリ (マウントポイント) 自体の場合のみ None を返す。
+        ルート直下のディレクトリの場合はルートの node_id を返す。
         """
         resolved = path.resolve()
         roots = self._path_security.root_dirs
-        # ルートディレクトリ自体なら None
+        # ルートディレクトリ自体なら None (トップページへの遷移はフロントエンドで処理)
         if resolved in roots:
             return None
         parent = resolved.parent
-        # ルート直下なら None
-        if parent in roots:
-            return None
         try:
             self._path_security.validate(parent)
         except PathSecurityError, OSError:
