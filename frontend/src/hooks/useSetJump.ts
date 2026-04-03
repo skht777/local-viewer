@@ -12,6 +12,7 @@ import { browseNodeOptions } from "./api/browseQueries";
 import { findNextSet, findPrevSet, resolveTopLevelDir, shouldConfirm } from "./useSetNavigation";
 import type { ViewerMode } from "./useViewerParams";
 import type { AncestorEntry, BrowseEntry, BrowseResponse } from "../types/api";
+import { resolveFirstViewable } from "../utils/resolveFirstViewable";
 
 interface UseSetJumpProps {
   currentNodeId: string | null;
@@ -60,16 +61,40 @@ export function useSetJump({
 
   // 遷移先の kind に応じた URL で遷移
   // - PDF: ターゲットの親ディレクトリに留まり ?pdf= 付きで PDF ビューワーを開く
-  // - ディレクトリ/アーカイブ: 従来通り browse
+  // - アーカイブ: そのまま進入してビューワーを開く
+  // - ディレクトリ: 再帰探索して最初の閲覧対象を開く
   const navigateToTarget = useCallback(
-    (target: BrowseEntry, targetParentNodeId: string | null) => {
+    async (target: BrowseEntry, targetParentNodeId: string | null) => {
       if (target.kind === "pdf") {
         navigate(`/browse/${targetParentNodeId}?pdf=${target.node_id}&page=1&mode=${mode}`);
-      } else {
+        return;
+      }
+      if (target.kind !== "directory") {
+        // アーカイブ: そのまま進入
+        navigate(`/browse/${target.node_id}?tab=images&index=0&mode=${mode}`);
+        return;
+      }
+      // ディレクトリ: 再帰探索して最初の閲覧対象を開く
+      try {
+        const resolved = await resolveFirstViewable(target.node_id, queryClient);
+        if (!resolved) {
+          navigate(`/browse/${target.node_id}?tab=images&index=0&mode=${mode}`);
+          return;
+        }
+        if (resolved.entry.kind === "pdf") {
+          navigate(
+            `/browse/${resolved.parentNodeId}?pdf=${resolved.entry.node_id}&page=1&mode=${mode}`,
+          );
+        } else if (resolved.entry.kind === "image") {
+          navigate(`/browse/${resolved.parentNodeId}?tab=images&index=0&mode=${mode}`);
+        } else {
+          navigate(`/browse/${resolved.entry.node_id}?tab=images&index=0&mode=${mode}`);
+        }
+      } catch {
         navigate(`/browse/${target.node_id}?tab=images&index=0&mode=${mode}`);
       }
     },
-    [navigate, mode],
+    [navigate, mode, queryClient],
   );
 
   // 再帰的に親を辿って兄弟セットを探索
