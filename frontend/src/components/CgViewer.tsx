@@ -36,18 +36,21 @@ interface CgViewerProps {
   onClose: () => void;
 }
 
-// fitMode + 見開きページ数に応じた画像 CSS クラス
-function fitClass(fitMode: string, pageCount: number): string {
-  const isSpread = pageCount > 1;
+// fitMode に応じた画像 CSS クラス
+// - width: ビューポート幅にフィット（小さい画像も拡大）
+// - height: ビューポート高さにフィット（小さい画像も拡大）
+// - original: 原寸表示
+// ラッパー div に h-full/w-full を設定し、パーセンテージの参照先を確立する前提
+function fitClass(fitMode: string): string {
   switch (fitMode) {
     case "width":
-      return isSpread ? "h-auto max-w-full object-contain" : "w-full h-auto object-contain";
+      return "w-full h-auto object-contain";
     case "height":
-      return isSpread ? "h-full w-auto object-contain" : "h-full w-auto object-contain";
+      return "h-full w-auto object-contain";
     case "original":
       return "max-w-none max-h-none";
     default:
-      return isSpread ? "h-auto max-w-full object-contain" : "w-full h-auto object-contain";
+      return "w-full h-auto object-contain";
   }
 }
 
@@ -226,14 +229,14 @@ export function CgViewer({
                 key={img.node_id}
                 className={
                   displayIndices.length > 1
-                    ? "flex min-w-0 flex-1 items-center justify-center"
-                    : "flex items-center justify-center"
+                    ? "flex min-w-0 flex-1 h-full items-center justify-center"
+                    : "flex h-full w-full items-center justify-center"
                 }
               >
                 <img
                   src={`/api/file/${img.node_id}`}
                   alt={img.name}
-                  className={fitClass(fitMode, displayIndices.length)}
+                  className={fitClass(fitMode)}
                   draggable={false}
                 />
               </div>
