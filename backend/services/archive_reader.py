@@ -53,6 +53,12 @@ class ArchiveReader(ABC):
         data = self.extract_entry(archive_path, entry_name)
         dest.write_bytes(data)
 
+    def extract_entries(
+        self, archive_path: Path, entry_names: list[str]
+    ) -> dict[str, bytes]:
+        """複数エントリを一括抽出する (デフォルトは extract_entry ループ)."""
+        return {name: self.extract_entry(archive_path, name) for name in entry_names}
+
     @abstractmethod
     def supports(self, path: Path) -> bool:
         """このリーダーが対応する拡張子か."""
@@ -147,6 +153,29 @@ class ZipArchiveReader(ArchiveReader):
                         raise ArchiveSecurityError(msg)
                     chunks.append(chunk)
                 return b"".join(chunks)
+
+    def extract_entries(
+        self, archive_path: Path, entry_names: list[str]
+    ) -> dict[str, bytes]:
+        """ZIP を 1 回だけ開いて複数エントリを抽出する."""
+        result: dict[str, bytes] = {}
+        with zipfile.ZipFile(archive_path, "r") as zf:
+            for name in entry_names:
+                max_size = self._validator.max_entry_size_for(name)
+                with zf.open(name) as f:
+                    chunks: list[bytes] = []
+                    total = 0
+                    while True:
+                        chunk = f.read(_EXTRACT_CHUNK_SIZE)
+                        if not chunk:
+                            break
+                        total += len(chunk)
+                        if total > max_size:
+                            msg = f"抽出時にサイズ上限を超えました: {name}"
+                            raise ArchiveSecurityError(msg)
+                        chunks.append(chunk)
+                    result[name] = b"".join(chunks)
+        return result
 
     def extract_entry_to_file(
         self, archive_path: Path, entry_name: str, dest: Path
@@ -264,6 +293,31 @@ class RarArchiveReader(ArchiveReader):
                         raise ArchiveSecurityError(msg)
                     chunks.append(chunk)
                 return b"".join(chunks)
+
+    def extract_entries(
+        self, archive_path: Path, entry_names: list[str]
+    ) -> dict[str, bytes]:
+        """RAR を 1 回だけ開いて複数エントリを抽出する."""
+        import rarfile
+
+        result: dict[str, bytes] = {}
+        with rarfile.RarFile(archive_path, "r") as rf:
+            for name in entry_names:
+                max_size = self._validator.max_entry_size_for(name)
+                with rf.open(name) as f:
+                    chunks: list[bytes] = []
+                    total = 0
+                    while True:
+                        chunk = f.read(_EXTRACT_CHUNK_SIZE)
+                        if not chunk:
+                            break
+                        total += len(chunk)
+                        if total > max_size:
+                            msg = f"抽出時にサイズ上限を超えました: {name}"
+                            raise ArchiveSecurityError(msg)
+                        chunks.append(chunk)
+                    result[name] = b"".join(chunks)
+        return result
 
     def extract_entry_to_file(
         self, archive_path: Path, entry_name: str, dest: Path

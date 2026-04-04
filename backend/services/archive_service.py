@@ -145,6 +145,47 @@ class ArchiveService:
         self._cache.put(cache_key, data)
         return data
 
+    def extract_entries_batch(
+        self, archive_path: Path, entry_names: list[str]
+    ) -> dict[str, bytes]:
+        """複数エントリを一括抽出する (キャッシュ付き).
+
+        キャッシュ済みエントリはスキップし、未キャッシュ分のみ
+        reader.extract_entries() で一括展開する。
+        動画エントリはメモリキャッシュをバイパスする。
+        """
+        stat = archive_path.stat()
+        result: dict[str, bytes] = {}
+        uncached_names: list[str] = []
+
+        # キャッシュ済みエントリを先に収集
+        for name in entry_names:
+            if self._is_video_entry(name):
+                uncached_names.append(name)
+                continue
+            cache_key = f"{archive_path}:{stat.st_mtime_ns}:{name}"
+            cached = self._cache.get(cache_key)
+            if cached is not None:
+                result[name] = cached
+            else:
+                uncached_names.append(name)
+
+        # 未キャッシュ分を一括展開
+        if uncached_names:
+            reader = self.get_reader(archive_path)
+            if reader is None:
+                msg = f"サポートされていないアーカイブ形式です: {archive_path.suffix}"
+                raise ValueError(msg)
+            extracted = reader.extract_entries(archive_path, uncached_names)
+            for name, data in extracted.items():
+                result[name] = data
+                # 動画以外はキャッシュに格納
+                if not self._is_video_entry(name):
+                    cache_key = f"{archive_path}:{stat.st_mtime_ns}:{name}"
+                    self._cache.put(cache_key, data)
+
+        return result
+
     def extract_entry_to_file(
         self, archive_path: Path, entry_name: str, dest: Path
     ) -> None:
