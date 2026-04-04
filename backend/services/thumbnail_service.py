@@ -80,6 +80,21 @@ class ThumbnailService:
         thumb_bytes = self.generate_thumbnail(source_bytes, width)
         return self._cache.put(cache_key, thumb_bytes, suffix=".jpg")
 
+    def get_or_generate_bytes(
+        self,
+        source_bytes: bytes,
+        cache_key: str,
+        width: int = DEFAULT_WIDTH,
+    ) -> bytes:
+        """キャッシュから取得、なければバイト列から生成してキャッシュし bytes を返す."""
+        cached = self._cache.get(cache_key)
+        if cached is not None:
+            return cached.read_bytes()
+
+        thumb_bytes = self.generate_thumbnail(source_bytes, width)
+        self._cache.put(cache_key, thumb_bytes, suffix=".jpg")
+        return thumb_bytes
+
     def get_or_generate_from_path(
         self,
         source_path: Path,
@@ -96,3 +111,21 @@ class ThumbnailService:
 
         thumb_bytes = self.generate_thumbnail_from_path(source_path, width)
         return self._cache.put(cache_key, thumb_bytes, suffix=".jpg")
+
+    def get_or_generate_bytes_from_path(
+        self,
+        source_path: Path,
+        cache_key: str,
+        width: int = DEFAULT_WIDTH,
+    ) -> bytes:
+        """キャッシュから取得、なければパスから生成してキャッシュし bytes を返す.
+
+        path_security 検証済みパスのみ渡すこと。
+        """
+        cached = self._cache.get(cache_key)
+        if cached is not None:
+            return cached.read_bytes()
+
+        thumb_bytes = self.generate_thumbnail_from_path(source_path, width)
+        self._cache.put(cache_key, thumb_bytes, suffix=".jpg")
+        return thumb_bytes

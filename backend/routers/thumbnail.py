@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pyvips
 from fastapi import APIRouter, Depends, HTTPException, Request
-from fastapi.responses import FileResponse, Response
+from fastapi.responses import Response
 from starlette.concurrency import run_in_threadpool
 
 from backend.services.archive_service import ArchiveService
@@ -60,25 +60,30 @@ def _cache_control(request: Request) -> str:
     return _CACHE_IMMUTABLE if request.query_params.get("v") else _CACHE_DEFAULT
 
 
-@router.get("/thumbnail/{node_id}")
-async def serve_thumbnail(
+def _generate_thumbnail_bytes(
     node_id: str,
-    request: Request,
-    registry: NodeRegistry = Depends(get_node_registry),
-    archive_service: ArchiveService = Depends(get_archive_service),
-    thumb_service: ThumbnailService = Depends(get_thumbnail_service),
-) -> Response:
-    """画像またはアーカイブのサムネイルを返す.
+    registry: NodeRegistry,
+    archive_service: ArchiveService,
+    thumb_service: ThumbnailService,
+) -> tuple[bytes, str]:
+    """node_id からサムネイル JPEG バイト列と ETag を生成する.
 
-    - 画像ファイル → Pillow でリサイズ
-    - アーカイブ → 先頭の画像エントリを抽出してサムネイル化
-    - ディレクトリ → 422 (フロントは preview_node_ids 経由で個別画像を要求)
+    3 つのケースを処理:
+    - アーカイブ内エントリ → 抽出してサムネイル化
+    - アーカイブファイル自体 → 先頭画像エントリのサムネイル
+    - 通常の画像ファイル → パスからサムネイル生成
+
+    CPU-bound のため run_in_threadpool で呼び出すこと。
+
+    Raises:
+        HTTPException: ファイル不在 (404)、非対応形式 (422)、破損データ (422)
+        pyvips.Error: 画像デコード失敗 (呼び出し側で 422 に変換)
     """
     # アーカイブエントリかチェック
     archive_entry = registry.resolve_archive_entry(node_id)
     if archive_entry is not None:
-        return await _serve_archive_entry_thumbnail(
-            archive_entry, node_id, request, archive_service, thumb_service
+        return _generate_archive_entry_thumbnail(
+            archive_entry, node_id, archive_service, thumb_service
         )
 
     path = registry.resolve(node_id)
@@ -100,8 +105,8 @@ async def serve_thumbnail(
 
     # アーカイブファイル → 先頭画像エントリのサムネイル
     if archive_service.is_supported(path):
-        return await _serve_archive_thumbnail(
-            path, node_id, request, registry, archive_service, thumb_service
+        return _generate_archive_cover_thumbnail(
+            path, node_id, archive_service, thumb_service
         )
 
     # 画像以外 (PDF/動画等) はサムネイル非対応
@@ -118,98 +123,40 @@ async def serve_thumbnail(
     # 通常の画像ファイル → サムネイル
     st = path.stat()
     etag = _compute_etag(st.st_mtime_ns, node_id)
-
-    if_none_match = request.headers.get("if-none-match")
-    if if_none_match and if_none_match.strip('"') == etag:
-        return Response(status_code=304, headers={"ETag": f'"{etag}"'})
-
     cache_key = ThumbnailService.make_cache_key(node_id, st.st_mtime_ns)
-
-    def _generate() -> FileResponse:
-        # パスベース読み込みで遅延デコード (メモリ効率向上)
-        thumb_path = thumb_service.get_or_generate_from_path(path, cache_key)
-        return FileResponse(
-            path=thumb_path,
-            media_type="image/jpeg",
-            headers={
-                "ETag": f'"{etag}"',
-                "Cache-Control": _cache_control(request),
-            },
-        )
-
-    try:
-        return await run_in_threadpool(_generate)
-    except pyvips.Error:
-        raise HTTPException(
-            status_code=422,
-            detail={
-                "error": "画像として認識できないデータです",
-                "code": "INVALID_IMAGE",
-            },
-        ) from None
+    thumb_bytes = thumb_service.get_or_generate_bytes_from_path(path, cache_key)
+    return thumb_bytes, etag
 
 
-async def _serve_archive_entry_thumbnail(
+def _generate_archive_entry_thumbnail(
     archive_entry: tuple[Path, str],
     node_id: str,
-    request: Request,
     archive_service: ArchiveService,
     thumb_service: ThumbnailService,
-) -> Response:
-    """アーカイブ内の画像エントリのサムネイルを返す."""
+) -> tuple[bytes, str]:
+    """アーカイブ内の画像エントリのサムネイル bytes と ETag を返す."""
     archive_path, entry_name = archive_entry
     st = archive_path.stat()
     etag = _compute_etag(st.st_mtime_ns, node_id)
-
-    if_none_match = request.headers.get("if-none-match")
-    if if_none_match and if_none_match.strip('"') == etag:
-        return Response(status_code=304, headers={"ETag": f'"{etag}"'})
-
     cache_key = ThumbnailService.make_cache_key(node_id, st.st_mtime_ns)
-
-    def _generate() -> FileResponse:
-        source_bytes = archive_service.extract_entry(archive_path, entry_name)
-        thumb_path = thumb_service.get_or_generate(source_bytes, cache_key)
-        return FileResponse(
-            path=thumb_path,
-            media_type="image/jpeg",
-            headers={
-                "ETag": f'"{etag}"',
-                "Cache-Control": _cache_control(request),
-            },
-        )
-
-    try:
-        return await run_in_threadpool(_generate)
-    except pyvips.Error:
-        raise HTTPException(
-            status_code=422,
-            detail={
-                "error": "画像として認識できないデータです",
-                "code": "INVALID_IMAGE",
-            },
-        ) from None
+    source_bytes = archive_service.extract_entry(archive_path, entry_name)
+    thumb_bytes = thumb_service.get_or_generate_bytes(source_bytes, cache_key)
+    return thumb_bytes, etag
 
 
-async def _serve_archive_thumbnail(
+def _generate_archive_cover_thumbnail(
     archive_path: Path,
     node_id: str,
-    request: Request,
-    registry: NodeRegistry,
     archive_service: ArchiveService,
     thumb_service: ThumbnailService,
-) -> Response:
-    """アーカイブファイル自体のサムネイル (先頭画像エントリ) を返す."""
+) -> tuple[bytes, str]:
+    """アーカイブファイル自体のサムネイル (先頭画像エントリ) の bytes と ETag を返す."""
     st = archive_path.stat()
     etag = _compute_etag(st.st_mtime_ns, node_id)
 
-    if_none_match = request.headers.get("if-none-match")
-    if if_none_match and if_none_match.strip('"') == etag:
-        return Response(status_code=304, headers={"ETag": f'"{etag}"'})
-
     # アーカイブ内の先頭画像エントリを探す
     try:
-        entries = await run_in_threadpool(archive_service.list_entries, archive_path)
+        entries = archive_service.list_entries(archive_path)
     except Exception as exc:
         logger.warning("アーカイブ読み取り失敗: %s (%s)", archive_path, exc)
         raise HTTPException(
@@ -220,7 +167,6 @@ async def _serve_archive_thumbnail(
             },
         ) from exc
 
-    # 先頭の画像エントリを探す
     first_image = None
     for entry in entries:
         name = entry.name
@@ -240,21 +186,37 @@ async def _serve_archive_thumbnail(
         )
 
     cache_key = ThumbnailService.make_cache_key(node_id, st.st_mtime_ns)
+    source_bytes = archive_service.extract_entry(archive_path, first_image.name)
+    thumb_bytes = thumb_service.get_or_generate_bytes(source_bytes, cache_key)
+    return thumb_bytes, etag
 
-    def _generate() -> FileResponse:
-        source_bytes = archive_service.extract_entry(archive_path, first_image.name)
-        thumb_path = thumb_service.get_or_generate(source_bytes, cache_key)
-        return FileResponse(
-            path=thumb_path,
-            media_type="image/jpeg",
-            headers={
-                "ETag": f'"{etag}"',
-                "Cache-Control": _cache_control(request),
-            },
+
+@router.get("/thumbnail/{node_id}")
+async def serve_thumbnail(
+    node_id: str,
+    request: Request,
+    registry: NodeRegistry = Depends(get_node_registry),
+    archive_service: ArchiveService = Depends(get_archive_service),
+    thumb_service: ThumbnailService = Depends(get_thumbnail_service),
+) -> Response:
+    """画像またはアーカイブのサムネイルを返す.
+
+    - 画像ファイル → pyvips でリサイズ
+    - アーカイブ → 先頭の画像エントリを抽出してサムネイル化
+    - ディレクトリ → 422 (フロントは preview_node_ids 経由で個別画像を要求)
+    """
+    # ETag ベースの条件付きリクエスト (事前チェック)
+    # _generate_thumbnail_bytes 内で ETag を計算するが、
+    # 304 判定のためにここで先に ETag を取得する必要がある
+    # → 生成後に判定する方式に統一 (stat は生成関数内で 1 回のみ)
+
+    def _generate() -> tuple[bytes, str]:
+        return _generate_thumbnail_bytes(
+            node_id, registry, archive_service, thumb_service
         )
 
     try:
-        return await run_in_threadpool(_generate)
+        thumb_bytes, etag = await run_in_threadpool(_generate)
     except pyvips.Error:
         raise HTTPException(
             status_code=422,
@@ -263,3 +225,17 @@ async def _serve_archive_thumbnail(
                 "code": "INVALID_IMAGE",
             },
         ) from None
+
+    # ETag 一致なら 304
+    if_none_match = request.headers.get("if-none-match")
+    if if_none_match and if_none_match.strip('"') == etag:
+        return Response(status_code=304, headers={"ETag": f'"{etag}"'})
+
+    return Response(
+        content=thumb_bytes,
+        media_type="image/jpeg",
+        headers={
+            "ETag": f'"{etag}"',
+            "Cache-Control": _cache_control(request),
+        },
+    )
