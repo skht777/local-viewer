@@ -22,6 +22,8 @@ export interface BrowseResponse {
   parent_node_id: string | null;
   ancestors: AncestorEntry[];
   entries: BrowseEntry[];
+  next_cursor: string | null;
+  total_count: number | null;
 }
 
 // 検索 API

@@ -10,7 +10,6 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useBrowseKeyboard } from "../hooks/useBrowseKeyboard";
 import type { SortOrder, ViewerTab } from "../hooks/useViewerParams";
 import type { BrowseEntry } from "../types/api";
-import { sortEntries } from "../utils/sortEntries";
 import { FileCard } from "./FileCard";
 
 interface FileBrowserProps {
@@ -30,6 +29,9 @@ interface FileBrowserProps {
   sort: SortOrder;
   selectedNodeId?: string;
   keyboardEnabled?: boolean;
+  hasMore?: boolean;
+  isLoadingMore?: boolean;
+  onLoadMore?: () => void;
 }
 
 // タブに応じて表示する kind をフィルタ
@@ -72,9 +74,30 @@ export function FileBrowser({
   sort,
   selectedNodeId,
   keyboardEnabled = true,
+  hasMore,
+  isLoadingMore,
+  onLoadMore,
 }: FileBrowserProps) {
-  const sorted = sortEntries(entries, sort);
-  const filtered = filterByTab(sorted, tab, sort);
+  // サーバーサイドソート済みのため sortEntries はスキップ
+  const filtered = filterByTab(entries, tab, sort);
+
+  // 無限スクロール: センチネル要素の IntersectionObserver
+  const sentinelRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!hasMore || !onLoadMore) return;
+    const el = sentinelRef.current;
+    if (!el) return;
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting && !isLoadingMore) {
+          onLoadMore();
+        }
+      },
+      { rootMargin: "200px" },
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [hasMore, isLoadingMore, onLoadMore]);
 
   // エントリ変更時（ナビゲーション・タブ切替）に先頭カードへ focus
   const firstCardRef = useRef<HTMLDivElement>(null);
@@ -246,6 +269,13 @@ export function FileBrowser({
               isSelected={entry.node_id === effectiveSelectedId}
             />
           ))}
+        </div>
+      )}
+
+      {/* 無限スクロール: センチネル + ローディング表示 */}
+      {hasMore && (
+        <div ref={sentinelRef} className="flex justify-center py-4">
+          {isLoadingMore && <p className="text-gray-400">読み込み中...</p>}
         </div>
       )}
     </main>

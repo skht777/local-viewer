@@ -152,11 +152,12 @@ describe("FileBrowser", () => {
 
   // --- ソート ---
 
-  test("sort=date-descで更新日時の降順にソートされる", () => {
+  test("sort=date-descでサーバーソート済みの降順が維持される", () => {
+    // サーバーサイドソート済み: 日付降順
     const entries: BrowseEntry[] = [
-      { node_id: "i1", name: "old.jpg", kind: "image", size_bytes: 100, mime_type: "image/jpeg", child_count: null, modified_at: 1000, preview_node_ids: null },
       { node_id: "i2", name: "new.jpg", kind: "image", size_bytes: 100, mime_type: "image/jpeg", child_count: null, modified_at: 3000, preview_node_ids: null },
       { node_id: "i3", name: "mid.jpg", kind: "image", size_bytes: 100, mime_type: "image/jpeg", child_count: null, modified_at: 2000, preview_node_ids: null },
+      { node_id: "i1", name: "old.jpg", kind: "image", size_bytes: 100, mime_type: "image/jpeg", child_count: null, modified_at: 1000, preview_node_ids: null },
     ];
     render(
       <FileBrowser entries={entries} isLoading={false} onNavigate={() => {}} tab="images" sort="date-desc" />,
@@ -168,10 +169,11 @@ describe("FileBrowser", () => {
     expect(names[2]).toContain("old.jpg");
   });
 
-  test("sort=date-ascで更新日時の昇順にソートされる", () => {
+  test("sort=date-ascでサーバーソート済みの昇順が維持される", () => {
+    // サーバーサイドソート済み: 日付昇順
     const entries: BrowseEntry[] = [
-      { node_id: "i1", name: "new.jpg", kind: "image", size_bytes: 100, mime_type: "image/jpeg", child_count: null, modified_at: 3000, preview_node_ids: null },
       { node_id: "i2", name: "old.jpg", kind: "image", size_bytes: 100, mime_type: "image/jpeg", child_count: null, modified_at: 1000, preview_node_ids: null },
+      { node_id: "i1", name: "new.jpg", kind: "image", size_bytes: 100, mime_type: "image/jpeg", child_count: null, modified_at: 3000, preview_node_ids: null },
     ];
     render(
       <FileBrowser entries={entries} isLoading={false} onNavigate={() => {}} tab="images" sort="date-asc" />,
@@ -181,10 +183,11 @@ describe("FileBrowser", () => {
     expect(cards[1].textContent).toContain("new.jpg");
   });
 
-  test("sort=name-descで名前の降順にソートされる", () => {
+  test("sort=name-descでサーバーソート済みの名前降順が維持される", () => {
+    // サーバーサイドソート済み: 名前降順
     const entries: BrowseEntry[] = [
-      { node_id: "i1", name: "alpha.jpg", kind: "image", size_bytes: 100, mime_type: "image/jpeg", child_count: null, modified_at: 1000, preview_node_ids: null },
       { node_id: "i2", name: "beta.jpg", kind: "image", size_bytes: 100, mime_type: "image/jpeg", child_count: null, modified_at: 2000, preview_node_ids: null },
+      { node_id: "i1", name: "alpha.jpg", kind: "image", size_bytes: 100, mime_type: "image/jpeg", child_count: null, modified_at: 1000, preview_node_ids: null },
     ];
     render(
       <FileBrowser entries={entries} isLoading={false} onNavigate={() => {}} tab="images" sort="name-desc" />,
@@ -229,10 +232,11 @@ describe("FileBrowser", () => {
     expect(screen.getByTestId("file-card-file3")).not.toHaveAttribute("aria-current");
   });
 
-  test("sort=date-descでmodified_atがnullのエントリが最後になる", () => {
+  test("sort=date-descでサーバーソート済みのnullエントリが最後に維持される", () => {
+    // サーバーサイドソート済み: 日付降順、null は末尾
     const entries: BrowseEntry[] = [
-      { node_id: "i1", name: "no-date.jpg", kind: "image", size_bytes: 100, mime_type: "image/jpeg", child_count: null, modified_at: null, preview_node_ids: null },
       { node_id: "i2", name: "has-date.jpg", kind: "image", size_bytes: 100, mime_type: "image/jpeg", child_count: null, modified_at: 1000, preview_node_ids: null },
+      { node_id: "i1", name: "no-date.jpg", kind: "image", size_bytes: 100, mime_type: "image/jpeg", child_count: null, modified_at: null, preview_node_ids: null },
     ];
     render(
       <FileBrowser entries={entries} isLoading={false} onNavigate={() => {}} tab="images" sort="date-desc" />,

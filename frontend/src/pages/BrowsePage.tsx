@@ -5,9 +5,9 @@
 // - PDF クリック → openPdfViewer で PDF ビューワーを開く
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
-import { browseNodeOptions } from "../hooks/api/browseQueries";
+import { browseInfiniteOptions, browseNodeOptions } from "../hooks/api/browseQueries";
 import { mountListOptions } from "../hooks/api/mountQueries";
 import { useViewerParams, type ViewerTab } from "../hooks/useViewerParams";
 import { useViewerStore } from "../stores/viewerStore";
@@ -59,8 +59,25 @@ export default function BrowsePage() {
   const [focusArea, setFocusArea] = useState<"browser" | "tree">("browser");
   const treeRef = useRef<HTMLElement>(null);
 
-  // 現在のディレクトリのデータ
-  const { data, isLoading } = useQuery(browseNodeOptions(nodeId));
+  // 現在のディレクトリのデータ (ページネーション対応)
+  const {
+    data: infiniteData,
+    isLoading,
+    hasNextPage,
+    fetchNextPage,
+    isFetchingNextPage,
+  } = useInfiniteQuery(browseInfiniteOptions(nodeId, params.sort));
+
+  // 全ページの entries を結合し、メタデータは先頭ページから取得
+  const data = useMemo(() => {
+    if (!infiniteData?.pages?.length) return undefined;
+    const first = infiniteData.pages[0];
+    const allEntries = infiniteData.pages.flatMap((p) => p.entries);
+    return {
+      ...first,
+      entries: allEntries,
+    };
+  }, [infiniteData]);
 
   // マウントポイント一覧 (ツリー用)
   const { data: mountData } = useQuery(mountListOptions());
@@ -324,6 +341,9 @@ export default function BrowsePage() {
             sort={params.sort}
             selectedNodeId={selectedNodeId}
             keyboardEnabled={focusArea === "browser"}
+            hasMore={hasNextPage}
+            isLoadingMore={isFetchingNextPage}
+            onLoadMore={fetchNextPage}
           />
         )}
       </div>
