@@ -130,6 +130,8 @@ class NodeRegistry:
         self._archive_entry_to_id: dict[str, str] = {}
         self._id_to_composite_key: dict[str, str] = {}  # eviction O(1) 用逆引き
         self._archive_registry_max = archive_registry_max_entries
+        # DirIndex 参照 (オプション、main.py から設定)
+        self._dir_index: object | None = None
 
     @property
     def path_security(self) -> PathSecurity:
@@ -284,7 +286,12 @@ class NodeRegistry:
             if is_dir:
                 dir_count += 1
                 if dir_count <= self._CHILD_META_LIMIT:
-                    child_count, preview_ids = self._scan_child_meta(resolved)
+                    # DirIndex 優先、なければ scandir フォールバック
+                    result = self._scan_child_meta_from_index(resolved)
+                    if result is not None:
+                        child_count, preview_ids = result
+                    else:
+                        child_count, preview_ids = self._scan_child_meta(resolved)
                 else:
                     child_count, preview_ids = None, None
                 entries.append(
@@ -390,7 +397,11 @@ class NodeRegistry:
             if is_dir:
                 dir_count += 1
                 if dir_count <= self._CHILD_META_LIMIT:
-                    child_count, preview_ids = self._scan_child_meta(resolved)
+                    result = self._scan_child_meta_from_index(resolved)
+                    if result is not None:
+                        child_count, preview_ids = result
+                    else:
+                        child_count, preview_ids = self._scan_child_meta(resolved)
                 else:
                     child_count, preview_ids = None, None
                 entries.append(
@@ -435,7 +446,11 @@ class NodeRegistry:
         for _, _, root in self._root_entries:
             node_id = self.register(root)
             name = names.get(root, root.name)
-            child_count, _ = self._scan_child_meta(root)
+            result = self._scan_child_meta_from_index(root)
+            if result is not None:
+                child_count, _ = result
+            else:
+                child_count, _ = self._scan_child_meta(root)
             entries.append(
                 EntryMeta(
                     node_id=node_id,
@@ -648,3 +663,47 @@ class NodeRegistry:
         except PermissionError:
             pass
         return count, preview_ids if preview_ids else None
+
+    def set_dir_index(self, dir_index: object) -> None:
+        """DirIndex への参照を設定する."""
+        self._dir_index = dir_index
+
+    def _scan_child_meta_from_index(
+        self, directory: Path, preview_limit: int = 3
+    ) -> tuple[int, list[str] | None] | None:
+        """DirIndex を使って child_count と preview_ids を取得する.
+
+        DirIndex が未 ready の場合は None を返す (フォールバック用)。
+        """
+        from backend.services.dir_index import DirIndex
+
+        di = self._dir_index
+        if not isinstance(di, DirIndex) or not di.is_ready:
+            return None
+
+        # parent_path キーを構築
+        root = self._path_security.find_root_for(directory)
+        if root is None:
+            return None
+        mount_id = ""
+        for mid, mroot in self._mount_id_map.items():
+            if mroot == root:
+                mount_id = mid
+                break
+        rel = str(directory.relative_to(root))
+        parent_key = f"{mount_id}/{rel}" if rel != "." else mount_id
+
+        child_count = di.child_count(parent_key)
+        previews = di.preview_images(parent_key, limit=preview_limit)
+
+        preview_ids: list[str] | None = None
+        if previews:
+            ids: list[str] = []
+            for row in previews:
+                child = directory / str(row["name"])
+                if child.exists():
+                    resolved = child.resolve()
+                    ids.append(self.register_resolved(resolved))
+            preview_ids = ids if ids else None
+
+        return child_count, preview_ids

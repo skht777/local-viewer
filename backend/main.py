@@ -168,6 +168,10 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
         {m.mount_id: m.resolve_path(base_dir) for m in mount_config.mounts}
     )
 
+    # DirIndex 参照を NodeRegistry に設定 (child_count/preview 高速化用)
+    # ※ _dir_index はこの後の初期化ブロックで作成される
+    # → lifespan の最後で設定する
+
     # アーカイブサービス初期化
     from backend.services.archive_security import ArchiveEntryValidator
 
@@ -214,6 +218,9 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
     dir_index_path = settings.index_db_path.replace(".db", "-dir.db")
     _dir_index = DirIndex(dir_index_path)
     _dir_index.init_db()
+
+    # NodeRegistry に DirIndex 参照を設定 (child_count/preview 高速化)
+    _node_registry.set_dir_index(_dir_index)
 
     # DB に既存エントリがあれば incremental_scan、なければ full scan
     has_existing = _indexer.entry_count() > 0
