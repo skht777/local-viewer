@@ -13,6 +13,7 @@ import hmac
 import mimetypes
 import os
 from collections import OrderedDict
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -221,14 +222,20 @@ class NodeRegistry:
             raise NodeNotFoundError(node_id)
         return path
 
+    # stat 並列化の閾値 (WSL2 DrvFs 等で stat が遅い環境向け)
+    _PARALLEL_STAT_THRESHOLD = 200
+    _PARALLEL_STAT_WORKERS = 32
+    # _scan_child_meta を実行するサブディレクトリ数の上限
+    _CHILD_META_LIMIT = 100
+
     def list_directory(self, directory: Path) -> list[EntryMeta]:
         """ディレクトリの内容を一覧し、各エントリを登録して返す.
 
         os.scandir() で DirEntry を取得し、キャッシュ済みの
-        is_dir/is_symlink/stat を活用して I/O を最小化する。
+        is_dir/is_symlink を活用して I/O を最小化する。
+        大量エントリ時は stat を並列化してスループットを向上する。
         """
         validated = self._path_security.validate_existing(directory)
-        entries: list[EntryMeta] = []
 
         # os.scandir() — DirEntry の is_dir/is_symlink は追加 I/O なし
         with os.scandir(validated) as scanner:
@@ -240,6 +247,8 @@ class NodeRegistry:
                 ),
             )
 
+        # Phase 1: validate + classify (stat 不要、高速)
+        pre_entries: list[tuple[os.DirEntry[str], Path, str, EntryKind, bool]] = []
         for de in dir_entries:
             child = Path(de.path)
             is_dir = de.is_dir(follow_symlinks=False)
@@ -253,21 +262,38 @@ class NodeRegistry:
 
             node_id = self.register_resolved(resolved)
             kind = self._classify_entry(de)
+            pre_entries.append((de, resolved, node_id, kind, is_dir))
 
+        # Phase 2: stat (大量エントリ時は並列化で I/O スループット向上)
+        if len(pre_entries) > self._PARALLEL_STAT_THRESHOLD:
+            with ThreadPoolExecutor(max_workers=self._PARALLEL_STAT_WORKERS) as pool:
+                stats = list(pool.map(lambda x: x[0].stat(), pre_entries))
+        else:
+            stats = [pe[0].stat() for pe in pre_entries]
+
+        # Phase 3: EntryMeta 構築
+        entries: list[EntryMeta] = []
+        dir_count = 0
+        for (de, resolved, node_id, kind, is_dir), st in zip(
+            pre_entries, stats, strict=True
+        ):
             if is_dir:
-                child_count, preview_ids = self._scan_child_meta(resolved)
+                dir_count += 1
+                if dir_count <= self._CHILD_META_LIMIT:
+                    child_count, preview_ids = self._scan_child_meta(resolved)
+                else:
+                    child_count, preview_ids = None, None
                 entries.append(
                     EntryMeta(
                         node_id=node_id,
                         name=de.name,
                         kind=kind,
                         child_count=child_count,
-                        modified_at=de.stat().st_mtime,
+                        modified_at=st.st_mtime,
                         preview_node_ids=preview_ids,
                     )
                 )
             else:
-                st = de.stat()
                 name = de.name
                 dot_idx = name.rfind(".")
                 ext = name[dot_idx:].lower() if dot_idx > 0 else ""
