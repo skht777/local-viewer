@@ -44,6 +44,20 @@ class ThumbnailWarmer:
         self._pending: set[str] = set()
         self._lock = threading.Lock()
 
+    def _is_likely_cached(self, node_id: str, modified_at: float | None) -> bool:
+        """modified_at から近似 mtime_ns を復元してキャッシュをチェックする.
+
+        modified_at は秒精度 (float) のため mtime_ns の完全復元は不可。
+        近似値でキャッシュキーを生成し、ヒットすればスキップする。
+        ミスの場合は _generate_thumbnail_bytes 内で正確な
+        mtime_ns を使って再チェックする。
+        """
+        if modified_at is None:
+            return False
+        approx_mtime_ns = int(modified_at * 1_000_000_000)
+        cache_key = self._thumb_service.make_cache_key(node_id, approx_mtime_ns)
+        return self._thumb_service.is_cached(cache_key)
+
     async def warm(self, entries: list[EntryMeta]) -> None:
         """エントリのサムネイルをバックグラウンドで事前生成する.
 
@@ -54,6 +68,9 @@ class ThumbnailWarmer:
         targets: list[str] = []
         for entry in entries:
             if entry.kind not in ("image", "archive"):
+                continue
+            # キャッシュ済みならスレッドプール投入をスキップ
+            if self._is_likely_cached(entry.node_id, entry.modified_at):
                 continue
             with self._lock:
                 if entry.node_id in self._pending:
