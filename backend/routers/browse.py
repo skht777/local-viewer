@@ -12,6 +12,7 @@ import asyncio
 import hashlib
 import logging
 import zipfile
+from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import Response
@@ -23,6 +24,7 @@ from backend.services.browse_cursor import (
     SortOrder,
     paginate,
 )
+from backend.services.dir_index import DirIndex
 from backend.services.node_registry import BrowseResponse, EntryMeta, NodeRegistry
 from backend.services.thumbnail_warmer import ThumbnailWarmer
 
@@ -48,6 +50,11 @@ def get_archive_service() -> ArchiveService:
 
 def get_thumbnail_warmer() -> ThumbnailWarmer | None:
     """ThumbnailWarmer の DI スタブ (未設定時は None)."""
+    return None
+
+
+def get_dir_index() -> DirIndex | None:
+    """DirIndex の DI スタブ (未設定時は None)."""
     return None
 
 
@@ -87,6 +94,63 @@ def _schedule_prewarm(
     task.add_done_callback(_prewarm_tasks.discard)
 
 
+def _dir_index_to_entries(
+    rows: list[dict[str, object]],
+    parent_path_real: Path,
+    registry: NodeRegistry,
+) -> list[EntryMeta]:
+    """DirIndex の SQL 結果を EntryMeta に変換する.
+
+    - 各行のパスを validate_existing() で検証 (stale 行を除外)
+    - register_resolved() で node_id を登録
+    """
+    import mimetypes
+    from typing import cast
+
+    from backend.services.extensions import MIME_MAP
+
+    entries: list[EntryMeta] = []
+    for row in rows:
+        name = str(row["name"])
+        kind = str(row["kind"])
+        mtime_ns = cast(int, row["mtime_ns"]) if row["mtime_ns"] else 0
+        child_path = parent_path_real / name
+
+        # stale/削除済みファイルをスキップ
+        if not child_path.exists():
+            continue
+
+        resolved = child_path.resolve()
+        node_id = registry.register_resolved(resolved)
+
+        if kind == "directory":
+            entries.append(
+                EntryMeta(
+                    node_id=node_id,
+                    name=name,
+                    kind=kind,  # type: ignore[arg-type]
+                    modified_at=mtime_ns / 1e9 if mtime_ns else None,
+                )
+            )
+        else:
+            dot_idx = name.rfind(".")
+            ext = name[dot_idx:].lower() if dot_idx > 0 else ""
+            mime = MIME_MAP.get(ext) or mimetypes.guess_type(name)[0]
+            entries.append(
+                EntryMeta(
+                    node_id=node_id,
+                    name=name,
+                    kind=kind,  # type: ignore[arg-type]
+                    size_bytes=(
+                        cast(int, row["size_bytes"]) if row.get("size_bytes") else None
+                    ),
+                    mime_type=mime,
+                    modified_at=mtime_ns / 1e9 if mtime_ns else None,
+                )
+            )
+    return entries
+
+
 @router.get("/browse/{node_id}", response_model=BrowseResponse)
 async def browse_directory(
     node_id: str,
@@ -94,6 +158,7 @@ async def browse_directory(
     registry: NodeRegistry = Depends(get_node_registry),
     archive_service: ArchiveService = Depends(get_archive_service),
     warmer: ThumbnailWarmer | None = Depends(get_thumbnail_warmer),
+    dir_index: DirIndex | None = Depends(get_dir_index),
     sort: SortOrder = Query(SortOrder.NAME_ASC),
     limit: int | None = Query(None, ge=1, le=MAX_LIMIT),
     cursor: str | None = Query(None),
@@ -174,10 +239,22 @@ async def browse_directory(
             },
         )
 
+    # DirIndex パス: ready + limit 指定時は SQL クエリで高速化
+    # DirIndex が利用可能なら scandir/stat を完全にスキップ
+    _used_dir_index = False
+    if dir_index is not None and dir_index.is_ready and limit is not None:
+        _dir_index_result = await _try_dir_index_query(
+            dir_index, registry, path, sort, limit, cursor
+        )
+        if _dir_index_result is not None:
+            page_entries, next_cursor_val, total_count, etag = _dir_index_result
+            _used_dir_index = True
+
+    # フォールバック: DirIndex が使えない場合は従来パス
     # name ソート + limit 指定時: DirEntry レベルでページ分だけ stat (遅延評価)
     # date ソート時: 全件 stat が必要 (stat 結果がソートキー)
     _is_name_sort = sort in (SortOrder.NAME_ASC, SortOrder.NAME_DESC)
-    if _is_name_sort and limit is not None:
+    if not _used_dir_index and _is_name_sort and limit is not None:
         # カーソルから前ページ末尾の node_id を取得
         cursor_node_id = _extract_cursor_node_id(cursor, sort)
 
@@ -209,7 +286,7 @@ async def browse_directory(
             from backend.services.browse_cursor import encode_cursor
 
             next_cursor_val = encode_cursor(sort, page_entries[-1], etag)
-    else:
+    elif not _used_dir_index:
         # date ソート or limit なし: 従来の全件取得 + ページネーション
         entries = await run_in_threadpool(registry.list_directory, path)
 
@@ -260,6 +337,90 @@ async def browse_directory(
         media_type="application/json",
         headers={"ETag": etag, "Cache-Control": "private, no-cache"},
     )
+
+
+async def _try_dir_index_query(
+    dir_index: DirIndex,
+    registry: NodeRegistry,
+    path: Path,
+    sort: SortOrder,
+    limit: int,
+    cursor: str | None,
+) -> tuple[list[EntryMeta], str | None, int, str] | None:
+    """DirIndex を使って SQL クエリでページを取得する.
+
+    DirIndex が stale (ディレクトリ mtime 不一致) の場合は None を返す。
+    Returns: (page_entries, next_cursor, total_count, etag) or None
+    """
+    from backend.services.browse_cursor import encode_cursor
+
+    # ディレクトリの実 mtime を確認
+    try:
+        dir_stat = path.stat()
+    except OSError:
+        return None
+
+    # DirIndex に対応する parent_path を構築
+    root = registry.path_security.find_root_for(path)
+    if root is None:
+        return None
+
+    # mount_id は NodeRegistry から取得 (mount_id_map の逆引き)
+    mount_id = ""
+    for mid, mroot in registry.mount_id_map.items():
+        if mroot == root:
+            mount_id = mid
+            break
+
+    rel = str(path.relative_to(root))
+    parent_path_key = f"{mount_id}/{rel}" if rel != "." else mount_id
+
+    # DirIndex の mtime と比較 → 不一致なら stale
+    cached_mtime = dir_index.get_dir_mtime(parent_path_key)
+    if cached_mtime is None or cached_mtime != dir_stat.st_mtime_ns:
+        return None
+
+    # カーソルから sort_key を取得
+    cursor_sort_key = None
+    if cursor:
+        try:
+            from backend.services.browse_cursor import decode_cursor
+
+            cursor_data = decode_cursor(cursor, sort)
+            # cursor には node_id が入っているが、DirIndex は sort_key ベース
+            # → DirIndex から該当 node_id の sort_key を取得
+            cursor_name = str(cursor_data.get("n", ""))
+            from backend.services.dir_index import encode_sort_key
+
+            cursor_sort_key = encode_sort_key(cursor_name)
+        except ValueError:
+            return None  # カーソル不正 → フォールバック
+
+    # SQL クエリ実行
+    rows = await run_in_threadpool(
+        dir_index.query_page,
+        parent_path_key,
+        sort.value,
+        limit + 1,
+        cursor_sort_key,
+    )
+
+    # EntryMeta に変換 (path_security 検証付き)
+    all_entries = await run_in_threadpool(_dir_index_to_entries, rows, path, registry)
+
+    total_count = await run_in_threadpool(dir_index.total_count, parent_path_key)
+
+    # ページネーション
+    has_next = len(all_entries) > limit
+    page_entries = all_entries[:limit]
+
+    etag = _compute_etag(page_entries)
+
+    next_cursor_val = None
+    if has_next and page_entries:
+        next_cursor_val = encode_cursor(sort, page_entries[-1], etag)
+
+    return page_entries, next_cursor_val, total_count, etag
 
 
 def _extract_cursor_node_id(cursor: str | None, sort: SortOrder) -> str | None:

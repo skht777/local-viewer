@@ -300,6 +300,9 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
     )
     _app.dependency_overrides[browse.get_thumbnail_warmer] = lambda: _thumbnail_warmer
 
+    # DirIndex の DI 登録
+    _app.dependency_overrides[browse.get_dir_index] = lambda: _dir_index
+
     yield
 
     # シャットダウン
