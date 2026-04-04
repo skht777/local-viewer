@@ -315,6 +315,112 @@ class NodeRegistry:
 
         return entries
 
+    def list_directory_page(
+        self,
+        directory: Path,
+        limit: int,
+        cursor_node_id: str | None = None,
+        reverse: bool = False,
+    ) -> tuple[list[EntryMeta], int]:
+        """name ソート用: ページ分の DirEntry だけ stat + EntryMeta 構築する.
+
+        全件 stat を回避し、ページに必要な分だけ I/O ���行う。
+        name ソートは DirEntry レベルでソート可能なため、
+        カーソル位置を node_id で特定してページ分のみ処理する。
+
+        Returns:
+            (page_entries, total_count)
+        """
+        validated = self._path_security.validate_existing(directory)
+
+        # DirEntry 取得 + validate + classify (stat 不要)
+        with os.scandir(validated) as scanner:
+            dir_entries = sorted(
+                scanner,
+                key=lambda e: (
+                    not e.is_dir(follow_symlinks=False),
+                    natural_sort_key(e.name),
+                ),
+            )
+
+        pre_entries: list[tuple[os.DirEntry[str], Path, str, EntryKind, bool]] = []
+        for de in dir_entries:
+            child = Path(de.path)
+            is_dir = de.is_dir(follow_symlinks=False)
+            is_link = de.is_symlink()
+            try:
+                resolved = self._path_security.validate_child(child, is_symlink=is_link)
+            except PathSecurityError, OSError:
+                continue
+            node_id = self.register_resolved(resolved)
+            kind = self._classify_entry(de)
+            pre_entries.append((de, resolved, node_id, kind, is_dir))
+
+        total_count = len(pre_entries)
+
+        # name-desc: ディレクトリ優先を維持しつつ名前降順
+        # ディレクトリ群と非ディレクトリ群をそれぞれ逆順にする
+        if reverse:
+            dirs = [pe for pe in pre_entries if pe[4]]  # is_dir=True
+            files = [pe for pe in pre_entries if not pe[4]]
+            pre_entries = list(reversed(dirs)) + list(reversed(files))
+
+        # カーソル位置を node_id で特定
+        start_idx = 0
+        if cursor_node_id:
+            for i, (_, _, nid, _, _) in enumerate(pre_entries):
+                if nid == cursor_node_id:
+                    start_idx = i + 1
+                    break
+
+        # ページ分 (+1 で next_cursor 有無を判定) のみ stat + EntryMeta 構築
+        page_pre = pre_entries[start_idx : start_idx + limit + 1]
+
+        if len(page_pre) > self._PARALLEL_STAT_THRESHOLD:
+            with ThreadPoolExecutor(max_workers=self._PARALLEL_STAT_WORKERS) as pool:
+                stats = list(pool.map(lambda x: x[0].stat(), page_pre))
+        else:
+            stats = [pe[0].stat() for pe in page_pre]
+
+        entries: list[EntryMeta] = []
+        dir_count = 0
+        for (de, resolved, node_id, kind, is_dir), st in zip(
+            page_pre, stats, strict=True
+        ):
+            if is_dir:
+                dir_count += 1
+                if dir_count <= self._CHILD_META_LIMIT:
+                    child_count, preview_ids = self._scan_child_meta(resolved)
+                else:
+                    child_count, preview_ids = None, None
+                entries.append(
+                    EntryMeta(
+                        node_id=node_id,
+                        name=de.name,
+                        kind=kind,
+                        child_count=child_count,
+                        modified_at=st.st_mtime,
+                        preview_node_ids=preview_ids,
+                    )
+                )
+            else:
+                name = de.name
+                dot_idx = name.rfind(".")
+                ext = name[dot_idx:].lower() if dot_idx > 0 else ""
+                mime = MIME_MAP.get(ext) or mimetypes.guess_type(name)[0]
+                entries.append(
+                    EntryMeta(
+                        node_id=node_id,
+                        name=de.name,
+                        kind=kind,
+                        size_bytes=st.st_size,
+                        mime_type=mime,
+                        modified_at=st.st_mtime,
+                    )
+                )
+
+        return entries, total_count
+
     def list_mount_roots(
         self, mount_names: dict[Path, str] | None = None
     ) -> list[EntryMeta]:

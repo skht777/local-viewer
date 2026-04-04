@@ -174,19 +174,71 @@ async def browse_directory(
             },
         )
 
-    entries = await run_in_threadpool(registry.list_directory, path)
+    # name ソート + limit 指定時: DirEntry レベルでページ分だけ stat (遅延評価)
+    # date ソート時: 全件 stat が必要 (stat 結果がソートキー)
+    _is_name_sort = sort in (SortOrder.NAME_ASC, SortOrder.NAME_DESC)
+    if _is_name_sort and limit is not None:
+        # カーソルから前ページ末尾の node_id を取得
+        cursor_node_id = _extract_cursor_node_id(cursor, sort)
 
-    etag = _compute_etag(entries)
-    if request.headers.get("if-none-match") == etag:
-        return Response(
-            status_code=304,
-            headers={"ETag": etag, "Cache-Control": "private, no-cache"},
+        # list_directory_page は DirEntry レベルでソート + ページ分のみ stat
+        # name-desc 時は reverse=True でディレクトリ優先 + 名前降順
+        _reverse = sort == SortOrder.NAME_DESC
+        all_page_entries, total_count = await run_in_threadpool(
+            registry.list_directory_page,
+            path,
+            limit + 1,
+            cursor_node_id,
+            reverse=_reverse,
         )
 
-    # ページネーション適用
-    page_entries, next_cursor, total_count = _apply_pagination(
-        entries, sort, limit, cursor, etag
-    )
+        # limit + 1 件取得 → 超過分で next_cursor 有無を判定
+        has_next = len(all_page_entries) > limit
+        page_entries = all_page_entries[:limit]
+
+        # per-page ETag (ページ内エントリのみ)
+        etag = _compute_etag(page_entries)
+        if request.headers.get("if-none-match") == etag:
+            return Response(
+                status_code=304,
+                headers={"ETag": etag, "Cache-Control": "private, no-cache"},
+            )
+
+        next_cursor_val = None
+        if has_next and page_entries:
+            from backend.services.browse_cursor import encode_cursor
+
+            next_cursor_val = encode_cursor(sort, page_entries[-1], etag)
+    else:
+        # date ソート or limit なし: 従来の全件取得 + ページネーション
+        entries = await run_in_threadpool(registry.list_directory, path)
+
+        # per-page ETag: limit 指定時はページ適用後、なし時はソート後の全件
+        if limit is not None:
+            page_entries, next_cursor_val, total_count = _apply_pagination(
+                entries, sort, limit, cursor, ""
+            )
+            etag = _compute_etag(page_entries)
+        else:
+            # limit なしでもソートは適用 (name-desc, date-* 等)
+            from backend.services.browse_cursor import sort_entries
+
+            page_entries = sort_entries(entries, sort)
+            total_count = len(entries)
+            next_cursor_val = None
+            etag = _compute_etag(page_entries)
+
+        if request.headers.get("if-none-match") == etag:
+            return Response(
+                status_code=304,
+                headers={"ETag": etag, "Cache-Control": "private, no-cache"},
+            )
+
+        # limit 指定時は etag を更新してカーソルに反映
+        if limit is not None and next_cursor_val:
+            from backend.services.browse_cursor import encode_cursor
+
+            next_cursor_val = encode_cursor(sort, page_entries[-1], etag)
 
     parent_node_id = registry.get_parent_node_id(path)
     ancestors = await run_in_threadpool(registry.get_ancestors, path)
@@ -200,7 +252,7 @@ async def browse_directory(
         parent_node_id=parent_node_id,
         ancestors=ancestors,
         entries=page_entries,
-        next_cursor=next_cursor,
+        next_cursor=next_cursor_val,
         total_count=total_count if limit is not None else None,
     )
     return Response(
@@ -208,6 +260,22 @@ async def browse_directory(
         media_type="application/json",
         headers={"ETag": etag, "Cache-Control": "private, no-cache"},
     )
+
+
+def _extract_cursor_node_id(cursor: str | None, sort: SortOrder) -> str | None:
+    """カーソルから前ページ末尾の node_id を抽出する."""
+    if cursor is None:
+        return None
+    from backend.services.browse_cursor import decode_cursor
+
+    try:
+        data = decode_cursor(cursor, sort)
+        return str(data.get("id", ""))
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail={"error": str(exc), "code": "INVALID_CURSOR"},
+        ) from exc
 
 
 def _apply_pagination(
