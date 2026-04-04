@@ -26,6 +26,17 @@ export interface BrowseResponse {
   total_count: number | null;
 }
 
+// first-viewable API
+export interface FirstViewableResponse {
+  entry: BrowseEntry | null;
+  parent_node_id: string | null;
+}
+
+// sibling API
+export interface SiblingResponse {
+  entry: BrowseEntry | null;
+}
+
 // 検索 API
 export interface SearchResult {
   node_id: string;

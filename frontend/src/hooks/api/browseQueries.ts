@@ -6,10 +6,11 @@ import type { BrowseResponse, SearchResponse } from "../../types/api";
 import { apiFetch } from "./apiClient";
 
 // 特定ディレクトリの中身を取得 (後方互換: ページネーションなし)
-export function browseNodeOptions(nodeId: string | undefined) {
+export function browseNodeOptions(nodeId: string | undefined, sort?: SortOrder) {
+  const sortParam = sort && sort !== "name-asc" ? `?sort=${sort}` : "";
   return queryOptions({
-    queryKey: ["browse", nodeId],
-    queryFn: () => apiFetch<BrowseResponse>(`/api/browse/${nodeId}`),
+    queryKey: ["browse", nodeId, sort ?? "name-asc"],
+    queryFn: () => apiFetch<BrowseResponse>(`/api/browse/${nodeId}${sortParam}`),
     enabled: !!nodeId,
   });
 }

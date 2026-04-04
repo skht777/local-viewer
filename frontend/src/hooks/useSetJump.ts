@@ -8,10 +8,11 @@
 import { useCallback, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
+import { apiFetch } from "./api/apiClient";
 import { browseNodeOptions } from "./api/browseQueries";
 import { findNextSet, findPrevSet, resolveTopLevelDir, shouldConfirm } from "./useSetNavigation";
 import type { SortOrder, ViewerMode } from "./useViewerParams";
-import type { AncestorEntry, BrowseEntry, BrowseResponse } from "../types/api";
+import type { AncestorEntry, BrowseEntry, BrowseResponse, SiblingResponse } from "../types/api";
 import { resolveFirstViewable } from "../utils/resolveFirstViewable";
 import { sortEntries } from "../utils/sortEntries";
 
@@ -152,14 +153,30 @@ export function useSetJump({
         if (visited.has(currentParentId)) break;
         visited.add(currentParentId);
 
-        const parentData: BrowseResponse = await queryClient.fetchQuery(
-          browseNodeOptions(currentParentId),
-        );
+        // sibling API を優先試行 (1 クエリで次/前セットを取得)
+        let sibling: BrowseEntry | null = null;
+        let parentData: BrowseResponse | null = null;
+        if (currentChildId) {
+          try {
+            const resp = await apiFetch<SiblingResponse>(
+              `/api/browse/${currentParentId}/sibling?current=${currentChildId}&direction=${direction}&sort=${sort}`,
+            );
+            sibling = resp.entry;
+          } catch {
+            // API 失敗時はフォールバック
+          }
+        }
+
+        // sibling API で見つからなかった or 失敗 → フォールバック: 全件取得
+        if (!parentData) {
+          parentData = await queryClient.fetchQuery(browseNodeOptions(currentParentId, sort));
+        }
         if (!currentChildId) break;
 
-        // ユーザーのソート順を適用してから兄弟を探索
-        const sorted = sortEntries(parentData.entries, sort);
-        const sibling = finder(sorted, currentChildId);
+        if (!sibling) {
+          const sorted = sortEntries(parentData.entries, sort);
+          sibling = finder(sorted, currentChildId);
+        }
 
         // ソースの topDir を level 0 で算出
         if (!isSourceResolved) {

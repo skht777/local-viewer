@@ -6,9 +6,10 @@
 
 import { useEffect } from "react";
 import { useQueryClient } from "@tanstack/react-query";
+import { apiFetch } from "./api/apiClient";
 import { browseNodeOptions } from "./api/browseQueries";
 import { findNextSet, findPrevSet } from "./useSetNavigation";
-import type { AncestorEntry, BrowseResponse } from "../types/api";
+import type { AncestorEntry, BrowseResponse, SiblingResponse } from "../types/api";
 
 interface UseSiblingPrefetchProps {
   currentNodeId: string | null;
@@ -51,6 +52,19 @@ export function useSiblingPrefetch({
         if (visited.has(currentParentId)) break;
         visited.add(currentParentId);
 
+        // sibling API を優先試行
+        let sibling = null;
+        if (currentChildId) {
+          try {
+            const resp = await apiFetch<SiblingResponse>(
+              `/api/browse/${currentParentId}/sibling?current=${currentChildId}&direction=${direction}&sort=name-asc`,
+            );
+            sibling = resp.entry;
+          } catch {
+            // フォールバック
+          }
+        }
+
         let parentData: BrowseResponse;
         try {
           parentData = await queryClient.fetchQuery(browseNodeOptions(currentParentId));
@@ -59,7 +73,9 @@ export function useSiblingPrefetch({
         }
         if (!currentChildId || cancelled) return;
 
-        const sibling = finder(parentData.entries, currentChildId);
+        if (!sibling) {
+          sibling = finder(parentData.entries, currentChildId);
+        }
 
         if (sibling) {
           // 兄弟発見 → kind に応じてプリフェッチ

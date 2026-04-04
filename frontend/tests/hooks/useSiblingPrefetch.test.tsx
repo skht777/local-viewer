@@ -36,6 +36,8 @@ function browseResponse(
     parent_node_id: parentNodeId,
     ancestors,
     entries,
+    next_cursor: null,
+    total_count: null,
   };
 }
 
@@ -76,7 +78,8 @@ function createSeededClient(data: Record<string, BrowseResponse>): QueryClient {
     },
   });
   for (const [nodeId, response] of Object.entries(data)) {
-    client.setQueryData(["browse", nodeId], response);
+    // browseNodeOptions のキーは ["browse", nodeId, sort] (sort デフォルト "name-asc")
+    client.setQueryData(["browse", nodeId, "name-asc"], response);
   }
   return client;
 }
@@ -111,7 +114,7 @@ describe("useSiblingPrefetch", () => {
 
     // d2 の browse データがキャッシュに入る
     await waitFor(() => {
-      expect(client.getQueryData(["browse", "d2"])).toBeDefined();
+      expect(client.getQueryData(["browse", "d2", "name-asc"])).toBeDefined();
     });
   });
 
@@ -138,7 +141,7 @@ describe("useSiblingPrefetch", () => {
     );
 
     await waitFor(() => {
-      expect(client.getQueryData(["browse", "d1"])).toBeDefined();
+      expect(client.getQueryData(["browse", "d1", "name-asc"])).toBeDefined();
     });
   });
 
@@ -175,7 +178,7 @@ describe("useSiblingPrefetch", () => {
 
     // 1階層上がって d2 のデータがプリフェッチされる
     await waitFor(() => {
-      expect(client.getQueryData(["browse", "d2"])).toBeDefined();
+      expect(client.getQueryData(["browse", "d2", "name-asc"])).toBeDefined();
     });
   });
 
@@ -236,10 +239,10 @@ describe("useSiblingPrefetch", () => {
 
     await waitFor(() => {
       // 親ディレクトリのキャッシュは温まっている
-      expect(client.getQueryData(["browse", "parent"])).toBeDefined();
+      expect(client.getQueryData(["browse", "parent", "name-asc"])).toBeDefined();
     });
     // PDF の node_id で browse しない（422 になるため）
-    expect(client.getQueryData(["browse", "p1"])).toBeUndefined();
+    expect(client.getQueryData(["browse", "p1", "name-asc"])).toBeUndefined();
   });
 
   test("currentNodeId が null の場合は何もしない", async () => {
