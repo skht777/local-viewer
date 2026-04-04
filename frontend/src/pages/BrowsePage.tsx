@@ -163,14 +163,13 @@ export default function BrowsePage() {
     }
   }, [data?.parent_node_id, navigate, buildBrowseSearch]);
 
-  // ツリーにフォーカス移動
+  // ツリーにフォーカス移動（現在のディレクトリのノードにフォーカス）
   const handleFocusTree = useCallback(() => {
     setFocusArea("tree");
-    const firstTreeItem = treeRef.current?.querySelector<HTMLElement>(
-      "[data-testid^='tree-node-']",
-    );
-    firstTreeItem?.focus();
-  }, []);
+    const activeNode = treeRef.current?.querySelector<HTMLElement>(`[data-node-id="${nodeId}"]`);
+    const fallback = treeRef.current?.querySelector<HTMLElement>("[data-testid^='tree-node-']");
+    (activeNode ?? fallback)?.focus();
+  }, [nodeId]);
 
   // ブラウザーにフォーカス移動（ツリーから呼ばれる）
   const handleFocusBrowser = useCallback(() => {
