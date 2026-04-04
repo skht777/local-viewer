@@ -222,17 +222,27 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
     # NodeRegistry に DirIndex 参照を設定 (child_count/preview 高速化)
     _node_registry.set_dir_index(_dir_index)
 
-    # DB に既存エントリがあれば incremental_scan、なければ full scan
-    has_existing = _indexer.entry_count() > 0
+    # スキャン方式の決定:
+    # - Indexer と DirIndex の両方が構築済み → incremental scan
+    # - どちらかが未構築 → full scan (両方を同時構築)
+    has_indexer = _indexer.entry_count() > 0
+    has_dir_index = _dir_index.is_full_scan_done()
 
-    # Warm Start: マウント構成が一致すれば既存データで即座に検索を提供
     current_mount_ids = sorted(m.mount_id for m in mount_config.mounts)
-    if has_existing and _indexer.check_mount_fingerprint(current_mount_ids):
+    can_incremental = (
+        has_indexer
+        and has_dir_index
+        and _indexer.check_mount_fingerprint(current_mount_ids)
+    )
+
+    if can_incremental:
         _indexer.mark_warm_start()
         _dir_index.mark_warm_start()
         logger.info("Warm Start: 既存インデックスで検索を有効化 (stale)")
     else:
-        has_existing = False
+        if has_indexer and not has_dir_index:
+            logger.info("DirIndex 未構築 → full scan で両方を構築")
+        can_incremental = False
 
     # マウント構成を DB に保存 (次回起動時の Warm Start 判定用)
     _indexer.save_mount_fingerprint(current_mount_ids)
@@ -269,7 +279,7 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
 
     for mount in mount_config.mounts:
         root = mount.resolve_path(base_dir)
-        if has_existing:
+        if can_incremental:
             scan_fn = _background_incremental_scan_sync
         else:
             scan_fn = _background_scan_sync
@@ -373,15 +383,14 @@ def _background_incremental_scan_sync(
     from backend.services.dir_index import DirIndex
 
     di = dir_index if isinstance(dir_index, DirIndex) else None
-
-    # DirIndex が空の場合は incremental scan の枝刈りで子エントリが渡されない
-    # → Indexer は incremental、DirIndex は full scan で初期化
-    di_needs_full = di is not None and not di.is_full_scan_done()
-    on_walk = di.ingest_walk_entry if (di and not di_needs_full) else None
+    # incremental_scan: 両方の DB が構築済みの場合のみ呼ばれる
+    on_walk = di.ingest_walk_entry if di else None
     try:
         added, updated, deleted = indexer.incremental_scan(
             root_dir, path_security, mount_id, on_walk_entry=on_walk
         )
+        if di:
+            di.mark_ready()
         logger.info(
             "差分インデックス完了: +%d ~%d -%d (%s)",
             added,
@@ -389,21 +398,6 @@ def _background_incremental_scan_sync(
             deleted,
             mount_id or "default",
         )
-
-        # DirIndex 初回構築: full scan で全ディレクトリの子エントリを取得
-        if di_needs_full and di:
-            logger.info("DirIndex 初回構築: full scan 開始 (%s)", mount_id)
-            indexer.scan_directory(
-                root_dir,
-                path_security,
-                mount_id,
-                on_walk_entry=di.ingest_walk_entry,
-            )
-            di.mark_full_scan_done()
-            logger.info("DirIndex 初回構築完了 (%s)", mount_id)
-
-        if di:
-            di.mark_ready()
     except Exception:
         logger.exception("差分インデックススキャンに失敗しました")
 
