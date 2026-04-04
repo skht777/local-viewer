@@ -362,6 +362,15 @@ class DirIndex:
         finally:
             conn.close()
 
+    def entry_count(self) -> int:
+        """DB 内の全エントリ数を返す."""
+        conn = self._connect()
+        try:
+            row = conn.execute("SELECT COUNT(*) FROM dir_entries").fetchone()
+            return row[0] if row else 0
+        finally:
+            conn.close()
+
     def ingest_walk_entry(
         self,
         walk_entry_path: str,

@@ -372,14 +372,15 @@ def _background_incremental_scan_sync(
     from backend.services.dir_index import DirIndex
 
     di = dir_index if isinstance(dir_index, DirIndex) else None
-    # 差分スキャンでは DirIndex は全件再構築 (incremental 対応は将来)
-    on_walk = di.ingest_walk_entry if di else None
+
+    # DirIndex が空の場合は incremental scan の枝刈りで子エントリが渡されない
+    # → Indexer は incremental、DirIndex は full scan で初期化
+    di_needs_full = di is not None and di.entry_count() == 0
+    on_walk = di.ingest_walk_entry if (di and not di_needs_full) else None
     try:
         added, updated, deleted = indexer.incremental_scan(
             root_dir, path_security, mount_id, on_walk_entry=on_walk
         )
-        if di:
-            di.mark_ready()
         logger.info(
             "差分インデックス完了: +%d ~%d -%d (%s)",
             added,
@@ -387,6 +388,20 @@ def _background_incremental_scan_sync(
             deleted,
             mount_id or "default",
         )
+
+        # DirIndex 初回構築: full scan で全ディレクトリの子エントリを取得
+        if di_needs_full and di:
+            logger.info("DirIndex 初回構築: full scan 開始 (%s)", mount_id)
+            indexer.scan_directory(
+                root_dir,
+                path_security,
+                mount_id,
+                on_walk_entry=di.ingest_walk_entry,
+            )
+            logger.info("DirIndex 初回構築完了 (%s)", mount_id)
+
+        if di:
+            di.mark_ready()
     except Exception:
         logger.exception("差分インデックススキャンに失敗しました")
 
