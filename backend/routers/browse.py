@@ -16,6 +16,7 @@ from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import Response
+from pydantic import BaseModel
 from starlette.concurrency import run_in_threadpool
 
 from backend.services.archive_service import ArchiveService
@@ -457,3 +458,263 @@ def _apply_pagination(
             status_code=400,
             detail={"error": str(exc), "code": "INVALID_CURSOR"},
         ) from exc
+
+
+# --- first-viewable エンドポイント ---
+
+
+class FirstViewableResponse(BaseModel):
+    """first-viewable API のレスポンス."""
+
+    entry: EntryMeta | None = None
+    parent_node_id: str | None = None
+
+
+@router.get(
+    "/browse/{node_id}/first-viewable",
+    response_model=FirstViewableResponse,
+)
+async def first_viewable(
+    node_id: str,
+    registry: NodeRegistry = Depends(get_node_registry),
+    dir_index: DirIndex | None = Depends(get_dir_index),
+    sort: SortOrder = Query(SortOrder.NAME_ASC),
+) -> FirstViewableResponse:
+    """ディレクトリ内の最初の閲覧対象を再帰的に探索する.
+
+    優先順位: archive > pdf > image > directory (再帰降下)
+    DirIndex ready 時は SQL クエリ、未 ready 時は scandir。
+    最大 10 レベルまで再帰。
+    """
+    max_depth = 10
+    current_id = node_id
+
+    for _ in range(max_depth):
+        current_path = registry.resolve(current_id)
+        if not current_path.is_dir():
+            break
+
+        # DirIndex パス: SQL で最初の閲覧対象を探す
+        entry_meta = await _find_first_viewable_from_index(
+            dir_index, registry, current_path, sort
+        )
+
+        if entry_meta is None:
+            # フォールバック: scandir
+            entries = await run_in_threadpool(registry.list_directory, current_path)
+            from backend.services.browse_cursor import sort_entries
+
+            sorted_entries = sort_entries(entries, sort)
+            entry_meta = _select_first_viewable(sorted_entries)
+
+        if entry_meta is None:
+            return FirstViewableResponse()
+
+        if entry_meta.kind in ("image", "archive", "pdf"):
+            return FirstViewableResponse(
+                entry=entry_meta,
+                parent_node_id=current_id,
+            )
+
+        # directory → 再帰降下
+        current_id = entry_meta.node_id
+
+    return FirstViewableResponse()
+
+
+async def _find_first_viewable_from_index(
+    dir_index: DirIndex | None,
+    registry: NodeRegistry,
+    directory: Path,
+    sort: SortOrder,
+) -> EntryMeta | None:
+    """DirIndex から最初の閲覧対象を探す."""
+    if dir_index is None or not dir_index.is_ready:
+        return None
+
+    root = registry.path_security.find_root_for(directory)
+    if root is None:
+        return None
+
+    mount_id = ""
+    for mid, mroot in registry.mount_id_map.items():
+        if mroot == root:
+            mount_id = mid
+            break
+
+    rel = str(directory.relative_to(root))
+    parent_key = f"{mount_id}/{rel}" if rel != "." else mount_id
+
+    # archive > pdf > image の優先順位で SQL クエリ
+    for kind in ("archive", "pdf", "image"):
+        rows = await run_in_threadpool(dir_index.query_page, parent_key, sort.value, 1)
+        # kind フィルタ付きクエリ (DirIndex に追加予定。暫定: 全件取得後フィルタ)
+        filtered = [r for r in rows if r["kind"] == kind]
+        if filtered:
+            entries = await run_in_threadpool(
+                _dir_index_to_entries, filtered[:1], directory, registry
+            )
+            if entries:
+                return entries[0]
+
+    # 閲覧対象なし → directory を探す (再帰降下用)
+    rows = await run_in_threadpool(dir_index.query_page, parent_key, sort.value, 1)
+    dir_rows = [r for r in rows if r["kind"] == "directory"]
+    if dir_rows:
+        entries = await run_in_threadpool(
+            _dir_index_to_entries, dir_rows[:1], directory, registry
+        )
+        if entries:
+            return entries[0]
+
+    return None
+
+
+def _select_first_viewable(entries: list[EntryMeta]) -> EntryMeta | None:
+    """ソート済みエントリから最初の閲覧対象を選ぶ.
+
+    優先順位: archive > pdf > image > directory (再帰降下用)
+    """
+    for kind in ("archive", "pdf", "image"):
+        for e in entries:
+            if e.kind == kind:
+                return e
+    # 閲覧対象なし → directory を探す
+    for e in entries:
+        if e.kind == "directory":
+            return e
+    return None
+
+
+# --- sibling エンドポイント ---
+
+
+class SiblingResponse(BaseModel):
+    """sibling API のレスポンス."""
+
+    entry: EntryMeta | None = None
+
+
+@router.get(
+    "/browse/{parent_node_id}/sibling",
+    response_model=SiblingResponse,
+)
+async def find_sibling(
+    parent_node_id: str,
+    current: str = Query(..., description="現在のエントリの node_id"),
+    direction: str = Query(..., description="next or prev"),
+    registry: NodeRegistry = Depends(get_node_registry),
+    dir_index: DirIndex | None = Depends(get_dir_index),
+    sort: SortOrder = Query(SortOrder.NAME_ASC),
+) -> SiblingResponse:
+    """次または前の兄弟セット (directory/archive/pdf) を返す.
+
+    DirIndex ready 時は SQL クエリで 1 エントリのみ取得。
+    """
+    parent_path = registry.resolve(parent_node_id)
+    if not parent_path.is_dir():
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "error": "親がディレクトリではありません",
+                "code": "NOT_A_DIRECTORY",
+            },
+        )
+
+    # 現在エントリのパスを取得
+    current_path = registry.resolve(current)
+    current_name = current_path.name
+
+    # DirIndex パス
+    if dir_index is not None and dir_index.is_ready:
+        entry = await _find_sibling_from_index(
+            dir_index, registry, parent_path, current_name, direction, sort
+        )
+        if entry is not None:
+            return SiblingResponse(entry=entry)
+
+    # フォールバック: 全件取得して検索
+    entries = await run_in_threadpool(registry.list_directory, parent_path)
+    from backend.services.browse_cursor import sort_entries
+
+    sorted_entries = sort_entries(entries, sort)
+    candidates = [
+        e for e in sorted_entries if e.kind in ("directory", "archive", "pdf")
+    ]
+    current_idx = next(
+        (i for i, e in enumerate(candidates) if e.node_id == current), -1
+    )
+    if current_idx < 0:
+        return SiblingResponse()
+
+    if direction == "next" and current_idx + 1 < len(candidates):
+        return SiblingResponse(entry=candidates[current_idx + 1])
+    if direction == "prev" and current_idx > 0:
+        return SiblingResponse(entry=candidates[current_idx - 1])
+
+    return SiblingResponse()
+
+
+async def _find_sibling_from_index(
+    dir_index: DirIndex,
+    registry: NodeRegistry,
+    parent_path: Path,
+    current_name: str,
+    direction: str,
+    sort: SortOrder,
+) -> EntryMeta | None:
+    """DirIndex から次/前の兄弟セットを探す."""
+    root = registry.path_security.find_root_for(parent_path)
+    if root is None:
+        return None
+
+    mount_id = ""
+    for mid, mroot in registry.mount_id_map.items():
+        if mroot == root:
+            mount_id = mid
+            break
+
+    rel = str(parent_path.relative_to(root))
+    parent_key = f"{mount_id}/{rel}" if rel != "." else mount_id
+
+    from backend.services.dir_index import encode_sort_key
+
+    current_sort_key = encode_sort_key(current_name)
+
+    # 次/前の兄弟 (kind=directory/archive/pdf) を SQL で取得
+    conn = dir_index._connect()
+    try:
+        if direction == "next":
+            rows = conn.execute(
+                """
+                SELECT * FROM dir_entries
+                WHERE parent_path = ?
+                  AND kind IN ('directory', 'archive', 'pdf')
+                  AND sort_key > ?
+                ORDER BY sort_key ASC
+                LIMIT 1
+                """,
+                (parent_key, current_sort_key),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                """
+                SELECT * FROM dir_entries
+                WHERE parent_path = ?
+                  AND kind IN ('directory', 'archive', 'pdf')
+                  AND sort_key < ?
+                ORDER BY sort_key DESC
+                LIMIT 1
+                """,
+                (parent_key, current_sort_key),
+            ).fetchall()
+    finally:
+        conn.close()
+
+    if not rows:
+        return None
+
+    entries = await run_in_threadpool(
+        _dir_index_to_entries, [dict(rows[0])], parent_path, registry
+    )
+    return entries[0] if entries else None
