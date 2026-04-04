@@ -16,7 +16,7 @@ import { useMangaKeyboard } from "../hooks/useMangaKeyboard";
 import { useSetJump } from "../hooks/useSetJump";
 import { useSiblingPrefetch } from "../hooks/useSiblingPrefetch";
 import { useToolbarAutoHide } from "../hooks/useToolbarAutoHide";
-import type { ViewerMode } from "../hooks/useViewerParams";
+import type { SortOrder, ViewerMode } from "../hooks/useViewerParams";
 import { KeyboardHelp, MANGA_SHORTCUTS } from "./KeyboardHelp";
 import { MangaToolbar } from "./MangaToolbar";
 import { NavigationPrompt } from "./NavigationPrompt";
@@ -30,6 +30,7 @@ interface MangaViewerProps {
   currentNodeId: string | null;
   ancestors?: AncestorEntry[];
   mode: ViewerMode;
+  sort?: SortOrder;
   onIndexChange: (index: number) => void;
   onClose: () => void;
 }
@@ -42,6 +43,7 @@ export function MangaViewer({
   currentNodeId,
   ancestors,
   mode,
+  sort,
   onIndexChange,
   onClose,
 }: MangaViewerProps) {
@@ -117,7 +119,7 @@ export function MangaViewer({
   const [isHelpOpen, setIsHelpOpen] = useState(false);
 
   // セット間ジャンプ + バックグラウンドプリフェッチ
-  const setJump = useSetJump({ currentNodeId, parentNodeId, ancestors, mode });
+  const setJump = useSetJump({ currentNodeId, parentNodeId, ancestors, mode, sort });
   useSiblingPrefetch({ currentNodeId, parentNodeId, ancestors });
 
   // Escape 優先順位: (1) ヘルプ閉じ → (2) プロンプト閉じ → (3) フルスクリーン解除 → (4) ビューワー閉じ

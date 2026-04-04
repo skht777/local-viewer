@@ -2,7 +2,11 @@ import { QueryClient } from "@tanstack/react-query";
 import { resolveFirstViewable } from "../../src/utils/resolveFirstViewable";
 import type { BrowseEntry, BrowseResponse } from "../../src/types/api";
 
-function entry(kind: BrowseEntry["kind"], id: string): BrowseEntry {
+function entry(
+  kind: BrowseEntry["kind"],
+  id: string,
+  overrides?: Partial<BrowseEntry>,
+): BrowseEntry {
   return {
     node_id: id,
     name: id,
@@ -12,6 +16,7 @@ function entry(kind: BrowseEntry["kind"], id: string): BrowseEntry {
     child_count: null,
     modified_at: null,
     preview_node_ids: null,
+    ...overrides,
   };
 }
 
@@ -111,5 +116,41 @@ describe("resolveFirstViewable", () => {
 
     const result = await resolveFirstViewable("dir1", qc);
     expect(result).toBeNull();
+  });
+
+  test("date-descソートで最新のアーカイブが選択される", async () => {
+    const qc = createMockQueryClient({
+      dir1: browseResponse("dir1", [
+        entry("archive", "old", { name: "old", modified_at: 1000 }),
+        entry("archive", "new", { name: "new", modified_at: 2000 }),
+      ]),
+    });
+
+    const result = await resolveFirstViewable("dir1", qc, "date-desc");
+    expect(result?.entry.node_id).toBe("new");
+  });
+
+  test("name-descソートで名前降順の最初のエントリが選択される", async () => {
+    const qc = createMockQueryClient({
+      dir1: browseResponse("dir1", [
+        entry("image", "alpha", { name: "alpha" }),
+        entry("image", "zeta", { name: "zeta" }),
+      ]),
+    });
+
+    const result = await resolveFirstViewable("dir1", qc, "name-desc");
+    expect(result?.entry.node_id).toBe("zeta");
+  });
+
+  test("ソート順がデフォルト(name-asc)の場合は元の順序を維持する", async () => {
+    const qc = createMockQueryClient({
+      dir1: browseResponse("dir1", [
+        entry("image", "alpha", { name: "alpha" }),
+        entry("image", "zeta", { name: "zeta" }),
+      ]),
+    });
+
+    const result = await resolveFirstViewable("dir1", qc, "name-asc");
+    expect(result?.entry.node_id).toBe("alpha");
   });
 });

@@ -6,7 +6,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import type { AncestorEntry } from "../types/api";
-import type { ViewerMode } from "../hooks/useViewerParams";
+import type { SortOrder, ViewerMode } from "../hooks/useViewerParams";
 import { useViewerStore } from "../stores/viewerStore";
 import { useFullscreen } from "../hooks/useFullscreen";
 import { useMangaScroll } from "../hooks/useMangaScroll";
@@ -29,6 +29,7 @@ interface PdfMangaViewerProps {
   ancestors?: AncestorEntry[];
   initialPage: number;
   mode: ViewerMode;
+  sort?: SortOrder;
   onPageChange: (page: number) => void;
   onClose: () => void;
 }
@@ -40,6 +41,7 @@ export function PdfMangaViewer({
   ancestors,
   initialPage,
   mode,
+  sort,
   onPageChange,
   onClose,
 }: PdfMangaViewerProps) {
@@ -138,6 +140,7 @@ export function PdfMangaViewer({
     parentNodeId,
     ancestors,
     mode,
+    sort,
   });
   useSiblingPrefetch({ currentNodeId: pdfNodeId, parentNodeId, ancestors });
 

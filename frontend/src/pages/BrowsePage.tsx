@@ -195,6 +195,7 @@ export default function BrowsePage() {
       ancestors: data?.ancestors,
       initialPage: params.pdfPage,
       mode: params.mode,
+      sort: params.sort,
       onPageChange: setPdfPage,
       onClose: closePdfViewer,
     };
@@ -218,6 +219,7 @@ export default function BrowsePage() {
           currentNodeId={data?.current_node_id ?? null}
           ancestors={data?.ancestors}
           mode={params.mode}
+          sort={params.sort}
           onIndexChange={setIndex}
           onClose={closeViewer}
         />
@@ -233,6 +235,7 @@ export default function BrowsePage() {
         currentNodeId={data?.current_node_id ?? null}
         ancestors={data?.ancestors}
         mode={params.mode}
+        sort={params.sort}
         onIndexChange={setIndex}
         onClose={closeViewer}
       />
@@ -281,7 +284,7 @@ export default function BrowsePage() {
             onOpenViewer={async (id) => {
               // ディレクトリ内を再帰探索し、最初の閲覧対象を見つけてビューワーを開く
               try {
-                const target = await resolveFirstViewable(id, queryClient);
+                const target = await resolveFirstViewable(id, queryClient, params.sort);
                 if (!target) {
                   navigate(`/browse/${id}${buildBrowseSearch()}`);
                   return;

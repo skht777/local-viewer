@@ -17,7 +17,7 @@ import { useSetJump } from "../hooks/useSetJump";
 import { useSiblingPrefetch } from "../hooks/useSiblingPrefetch";
 import { useToast } from "../hooks/useToast";
 import { useToolbarAutoHide } from "../hooks/useToolbarAutoHide";
-import type { ViewerMode } from "../hooks/useViewerParams";
+import type { SortOrder, ViewerMode } from "../hooks/useViewerParams";
 import { CgToolbar } from "./CgToolbar";
 import { KeyboardHelp, CG_SHORTCUTS } from "./KeyboardHelp";
 import { NavigationPrompt } from "./NavigationPrompt";
@@ -32,6 +32,7 @@ interface CgViewerProps {
   currentNodeId: string | null;
   ancestors?: AncestorEntry[];
   mode: ViewerMode;
+  sort?: SortOrder;
   onIndexChange: (index: number) => void;
   onClose: () => void;
 }
@@ -62,6 +63,7 @@ export function CgViewer({
   currentNodeId,
   ancestors,
   mode,
+  sort,
   onIndexChange,
   onClose,
 }: CgViewerProps) {
@@ -100,7 +102,7 @@ export function CgViewer({
   const [isHelpOpen, setIsHelpOpen] = useState(false);
 
   // セット間ジャンプ + バックグラウンドプリフェッチ
-  const setJump = useSetJump({ currentNodeId, parentNodeId, ancestors, mode });
+  const setJump = useSetJump({ currentNodeId, parentNodeId, ancestors, mode, sort });
   useSiblingPrefetch({ currentNodeId, parentNodeId, ancestors });
 
   // Escape 優先順位: (1) ヘルプ閉じ → (2) プロンプト閉じ → (3) フルスクリーン解除 → (4) ビューワー閉じ

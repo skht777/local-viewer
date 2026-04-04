@@ -10,7 +10,7 @@ import { useNavigate } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { browseNodeOptions } from "./api/browseQueries";
 import { findNextSet, findPrevSet, resolveTopLevelDir, shouldConfirm } from "./useSetNavigation";
-import type { ViewerMode } from "./useViewerParams";
+import type { SortOrder, ViewerMode } from "./useViewerParams";
 import type { AncestorEntry, BrowseEntry, BrowseResponse } from "../types/api";
 import { resolveFirstViewable } from "../utils/resolveFirstViewable";
 
@@ -19,6 +19,7 @@ interface UseSetJumpProps {
   parentNodeId: string | null;
   ancestors?: AncestorEntry[];
   mode: ViewerMode;
+  sort?: SortOrder;
 }
 
 interface Prompt {
@@ -52,6 +53,7 @@ export function useSetJump({
   parentNodeId,
   ancestors = [],
   mode,
+  sort = "name-asc",
 }: UseSetJumpProps): UseSetJumpReturn {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -76,7 +78,7 @@ export function useSetJump({
       }
       // ディレクトリ: 再帰探索して最初の閲覧対象を開く
       try {
-        const resolved = await resolveFirstViewable(target.node_id, queryClient);
+        const resolved = await resolveFirstViewable(target.node_id, queryClient, sort);
         if (!resolved) {
           navigate(`/browse/${target.node_id}?tab=images&index=0&mode=${mode}`);
           return;
@@ -94,7 +96,7 @@ export function useSetJump({
         navigate(`/browse/${target.node_id}?tab=images&index=0&mode=${mode}`);
       }
     },
-    [navigate, mode, queryClient],
+    [navigate, mode, sort, queryClient],
   );
 
   // 再帰的に親を辿って兄弟セットを探索
