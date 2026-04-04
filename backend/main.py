@@ -351,6 +351,7 @@ def _background_scan_sync(
             root_dir, path_security, mount_id, on_walk_entry=on_walk
         )
         if di:
+            di.mark_full_scan_done()
             di.mark_ready()
         logger.info(
             "初回インデックス完了: %d エントリ (%s)",
@@ -375,7 +376,7 @@ def _background_incremental_scan_sync(
 
     # DirIndex が空の場合は incremental scan の枝刈りで子エントリが渡されない
     # → Indexer は incremental、DirIndex は full scan で初期化
-    di_needs_full = di is not None and di.entry_count() == 0
+    di_needs_full = di is not None and not di.is_full_scan_done()
     on_walk = di.ingest_walk_entry if (di and not di_needs_full) else None
     try:
         added, updated, deleted = indexer.incremental_scan(
@@ -398,6 +399,7 @@ def _background_incremental_scan_sync(
                 mount_id,
                 on_walk_entry=di.ingest_walk_entry,
             )
+            di.mark_full_scan_done()
             logger.info("DirIndex 初回構築完了 (%s)", mount_id)
 
         if di:

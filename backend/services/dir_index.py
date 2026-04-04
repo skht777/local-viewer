@@ -412,6 +412,29 @@ class DirIndex:
         # ディレクトリ mtime を記録
         self.set_dir_mtime(parent_path, dir_mtime_ns)
 
+    def is_full_scan_done(self) -> bool:
+        """フルスキャンが完了しているかを返す."""
+        conn = self._connect()
+        try:
+            row = conn.execute(
+                "SELECT value FROM schema_meta WHERE key = 'full_scan_done'"
+            ).fetchone()
+            return row is not None and row[0] == "1"
+        finally:
+            conn.close()
+
+    def mark_full_scan_done(self) -> None:
+        """フルスキャン完了フラグを設定する."""
+        conn = self._connect()
+        try:
+            conn.execute(
+                "INSERT OR REPLACE INTO schema_meta (key, value) VALUES (?, ?)",
+                ("full_scan_done", "1"),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
     def mark_ready(self) -> None:
         """インデックスが使用可能な状態にする."""
         self._is_ready = True
