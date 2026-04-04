@@ -62,6 +62,17 @@ export function useSetJump({
 
   const dismissPrompt = useCallback(() => setPrompt(null), []);
 
+  // browse スコープ (mode/sort) を含む search 文字列を構築
+  const buildSearch = useCallback(
+    (params: Record<string, string>): string => {
+      const sp = new URLSearchParams(params);
+      if (mode === "manga") sp.set("mode", "manga");
+      if (sort !== "name-asc") sp.set("sort", sort);
+      return `?${sp}`;
+    },
+    [mode, sort],
+  );
+
   // 遷移先の kind に応じた URL で遷移
   // - PDF: ターゲットの親ディレクトリに留まり ?pdf= 付きで PDF ビューワーを開く
   // - アーカイブ: そのまま進入してビューワーを開く
@@ -69,35 +80,37 @@ export function useSetJump({
   const navigateToTarget = useCallback(
     async (target: BrowseEntry, targetParentNodeId: string | null) => {
       if (target.kind === "pdf") {
-        navigate(`/browse/${targetParentNodeId}?pdf=${target.node_id}&page=1&mode=${mode}`);
+        navigate(`/browse/${targetParentNodeId}${buildSearch({ pdf: target.node_id, page: "1" })}`);
         return;
       }
       if (target.kind !== "directory") {
         // アーカイブ: そのまま進入
-        navigate(`/browse/${target.node_id}?tab=images&index=0&mode=${mode}`);
+        navigate(`/browse/${target.node_id}${buildSearch({ tab: "images", index: "0" })}`);
         return;
       }
       // ディレクトリ: 再帰探索して最初の閲覧対象を開く
       try {
         const resolved = await resolveFirstViewable(target.node_id, queryClient, sort);
         if (!resolved) {
-          navigate(`/browse/${target.node_id}?tab=images&index=0&mode=${mode}`);
+          navigate(`/browse/${target.node_id}${buildSearch({ tab: "images", index: "0" })}`);
           return;
         }
         if (resolved.entry.kind === "pdf") {
           navigate(
-            `/browse/${resolved.parentNodeId}?pdf=${resolved.entry.node_id}&page=1&mode=${mode}`,
+            `/browse/${resolved.parentNodeId}${buildSearch({ pdf: resolved.entry.node_id, page: "1" })}`,
           );
         } else if (resolved.entry.kind === "image") {
-          navigate(`/browse/${resolved.parentNodeId}?tab=images&index=0&mode=${mode}`);
+          navigate(`/browse/${resolved.parentNodeId}${buildSearch({ tab: "images", index: "0" })}`);
         } else {
-          navigate(`/browse/${resolved.entry.node_id}?tab=images&index=0&mode=${mode}`);
+          navigate(
+            `/browse/${resolved.entry.node_id}${buildSearch({ tab: "images", index: "0" })}`,
+          );
         }
       } catch {
-        navigate(`/browse/${target.node_id}?tab=images&index=0&mode=${mode}`);
+        navigate(`/browse/${target.node_id}${buildSearch({ tab: "images", index: "0" })}`);
       }
     },
-    [navigate, mode, sort, queryClient],
+    [navigate, buildSearch, sort, queryClient],
   );
 
   // 再帰的に親を辿って兄弟セットを探索

@@ -290,11 +290,13 @@ export default function BrowsePage() {
                 }
 
                 if (target.entry.kind === "pdf") {
-                  // PDF: 親ディレクトリでPDFビューワーを開く
-                  const modeParam = params.mode === "manga" ? "&mode=manga" : "";
-                  navigate(
-                    `/browse/${target.parentNodeId}?pdf=${target.entry.node_id}&page=1${modeParam}`,
-                  );
+                  // PDF: 親ディレクトリでPDFビューワーを開く (browse スコープを保持)
+                  const sp = new URLSearchParams();
+                  sp.set("pdf", target.entry.node_id);
+                  sp.set("page", "1");
+                  if (params.mode === "manga") sp.set("mode", "manga");
+                  if (params.sort !== "name-asc") sp.set("sort", params.sort);
+                  navigate(`/browse/${target.parentNodeId}?${sp}`);
                 } else if (target.entry.kind === "image") {
                   // 画像: 親ディレクトリでビューワーを開く
                   navigate(
