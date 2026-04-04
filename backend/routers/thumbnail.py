@@ -1,11 +1,14 @@
 """サムネイル配信 API.
 
 GET /api/thumbnail/{node_id} — 画像/アーカイブのサムネイルを返す
-- image → Pillow でリサイズ
+POST /api/thumbnails/batch — 複数サムネイルを一括取得
+- image → pyvips でリサイズ
 - archive → 先頭画像エントリをサムネイル化
 - ディレクトリ / 画像なし → 422 / 404
 """
 
+import asyncio
+import base64
 import hashlib
 import logging
 from pathlib import Path
@@ -13,8 +16,10 @@ from pathlib import Path
 import pyvips
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import Response
+from pydantic import BaseModel, Field
 from starlette.concurrency import run_in_threadpool
 
+from backend.errors import NodeNotFoundError
 from backend.services.archive_service import ArchiveService
 from backend.services.extensions import IMAGE_EXTENSIONS
 from backend.services.node_registry import NodeRegistry
@@ -239,3 +244,90 @@ async def serve_thumbnail(
             "Cache-Control": _cache_control(request),
         },
     )
+
+
+# --- バッチサムネイル API ---
+
+
+class ThumbnailBatchRequest(BaseModel):
+    """バッチサムネイルのリクエストボディ."""
+
+    node_ids: list[str] = Field(max_length=50)
+
+
+class ThumbnailResult(BaseModel):
+    """バッチサムネイルの個別結果."""
+
+    data: str | None = None
+    etag: str | None = None
+    error: str | None = None
+    code: str | None = None
+
+
+class ThumbnailBatchResponse(BaseModel):
+    """バッチサムネイルのレスポンス."""
+
+    thumbnails: dict[str, ThumbnailResult]
+
+
+async def _generate_one_thumbnail(
+    node_id: str,
+    registry: NodeRegistry,
+    archive_service: ArchiveService,
+    thumb_service: ThumbnailService,
+) -> ThumbnailResult:
+    """1 つの node_id のサムネイルを生成し ThumbnailResult を返す."""
+    try:
+        thumb_bytes, etag = await run_in_threadpool(
+            _generate_thumbnail_bytes,
+            node_id,
+            registry,
+            archive_service,
+            thumb_service,
+        )
+        return ThumbnailResult(
+            data=base64.b64encode(thumb_bytes).decode(),
+            etag=f'"{etag}"',
+        )
+    except NodeNotFoundError:
+        return ThumbnailResult(
+            error="ファイルが見つかりません",
+            code="NOT_FOUND",
+        )
+    except HTTPException as exc:
+        detail: dict[str, str] = exc.detail if isinstance(exc.detail, dict) else {}
+        return ThumbnailResult(
+            error=detail.get("error", str(exc.detail)),
+            code=detail.get("code", "UNKNOWN"),
+        )
+    except pyvips.Error:
+        return ThumbnailResult(
+            error="画像として認識できないデータです",
+            code="INVALID_IMAGE",
+        )
+
+
+@router.post("/thumbnails/batch", response_model=ThumbnailBatchResponse)
+async def serve_thumbnails_batch(
+    body: ThumbnailBatchRequest,
+    registry: NodeRegistry = Depends(get_node_registry),
+    archive_service: ArchiveService = Depends(get_archive_service),
+    thumb_service: ThumbnailService = Depends(get_thumbnail_service),
+) -> ThumbnailBatchResponse:
+    """複数 node_id のサムネイルを一括取得する.
+
+    - 最大 50 件の node_ids を受け付ける
+    - 各 node_id ごとに成功/エラーを返す (全体は常に 200)
+    - 並列実行: asyncio.gather で thread pool に投入
+    """
+    # 重複排除 (順序保持)
+    unique_ids = list(dict.fromkeys(body.node_ids))
+
+    tasks = [
+        _generate_one_thumbnail(nid, registry, archive_service, thumb_service)
+        for nid in unique_ids
+    ]
+    results = await asyncio.gather(*tasks)
+
+    thumbnails = dict(zip(unique_ids, results, strict=True))
+    return ThumbnailBatchResponse(thumbnails=thumbnails)
