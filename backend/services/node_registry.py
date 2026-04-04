@@ -84,6 +84,8 @@ class BrowseResponse(BaseModel):
     - parent_node_id: 親ディレクトリの node_id (ルートは None)
     - ancestors: 祖先エントリ (マウントルートから親まで、パンくず用)
     - entries: 子エントリ一覧
+    - next_cursor: 次ページカーソル (null = 最終ページ or ページネーション未使用)
+    - total_count: 全エントリ数 (ページネーション使用時のみ)
     """
 
     current_node_id: str | None = None
@@ -91,6 +93,8 @@ class BrowseResponse(BaseModel):
     parent_node_id: str | None = None
     ancestors: list[AncestorEntry] = []
     entries: list[EntryMeta]
+    next_cursor: str | None = None
+    total_count: int | None = None
 
 
 class NodeRegistry:

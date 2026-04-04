@@ -4,17 +4,23 @@ GET /api/browse          — ルート一覧 (ROOT_DIR 直下)
 GET /api/browse/{node_id} — ディレクトリ/アーカイブ一覧
 
 ETag + 304 で未変更時の転送を省略する。
+カーソルベースのページネーション + サーバーサイドソートに対応。
 """
 
 import hashlib
 import logging
 import zipfile
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import Response
 from starlette.concurrency import run_in_threadpool
 
 from backend.services.archive_service import ArchiveService
+from backend.services.browse_cursor import (
+    MAX_LIMIT,
+    SortOrder,
+    paginate,
+)
 from backend.services.node_registry import BrowseResponse, EntryMeta, NodeRegistry
 
 logger = logging.getLogger(__name__)
@@ -56,12 +62,18 @@ async def browse_directory(
     request: Request,
     registry: NodeRegistry = Depends(get_node_registry),
     archive_service: ArchiveService = Depends(get_archive_service),
+    sort: SortOrder = Query(SortOrder.NAME_ASC),
+    limit: int | None = Query(None, ge=1, le=MAX_LIMIT),
+    cursor: str | None = Query(None),
 ) -> BrowseResponse | Response:
     """指定ディレクトリまたはアーカイブの一覧を返す.
 
     node_id → パス解決 → ディレクトリ or アーカイブ一覧 → レスポンス。
     アーカイブの場合: 中身をエントリとして返す。
     ディレクトリでもアーカイブでもない場合は 422。
+
+    ページネーション: limit + cursor でカーソルベースのページング。
+    limit 省略時は全件返却 (後方互換)。
     """
     path = registry.resolve(node_id)
 
@@ -92,6 +104,11 @@ async def browse_directory(
                 },
             )
 
+        # ページネーション適用
+        page_entries, next_cursor, total_count = _apply_pagination(
+            entries, sort, limit, cursor, etag
+        )
+
         parent_node_id = registry.get_parent_node_id(path)
         ancestors = await run_in_threadpool(registry.get_ancestors, path)
         response = BrowseResponse(
@@ -99,7 +116,9 @@ async def browse_directory(
             current_name=path.name,
             parent_node_id=parent_node_id,
             ancestors=ancestors,
-            entries=entries,
+            entries=page_entries,
+            next_cursor=next_cursor,
+            total_count=total_count if limit is not None else None,
         )
         return Response(
             content=response.model_dump_json(),
@@ -128,6 +147,11 @@ async def browse_directory(
             headers={"ETag": etag, "Cache-Control": "private, no-cache"},
         )
 
+    # ページネーション適用
+    page_entries, next_cursor, total_count = _apply_pagination(
+        entries, sort, limit, cursor, etag
+    )
+
     parent_node_id = registry.get_parent_node_id(path)
     ancestors = await run_in_threadpool(registry.get_ancestors, path)
     response = BrowseResponse(
@@ -135,10 +159,32 @@ async def browse_directory(
         current_name=path.name,
         parent_node_id=parent_node_id,
         ancestors=ancestors,
-        entries=entries,
+        entries=page_entries,
+        next_cursor=next_cursor,
+        total_count=total_count if limit is not None else None,
     )
     return Response(
         content=response.model_dump_json(),
         media_type="application/json",
         headers={"ETag": etag, "Cache-Control": "private, no-cache"},
     )
+
+
+def _apply_pagination(
+    entries: list[EntryMeta],
+    sort: SortOrder,
+    limit: int | None,
+    cursor: str | None,
+    etag: str,
+) -> tuple[list[EntryMeta], str | None, int]:
+    """ページネーションを適用する.
+
+    カーソル検証エラー時は HTTPException(400) を送出。
+    """
+    try:
+        return paginate(entries, sort, limit, cursor, etag)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail={"error": str(exc), "code": "INVALID_CURSOR"},
+        ) from exc
