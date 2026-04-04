@@ -100,18 +100,40 @@ def decode_cursor(cursor_str: str, expected_sort: SortOrder) -> dict[str, object
     return result
 
 
+def _invert_sort_key(key: tuple[int | str, ...]) -> tuple[object, ...]:
+    """natural_sort_key の結果を反転する (降順ソート用).
+
+    文字列要素は各バイトをビット反転、整数要素は符号反転。
+    """
+    inverted: list[object] = []
+    for part in key:
+        if isinstance(part, int):
+            inverted.append(-part)
+        else:
+            # 文字列: 各文字の ord を反転 (Unicode 最大値からの距離)
+            inverted.append(tuple(-ord(c) for c in part))
+    return tuple(inverted)
+
+
 def sort_entries(entries: list[EntryMeta], sort: SortOrder) -> list[EntryMeta]:
-    """エントリをソート順に並び替える."""
+    """エントリをソート順に並び替える.
+
+    name ソートはディレクトリ優先を維持する。
+    date ソートはディレクトリ優先なし (null は末尾)。
+    """
     if sort == SortOrder.NAME_ASC:
         return sorted(
             entries,
             key=lambda e: (e.kind != "directory", natural_sort_key(e.name)),
         )
     if sort == SortOrder.NAME_DESC:
+        # ディレクトリ優先を維持しつつ名前のみ降順
         return sorted(
             entries,
-            key=lambda e: (e.kind != "directory", natural_sort_key(e.name)),
-            reverse=True,
+            key=lambda e: (
+                e.kind != "directory",
+                _invert_sort_key(natural_sort_key(e.name)),
+            ),
         )
     if sort == SortOrder.DATE_DESC:
         return sorted(

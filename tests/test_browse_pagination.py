@@ -135,3 +135,45 @@ async def test_limitなしで全エントリが返る_後方互換(
     assert len(data["entries"]) == 10
     # 後方互換: next_cursor は null
     assert data.get("next_cursor") is None
+
+
+async def test_name_descでディレクトリがファイルより前に来る(
+    client: AsyncClient,
+    test_node_registry: NodeRegistry,
+    test_root: Path,
+) -> None:
+    """name-desc ソートでもディレクトリ優先が維持されることを検証."""
+    # ディレクトリとファイルが混在するディレクトリを作成
+    d = test_root / "mixed"
+    d.mkdir()
+    (d / "subdir_a").mkdir()
+    (d / "subdir_b").mkdir()
+
+    buf = io.BytesIO()
+    Image.new("RGB", (1, 1), color="red").save(buf, format="JPEG")
+    jpeg = buf.getvalue()
+    (d / "alpha.jpg").write_bytes(jpeg)
+    (d / "zulu.jpg").write_bytes(jpeg)
+
+    node_id = test_node_registry.register(d)
+
+    response = await client.get(f"/api/browse/{node_id}?sort=name-desc")
+    assert response.status_code == 200
+
+    entries = response.json()["entries"]
+    kinds = [e["kind"] for e in entries]
+
+    # ディレクトリが先、ファイルが後
+    dir_indices = [i for i, k in enumerate(kinds) if k == "directory"]
+    file_indices = [i for i, k in enumerate(kinds) if k != "directory"]
+    assert all(di < fi for di in dir_indices for fi in file_indices), (
+        f"ディレクトリがファイルより前に来るべき: {[(e['name'], e['kind']) for e in entries]}"
+    )
+
+    # ディレクトリ内は名前降順
+    dir_names = [entries[i]["name"] for i in dir_indices]
+    assert dir_names == sorted(dir_names, reverse=True)
+
+    # ファイル内も名前降順
+    file_names = [entries[i]["name"] for i in file_indices]
+    assert file_names == sorted(file_names, reverse=True)
