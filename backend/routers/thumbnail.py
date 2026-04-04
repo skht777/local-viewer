@@ -307,6 +307,60 @@ async def _generate_one_thumbnail(
         )
 
 
+async def _generate_archive_group_thumbnails(
+    archive_path: Path,
+    entries: list[tuple[str, str]],
+    archive_service: ArchiveService,
+    thumb_service: ThumbnailService,
+) -> dict[str, ThumbnailResult]:
+    """同一アーカイブの複数エントリを一括展開してサムネイル生成する.
+
+    entries: [(node_id, entry_name), ...]
+    アーカイブを 1 回だけ開き、extract_entries_batch で一括展開する。
+    """
+
+    def _generate() -> dict[str, ThumbnailResult]:
+        st = archive_path.stat()
+        entry_names = [name for _, name in entries]
+        extracted = archive_service.extract_entries_batch(archive_path, entry_names)
+
+        results: dict[str, ThumbnailResult] = {}
+        for node_id, entry_name in entries:
+            etag = _compute_etag(st.st_mtime_ns, node_id)
+            source_bytes = extracted.get(entry_name)
+            if source_bytes is None:
+                results[node_id] = ThumbnailResult(
+                    error="アーカイブエントリが見つかりません",
+                    code="NOT_FOUND",
+                )
+                continue
+            try:
+                cache_key = ThumbnailService.make_cache_key(node_id, st.st_mtime_ns)
+                thumb_bytes = thumb_service.get_or_generate_bytes(
+                    source_bytes, cache_key
+                )
+                results[node_id] = ThumbnailResult(
+                    data=base64.b64encode(thumb_bytes).decode(),
+                    etag=f'"{etag}"',
+                )
+            except pyvips.Error:
+                results[node_id] = ThumbnailResult(
+                    error="画像として認識できないデータです",
+                    code="INVALID_IMAGE",
+                )
+        return results
+
+    try:
+        return await run_in_threadpool(_generate)
+    except Exception as exc:
+        # アーカイブ全体のエラー → 全エントリにエラーを返す
+        error_msg = f"アーカイブ読み取り失敗: {exc}"
+        return {
+            nid: ThumbnailResult(error=error_msg, code="INVALID_ARCHIVE")
+            for nid, _ in entries
+        }
+
+
 @router.post("/thumbnails/batch", response_model=ThumbnailBatchResponse)
 async def serve_thumbnails_batch(
     body: ThumbnailBatchRequest,
@@ -318,16 +372,47 @@ async def serve_thumbnails_batch(
 
     - 最大 50 件の node_ids を受け付ける
     - 各 node_id ごとに成功/エラーを返す (全体は常に 200)
-    - 並列実行: asyncio.gather で thread pool に投入
+    - アーカイブエントリは archive_path ごとにグルーピングして一括展開
+    - 非アーカイブエントリは個別に並列処理
     """
     # 重複排除 (順序保持)
     unique_ids = list(dict.fromkeys(body.node_ids))
 
-    tasks = [
-        _generate_one_thumbnail(nid, registry, archive_service, thumb_service)
-        for nid in unique_ids
-    ]
-    results = await asyncio.gather(*tasks)
+    # アーカイブエントリをグルーピング、通常エントリは個別処理
+    archive_groups: dict[Path, list[tuple[str, str]]] = {}
+    regular_ids: list[str] = []
 
-    thumbnails = dict(zip(unique_ids, results, strict=True))
+    for nid in unique_ids:
+        entry = registry.resolve_archive_entry(nid)
+        if entry is not None:
+            archive_path, entry_name = entry
+            archive_groups.setdefault(archive_path, []).append((nid, entry_name))
+        else:
+            regular_ids.append(nid)
+
+    # 非アーカイブエントリの個別処理タスク
+    regular_tasks = [
+        _generate_one_thumbnail(nid, registry, archive_service, thumb_service)
+        for nid in regular_ids
+    ]
+
+    # アーカイブグループの一括処理タスク
+    archive_tasks = [
+        _generate_archive_group_thumbnails(
+            arc_path, entries, archive_service, thumb_service
+        )
+        for arc_path, entries in archive_groups.items()
+    ]
+
+    # 並列実行: 通常エントリとアーカイブグループを別々に gather
+    regular_results = await asyncio.gather(*regular_tasks)
+    archive_results = await asyncio.gather(*archive_tasks)
+
+    # 結果を統合
+    thumbnails: dict[str, ThumbnailResult] = {}
+    for nid, result in zip(regular_ids, regular_results, strict=True):
+        thumbnails[nid] = result
+    for group_result in archive_results:
+        thumbnails.update(group_result)
+
     return ThumbnailBatchResponse(thumbnails=thumbnails)
