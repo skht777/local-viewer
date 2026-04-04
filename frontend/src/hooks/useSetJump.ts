@@ -13,6 +13,7 @@ import { findNextSet, findPrevSet, resolveTopLevelDir, shouldConfirm } from "./u
 import type { SortOrder, ViewerMode } from "./useViewerParams";
 import type { AncestorEntry, BrowseEntry, BrowseResponse } from "../types/api";
 import { resolveFirstViewable } from "../utils/resolveFirstViewable";
+import { sortEntries } from "../utils/sortEntries";
 
 interface UseSetJumpProps {
   currentNodeId: string | null;
@@ -126,11 +127,13 @@ export function useSetJump({
         );
         if (!currentChildId) break;
 
-        const sibling = finder(parentData.entries, currentChildId);
+        // ユーザーのソート順を適用してから兄弟を探索
+        const sorted = sortEntries(parentData.entries, sort);
+        const sibling = finder(sorted, currentChildId);
 
         // ソースの topDir を level 0 で算出
         if (!isSourceResolved) {
-          const sourceEntry = parentData.entries.find((e) => e.node_id === currentChildId);
+          const sourceEntry = sorted.find((e) => e.node_id === currentChildId);
           if (sourceEntry) {
             sourceTopDir = resolveTopLevelDir(
               parentData.ancestors,
@@ -158,7 +161,7 @@ export function useSetJump({
 
       return null;
     },
-    [currentNodeId, parentNodeId, ancestors, queryClient],
+    [currentNodeId, parentNodeId, ancestors, sort, queryClient],
   );
 
   // PageDown/X: 条件付き確認で次のセットへ
