@@ -356,11 +356,15 @@ def _background_scan_sync(
 
     di = dir_index if isinstance(dir_index, DirIndex) else None
     on_walk = di.ingest_walk_entry if di else None
+    # バルクモード: 単一接続 + バッチ INSERT で高速化
+    if di:
+        di.begin_bulk()
     try:
         count = indexer.scan_directory(
             root_dir, path_security, mount_id, on_walk_entry=on_walk
         )
         if di:
+            di.end_bulk()
             di.mark_full_scan_done()
             di.mark_ready()
         logger.info(
@@ -369,6 +373,8 @@ def _background_scan_sync(
             mount_id or "default",
         )
     except Exception:
+        if di:
+            di.end_bulk()
         logger.exception("初回インデックススキャンに失敗しました")
 
 
@@ -385,11 +391,14 @@ def _background_incremental_scan_sync(
     di = dir_index if isinstance(dir_index, DirIndex) else None
     # incremental_scan: 両方の DB が構築済みの場合のみ呼ばれる
     on_walk = di.ingest_walk_entry if di else None
+    if di:
+        di.begin_bulk()
     try:
         added, updated, deleted = indexer.incremental_scan(
             root_dir, path_security, mount_id, on_walk_entry=on_walk
         )
         if di:
+            di.end_bulk()
             di.mark_ready()
         logger.info(
             "差分インデックス完了: +%d ~%d -%d (%s)",
@@ -399,6 +408,8 @@ def _background_incremental_scan_sync(
             mount_id or "default",
         )
     except Exception:
+        if di:
+            di.end_bulk()
         logger.exception("差分インデックススキャンに失敗しました")
 
 
