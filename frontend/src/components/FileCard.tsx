@@ -23,6 +23,7 @@ interface FileCardProps {
   onEnter?: (entry: BrowseEntry) => void;
   isSelected?: boolean;
   ref?: Ref<HTMLDivElement>;
+  batchThumbnailUrl?: string;
 }
 
 // kind に応じたアイコン
@@ -51,9 +52,13 @@ export function FileCard({
   onEnter,
   isSelected,
   ref,
+  batchThumbnailUrl,
 }: FileCardProps) {
   const [hasImageError, setHasImageError] = useState(false);
   const [hasPreviewError, setHasPreviewError] = useState(false);
+
+  // バッチ Blob URL があれば優先、なければ個別 URL にフォールバック
+  const thumbSrc = batchThumbnailUrl ?? thumbnailUrl(entry.node_id, entry.modified_at);
   const isImagePreview = entry.kind === "image" && !hasImageError;
 
   // ディレクトリ: preview_node_ids があればサムネイルグリッド表示
@@ -97,7 +102,7 @@ export function FileCard({
       <div className="relative flex aspect-square items-center justify-center bg-surface-raised text-4xl">
         {isImagePreview ? (
           <img
-            src={thumbnailUrl(entry.node_id, entry.modified_at)}
+            src={thumbSrc}
             alt={entry.name}
             className="h-full w-full object-cover"
             loading="lazy"
@@ -112,7 +117,7 @@ export function FileCard({
           />
         ) : hasArchivePreview ? (
           <img
-            src={thumbnailUrl(entry.node_id, entry.modified_at)}
+            src={thumbSrc}
             alt={entry.name}
             className="h-full w-full object-cover"
             loading="lazy"

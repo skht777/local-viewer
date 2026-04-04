@@ -6,7 +6,8 @@
 // - tab に応じてエントリをフィルタ
 
 import type { KeyboardEvent } from "react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useBatchThumbnails } from "../hooks/api/thumbnailQueries";
 import { useBrowseKeyboard } from "../hooks/useBrowseKeyboard";
 import type { SortOrder, ViewerTab } from "../hooks/useViewerParams";
 import type { BrowseEntry } from "../types/api";
@@ -80,6 +81,13 @@ export function FileBrowser({
 }: FileBrowserProps) {
   // サーバーサイドソート済みのため sortEntries はスキップ
   const filtered = filterByTab(entries, tab, sort);
+
+  // バッチサムネイル: image/archive エントリの node_ids を収集
+  const thumbnailNodeIds = useMemo(
+    () => filtered.filter((e) => e.kind === "image" || e.kind === "archive").map((e) => e.node_id),
+    [filtered],
+  );
+  const batchThumbnails = useBatchThumbnails(thumbnailNodeIds);
 
   // 無限スクロール: センチネル要素の IntersectionObserver
   const sentinelRef = useRef<HTMLDivElement>(null);
@@ -267,6 +275,7 @@ export function FileBrowser({
               onOpen={getOpenHandler(entry)}
               onEnter={getEnterHandler(entry)}
               isSelected={entry.node_id === effectiveSelectedId}
+              batchThumbnailUrl={batchThumbnails.get(entry.node_id)}
             />
           ))}
         </div>
