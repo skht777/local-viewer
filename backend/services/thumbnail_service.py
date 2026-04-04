@@ -129,3 +129,7 @@ class ThumbnailService:
         thumb_bytes = self.generate_thumbnail_from_path(source_path, width)
         self._cache.put(cache_key, thumb_bytes, suffix=".jpg")
         return thumb_bytes
+
+    def is_cached(self, cache_key: str) -> bool:
+        """キャッシュにサムネイルが存在するかを返す."""
+        return self._cache.get(cache_key) is not None

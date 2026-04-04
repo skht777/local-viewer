@@ -5,8 +5,10 @@ GET /api/browse/{node_id} — ディレクトリ/アーカイブ一覧
 
 ETag + 304 で未変更時の転送を省略する。
 カーソルベースのページネーション + サーバーサイドソートに対応。
+サムネイルプリウォーム: レスポンス返却後にバックグラウンド生成。
 """
 
+import asyncio
 import hashlib
 import logging
 import zipfile
@@ -22,6 +24,7 @@ from backend.services.browse_cursor import (
     paginate,
 )
 from backend.services.node_registry import BrowseResponse, EntryMeta, NodeRegistry
+from backend.services.thumbnail_warmer import ThumbnailWarmer
 
 logger = logging.getLogger(__name__)
 
@@ -43,6 +46,11 @@ def get_archive_service() -> ArchiveService:
     raise RuntimeError(msg)
 
 
+def get_thumbnail_warmer() -> ThumbnailWarmer | None:
+    """ThumbnailWarmer の DI スタブ (未設定時は None)."""
+    return None
+
+
 def _compute_etag(entries: list[EntryMeta]) -> str:
     """entries の内容から ETag を生成する.
 
@@ -56,12 +64,36 @@ def _compute_etag(entries: list[EntryMeta]) -> str:
     return hashlib.md5(content.encode()).hexdigest()  # noqa: S324
 
 
+# プリウォームの fire-and-forget タスク参照 (GC 防止)
+_prewarm_tasks: set[asyncio.Task[None]] = set()
+
+
+def _schedule_prewarm(
+    warmer: ThumbnailWarmer | None,
+    entries: list[EntryMeta],
+) -> None:
+    """プリウォームタスクをスケジュールする (fire-and-forget)."""
+    if warmer is None:
+        return
+
+    async def _run() -> None:
+        try:
+            await warmer.warm(entries)
+        except Exception:
+            logger.debug("プリウォームタスクでエラー", exc_info=True)
+
+    task = asyncio.create_task(_run())
+    _prewarm_tasks.add(task)
+    task.add_done_callback(_prewarm_tasks.discard)
+
+
 @router.get("/browse/{node_id}", response_model=BrowseResponse)
 async def browse_directory(
     node_id: str,
     request: Request,
     registry: NodeRegistry = Depends(get_node_registry),
     archive_service: ArchiveService = Depends(get_archive_service),
+    warmer: ThumbnailWarmer | None = Depends(get_thumbnail_warmer),
     sort: SortOrder = Query(SortOrder.NAME_ASC),
     limit: int | None = Query(None, ge=1, le=MAX_LIMIT),
     cursor: str | None = Query(None),
@@ -111,6 +143,10 @@ async def browse_directory(
 
         parent_node_id = registry.get_parent_node_id(path)
         ancestors = await run_in_threadpool(registry.get_ancestors, path)
+
+        # プリウォーム: ページ内エントリのサムネイルをバックグラウンド生成
+        _schedule_prewarm(warmer, page_entries)
+
         response = BrowseResponse(
             current_node_id=node_id,
             current_name=path.name,
@@ -154,6 +190,10 @@ async def browse_directory(
 
     parent_node_id = registry.get_parent_node_id(path)
     ancestors = await run_in_threadpool(registry.get_ancestors, path)
+
+    # プリウォーム: ページ内エントリのサムネイルをバックグラウンド生成
+    _schedule_prewarm(warmer, page_entries)
+
     response = BrowseResponse(
         current_node_id=node_id,
         current_name=path.name,
