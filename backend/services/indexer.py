@@ -12,6 +12,7 @@ import bisect
 import logging
 import re
 import sqlite3
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -406,12 +407,14 @@ class Indexer:
         path_security: PathSecurity,
         mount_id: str = "",
         workers: int = 8,
+        on_walk_entry: Callable[..., None] | None = None,
     ) -> int:
         """ルートディレクトリ以下を再帰走査してインデックスに追加する.
 
         - parallel_walk で stat() を並列実行 (WSL2 drvfs 高速化)
         - PathSecurity チェックを通過したエントリのみ登録
         - 1000 エントリごとにバッチ INSERT
+        - on_walk_entry: 各 WalkEntry を受け取るコールバック (DirIndex 連携用)
         - スキャン完了後 _is_ready = True
         - 戻り値: 登録エントリ数
         """
@@ -436,6 +439,17 @@ class Indexer:
                 path_validator=_safe_validate,
             ):
                 dp = walk_entry.path
+
+                # DirIndex コールバック: WalkEntry を丸ごと配る
+                if on_walk_entry is not None:
+                    on_walk_entry(
+                        str(dp),
+                        str(root_dir),
+                        mount_id,
+                        walk_entry.mtime_ns,
+                        walk_entry.subdirs,
+                        walk_entry.files,
+                    )
 
                 # ディレクトリ自体を登録 (ルートは除く)
                 # mtime_ns は parallel_walk が取得済み
@@ -475,6 +489,7 @@ class Indexer:
         path_security: PathSecurity,
         mount_id: str = "",
         workers: int = 8,
+        on_walk_entry: Callable[..., None] | None = None,
     ) -> tuple[int, int, int]:
         """差分スキャン (追加, 更新, 削除) の件数を返す.
 
@@ -546,6 +561,17 @@ class Indexer:
                 dir_filter=_dir_mtime_filter,
             ):
                 dp = walk_entry.path
+
+                # DirIndex コールバック
+                if on_walk_entry is not None:
+                    on_walk_entry(
+                        str(dp),
+                        str(root_dir),
+                        mount_id,
+                        walk_entry.mtime_ns,
+                        walk_entry.subdirs,
+                        walk_entry.files,
+                    )
 
                 # ルートは dir_filter を通らないためここで処理
                 if dp != root_dir:

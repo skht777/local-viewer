@@ -362,6 +362,47 @@ class DirIndex:
         finally:
             conn.close()
 
+    def ingest_walk_entry(
+        self,
+        walk_entry_path: str,
+        root_dir: str,
+        mount_id: str,
+        dir_mtime_ns: int,
+        subdirs: list[tuple[str, int]],
+        files: list[tuple[str, int, int]],
+    ) -> None:
+        """parallel_walk の WalkEntry を受け取り DirIndex に格納する.
+
+        - walk_entry_path: ディレクトリの絶対パス文字列
+        - root_dir: マウントルートの絶対パス文字列
+        - mount_id: マウント ID
+        - dir_mtime_ns: ディレクトリ自体の mtime
+        - subdirs: [(name, mtime_ns), ...]
+        - files: [(name, size_bytes, mtime_ns), ...]
+        """
+        # parent_path: "{mount_id}/relative/path" (ルート自体は mount_id)
+        from pathlib import Path
+
+        from backend.services.indexer import _classify_by_extension
+
+        rel = str(Path(walk_entry_path).relative_to(root_dir))
+        parent_path = f"{mount_id}/{rel}" if rel != "." else mount_id
+
+        # サブディレクトリをエントリとして追加
+        entries: list[tuple[str, str, int | None, int]] = []
+        for name, mtime_ns in subdirs:
+            entries.append((name, "directory", None, mtime_ns))
+        # ファイルをエントリとして追加
+        for name, size_bytes, mtime_ns in files:
+            kind = _classify_by_extension(name)
+            entries.append((name, kind, size_bytes, mtime_ns))
+
+        if entries:
+            self.add_entries(parent_path, entries)
+
+        # ディレクトリ mtime を記録
+        self.set_dir_mtime(parent_path, dir_mtime_ns)
+
     def mark_ready(self) -> None:
         """インデックスが使用可能な状態にする."""
         self._is_ready = True

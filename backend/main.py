@@ -202,12 +202,18 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
         status = "available" if available else "NOT available"
         logger.log(level, "Archive: %s support: %s", fmt, status)
 
-    # Indexer 初期化 + バックグラウンドスキャン
+    # Indexer + DirIndex 初期化 + バックグラウンドスキャン
+    from backend.services.dir_index import DirIndex
     from backend.services.file_watcher import FileWatcher
     from backend.services.indexer import Indexer
 
     _indexer = Indexer(settings.index_db_path)
     _indexer.init_db()
+
+    # DirIndex: ディレクトリリスティング専用インデックス (独立 DB)
+    dir_index_path = settings.index_db_path.replace(".db", "-dir.db")
+    _dir_index = DirIndex(dir_index_path)
+    _dir_index.init_db()
 
     # DB に既存エントリがあれば incremental_scan、なければ full scan
     has_existing = _indexer.entry_count() > 0
@@ -216,6 +222,7 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
     current_mount_ids = sorted(m.mount_id for m in mount_config.mounts)
     if has_existing and _indexer.check_mount_fingerprint(current_mount_ids):
         _indexer.mark_warm_start()
+        _dir_index.mark_warm_start()
         logger.info("Warm Start: 既存インデックスで検索を有効化 (stale)")
     else:
         has_existing = False
@@ -259,7 +266,7 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
             scan_fn = _background_incremental_scan_sync
         else:
             scan_fn = _background_scan_sync
-        scan_args = (_indexer, root, path_security, mount.mount_id)
+        scan_args = (_indexer, _dir_index, root, path_security, mount.mount_id)
         t = _threading.Thread(
             target=_scan_then_watch,
             args=(scan_fn, scan_args),
@@ -319,13 +326,22 @@ def _log_task_exception(task: asyncio.Task[object]) -> None:
 
 def _background_scan_sync(
     indexer: Indexer,
+    dir_index: object,
     root_dir: FilePath,
     path_security: PathSecurity,
     mount_id: str = "",
 ) -> None:
     """バックグラウンドスレッドで初回インデックススキャンを実行する."""
+    from backend.services.dir_index import DirIndex
+
+    di = dir_index if isinstance(dir_index, DirIndex) else None
+    on_walk = di.ingest_walk_entry if di else None
     try:
-        count = indexer.scan_directory(root_dir, path_security, mount_id)
+        count = indexer.scan_directory(
+            root_dir, path_security, mount_id, on_walk_entry=on_walk
+        )
+        if di:
+            di.mark_ready()
         logger.info(
             "初回インデックス完了: %d エントリ (%s)",
             count,
@@ -337,15 +353,23 @@ def _background_scan_sync(
 
 def _background_incremental_scan_sync(
     indexer: Indexer,
+    dir_index: object,
     root_dir: FilePath,
     path_security: PathSecurity,
     mount_id: str = "",
 ) -> None:
     """バックグラウンドスレッドで差分インデックススキャンを実行する."""
+    from backend.services.dir_index import DirIndex
+
+    di = dir_index if isinstance(dir_index, DirIndex) else None
+    # 差分スキャンでは DirIndex は全件再構築 (incremental 対応は将来)
+    on_walk = di.ingest_walk_entry if di else None
     try:
         added, updated, deleted = indexer.incremental_scan(
-            root_dir, path_security, mount_id
+            root_dir, path_security, mount_id, on_walk_entry=on_walk
         )
+        if di:
+            di.mark_ready()
         logger.info(
             "差分インデックス完了: +%d ~%d -%d (%s)",
             added,
