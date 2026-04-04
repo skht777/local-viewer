@@ -180,7 +180,9 @@ export function useSetJump({
 
         // ソースの topDir を level 0 で算出
         if (!isSourceResolved) {
-          const sourceEntry = sorted.find((e) => e.node_id === currentChildId);
+          const sourceEntry = parentData.entries.find(
+            (e: BrowseEntry) => e.node_id === currentChildId,
+          );
           if (sourceEntry) {
             sourceTopDir = resolveTopLevelDir(
               parentData.ancestors,
