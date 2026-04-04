@@ -303,7 +303,8 @@ export default function BrowsePage() {
                     `/browse/${target.parentNodeId}${buildBrowseSearch({ tab: "images", index: 0 })}`,
                   );
                 } else {
-                  // アーカイブ: アーカイブに進入してビューワーを開く
+                  // アーカイブ: プリフェッチしてから進入してビューワーを開く
+                  await queryClient.prefetchQuery(browseNodeOptions(target.entry.node_id));
                   navigate(
                     `/browse/${target.entry.node_id}${buildBrowseSearch({ tab: "images", index: 0 })}`,
                   );
