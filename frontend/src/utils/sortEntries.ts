@@ -1,23 +1,23 @@
 // ソートキーと方向に応じてエントリを並び替え
-// - name-asc: API のデフォルト順 (ディレクトリ優先 + 名前昇順) をそのまま使用
-// - name-desc: 名前降順 (ディレクトリ優先は維持)
+// - name-asc/desc: ディレクトリ優先 + localeCompare (numeric) で統一
 // - date-desc: 更新日時降順 (最新が先頭)、null は末尾
 // - date-asc: 更新日時昇順 (最古が先頭)、null は末尾
 
 import type { SortOrder } from "../hooks/useViewerParams";
 import type { BrowseEntry } from "../types/api";
 
-export function sortEntries(entries: BrowseEntry[], sort: SortOrder): BrowseEntry[] {
-  if (sort === "name-asc") return entries;
+// ディレクトリ優先 + 名前の自然順比較
+function compareByName(a: BrowseEntry, b: BrowseEntry): number {
+  const aIsDir = a.kind === "directory" ? 0 : 1;
+  const bIsDir = b.kind === "directory" ? 0 : 1;
+  if (aIsDir !== bIsDir) return aIsDir - bIsDir;
+  return a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: "base" });
+}
 
+export function sortEntries(entries: BrowseEntry[], sort: SortOrder): BrowseEntry[] {
   return [...entries].sort((a, b) => {
-    if (sort === "name-desc") {
-      // ディレクトリ優先は維持しつつ、名前は降順
-      const aIsDir = a.kind === "directory" ? 0 : 1;
-      const bIsDir = b.kind === "directory" ? 0 : 1;
-      if (aIsDir !== bIsDir) return aIsDir - bIsDir;
-      return b.name.localeCompare(a.name, undefined, { numeric: true, sensitivity: "base" });
-    }
+    if (sort === "name-asc") return compareByName(a, b);
+    if (sort === "name-desc") return -compareByName(a, b);
 
     // date ソート: null は末尾
     if (a.modified_at == null && b.modified_at == null) return 0;
