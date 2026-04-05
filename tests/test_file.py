@@ -332,3 +332,149 @@ async def test_抽出上限超過でAPIが422を返す(
 
     response = await ac.get(f"/api/file/{entry_node_id}")
     assert response.status_code == 422
+
+
+# --- MKV remux 統合テスト ---
+
+
+@pytest.fixture
+async def remux_client(
+    tmp_path: Path,
+) -> AsyncGenerator[tuple[AsyncClient, NodeRegistry, Path]]:
+    """VideoConverter をモックした remux テスト用 TestClient."""
+    from unittest.mock import patch
+
+    (tmp_path / "videos").mkdir()
+    mkv_path = tmp_path / "videos" / "test.mkv"
+    mkv_path.write_bytes(b"\x1a\x45\xdf\xa3" + b"\x00" * 100)  # Matroska ヘッダ
+
+    os.environ["MOUNT_BASE_DIR"] = str(tmp_path)
+    settings = Settings()
+
+    ps = PathSecurity(settings)
+    registry = NodeRegistry(ps)
+    validator = ArchiveEntryValidator(settings)
+    archive_svc = ArchiveService(validator=validator)
+
+    from backend.services.temp_file_cache import TempFileCache
+
+    temp_cache = TempFileCache(
+        cache_dir=tmp_path / ".disk-cache",
+        max_size_bytes=100 * 1024 * 1024,
+    )
+
+    # remux 成功時: ダミー MP4 ファイルを返すモック
+    remuxed_mp4 = tmp_path / "remuxed.mp4"
+    remuxed_mp4.write_bytes(
+        b"\x00\x00\x00\x14ftypisom\x00\x00\x00\x00isom" + b"\x00" * 50
+    )
+
+    from backend.services.video_converter import VideoConverter
+
+    converter = VideoConverter(temp_cache=temp_cache, timeout=30)
+
+    app.dependency_overrides[browse.get_node_registry] = lambda: registry
+    app.dependency_overrides[file.get_node_registry] = lambda: registry
+    app.dependency_overrides[browse.get_archive_service] = lambda: archive_svc
+    app.dependency_overrides[file.get_archive_service] = lambda: archive_svc
+    app.dependency_overrides[file.get_temp_file_cache] = lambda: temp_cache
+    app.dependency_overrides[file.get_video_converter] = lambda: converter
+
+    app.add_exception_handler(PathSecurityError, path_security_error_handler)  # type: ignore[arg-type]
+    app.add_exception_handler(NodeNotFoundError, node_not_found_error_handler)  # type: ignore[arg-type]
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as ac:
+        yield ac, registry, remuxed_mp4
+
+    app.dependency_overrides.clear()
+    os.environ.pop("MOUNT_BASE_DIR", None)
+
+
+async def test_MKVファイルがremux成功時にMP4として配信される(
+    remux_client: tuple[AsyncClient, NodeRegistry, Path],
+) -> None:
+    """needs_remux=True + is_available=True + get_remuxed 成功 → video/mp4."""
+    from unittest.mock import patch
+
+    ac, registry, remuxed_mp4 = remux_client
+    root = registry.path_security.root_dirs[0]
+    mkv_path = root / "videos" / "test.mkv"
+    node_id = registry.register(mkv_path)
+
+    with (
+        patch(
+            "backend.routers.file.VideoConverter.needs_remux",
+            return_value=True,
+        ),
+        patch(
+            "backend.routers.file.VideoConverter.is_available",
+            new_callable=lambda: property(lambda self: True),
+        ),
+        patch(
+            "backend.routers.file.VideoConverter.get_remuxed",
+            return_value=remuxed_mp4,
+        ),
+    ):
+        resp = await ac.get(f"/api/file/{node_id}")
+
+    assert resp.status_code == 200
+    assert resp.headers["content-type"] == "video/mp4"
+
+
+async def test_MKVファイルのremux失敗時に元ファイルが配信される(
+    remux_client: tuple[AsyncClient, NodeRegistry, Path],
+) -> None:
+    """get_remuxed=None → 元の MKV ファイルがそのまま配信される."""
+    from unittest.mock import patch
+
+    ac, registry, _ = remux_client
+    root = registry.path_security.root_dirs[0]
+    mkv_path = root / "videos" / "test.mkv"
+    node_id = registry.register(mkv_path)
+
+    with (
+        patch(
+            "backend.routers.file.VideoConverter.needs_remux",
+            return_value=True,
+        ),
+        patch(
+            "backend.routers.file.VideoConverter.is_available",
+            new_callable=lambda: property(lambda self: True),
+        ),
+        patch(
+            "backend.routers.file.VideoConverter.get_remuxed",
+            return_value=None,
+        ),
+    ):
+        resp = await ac.get(f"/api/file/{node_id}")
+
+    assert resp.status_code == 200
+    # remux 失敗 → 元ファイル配信 (video/x-matroska)
+    assert "video/mp4" not in resp.headers.get("content-type", "")
+
+
+async def test_FFmpeg未インストール時にremuxスキップで元ファイル配信(
+    remux_client: tuple[AsyncClient, NodeRegistry, Path],
+) -> None:
+    """is_available=False → remux をスキップして元ファイルを配信."""
+    from unittest.mock import patch
+
+    ac, registry, _ = remux_client
+    root = registry.path_security.root_dirs[0]
+    mkv_path = root / "videos" / "test.mkv"
+    node_id = registry.register(mkv_path)
+
+    with (
+        patch(
+            "backend.routers.file.VideoConverter.needs_remux",
+            return_value=True,
+        ),
+        patch(
+            "backend.routers.file.VideoConverter.is_available",
+            new_callable=lambda: property(lambda self: False),
+        ),
+    ):
+        resp = await ac.get(f"/api/file/{node_id}")
+
+    assert resp.status_code == 200
