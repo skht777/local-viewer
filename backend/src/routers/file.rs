@@ -181,10 +181,12 @@ mod tests {
 
         let ps = Arc::new(PathSecurity::new(vec![root], false).unwrap());
         let registry = NodeRegistry::new(ps, 100_000, HashMap::new());
+        let archive_service = Arc::new(crate::services::archive::ArchiveService::new(&settings));
 
         let app_state = Arc::new(AppState {
             settings: Arc::new(settings),
             node_registry: Arc::new(Mutex::new(registry)),
+            archive_service,
         });
 
         let app = Router::new()

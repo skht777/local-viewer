@@ -509,9 +509,11 @@ mod tests {
         .unwrap();
         let ps = Arc::new(PathSecurity::new(vec![root.to_path_buf()], false).unwrap());
         let registry = NodeRegistry::new(ps, 100_000, mount_names);
+        let archive_service = Arc::new(crate::services::archive::ArchiveService::new(&settings));
         Arc::new(AppState {
             settings: Arc::new(settings),
             node_registry: Arc::new(Mutex::new(registry)),
+            archive_service,
         })
     }
 

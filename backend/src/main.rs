@@ -118,9 +118,15 @@ fn build_app(settings: Settings) -> anyhow::Result<Router> {
         mount_names,
     );
 
+    // アーカイブサービス構築 + diagnostics ログ
+    let archive_service = Arc::new(services::archive::ArchiveService::new(&settings));
+    let diag = archive_service.get_diagnostics();
+    tracing::info!("アーカイブサポート: {:?}", diag);
+
     let app_state = Arc::new(AppState {
         settings: Arc::new(settings),
         node_registry: Arc::new(Mutex::new(registry)),
+        archive_service,
     });
 
     // CORS: 開発用ポートを許可
@@ -242,10 +248,12 @@ mod tests {
 
         let ps = Arc::new(PathSecurity::new(vec![root], false).unwrap());
         let registry = NodeRegistry::new(ps, 100_000, HashMap::new());
+        let archive_service = Arc::new(services::archive::ArchiveService::new(&settings));
 
         let app_state = Arc::new(AppState {
             settings: Arc::new(settings),
             node_registry: Arc::new(Mutex::new(registry)),
+            archive_service,
         });
 
         Router::new()
