@@ -33,14 +33,19 @@ pub(crate) enum AppError {
     NodeNotFound { node_id: String },
 
     /// アーカイブセキュリティ違反 (zip bomb, traversal 等)
-    #[allow(dead_code, reason = "Phase 4 で使用")]
+    #[allow(dead_code, reason = "Step 2 の ArchiveEntryValidator で使用")]
     #[error("{0}")]
     ArchiveSecurity(String),
 
     /// パスワード付きアーカイブ
-    #[allow(dead_code, reason = "Phase 4 で使用")]
+    #[allow(dead_code, reason = "Step 4 の ZipArchiveReader で使用")]
     #[error("{0}")]
     ArchivePassword(String),
+
+    /// アーカイブ読み取り失敗 (破損、非対応形式等)
+    #[allow(dead_code, reason = "Step 4 の ZipArchiveReader で使用")]
+    #[error("{0}")]
+    InvalidArchive(String),
 
     /// ファイルが存在しない (`validate_existing` 用)
     #[error("パスが存在しません: {path}")]
@@ -87,6 +92,7 @@ impl IntoResponse for AppError {
                 StatusCode::UNPROCESSABLE_ENTITY,
                 "ARCHIVE_PASSWORD_REQUIRED",
             ),
+            Self::InvalidArchive(_) => (StatusCode::UNPROCESSABLE_ENTITY, "INVALID_ARCHIVE"),
             Self::FileNotFound { .. } => (StatusCode::NOT_FOUND, "FILE_NOT_FOUND"),
             Self::InvalidCursor(_) => (StatusCode::BAD_REQUEST, "INVALID_CURSOR"),
             Self::NotADirectory { .. } => (StatusCode::UNPROCESSABLE_ENTITY, "NOT_A_DIRECTORY"),
@@ -129,6 +135,12 @@ mod tests {
     async fn archive_password_handler() -> Result<String, AppError> {
         Err(AppError::ArchivePassword(
             "パスワード付きアーカイブ".to_string(),
+        ))
+    }
+
+    async fn invalid_archive_handler() -> Result<String, AppError> {
+        Err(AppError::InvalidArchive(
+            "アーカイブを読み取れません".to_string(),
         ))
     }
 
@@ -200,6 +212,15 @@ mod tests {
         let (status, body) = call(app, "/test").await;
         assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
         assert!(body.contains("ARCHIVE_PASSWORD_REQUIRED"));
+    }
+
+    #[tokio::test]
+    async fn invalid_archive_errorが422とinvalid_archiveを返す() {
+        let app = Router::new().route("/test", get(invalid_archive_handler));
+        let (status, body) = call(app, "/test").await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+        assert!(body.contains("INVALID_ARCHIVE"));
+        assert!(body.contains("アーカイブを読み取れません"));
     }
 
     #[tokio::test]
