@@ -1,0 +1,130 @@
+[package]
+name = "local-viewer-backend"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+description = "Local Content Viewer - Rust backend"
+
+[[bin]]
+name = "local-viewer-backend"
+path = "src/main.rs"
+
+[dependencies]
+# Web フレームワーク
+axum = { version = "0.8", features = ["macros"] }
+tokio = { version = "1", features = ["full"] }
+tower = "0.5"
+tower-http = { version = "0.6", features = [
+    "cors",
+    "compression-gzip",
+    "fs",
+    "trace",
+    "set-header",
+] }
+hyper = "1"
+
+# シリアライズ
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# SQLite — bundled-full: FTS5 trigram トークナイザに必要 (bundled では FTS5 が無効)
+rusqlite = { version = "0.39", features = ["bundled-full"] }
+
+# 暗号 (HMAC-SHA256, MD5 ETag)
+hmac = "0.12"
+sha2 = "0.10"
+md-5 = "0.10"
+hex = "0.4"
+base64 = "0.22"
+
+# アーカイブ
+zip = "8"
+
+# 画像処理 (サムネイル)
+# image: JPEG/PNG/GIF/WebP/BMP/AVIF デコード
+# fast_image_resize: AVX2 SIMD 高速リサイズ (libvips より 35% 速い)
+image = { version = "0.25", default-features = false, features = [
+    "jpeg",
+    "png",
+    "gif",
+    "webp",
+    "bmp",
+    "avif",
+] }
+fast_image_resize = "5"
+
+# ファイル監視 (v8: symlink follow 設定可能)
+notify = "8"
+
+# 並列処理
+rayon = "1"
+
+# CLI
+clap = { version = "4", features = ["derive"] }
+
+# ログ
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+
+# エラーハンドリング
+thiserror = "2"
+anyhow = "1"
+
+# キャッシュ (W-TinyLFU、バイトベース制限、非同期対応)
+moka = { version = "0.12", features = ["future"] }
+
+# ユーティリティ
+regex = "1"
+mime_guess = "2"
+mime = "0.3"
+tempfile = "3"
+walkdir = "2"
+bytes = "1"
+tokio-util = { version = "0.7", features = ["io"] }
+
+[dev-dependencies]
+rstest = "0.23"
+insta = { version = "1", features = ["json"] }
+tower = { version = "0.5", features = ["util"] }
+hyper = { version = "1", features = ["full"] }
+http-body-util = "0.1"
+tokio = { version = "1", features = ["full", "test-util"] }
+
+[lints.rust]
+unsafe_code = "forbid"
+unreachable_pub = "warn"
+
+[lints.clippy]
+# pedantic グループ (priority -1 で個別 allow を優先)
+pedantic = { level = "warn", priority = -1 }
+
+# pedantic から除外 (false positive が多い / プロジェクト方針に合わない)
+missing_errors_doc = "allow"
+missing_panics_doc = "allow"
+module_name_repetitions = "allow"
+must_use_candidate = "allow"
+items_after_statements = "allow"
+cast_possible_truncation = "allow"
+cast_sign_loss = "allow"
+cast_precision_loss = "allow"
+
+# restriction から cherry-pick (本番コードに残すべきでないもの)
+dbg_macro = "deny"
+todo = "deny"
+print_stdout = "deny"
+print_stderr = "deny"
+unwrap_used = "warn"
+expect_used = "warn"
+allow_attributes_without_reason = "warn"
+clone_on_ref_ptr = "warn"
+rest_pat_in_fully_bound_structs = "warn"
+
+[profile.release]
+lto = "thin"
+strip = true
+codegen-units = 1
+
+[profile.dev]
+# 開発中は依存クレートを最適化 (ビルド速度と実行速度のバランス)
+[profile.dev.package."*"]
+opt-level = 1
