@@ -1,11 +1,12 @@
 """サムネイル配信 API.
 
-GET /api/thumbnail/{node_id} — 画像/アーカイブ/PDF のサムネイルを返す
+GET /api/thumbnail/{node_id} — 画像/アーカイブ/PDF/動画のサムネイルを返す
 POST /api/thumbnails/batch — 複数サムネイルを一括取得
 - image → pyvips でリサイズ
 - archive → 先頭画像エントリをサムネイル化
 - pdf → pyvips (poppler 経由) で先頭ページをサムネイル化
-- ディレクトリ / 動画 / 画像なし → 422 / 404
+- video → ffmpeg フレーム抽出 + pyvips リサイズ
+- ディレクトリ / 画像なし → 422 / 404
 """
 
 import asyncio
@@ -22,9 +23,14 @@ from starlette.concurrency import run_in_threadpool
 
 from backend.errors import NodeNotFoundError
 from backend.services.archive_service import ArchiveService
-from backend.services.extensions import IMAGE_EXTENSIONS, PDF_EXTENSIONS
+from backend.services.extensions import (
+    IMAGE_EXTENSIONS,
+    PDF_EXTENSIONS,
+    VIDEO_EXTENSIONS,
+)
 from backend.services.node_registry import NodeRegistry
 from backend.services.thumbnail_service import ThumbnailService
+from backend.services.video_converter import VideoConverter
 
 logger = logging.getLogger(__name__)
 
@@ -46,6 +52,12 @@ def get_archive_service() -> ArchiveService:
 def get_thumbnail_service() -> ThumbnailService:
     """ThumbnailService の DI スタブ."""
     msg = "ThumbnailService が DI で設定されていません"
+    raise RuntimeError(msg)
+
+
+def get_video_converter() -> VideoConverter:
+    """VideoConverter の DI スタブ."""
+    msg = "VideoConverter が DI で設定されていません"
     raise RuntimeError(msg)
 
 
@@ -71,12 +83,15 @@ def _generate_thumbnail_bytes(
     registry: NodeRegistry,
     archive_service: ArchiveService,
     thumb_service: ThumbnailService,
+    video_converter: VideoConverter | None = None,
 ) -> tuple[bytes, str]:
     """node_id からサムネイル JPEG バイト列と ETag を生成する.
 
-    3 つのケースを処理:
+    4 つのケースを処理:
     - アーカイブ内エントリ → 抽出してサムネイル化
     - アーカイブファイル自体 → 先頭画像エントリのサムネイル
+    - PDF → pyvips (poppler 経由) で先頭ページをサムネイル化
+    - 動画 → ffmpeg でフレーム抽出 + pyvips リサイズ
     - 通常の画像ファイル → パスからサムネイル生成
 
     CPU-bound のため run_in_threadpool で呼び出すこと。
@@ -125,7 +140,19 @@ def _generate_thumbnail_bytes(
         thumb_bytes = thumb_service.get_or_generate_bytes_from_path(path, cache_key)
         return thumb_bytes, etag
 
-    # 画像以外 (動画等) はサムネイル非対応
+    # 動画 → ffmpeg でフレーム抽出 + pyvips リサイズ
+    if ext in VIDEO_EXTENSIONS:
+        if video_converter is None:
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "error": "動画サムネイルが利用できません",
+                    "code": "NOT_SUPPORTED",
+                },
+            )
+        return _generate_video_thumbnail(path, node_id, thumb_service, video_converter)
+
+    # 画像以外はサムネイル非対応
     if ext not in IMAGE_EXTENSIONS:
         raise HTTPException(
             status_code=422,
@@ -206,6 +233,38 @@ def _generate_archive_cover_thumbnail(
     return thumb_bytes, etag
 
 
+def _generate_video_thumbnail(
+    path: Path,
+    node_id: str,
+    thumb_service: ThumbnailService,
+    video_converter: VideoConverter,
+) -> tuple[bytes, str]:
+    """動画のサムネイルを生成する (ffmpeg フレーム抽出 + pyvips リサイズ)."""
+    st = path.stat()
+    etag = _compute_etag(st.st_mtime_ns, node_id)
+    cache_key = ThumbnailService.make_cache_key(node_id, st.st_mtime_ns)
+
+    # キャッシュヒット
+    cached_bytes = thumb_service.get_cached_bytes(cache_key)
+    if cached_bytes is not None:
+        return cached_bytes, etag
+
+    # ffmpeg でフレーム抽出
+    frame_bytes = video_converter.extract_frame(path)
+    if frame_bytes is None:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "error": "動画のフレーム抽出に失敗しました",
+                "code": "FRAME_EXTRACT_FAILED",
+            },
+        )
+
+    # pyvips でリサイズ + キャッシュ
+    thumb_bytes = thumb_service.get_or_generate_bytes(frame_bytes, cache_key)
+    return thumb_bytes, etag
+
+
 @router.get("/thumbnail/{node_id}")
 async def serve_thumbnail(
     node_id: str,
@@ -213,21 +272,20 @@ async def serve_thumbnail(
     registry: NodeRegistry = Depends(get_node_registry),
     archive_service: ArchiveService = Depends(get_archive_service),
     thumb_service: ThumbnailService = Depends(get_thumbnail_service),
+    video_converter: VideoConverter = Depends(get_video_converter),
 ) -> Response:
-    """画像またはアーカイブのサムネイルを返す.
+    """画像/アーカイブ/PDF/動画のサムネイルを返す.
 
     - 画像ファイル → pyvips でリサイズ
     - アーカイブ → 先頭の画像エントリを抽出してサムネイル化
-    - ディレクトリ → 422 (フロントは preview_node_ids 経由で個別画像を要求)
+    - PDF → pyvips (poppler 経由) で先頭ページをサムネイル化
+    - 動画 → ffmpeg でフレーム抽出 + pyvips リサイズ
+    - ディレクトリ → 422 (フロントは preview_node_ids 経由で個別サムネイルを要求)
     """
-    # ETag ベースの条件付きリクエスト (事前チェック)
-    # _generate_thumbnail_bytes 内で ETag を計算するが、
-    # 304 判定のためにここで先に ETag を取得する必要がある
-    # → 生成後に判定する方式に統一 (stat は生成関数内で 1 回のみ)
 
     def _generate() -> tuple[bytes, str]:
         return _generate_thumbnail_bytes(
-            node_id, registry, archive_service, thumb_service
+            node_id, registry, archive_service, thumb_service, video_converter
         )
 
     try:
@@ -285,6 +343,7 @@ async def _generate_one_thumbnail(
     registry: NodeRegistry,
     archive_service: ArchiveService,
     thumb_service: ThumbnailService,
+    video_converter: VideoConverter | None = None,
 ) -> ThumbnailResult:
     """1 つの node_id のサムネイルを生成し ThumbnailResult を返す."""
     try:
@@ -294,6 +353,7 @@ async def _generate_one_thumbnail(
             registry,
             archive_service,
             thumb_service,
+            video_converter,
         )
         return ThumbnailResult(
             data=base64.b64encode(thumb_bytes).decode(),
@@ -377,6 +437,7 @@ async def serve_thumbnails_batch(
     registry: NodeRegistry = Depends(get_node_registry),
     archive_service: ArchiveService = Depends(get_archive_service),
     thumb_service: ThumbnailService = Depends(get_thumbnail_service),
+    video_converter: VideoConverter = Depends(get_video_converter),
 ) -> ThumbnailBatchResponse:
     """複数 node_id のサムネイルを一括取得する.
 
@@ -402,7 +463,9 @@ async def serve_thumbnails_batch(
 
     # 非アーカイブエントリの個別処理タスク
     regular_tasks = [
-        _generate_one_thumbnail(nid, registry, archive_service, thumb_service)
+        _generate_one_thumbnail(
+            nid, registry, archive_service, thumb_service, video_converter
+        )
         for nid in regular_ids
     ]
 

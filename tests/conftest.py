@@ -157,6 +157,7 @@ async def client(
     app.dependency_overrides[thumbnail.get_thumbnail_service] = (
         lambda: test_thumb_service
     )
+    app.dependency_overrides[thumbnail.get_video_converter] = lambda: test_converter
 
     # 例外ハンドラ登録 (lifespan が動かないテスト用)
     app.add_exception_handler(

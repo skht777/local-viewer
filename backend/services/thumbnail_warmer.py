@@ -21,6 +21,7 @@ if TYPE_CHECKING:
     from backend.services.archive_service import ArchiveService
     from backend.services.node_registry import EntryMeta, NodeRegistry
     from backend.services.thumbnail_service import ThumbnailService
+    from backend.services.video_converter import VideoConverter
 
 logger = logging.getLogger(__name__)
 
@@ -36,10 +37,12 @@ class ThumbnailWarmer:
         thumb_service: ThumbnailService,
         archive_service: ArchiveService,
         registry: NodeRegistry,
+        video_converter: VideoConverter | None = None,
     ) -> None:
         self._thumb_service = thumb_service
         self._archive_service = archive_service
         self._registry = registry
+        self._video_converter = video_converter
         self._semaphore = asyncio.Semaphore(_CONCURRENCY)
         self._pending: set[str] = set()
         self._lock = threading.Lock()
@@ -87,6 +90,7 @@ class ThumbnailWarmer:
                         self._registry,
                         self._archive_service,
                         self._thumb_service,
+                        self._video_converter,
                     )
                 except pyvips.Error, Exception:
                     logger.debug("プリウォーム失敗: %s", node_id)

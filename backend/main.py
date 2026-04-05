@@ -306,6 +306,7 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
     _app.dependency_overrides[thumbnail.get_node_registry] = get_node_registry
     _app.dependency_overrides[thumbnail.get_archive_service] = get_archive_service
     _app.dependency_overrides[thumbnail.get_thumbnail_service] = get_thumbnail_service
+    _app.dependency_overrides[thumbnail.get_video_converter] = get_video_converter
 
     # サムネイルプリウォーム初期化
     from backend.services.thumbnail_warmer import ThumbnailWarmer
@@ -314,6 +315,7 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
         thumb_service=_thumbnail_service,
         archive_service=_archive_service,
         registry=_node_registry,
+        video_converter=_video_converter,
     )
     _app.dependency_overrides[browse.get_thumbnail_warmer] = lambda: _thumbnail_warmer
 

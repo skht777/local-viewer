@@ -149,7 +149,20 @@ async def test_壊れたPDFファイルのサムネイルで422を返す(
     assert response.status_code == 422
 
 
-async def test_動画ファイルのサムネイルで422を返す(
+async def test_不正な動画のサムネイルで422を返す(
+    client: AsyncClient,
+    test_node_registry: NodeRegistry,
+    test_root: Path,
+) -> None:
+    # ダミーバイト列の動画 → ffmpeg フレーム抽出失敗 → 422
+    entries = test_node_registry.list_directory(test_root / "dir_b")
+    video_entry = next(e for e in entries if e.name == "video.mp4")
+
+    response = await client.get(f"/api/thumbnail/{video_entry.node_id}")
+    assert response.status_code == 422
+
+
+async def test_動画ファイルのサムネイルが200で返る(
     client: AsyncClient,
     test_node_registry: NodeRegistry,
     test_root: Path,
@@ -157,8 +170,22 @@ async def test_動画ファイルのサムネイルで422を返す(
     entries = test_node_registry.list_directory(test_root / "dir_b")
     video_entry = next(e for e in entries if e.name == "video.mp4")
 
-    response = await client.get(f"/api/thumbnail/{video_entry.node_id}")
-    assert response.status_code == 422
+    # ffmpeg の extract_frame をモックして有効な JPEG バイトを返す
+    _img = Image.new("RGB", (10, 10), color="red")
+    _buf = io.BytesIO()
+    _img.save(_buf, format="JPEG")
+    fake_jpeg = _buf.getvalue()
+
+    from unittest.mock import patch
+
+    with patch(
+        "backend.services.video_converter.VideoConverter.extract_frame",
+        return_value=fake_jpeg,
+    ):
+        response = await client.get(f"/api/thumbnail/{video_entry.node_id}")
+
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "image/jpeg"
 
 
 async def test_壊れた画像のアーカイブサムネイルで422を返す(
