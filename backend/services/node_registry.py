@@ -694,7 +694,7 @@ class NodeRegistry:
         parent_key = f"{mount_id}/{rel}" if rel != "." else mount_id
 
         child_count = di.child_count(parent_key)
-        previews = di.preview_images(parent_key, limit=preview_limit)
+        previews = di.preview_entries(parent_key, limit=preview_limit)
 
         preview_ids: list[str] | None = None
         if previews:

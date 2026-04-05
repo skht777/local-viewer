@@ -372,10 +372,10 @@ class DirIndex:
         finally:
             conn.close()
 
-    def preview_images(
+    def preview_entries(
         self, parent_path: str, limit: int = 3
     ) -> list[dict[str, object]]:
-        """ディレクトリ内の先頭画像エントリを返す."""
+        """ディレクトリ内のサムネイル対象エントリを返す."""
         conn = self._connect()
         try:
             rows = conn.execute(

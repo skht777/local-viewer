@@ -126,7 +126,7 @@ def test_child_countクエリが正しく返る(
     assert count == 3
 
 
-def test_preview_imagesクエリが先頭3件を返す(
+def test_preview_entriesクエリが先頭3件を返す(
     dir_index: DirIndex,
 ) -> None:
     dir_index.add_entries(
@@ -140,7 +140,7 @@ def test_preview_imagesクエリが先頭3件を返す(
         ],
     )
 
-    previews = dir_index.preview_images("mount1/dir_a", limit=3)
+    previews = dir_index.preview_entries("mount1/dir_a", limit=3)
     assert len(previews) == 3
     assert previews[0]["name"] == "a_img.jpg"
 

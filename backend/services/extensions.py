@@ -17,6 +17,9 @@ REMUX_EXTENSIONS = frozenset({".mkv"})
 ARCHIVE_EXTENSIONS = frozenset({".zip", ".rar", ".7z", ".cbz", ".cbr"})
 PDF_EXTENSIONS = frozenset({".pdf"})
 
+# サーバーサイドサムネイル���成対象 (画像 + アーカイブ + PDF)
+THUMBNAIL_EXTENSIONS = IMAGE_EXTENSIONS | ARCHIVE_EXTENSIONS | PDF_EXTENSIONS
+
 # 頻出拡張子 → MIME タイプ (辞書参照で高速化、未知は mimetypes にフォールバック)
 MIME_MAP: dict[str, str] = {
     ".jpg": "image/jpeg",
