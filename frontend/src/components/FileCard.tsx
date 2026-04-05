@@ -5,6 +5,7 @@
 // - kind === "image": /api/thumbnail/{node_id} でサムネイルプレビュー
 // - kind === "directory" + preview_node_ids: PreviewGrid でサムネイル表示
 // - kind === "archive": /api/thumbnail/{node_id} でサムネイル表示
+// - kind === "video": /api/thumbnail/{node_id} で ffmpeg フレーム抽出サムネイル
 // - kind === "pdf": usePdfThumbnail で先頭ページサムネイル表示
 
 import type { KeyboardEvent, Ref } from "react";
@@ -71,6 +72,9 @@ export function FileCard({
   // アーカイブ: /api/thumbnail/{node_id} でサムネイル表示
   const hasArchivePreview = entry.kind === "archive" && !hasPreviewError;
 
+  // 動画: ffmpeg フレーム抽出でサムネイル表示
+  const hasVideoPreview = entry.kind === "video" && !hasPreviewError;
+
   // PDF: pdfjs-dist で先頭ページをサムネイル表示
   const pdfThumbnail = usePdfThumbnail(entry.node_id, entry.kind === "pdf" && !hasPreviewError);
   const hasPdfPreview = entry.kind === "pdf" && pdfThumbnail.url != null && !hasPreviewError;
@@ -116,6 +120,15 @@ export function FileCard({
             onAllError={() => setHasPreviewError(true)}
           />
         ) : hasArchivePreview ? (
+          <img
+            src={thumbSrc}
+            alt={entry.name}
+            className="h-full w-full object-cover"
+            loading="lazy"
+            decoding="async"
+            onError={() => setHasPreviewError(true)}
+          />
+        ) : hasVideoPreview ? (
           <img
             src={thumbSrc}
             alt={entry.name}

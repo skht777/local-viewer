@@ -82,9 +82,12 @@ export function FileBrowser({
   // サーバーサイドソート済みのため sortEntries はスキップ
   const filtered = filterByTab(entries, tab, sort);
 
-  // バッチサムネイル: image/archive エントリの node_ids を収集
+  // バッチサムネイル: image/archive/video エントリの node_ids を収集
   const thumbnailNodeIds = useMemo(
-    () => filtered.filter((e) => e.kind === "image" || e.kind === "archive").map((e) => e.node_id),
+    () =>
+      filtered
+        .filter((e) => e.kind === "image" || e.kind === "archive" || e.kind === "video")
+        .map((e) => e.node_id),
     [filtered],
   );
   const batchThumbnails = useBatchThumbnails(thumbnailNodeIds);
