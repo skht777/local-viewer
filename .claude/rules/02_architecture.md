@@ -9,15 +9,18 @@ local-viewer/
 ├── config/
 │   └── mounts.json          # マウントポイント定義 (Docker: バインドマウント ./config:/app/config)
 ├── backend/
-│   ├── main.py              # FastAPI エントリポイント
+│   ├── main.py              # FastAPI エントリポイント (DI 登録: DirIndex, ThumbnailWarmer 等)
 │   ├── routers/             # APIルーター (1リソース1ファイル)
 │   └── services/            # ビジネスロジック
-│       └── mount_config.py  # MountConfigService (mounts.json 読み書き)
+│       ├── mount_config.py  # MountConfigService (mounts.json 読み書き)
+│       ├── dir_index.py     # DirIndex (SQLite ディレクトリリスティング専用インデックス)
+│       ├── browse_cursor.py # カーソルベースページネーション (HMAC 署名)
+│       └── thumbnail_warmer.py # サムネイルプリウォーム (バックグラウンド生成)
 ├── frontend/
 │   ├── src/
 │   │   ├── pages/           # ページコンポーネント (1ルート1ファイル)
 │   │   ├── components/      # UIコンポーネント
-│   │   ├── hooks/           # カスタムフック
+│   │   ├── hooks/           # カスタムフック (api/ 配下に TanStack Query オプション)
 │   │   ├── stores/          # zustand ストア (UI状態のみ)
 │   │   ├── lib/             # 外部ライブラリ設定 (pdfjs等)
 │   │   ├── types/           # API型定義

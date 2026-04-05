@@ -50,10 +50,13 @@ cd e2e && npx playwright test --ui   # UI モード
 ## 主要ファイル
 - `pyproject.toml` — Ruff + mypy + pytest 設定（リポジトリルート、backend/ 配下ではない）
 - `.oxlintrc.json` — oxlint 設定（react/typescript プラグイン）
-- `backend/main.py` — FastAPI エントリポイント
+- `backend/main.py` — FastAPI エントリポイント（DI 登録: DirIndex, ThumbnailWarmer 等）
 - `backend/config.py` — 環境変数ベースの設定モジュール（MOUNT_BASE_DIR, MOUNT_CONFIG_PATH 等）
 - `backend/errors.py` — 共通エラーモデル
 - `backend/services/mount_config.py` — マウントポイント設定の読み書き（mounts.json v2 スキーマ: slug + host_path）
+- `backend/services/dir_index.py` — DirIndex サービス（SQLite ディレクトリリスティング専用インデックス、browse 高速化）
+- `backend/services/browse_cursor.py` — カーソルベースページネーション（HMAC 署名、SortOrder、keyset ページング）
+- `backend/services/thumbnail_warmer.py` — サムネイルプリウォーム（バックグラウンド生成、重複排除）
 - `init.sh` — 初回セットアップ（.env コピー + manage_mounts.sh）
 - `start.sh` — Docker コンテナ起動（docker compose up --build）
 - `manage_mounts.sh` — マウントポイント管理 Bash TUI（ホスト側で実行、docker-compose.override.yml + mounts.json を更新）
@@ -61,6 +64,8 @@ cd e2e && npx playwright test --ui   # UI モード
 - `config/mounts.json` — マウントポイント定義ファイル（Docker ではバインドマウント ./config:/app/config）
 - `frontend/vite.config.ts` — Vite + Tailwind v4 + /api プロキシ + Vitest
 - `frontend/src/index.css` — Tailwind v4 `@theme` カスタムトークン定義
+- `frontend/src/hooks/api/browseQueries.ts` — TanStack Query（browseNodeOptions, browseInfiniteOptions, searchOptions）
+- `frontend/src/hooks/api/thumbnailQueries.ts` — バッチサムネイルフック（useBatchThumbnails）
 - `.env.example` — Docker ボリューム/ポート/リソース設定テンプレート
 - `e2e/playwright.config.ts` — E2E テスト設定
 
