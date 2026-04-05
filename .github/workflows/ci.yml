@@ -85,8 +85,8 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      # backend ランタイム依存 (pyvips + 7z)
-      - run: sudo apt-get update -qq && sudo apt-get install -y -qq libvips42 p7zip-full
+      # backend ランタイム依存 (pyvips + 7z + ffmpeg)
+      - run: sudo apt-get update -qq && sudo apt-get install -y -qq libvips42 p7zip-full ffmpeg
 
       - uses: actions/setup-python@v6
         with:
