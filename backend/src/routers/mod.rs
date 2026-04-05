@@ -5,3 +5,4 @@
 pub(crate) mod browse;
 pub(crate) mod file;
 pub(crate) mod mounts;
+pub(crate) mod thumbnail;

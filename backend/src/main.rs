@@ -10,7 +10,10 @@ use std::sync::{Arc, Mutex};
 
 use axum::http::Method;
 use axum::middleware::from_fn;
-use axum::{Json, Router, routing::get};
+use axum::{
+    Json, Router,
+    routing::{get, post},
+};
 use clap::Parser;
 use serde::Serialize;
 use tower_http::compression::CompressionLayer;
@@ -67,6 +70,7 @@ async fn health() -> Json<HealthResponse> {
 /// 5. `NodeRegistry::new()` — HMAC `node_id` マッピング
 /// 6. `AppState` 構築
 /// 7. ルーター + ミドルウェア登録
+#[allow(clippy::too_many_lines, reason = "サービス初期化は一箇所にまとめる")]
 fn build_app(settings: Settings) -> anyhow::Result<Router> {
     // マウントポイント設定読み込み
     let config_path = PathBuf::from(&settings.mount_config_path);
@@ -123,10 +127,35 @@ fn build_app(settings: Settings) -> anyhow::Result<Router> {
     let diag = archive_service.get_diagnostics();
     tracing::info!("アーカイブサポート: {:?}", diag);
 
+    // サムネイル・動画関連サービス構築
+    let cache_dir = std::env::temp_dir().join("viewer-disk-cache");
+    let cache_max = u64::from(settings.archive_disk_cache_mb) * 1024 * 1024;
+    let temp_file_cache = Arc::new(
+        services::temp_file_cache::TempFileCache::new(cache_dir, cache_max)
+            .map_err(|e| anyhow::anyhow!("ディスクキャッシュ初期化失敗: {e}"))?,
+    );
+    let video_converter = Arc::new(services::video_converter::VideoConverter::new(
+        Arc::clone(&temp_file_cache),
+        &settings,
+    ));
+    if video_converter.is_available() {
+        tracing::info!("Video remux: FFmpeg available");
+    } else {
+        tracing::warn!("Video remux: FFmpeg not found");
+    }
+    let thumbnail_service = Arc::new(services::thumbnail_service::ThumbnailService::new(
+        Arc::clone(&temp_file_cache),
+    ));
+    let thumbnail_warmer = Arc::new(services::thumbnail_warmer::ThumbnailWarmer::new(4));
+
     let app_state = Arc::new(AppState {
         settings: Arc::new(settings),
         node_registry: Arc::new(Mutex::new(registry)),
         archive_service,
+        temp_file_cache,
+        thumbnail_service,
+        video_converter,
+        thumbnail_warmer,
     });
 
     // CORS: 開発用ポートを許可
@@ -156,6 +185,14 @@ fn build_app(settings: Settings) -> anyhow::Result<Router> {
             get(routers::browse::find_sibling),
         )
         .route("/api/file/{node_id}", get(routers::file::serve_file))
+        .route(
+            "/api/thumbnail/{node_id}",
+            get(routers::thumbnail::serve_thumbnail),
+        )
+        .route(
+            "/api/thumbnails/batch",
+            post(routers::thumbnail::serve_thumbnails_batch),
+        )
         .with_state(app_state);
 
     // 静的ファイル配信 + SPA フォールバック
@@ -232,6 +269,11 @@ mod tests {
     use axum::http::{Request, StatusCode};
     use tower::ServiceExt;
 
+    use crate::services::temp_file_cache::TempFileCache;
+    use crate::services::thumbnail_service::ThumbnailService;
+    use crate::services::thumbnail_warmer::ThumbnailWarmer;
+    use crate::services::video_converter::VideoConverter;
+
     use super::*;
 
     fn test_app() -> Router {
@@ -249,11 +291,22 @@ mod tests {
         let ps = Arc::new(PathSecurity::new(vec![root], false).unwrap());
         let registry = NodeRegistry::new(ps, 100_000, HashMap::new());
         let archive_service = Arc::new(services::archive::ArchiveService::new(&settings));
+        let temp_file_cache = Arc::new(
+            TempFileCache::new(tempfile::TempDir::new().unwrap().keep(), 10 * 1024 * 1024).unwrap(),
+        );
+        let thumbnail_service = Arc::new(ThumbnailService::new(Arc::clone(&temp_file_cache)));
+        let video_converter =
+            Arc::new(VideoConverter::new(Arc::clone(&temp_file_cache), &settings));
+        let thumbnail_warmer = Arc::new(ThumbnailWarmer::new(4));
 
         let app_state = Arc::new(AppState {
             settings: Arc::new(settings),
             node_registry: Arc::new(Mutex::new(registry)),
             archive_service,
+            temp_file_cache,
+            thumbnail_service,
+            video_converter,
+            thumbnail_warmer,
         });
 
         Router::new()

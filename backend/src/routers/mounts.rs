@@ -74,6 +74,10 @@ mod tests {
     use crate::config::Settings;
     use crate::services::node_registry::NodeRegistry;
     use crate::services::path_security::PathSecurity;
+    use crate::services::temp_file_cache::TempFileCache;
+    use crate::services::thumbnail_service::ThumbnailService;
+    use crate::services::thumbnail_warmer::ThumbnailWarmer;
+    use crate::services::video_converter::VideoConverter;
 
     fn test_state(
         root: &std::path::Path,
@@ -87,10 +91,21 @@ mod tests {
         let ps = Arc::new(PathSecurity::new(vec![root.to_path_buf()], false).unwrap());
         let registry = NodeRegistry::new(ps, 100_000, mount_names);
         let archive_service = Arc::new(crate::services::archive::ArchiveService::new(&settings));
+        let temp_file_cache = Arc::new(
+            TempFileCache::new(tempfile::TempDir::new().unwrap().keep(), 10 * 1024 * 1024).unwrap(),
+        );
+        let thumbnail_service = Arc::new(ThumbnailService::new(Arc::clone(&temp_file_cache)));
+        let video_converter =
+            Arc::new(VideoConverter::new(Arc::clone(&temp_file_cache), &settings));
+        let thumbnail_warmer = Arc::new(ThumbnailWarmer::new(4));
         Arc::new(AppState {
             settings: Arc::new(settings),
             node_registry: Arc::new(Mutex::new(registry)),
             archive_service,
+            temp_file_cache,
+            thumbnail_service,
+            video_converter,
+            thumbnail_warmer,
         })
     }
 
