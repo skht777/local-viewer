@@ -117,13 +117,31 @@ async def test_壊れた画像ファイルのサムネイルで422を返す(
     assert response.status_code == 422
 
 
-async def test_PDFファイルのサムネイルで422を返す(
+async def test_有効なPDFファイルのサムネイルが200で返る(
     client: AsyncClient,
     test_node_registry: NodeRegistry,
     test_root: Path,
 ) -> None:
-    # PDF はサムネイル非対応
-    pdf_path = test_root / "document.pdf"
+    # Pillow で有効な PDF を生成
+    _img = Image.new("RGB", (10, 10), color="blue")
+    _buf = io.BytesIO()
+    _img.save(_buf, format="PDF")
+    pdf_path = test_root / "valid.pdf"
+    pdf_path.write_bytes(_buf.getvalue())
+    node_id = test_node_registry.register(pdf_path)
+
+    response = await client.get(f"/api/thumbnail/{node_id}")
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "image/jpeg"
+
+
+async def test_壊れたPDFファイルのサムネイルで422を返す(
+    client: AsyncClient,
+    test_node_registry: NodeRegistry,
+    test_root: Path,
+) -> None:
+    # 不正な��イト列の PDF → pyvips でデコード失敗 → 422
+    pdf_path = test_root / "broken.pdf"
     pdf_path.write_bytes(b"%PDF-1.4 dummy")
     node_id = test_node_registry.register(pdf_path)
 

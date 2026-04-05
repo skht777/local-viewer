@@ -1,10 +1,11 @@
 """サムネイル配信 API.
 
-GET /api/thumbnail/{node_id} — 画像/アーカイブのサムネイルを返す
+GET /api/thumbnail/{node_id} — 画像/アーカイブ/PDF のサムネイルを返す
 POST /api/thumbnails/batch — 複数サムネイルを一括取得
 - image → pyvips でリサイズ
 - archive → 先頭画像エントリをサムネイル化
-- ディレクトリ / 画像なし → 422 / 404
+- pdf → pyvips (poppler 経由) で先頭ページをサムネイル化
+- ディレクトリ / 動画 / 画像なし → 422 / 404
 """
 
 import asyncio
@@ -21,7 +22,7 @@ from starlette.concurrency import run_in_threadpool
 
 from backend.errors import NodeNotFoundError
 from backend.services.archive_service import ArchiveService
-from backend.services.extensions import IMAGE_EXTENSIONS
+from backend.services.extensions import IMAGE_EXTENSIONS, PDF_EXTENSIONS
 from backend.services.node_registry import NodeRegistry
 from backend.services.thumbnail_service import ThumbnailService
 
@@ -114,8 +115,17 @@ def _generate_thumbnail_bytes(
             path, node_id, archive_service, thumb_service
         )
 
-    # 画像以外 (PDF/動画等) はサムネイル非対応
     ext = path.suffix.lower()
+
+    # PDF → pyvips (poppler 経由) で先頭ページをサムネイル化
+    if ext in PDF_EXTENSIONS:
+        st = path.stat()
+        etag = _compute_etag(st.st_mtime_ns, node_id)
+        cache_key = ThumbnailService.make_cache_key(node_id, st.st_mtime_ns)
+        thumb_bytes = thumb_service.get_or_generate_bytes_from_path(path, cache_key)
+        return thumb_bytes, etag
+
+    # 画像以外 (動画等) はサムネイル非対応
     if ext not in IMAGE_EXTENSIONS:
         raise HTTPException(
             status_code=422,
