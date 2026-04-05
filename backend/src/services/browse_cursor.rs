@@ -277,9 +277,7 @@ fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
 
 /// カーソルエラーのヘルパー
 fn cursor_error(msg: &str) -> AppError {
-    AppError::PathSecurity {
-        message: msg.to_string(),
-    }
+    AppError::InvalidCursor(msg.to_string())
 }
 
 #[cfg(test)]

@@ -105,10 +105,9 @@ impl PathSecurity {
     pub(crate) fn validate_existing(&self, path: &Path) -> Result<PathBuf, AppError> {
         let resolved = self.validate(path)?;
         if !resolved.exists() {
-            return Err(AppError::path_security(format!(
-                "パスが存在しません: {}",
-                resolved.display()
-            )));
+            return Err(AppError::FileNotFound {
+                path: resolved.to_string_lossy().to_string(),
+            });
         }
         Ok(resolved)
     }

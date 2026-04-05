@@ -39,6 +39,14 @@ pub(crate) enum AppError {
     /// パスワード付きアーカイブ
     #[error("{0}")]
     ArchivePassword(String),
+
+    /// ファイルが存在しない (`validate_existing` 用)
+    #[error("パスが存在しません: {path}")]
+    FileNotFound { path: String },
+
+    /// 不正なカーソル (改ざん、期限切れ等)
+    #[error("{0}")]
+    InvalidCursor(String),
 }
 
 impl AppError {
@@ -69,6 +77,8 @@ impl IntoResponse for AppError {
                 StatusCode::UNPROCESSABLE_ENTITY,
                 "ARCHIVE_PASSWORD_REQUIRED",
             ),
+            Self::FileNotFound { .. } => (StatusCode::NOT_FOUND, "FILE_NOT_FOUND"),
+            Self::InvalidCursor(_) => (StatusCode::BAD_REQUEST, "INVALID_CURSOR"),
         };
 
         let body = ErrorResponse {
@@ -107,6 +117,18 @@ mod tests {
     async fn archive_password_handler() -> Result<String, AppError> {
         Err(AppError::ArchivePassword(
             "パスワード付きアーカイブ".to_string(),
+        ))
+    }
+
+    async fn file_not_found_handler() -> Result<String, AppError> {
+        Err(AppError::FileNotFound {
+            path: "/mnt/data/missing.txt".to_string(),
+        })
+    }
+
+    async fn invalid_cursor_handler() -> Result<String, AppError> {
+        Err(AppError::InvalidCursor(
+            "不正なカーソルフォーマットです".to_string(),
         ))
     }
 
@@ -154,6 +176,22 @@ mod tests {
         let (status, body) = call(app, "/test").await;
         assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
         assert!(body.contains("ARCHIVE_PASSWORD_REQUIRED"));
+    }
+
+    #[tokio::test]
+    async fn file_not_found_errorが404とfile_not_foundを返す() {
+        let app = Router::new().route("/test", get(file_not_found_handler));
+        let (status, body) = call(app, "/test").await;
+        assert_eq!(status, StatusCode::NOT_FOUND);
+        assert!(body.contains("FILE_NOT_FOUND"));
+    }
+
+    #[tokio::test]
+    async fn invalid_cursor_errorが400とinvalid_cursorを返す() {
+        let app = Router::new().route("/test", get(invalid_cursor_handler));
+        let (status, body) = call(app, "/test").await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert!(body.contains("INVALID_CURSOR"));
     }
 
     #[test]
