@@ -52,7 +52,7 @@ cd e2e && npx playwright test --ui   # UI モード
 - `.oxlintrc.json` — oxlint 設定（react/typescript プラグイン）
 - `backend/main.py` — FastAPI エントリポイント（DI 登録: DirIndex, ThumbnailWarmer 等）
 - `backend/config.py` — 環境変数ベースの設定モジュール（MOUNT_BASE_DIR, MOUNT_CONFIG_PATH 等）
-- `backend/errors.py` — 共通エラーモデル
+- `backend/errors.py` — 共通エラーモデル + 独自例外 (NotADirectoryApiError, InvalidArchiveError, InvalidCursorError 等) + ハンドラ
 - `backend/services/mount_config.py` — マウントポイント設定の読み書き（mounts.json v2 スキーマ: slug + host_path）
 - `backend/services/dir_index.py` — DirIndex サービス（SQLite ディレクトリリスティング専用インデックス、browse 高速化）
 - `backend/services/browse_cursor.py` — カーソルベースページネーション（HMAC 署名、SortOrder、keyset ページング）
