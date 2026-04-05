@@ -63,6 +63,69 @@ async def node_not_found_error_handler(
     )
 
 
+class NotADirectoryApiError(Exception):
+    """ディレクトリではないパスへの browse アクセス."""
+
+    def __init__(self, message: str = "ディレクトリではありません") -> None:
+        self.message = message
+        super().__init__(message)
+
+
+class InvalidArchiveError(Exception):
+    """壊れた・読み取れないアーカイブ."""
+
+    def __init__(self, message: str = "アーカイブを読み取れません") -> None:
+        self.message = message
+        super().__init__(message)
+
+
+class InvalidCursorError(Exception):
+    """不正なページネーションカーソル."""
+
+    def __init__(self, message: str = "不正なカーソルです") -> None:
+        self.message = message
+        super().__init__(message)
+
+
+async def not_a_directory_error_handler(
+    _request: Request, exc: NotADirectoryApiError
+) -> JSONResponse:
+    """NotADirectoryApiError → 422 レスポンス."""
+    return JSONResponse(
+        status_code=422,
+        content=ErrorResponse(
+            error=exc.message,
+            code="NOT_A_DIRECTORY",
+        ).model_dump(),
+    )
+
+
+async def invalid_archive_error_handler(
+    _request: Request, exc: InvalidArchiveError
+) -> JSONResponse:
+    """InvalidArchiveError → 422 レスポンス."""
+    return JSONResponse(
+        status_code=422,
+        content=ErrorResponse(
+            error=exc.message,
+            code="INVALID_ARCHIVE",
+        ).model_dump(),
+    )
+
+
+async def invalid_cursor_error_handler(
+    _request: Request, exc: InvalidCursorError
+) -> JSONResponse:
+    """InvalidCursorError → 400 レスポンス."""
+    return JSONResponse(
+        status_code=400,
+        content=ErrorResponse(
+            error=exc.message,
+            code="INVALID_CURSOR",
+        ).model_dump(),
+    )
+
+
 async def archive_security_error_handler(
     _request: Request, exc: Exception
 ) -> JSONResponse:

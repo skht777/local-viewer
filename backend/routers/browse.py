@@ -14,11 +14,16 @@ import logging
 import zipfile
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import Response
 from pydantic import BaseModel
 from starlette.concurrency import run_in_threadpool
 
+from backend.errors import (
+    InvalidArchiveError,
+    InvalidCursorError,
+    NotADirectoryApiError,
+)
 from backend.services.archive_service import ArchiveService
 from backend.services.browse_cursor import (
     MAX_LIMIT,
@@ -205,13 +210,7 @@ async def browse_directory(
             )
         except (zipfile.BadZipFile, OSError) as exc:
             logger.warning("アーカイブ読み取り失敗: %s (%s)", path, exc)
-            raise HTTPException(
-                status_code=422,
-                detail={
-                    "error": f"アーカイブを読み取れません: {exc}",
-                    "code": "INVALID_ARCHIVE",
-                },
-            ) from exc
+            raise InvalidArchiveError(f"アーカイブを読み取れません: {exc}") from exc
         entries = registry.list_archive_entries(path, archive_entries)
 
         etag = _compute_etag(entries)
@@ -254,13 +253,7 @@ async def browse_directory(
         )
 
     if not path.is_dir():
-        raise HTTPException(
-            status_code=422,
-            detail={
-                "error": "ディレクトリではありません",
-                "code": "NOT_A_DIRECTORY",
-            },
-        )
+        raise NotADirectoryApiError("ディレクトリではありません")
 
     # DirIndex パス: ready + limit 指定時は SQL クエリで高速化
     # DirIndex が利用可能なら scandir/stat を完全にスキップ
@@ -458,10 +451,7 @@ def _extract_cursor_node_id(cursor: str | None, sort: SortOrder) -> str | None:
         data = decode_cursor(cursor, sort)
         return str(data.get("id", ""))
     except ValueError as exc:
-        raise HTTPException(
-            status_code=400,
-            detail={"error": str(exc), "code": "INVALID_CURSOR"},
-        ) from exc
+        raise InvalidCursorError(str(exc)) from exc
 
 
 def _apply_pagination(
@@ -473,15 +463,12 @@ def _apply_pagination(
 ) -> tuple[list[EntryMeta], str | None, int]:
     """ページネーションを適用する.
 
-    カーソル検証エラー時は HTTPException(400) を送出。
+    カーソル検証エラー時は InvalidCursorError(400) を送出。
     """
     try:
         return paginate(entries, sort, limit, cursor, etag)
     except ValueError as exc:
-        raise HTTPException(
-            status_code=400,
-            detail={"error": str(exc), "code": "INVALID_CURSOR"},
-        ) from exc
+        raise InvalidCursorError(str(exc)) from exc
 
 
 # --- first-viewable エンドポイント ---
@@ -637,13 +624,7 @@ async def find_sibling(
     """
     parent_path = registry.resolve(parent_node_id)
     if not parent_path.is_dir():
-        raise HTTPException(
-            status_code=422,
-            detail={
-                "error": "親がディレクトリではありません",
-                "code": "NOT_A_DIRECTORY",
-            },
-        )
+        raise NotADirectoryApiError("親がディレクトリではありません")
 
     # 現在エントリのパスを取得
     current_path = registry.resolve(current)

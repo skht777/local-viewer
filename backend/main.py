@@ -19,11 +19,17 @@ from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from backend.config import init_settings
 from backend.errors import (
+    InvalidArchiveError,
+    InvalidCursorError,
     NodeNotFoundError,
+    NotADirectoryApiError,
     PathSecurityError,
     archive_password_error_handler,
     archive_security_error_handler,
+    invalid_archive_error_handler,
+    invalid_cursor_error_handler,
     node_not_found_error_handler,
+    not_a_directory_error_handler,
     path_security_error_handler,
 )
 from backend.routers import browse, file, mounts, search, thumbnail
@@ -474,6 +480,9 @@ app.add_middleware(GZipMiddleware, minimum_size=500, compresslevel=1)
 # 例外ハンドラ登録
 app.add_exception_handler(PathSecurityError, path_security_error_handler)  # type: ignore[arg-type]
 app.add_exception_handler(NodeNotFoundError, node_not_found_error_handler)  # type: ignore[arg-type]
+app.add_exception_handler(NotADirectoryApiError, not_a_directory_error_handler)  # type: ignore[arg-type]
+app.add_exception_handler(InvalidArchiveError, invalid_archive_error_handler)  # type: ignore[arg-type]
+app.add_exception_handler(InvalidCursorError, invalid_cursor_error_handler)  # type: ignore[arg-type]
 app.add_exception_handler(ArchiveSecurityError, archive_security_error_handler)
 app.add_exception_handler(ArchivePasswordError, archive_password_error_handler)
 
