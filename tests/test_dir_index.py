@@ -145,6 +145,31 @@ def test_preview_entriesクエリが先頭3件を返す(
     assert previews[0]["name"] == "a_img.jpg"
 
 
+def test_preview_entriesクエリがアーカイブとPDFを含む(
+    dir_index: DirIndex,
+) -> None:
+    dir_index.add_entries(
+        "mount1/mixed",
+        [
+            ("a_img.jpg", "image", 100, 1700000000_000000000),
+            ("b_comic.zip", "archive", 5000, 1700000001_000000000),
+            ("c_doc.pdf", "pdf", 500, 1700000002_000000000),
+            ("d_subdir", "directory", 0, 1700000003_000000000),
+            ("e_clip.mp4", "video", 10000, 1700000004_000000000),
+        ],
+    )
+
+    previews = dir_index.preview_entries("mount1/mixed", limit=5)
+    kinds = {p["kind"] for p in previews}
+    # image, archive, pdf が含まれる
+    assert "image" in kinds
+    assert "archive" in kinds
+    assert "pdf" in kinds
+    # directory と video は含まれない
+    assert "directory" not in kinds
+    assert "video" not in kinds
+
+
 def test_ディレクトリ優先のnameソート(
     dir_index: DirIndex,
 ) -> None:
