@@ -53,6 +53,11 @@ pub(crate) enum AppError {
     /// ディレクトリではないパスへの browse 操作
     #[error("ディレクトリではありません: {path}")]
     NotADirectory { path: String },
+
+    /// ファイルではないパスへの file 配信操作
+    #[allow(dead_code, reason = "Step 2 の file ルーターで使用")]
+    #[error("ファイルではありません: {path}")]
+    NotAFile { path: String },
 }
 
 impl AppError {
@@ -86,6 +91,7 @@ impl IntoResponse for AppError {
             Self::FileNotFound { .. } => (StatusCode::NOT_FOUND, "FILE_NOT_FOUND"),
             Self::InvalidCursor(_) => (StatusCode::BAD_REQUEST, "INVALID_CURSOR"),
             Self::NotADirectory { .. } => (StatusCode::UNPROCESSABLE_ENTITY, "NOT_A_DIRECTORY"),
+            Self::NotAFile { .. } => (StatusCode::UNPROCESSABLE_ENTITY, "NOT_A_FILE"),
         };
 
         let body = ErrorResponse {
@@ -136,6 +142,12 @@ mod tests {
     async fn not_a_directory_handler() -> Result<String, AppError> {
         Err(AppError::NotADirectory {
             path: "/mnt/data/file.jpg".to_string(),
+        })
+    }
+
+    async fn not_a_file_handler() -> Result<String, AppError> {
+        Err(AppError::NotAFile {
+            path: "/mnt/data/some_dir".to_string(),
         })
     }
 
@@ -206,6 +218,15 @@ mod tests {
         assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
         assert!(body.contains("NOT_A_DIRECTORY"));
         assert!(body.contains("ディレクトリではありません"));
+    }
+
+    #[tokio::test]
+    async fn not_a_file_errorが422とnot_a_fileを返す() {
+        let app = Router::new().route("/test", get(not_a_file_handler));
+        let (status, body) = call(app, "/test").await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+        assert!(body.contains("NOT_A_FILE"));
+        assert!(body.contains("ファイルではありません"));
     }
 
     #[tokio::test]
