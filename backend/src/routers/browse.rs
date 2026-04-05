@@ -195,6 +195,9 @@ pub(crate) async fn browse_directory(
         }
     }
 
+    // プリウォーム: サムネイルをバックグラウンドで事前生成
+    state.thumbnail_warmer.warm(&response.entries, &state);
+
     // JSON レスポンス + `ETag` + Cache-Control ヘッダ
     Ok((
         [
