@@ -6,13 +6,20 @@
 //! - クライアントに実パスを公開しない
 
 use std::collections::{HashMap, VecDeque};
+use std::fs::Metadata;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use hmac::{Hmac, Mac};
+use rayon::prelude::*;
 use sha2::Sha256;
 
 use crate::errors::AppError;
+use crate::services::extensions::{
+    EntryKind, extract_extension, is_thumbnail_extension, mime_for_extension,
+};
+use crate::services::models::EntryMeta;
+use crate::services::natural_sort::natural_sort_key;
 use crate::services::path_security::PathSecurity;
 
 type HmacSha256 = Hmac<Sha256>;
@@ -349,6 +356,292 @@ impl NodeRegistry {
         let result = mac.finalize().into_bytes();
         hex::encode(result)[..16].to_string()
     }
+
+    // --- ディレクトリリスティング ---
+
+    /// ディレクトリ内全エントリを `EntryMeta` として返す
+    ///
+    /// 3 フェーズ:
+    /// 1. `read_dir` + `validate_child` + classify (stat なし)
+    /// 2. stat 全エントリ (>200 件で rayon 並列)
+    /// 3. `register_resolved` + `EntryMeta` 構築
+    pub(crate) fn list_directory(&mut self, directory: &Path) -> Result<Vec<EntryMeta>, AppError> {
+        // Phase 1: read_dir + classify
+        let raw = self.scan_entries(directory)?;
+
+        // Phase 2: stat (閾値超過で rayon 並列)
+        let stated = stat_entries(&raw);
+
+        // Phase 3: register + EntryMeta 構築
+        self.build_entry_metas(directory, stated)
+    }
+
+    /// ページサイズ分のみ stat する最適化版 (name-sort 専用)
+    pub(crate) fn list_directory_page(
+        &mut self,
+        directory: &Path,
+        options: &PageOptions<'_>,
+    ) -> Result<(Vec<EntryMeta>, usize), AppError> {
+        // Phase 1: read_dir + classify
+        let mut raw = self.scan_entries(directory)?;
+        let total_count = raw.len();
+
+        // ディレクトリ優先 + 自然順ソート
+        raw.sort_by(|(a_path, a_kind, _), (b_path, b_kind, _)| {
+            let a_is_dir = *a_kind == EntryKind::Directory;
+            let b_is_dir = *b_kind == EntryKind::Directory;
+            b_is_dir.cmp(&a_is_dir).then_with(|| {
+                let a_name = a_path.file_name().unwrap_or_default().to_string_lossy();
+                let b_name = b_path.file_name().unwrap_or_default().to_string_lossy();
+                natural_sort_key(&a_name).cmp(&natural_sort_key(&b_name))
+            })
+        });
+
+        // reverse (name-desc) 時はディレクトリ/ファイルグループ内で反転
+        if options.reverse {
+            // ディレクトリとファイルの境界を見つけて各グループ内で反転
+            let dir_count = raw
+                .iter()
+                .filter(|(_, k, _)| *k == EntryKind::Directory)
+                .count();
+            raw[..dir_count].reverse();
+            raw[dir_count..].reverse();
+        }
+
+        // カーソル位置を検索
+        let start_idx = if let Some(cursor_id) = options.cursor_node_id {
+            // cursor_node_id に対応するエントリを見つけ、その次から
+            raw.iter()
+                .position(|(path, _, _)| {
+                    let key = path.to_string_lossy();
+                    self.path_to_id
+                        .get(key.as_ref())
+                        .is_some_and(|id| id == cursor_id)
+                })
+                .map_or(0, |pos| pos + 1)
+        } else {
+            0
+        };
+
+        // ページ分だけスライスして stat
+        let end_idx = (start_idx + options.limit).min(raw.len());
+        let page_raw = &raw[start_idx..end_idx];
+
+        // stat (ページ分のみ)
+        let stated: Vec<_> = page_raw
+            .iter()
+            .map(|(p, k, _)| (p.clone(), *k, std::fs::metadata(p).ok()))
+            .collect();
+
+        let entries = self.build_entry_metas(directory, stated)?;
+        Ok((entries, total_count))
+    }
+
+    /// 全マウントルートを `EntryMeta` として返す
+    pub(crate) fn list_mount_roots(&mut self) -> Vec<EntryMeta> {
+        let roots: Vec<PathBuf> = self.path_security.root_dirs().to_vec();
+        roots
+            .into_iter()
+            .map(|root| {
+                let node_id = self.register_resolved(&root);
+                let name = self.mount_names.get(&root).cloned().unwrap_or_else(|| {
+                    root.file_name().map_or_else(
+                        || root.to_string_lossy().to_string(),
+                        |n| n.to_string_lossy().to_string(),
+                    )
+                });
+                let (child_count, preview_node_ids) = self.scan_child_meta(&root, 3);
+                EntryMeta {
+                    node_id,
+                    name,
+                    kind: EntryKind::Directory,
+                    size_bytes: None,
+                    mime_type: None,
+                    child_count: Some(child_count),
+                    modified_at: None,
+                    preview_node_ids,
+                }
+            })
+            .collect()
+    }
+
+    // --- 内部ヘルパー ---
+
+    /// `read_dir` + `validate_child` + classify (stat なし)
+    fn scan_entries(&self, directory: &Path) -> Result<Vec<(PathBuf, EntryKind, bool)>, AppError> {
+        let entries = std::fs::read_dir(directory).map_err(|e| AppError::FileNotFound {
+            path: format!("{}: {e}", directory.display()),
+        })?;
+
+        let mut result = Vec::new();
+        for entry in entries {
+            let Ok(entry) = entry else { continue };
+            let path = entry.path();
+            let Ok(file_type) = entry.file_type() else {
+                continue;
+            };
+            let is_symlink = file_type.is_symlink();
+
+            // validate_child でセキュリティチェック (symlink 拒否等)
+            if self
+                .path_security
+                .validate_child(&path, is_symlink)
+                .is_err()
+            {
+                continue;
+            }
+
+            let kind = if file_type.is_dir() || (is_symlink && path.is_dir()) {
+                EntryKind::Directory
+            } else {
+                let name = entry.file_name().to_string_lossy().to_lowercase();
+                let ext = extract_extension(&name);
+                EntryKind::from_extension(ext)
+            };
+
+            result.push((path, kind, is_symlink));
+        }
+        Ok(result)
+    }
+
+    /// ディレクトリの子エントリ数 + プレビュー画像 `node_id` (最大 `preview_limit` 件) を取得
+    fn scan_child_meta(
+        &mut self,
+        directory: &Path,
+        preview_limit: usize,
+    ) -> (usize, Option<Vec<String>>) {
+        let Ok(entries) = std::fs::read_dir(directory) else {
+            return (0, None);
+        };
+
+        let mut count = 0usize;
+        let mut previews: Vec<String> = Vec::new();
+
+        for entry in entries {
+            let Ok(entry) = entry else { continue };
+            let Ok(ft) = entry.file_type() else {
+                continue;
+            };
+            // ディレクトリはカウントするがプレビュー対象外
+            if ft.is_dir() {
+                count += 1;
+                continue;
+            }
+            count += 1;
+
+            // プレビュー収集
+            if previews.len() < preview_limit {
+                let name = entry.file_name().to_string_lossy().to_lowercase();
+                let ext = extract_extension(&name);
+                if is_thumbnail_extension(ext) {
+                    let path = entry.path();
+                    if self
+                        .path_security
+                        .validate_child(&path, ft.is_symlink())
+                        .is_ok()
+                    {
+                        let resolved = std::fs::canonicalize(&path).unwrap_or(path);
+                        let id = self.register_resolved(&resolved);
+                        previews.push(id);
+                    }
+                }
+            }
+        }
+
+        let preview_ids = if previews.is_empty() {
+            None
+        } else {
+            Some(previews)
+        };
+        (count, preview_ids)
+    }
+
+    /// stat 済みエントリから `EntryMeta` を構築する
+    #[allow(
+        clippy::unnecessary_wraps,
+        reason = "Phase 6b で DirIndex 連携時にエラーを返す"
+    )]
+    fn build_entry_metas(
+        &mut self,
+        parent: &Path,
+        stated: Vec<(PathBuf, EntryKind, Option<Metadata>)>,
+    ) -> Result<Vec<EntryMeta>, AppError> {
+        let mut entries = Vec::with_capacity(stated.len());
+
+        for (path, kind, meta) in stated {
+            let resolved = std::fs::canonicalize(&path).unwrap_or_else(|_| path.clone());
+            let node_id = self.register_resolved(&resolved);
+            let name = path
+                .file_name()
+                .map_or_else(String::new, |n| n.to_string_lossy().to_string());
+
+            let (size_bytes, modified_at) = meta.as_ref().map_or((None, None), |m| {
+                let size = if kind == EntryKind::Directory {
+                    None
+                } else {
+                    Some(m.len())
+                };
+                let mtime = m
+                    .modified()
+                    .ok()
+                    .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                    .map(|d| d.as_secs_f64());
+                (size, mtime)
+            });
+
+            let mime_type = if kind == EntryKind::Directory {
+                None
+            } else {
+                let lower = name.to_lowercase();
+                let ext = extract_extension(&lower);
+                mime_for_extension(ext).map(String::from)
+            };
+
+            // ディレクトリの child_count と preview_node_ids
+            let (child_count, preview_node_ids) = if kind == EntryKind::Directory {
+                let (cc, pids) = self.scan_child_meta(&path, 3);
+                (Some(cc), pids)
+            } else {
+                (None, None)
+            };
+
+            entries.push(EntryMeta {
+                node_id,
+                name,
+                kind,
+                size_bytes,
+                mime_type,
+                child_count,
+                modified_at,
+                preview_node_ids,
+            });
+        }
+
+        let _ = parent; // 将来の DirIndex 連携用パラメータ
+        Ok(entries)
+    }
+}
+
+/// ページングオプション
+pub(crate) struct PageOptions<'a> {
+    pub limit: usize,
+    pub cursor_node_id: Option<&'a str>,
+    pub reverse: bool,
+}
+
+/// 200 件超で rayon 並列 stat
+const PARALLEL_STAT_THRESHOLD: usize = 200;
+
+fn stat_entries(raw: &[(PathBuf, EntryKind, bool)]) -> Vec<(PathBuf, EntryKind, Option<Metadata>)> {
+    if raw.len() > PARALLEL_STAT_THRESHOLD {
+        raw.par_iter()
+            .map(|(p, k, _)| (p.clone(), *k, std::fs::metadata(p).ok()))
+            .collect()
+    } else {
+        raw.iter()
+            .map(|(p, k, _)| (p.clone(), *k, std::fs::metadata(p).ok()))
+            .collect()
+    }
 }
 
 #[cfg(test)]
@@ -576,6 +869,180 @@ mod tests {
         let _id3 = reg.register_archive_entry(&archive, "p3.jpg").unwrap();
 
         assert!(!reg.is_archive_entry(&id1));
+    }
+
+    // --- list_directory ---
+
+    struct ListTestEnv {
+        #[allow(dead_code, reason = "TempDir のドロップでディレクトリを保持")]
+        dir: TempDir,
+        root: PathBuf,
+    }
+
+    impl ListTestEnv {
+        fn new() -> Self {
+            let dir = TempDir::new().unwrap();
+            let root = fs::canonicalize(dir.path()).unwrap();
+            // ファイル
+            fs::write(root.join("image1.jpg"), "jpg").unwrap();
+            fs::write(root.join("image2.png"), "png").unwrap();
+            fs::write(root.join("video.mp4"), "mp4").unwrap();
+            fs::write(root.join("doc.pdf"), "pdf").unwrap();
+            fs::write(root.join("readme.txt"), "txt").unwrap();
+            // サブディレクトリ (画像入り)
+            fs::create_dir_all(root.join("subdir")).unwrap();
+            fs::write(root.join("subdir/inner.jpg"), "inner").unwrap();
+            fs::write(root.join("subdir/inner2.png"), "inner2").unwrap();
+            // 空ディレクトリ
+            fs::create_dir_all(root.join("empty")).unwrap();
+            Self { dir, root }
+        }
+
+        fn registry(&self) -> NodeRegistry {
+            let ps = Arc::new(PathSecurity::new(vec![self.root.clone()], false).unwrap());
+            NodeRegistry::with_secret(ps, TEST_SECRET, HashMap::new())
+        }
+    }
+
+    #[test]
+    fn list_directoryが全エントリを返す() {
+        let env = ListTestEnv::new();
+        let mut reg = env.registry();
+        let entries = reg.list_directory(&env.root).unwrap();
+        // image1.jpg, image2.png, video.mp4, doc.pdf, readme.txt, subdir, empty = 7
+        assert_eq!(entries.len(), 7);
+    }
+
+    #[test]
+    fn list_directoryでファイルが正しくclassifyされる() {
+        let env = ListTestEnv::new();
+        let mut reg = env.registry();
+        let entries = reg.list_directory(&env.root).unwrap();
+        let image_count = entries
+            .iter()
+            .filter(|e| e.kind == EntryKind::Image)
+            .count();
+        assert_eq!(image_count, 2);
+        let video_count = entries
+            .iter()
+            .filter(|e| e.kind == EntryKind::Video)
+            .count();
+        assert_eq!(video_count, 1);
+        let dir_count = entries
+            .iter()
+            .filter(|e| e.kind == EntryKind::Directory)
+            .count();
+        assert_eq!(dir_count, 2);
+    }
+
+    #[test]
+    fn ディレクトリのchild_countが正しい() {
+        let env = ListTestEnv::new();
+        let mut reg = env.registry();
+        let entries = reg.list_directory(&env.root).unwrap();
+        let subdir = entries.iter().find(|e| e.name == "subdir").unwrap();
+        assert_eq!(subdir.child_count, Some(2)); // inner.jpg, inner2.png
+    }
+
+    #[test]
+    fn preview_node_idsが画像を含む() {
+        let env = ListTestEnv::new();
+        let mut reg = env.registry();
+        let entries = reg.list_directory(&env.root).unwrap();
+        let subdir = entries.iter().find(|e| e.name == "subdir").unwrap();
+        let previews = subdir.preview_node_ids.as_ref().unwrap();
+        assert!(!previews.is_empty());
+        assert!(previews.len() <= 3);
+    }
+
+    #[test]
+    fn 空ディレクトリのpreview_node_idsがnone() {
+        let env = ListTestEnv::new();
+        let mut reg = env.registry();
+        let entries = reg.list_directory(&env.root).unwrap();
+        let empty = entries.iter().find(|e| e.name == "empty").unwrap();
+        assert_eq!(empty.child_count, Some(0));
+        assert!(empty.preview_node_ids.is_none());
+    }
+
+    #[test]
+    fn modified_atがposix秒で設定される() {
+        let env = ListTestEnv::new();
+        let mut reg = env.registry();
+        let entries = reg.list_directory(&env.root).unwrap();
+        let file = entries.iter().find(|e| e.name == "image1.jpg").unwrap();
+        assert!(file.modified_at.is_some());
+        // 2020年以降の値であること (POSIX 秒)
+        assert!(file.modified_at.unwrap() > 1_577_836_800.0);
+    }
+
+    #[test]
+    fn 空ディレクトリのlist_directoryが空リストを返す() {
+        let env = ListTestEnv::new();
+        let mut reg = env.registry();
+        let entries = reg.list_directory(&env.root.join("empty")).unwrap();
+        assert!(entries.is_empty());
+    }
+
+    // --- list_directory_page ---
+
+    #[test]
+    fn list_directory_pageでlimit件分のみ返す() {
+        let env = ListTestEnv::new();
+        let mut reg = env.registry();
+        let opts = PageOptions {
+            limit: 3,
+            cursor_node_id: None,
+            reverse: false,
+        };
+        let (entries, total) = reg.list_directory_page(&env.root, &opts).unwrap();
+        assert_eq!(entries.len(), 3);
+        assert_eq!(total, 7);
+    }
+
+    #[test]
+    fn list_directory_pageの合計件数が全エントリ数() {
+        let env = ListTestEnv::new();
+        let mut reg = env.registry();
+        let opts = PageOptions {
+            limit: 100,
+            cursor_node_id: None,
+            reverse: false,
+        };
+        let (entries, total) = reg.list_directory_page(&env.root, &opts).unwrap();
+        assert_eq!(entries.len(), 7);
+        assert_eq!(total, 7);
+    }
+
+    // --- list_mount_roots ---
+
+    #[test]
+    fn list_mount_rootsが全ルートを返す() {
+        let env = ListTestEnv::new();
+        let mut reg = env.registry();
+        let roots = reg.list_mount_roots();
+        assert_eq!(roots.len(), 1);
+        assert_eq!(roots[0].kind, EntryKind::Directory);
+    }
+
+    #[test]
+    fn list_mount_rootsのnameがmount_namesを反映() {
+        let env = ListTestEnv::new();
+        let ps = Arc::new(PathSecurity::new(vec![env.root.clone()], false).unwrap());
+        let mut names = HashMap::new();
+        names.insert(env.root.clone(), "My Pictures".to_string());
+        let mut reg = NodeRegistry::with_secret(ps, TEST_SECRET, names);
+        let roots = reg.list_mount_roots();
+        assert_eq!(roots[0].name, "My Pictures");
+    }
+
+    #[test]
+    fn list_mount_rootsにchild_countが含まれる() {
+        let env = ListTestEnv::new();
+        let mut reg = env.registry();
+        let roots = reg.list_mount_roots();
+        assert!(roots[0].child_count.is_some());
+        assert_eq!(roots[0].child_count, Some(7));
     }
 
     // --- HMAC ゴールデンベクターテスト ---
