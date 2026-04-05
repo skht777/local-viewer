@@ -20,6 +20,10 @@
     "py_backend/**/*.py": [
       "py_backend/.venv/bin/ruff format",
       "py_backend/.venv/bin/ruff check --fix"
+    ],
+    "backend/src/**/*.rs": [
+      "bash -c 'source \"$HOME/.cargo/env\" && cd backend && cargo fmt -- --check'",
+      "bash -c 'source \"$HOME/.cargo/env\" && cd backend && cargo clippy --all-targets -- -D warnings'"
     ]
   }
 }
