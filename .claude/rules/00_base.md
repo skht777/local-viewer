@@ -37,5 +37,6 @@
 - `10_e2e_testing.md` — E2Eテスト規約 (Playwright)
 - `11_e2e_performance_debug.md` — E2Eパフォーマンス・デバッグ規約
 - `12_planning.md` — プラン策定規約（重要度分類・セルフレビュー・codex連携）
-- `backend-fastapi.md` — FastAPI固有規約 (パススコープ)
+- `backend-rust.md` — Rust バックエンド固有規約 (パススコープ)
+- `backend-fastapi.md` — FastAPI固有規約 (パススコープ、レガシー)
 - `frontend-react.md` — React固有規約 (パススコープ)

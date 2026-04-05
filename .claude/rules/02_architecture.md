@@ -8,7 +8,21 @@ local-viewer/
 ├── manage_mounts.sh         # マウントポイント管理 Bash TUI (ホスト側)
 ├── config/
 │   └── mounts.json          # マウントポイント定義 (Docker: バインドマウント ./config:/app/config)
-├── backend/
+├── rust-backend/            # Rust バックエンド (移行中)
+│   ├── Cargo.toml           # 依存クレート定義
+│   ├── rust-toolchain.toml  # Rust ツールチェーン固定
+│   ├── clippy.toml          # Clippy 設定
+│   ├── rustfmt.toml         # rustfmt 設定
+│   ├── src/
+│   │   ├── main.rs          # エントリポイント (AppState 初期化、ルーター登録)
+│   │   ├── config.rs        # 環境変数ベースの設定
+│   │   ├── errors.rs        # 共通エラー型 (IntoResponse)
+│   │   ├── state.rs         # AppState (DI コンテナ相当)
+│   │   ├── routers/         # API ルーター (1リソース1ファイル)
+│   │   ├── services/        # ビジネスロジック
+│   │   └── middleware/      # カスタムミドルウェア
+│   └── tests/               # 統合テスト + fixtures
+├── backend/                 # Python バックエンド (レガシー、移行完了後に削除)
 │   ├── main.py              # FastAPI エントリポイント (DI 登録: DirIndex, ThumbnailWarmer 等)
 │   ├── routers/             # APIルーター (1リソース1ファイル)
 │   └── services/            # ビジネスロジック
@@ -30,14 +44,24 @@ local-viewer/
 │   ├── playwright.config.ts   # E2E テスト設定
 │   ├── fixtures/              # テスト用フィクスチャ
 │   └── tests/                 # Playwright テストファイル
-├── Dockerfile               # マルチステージビルド
+├── Dockerfile               # マルチステージビルド (Python 版)
+├── Dockerfile.rust          # マルチステージビルド (Rust 版、3段構成)
 ├── docker-compose.yml           # 静的設定 (git tracked)
 └── docker-compose.override.yml  # マウント定義 (manage_mounts.sh 自動生成, gitignored)
 ```
 
 ## 依存関係ルール
 
-### Backend
+### Backend (Rust — 移行中)
+```
+routers → services → 外部クレート/std
+```
+- Python 版と同一のレイヤード依存方向を維持
+- 状態管理: `AppState` 構造体 + `Arc<T>` (FastAPI DI overrides に相当)
+- CPU バウンド処理: `tokio::task::spawn_blocking`
+- SQLite 操作: `spawn_blocking` 内で同期 rusqlite
+
+### Backend (Python — レガシー)
 ```
 routers → services → 外部ライブラリ/stdlib
 ```
@@ -58,6 +82,8 @@ stores → (外部依存なし、純粋なUI状態)
 - stores は TanStack Query のデータを複製しない
 
 ## アーキテクチャパターン
-- Backend: レイヤードアーキテクチャ (Router → Service → Infrastructure)
+- Backend (Rust): レイヤードアーキテクチャ (Router → Service → Infrastructure)、axum + tower ミドルウェア
+- Backend (Python): レイヤードアーキテクチャ (Router → Service → Infrastructure)、FastAPI DI
 - Frontend: Feature-based + Hooks パターン
-- Docker: フロントエンドビルド → Python ランタイムが静的ファイル + API を配信
+- Docker (Rust): フロントエンドビルド → Rust ビルド → debian-slim ランタイム (Python 不要)
+- Docker (Python): フロントエンドビルド → Python ランタイムが静的ファイル + API を配信

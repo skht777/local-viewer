@@ -13,7 +13,28 @@ Red → Green → Refactor を小刻みに回す:
 
 成果物よりフィードバック速度を優先する。
 
-## バックエンド (pytest + httpx)
+## バックエンド — Rust (cargo test + rstest)
+- テストディレクトリ: `rust-backend/tests/` (統合テスト) + 各モジュール内 `#[cfg(test)]` (ユニットテスト)
+- HTTP 統合テスト: `tower::ServiceExt::oneshot` を基本に Router テストを書く。必要なら `axum-test` は補助的に検討してよい
+- テスト用フィクスチャ: `rust-backend/tests/fixtures/` にサンプルファイル配置
+- パラメータ化テスト: `rstest` クレート
+- スナップショットテスト: `insta` クレート (JSON レスポンス比較)
+- 一時ディレクトリ: `tempfile` クレート
+
+### テストカテゴリ
+- **API テスト**: 各エンドポイントの正常系・異常系 (`tower::ServiceExt::oneshot`)
+- **サービステスト**: path_security, node_registry, archive, indexer のユニットテスト
+- **セキュリティ回帰テスト**: traversal, symlink, zip bomb, 壊れたアーカイブ
+- **互換性テスト**: Python 版と同一出力を検証するゴールデンベクターテスト (HMAC node_id, カーソル, ソート順)
+
+### テスト実行
+```bash
+cd rust-backend && cargo test                    # 全テスト
+cd rust-backend && cargo test -- --nocapture     # 標準出力付き
+cd rust-backend && cargo test test_node_registry # 特定モジュール
+```
+
+## バックエンド — Python レガシー (pytest + httpx)
 - テストディレクトリ: `tests/` (プロジェクトルート)
 - FastAPI `TestClient` (httpx) でAPIテスト
 - フィクスチャ: `tests/fixtures/` にサンプルファイル配置

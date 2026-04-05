@@ -1,6 +1,20 @@
 # 技術スタック
 
-## バックエンド
+## バックエンド (Rust — 移行中)
+- Rust (stable, rust-toolchain.toml で固定)
+- axum + tokio (HTTP フレームワーク + 非同期ランタイム)
+- tower + tower-http (ミドルウェア: CORS, GZip, 静的ファイル)
+- serde + serde_json (JSON シリアライズ)
+- rusqlite (`bundled-full` feature, FTS5 trigram 対応)
+- hmac + sha2 (HMAC-SHA256 node_id 生成)
+- image + fast_image_resize (サムネイル生成)
+- zip クレート (ZIP), unrar-free CLI (RAR), p7zip CLI (7z, subprocess)
+- notify (ファイル監視)
+- rayon (並列ディレクトリ走査)
+- clap (CLI 引数パース)
+- tracing + tracing-subscriber (構造化ログ)
+
+## バックエンド (Python — レガシー、移行完了後に削除)
 - Python 3.14
 - FastAPI + uvicorn
 - pyvips (サムネイル生成)
@@ -20,12 +34,16 @@
 - react-router-dom (ルーティング)
 
 ## 開発ツール
+- clippy (Rust lint)
+- rustfmt (Rust format)
+- cargo-deny (脆弱性・ライセンスチェック)
 - Ruff (Python lint + format)
 - mypy (Python 型チェック)
 - oxlint (TypeScript lint)
 - oxfmt (TypeScript format)
 - Vitest + Testing Library (フロントエンドテスト)
-- pytest + httpx (バックエンドテスト)
+- cargo test + rstest (Rust バックエンドテスト)
+- pytest + httpx (Python バックエンドテスト — レガシー)
 - Husky + lint-staged (pre-commit)
 
 ## コンテナ
@@ -39,3 +57,7 @@
 - react-pdf を提案しない（pdfjs-dist を直接使用）
 - CSS Modules, styled-components, Emotion を提案しない（Tailwind のみ）
 - Redux, MobX, Recoil を提案しない（zustand + TanStack Query）
+- actix-web, warp, rocket を提案しない（axum を使用）
+- Pillow 相当のクレートを提案しない（image + fast_image_resize を使用）
+- diesel, sea-orm を提案しない（rusqlite を直接使用）
+- `unsafe` ブロックは極力使わない（使用時は安全性を証明するコメント必須）

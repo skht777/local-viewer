@@ -1,20 +1,22 @@
 # CLAUDE.md -- local-viewer プロジェクト規約
 
 ローカルディレクトリの画像・動画・PDFを閲覧する Web アプリ。
-FastAPI バックエンド + React フロントエンド、Docker で配布。
+Rust バックエンド (移行中) + React フロントエンド、Docker で配布。
 
 ## 技術スタック
-- バックエンド: FastAPI + uvicorn (Python 3.14)
+- バックエンド (Rust — 移行中): axum + tokio, rusqlite (FTS5), image (サムネイル)
+- バックエンド (Python — レガシー): FastAPI + uvicorn (Python 3.14)
 - フロントエンド: React + Vite + TypeScript
 - スタイリング: Tailwind CSS v4 (Vite プラグイン、PostCSS 設定なし)
 - 状態管理: TanStack Query (サーバー) + zustand (UI のみ)
-- Lint/Format: Ruff (Python), oxlint + oxfmt (TypeScript)
+- Lint/Format: clippy + rustfmt (Rust), Ruff (Python), oxlint + oxfmt (TypeScript)
 - コンテナ: Docker マルチステージビルド
 
 ## 環境構築
-- Python 3.14: pyenv (`pyenv install 3.14`)
+- Rust: rustup (rust-toolchain.toml で自動バージョン管理)
+- Python 3.14: pyenv (`pyenv install 3.14`) — レガシーバックエンド用
 - Node.js 24: nodenv (`nodenv install 24.11.1`)
-- バージョンファイル (`.python-version`, `.node-version`) はリポジトリルートに配置
+- バージョンファイル (`.python-version`, `.node-version`, `rust-backend/rust-toolchain.toml`) はリポジトリに配置
 
 ## Commands
 
@@ -28,18 +30,34 @@ FastAPI バックエンド + React フロントエンド、Docker で配布。
 # マウントポイント管理（Bash TUI、ホスト側で実行）
 ./manage_mounts.sh
 
-# ローカル開発用セットアップ
-python -m venv backend/.venv && source backend/.venv/bin/activate && pip install -r backend/requirements-dev.txt
-cd frontend && npm install && cd ..
+# ローカル開発用セットアップ (Rust バックエンド)
+cd rust-backend && cargo build
 
-# Lint（バックエンド）
+# ローカル開発用セットアップ (Python レガシー)
+python -m venv backend/.venv && source backend/.venv/bin/activate && pip install -r backend/requirements-dev.txt
+
+# ローカル開発用セットアップ (フロントエンド)
+cd frontend && npm install
+
+# 型チェック（Rust、編集ループ中はこちらが高速）
+cd rust-backend && cargo check
+
+# Lint（Rust バックエンド）
+cd rust-backend && cargo clippy --all-targets --all-features -- -D warnings && cargo fmt --check
+
+# Lint（Python レガシー）
 source backend/.venv/bin/activate && ruff check backend/ && ruff format --check backend/ && mypy backend/
 
 # Lint（フロントエンド）
 npx oxlint frontend/src/ && npx oxfmt --check frontend/src/
 
-# Test
+# Test（Rust バックエンド）
+cd rust-backend && cargo test
+
+# Test（Python レガシー）
 source backend/.venv/bin/activate && pytest
+
+# Test（フロントエンド）
 cd frontend && npx vitest run
 
 # E2E Test
@@ -48,8 +66,19 @@ cd e2e && npx playwright test --ui   # UI モード
 ```
 
 ## 主要ファイル
+
+### Rust バックエンド (移行中)
+- `rust-backend/Cargo.toml` — 依存クレート定義
+- `rust-backend/src/main.rs` — エントリポイント（AppState 初期化、ルーター登録）
+- `rust-backend/src/config.rs` — 環境変数ベースの設定（Python 版 config.py と同一変数名）
+- `rust-backend/src/routers/` — API ルーター（browse, file, mounts, search, thumbnail）
+- `rust-backend/src/services/` — ビジネスロジック（node_registry, path_security, archive, indexer 等）
+- `rust-backend/rust-toolchain.toml` — Rust ツールチェーン固定
+- `rust-backend/clippy.toml` — Clippy 設定
+- `rust-backend/rustfmt.toml` — rustfmt 設定
+
+### Python バックエンド (レガシー)
 - `pyproject.toml` — Ruff + mypy + pytest 設定（リポジトリルート、backend/ 配下ではない）
-- `.oxlintrc.json` — oxlint 設定（react/typescript プラグイン）
 - `backend/main.py` — FastAPI エントリポイント（DI 登録: DirIndex, ThumbnailWarmer 等）
 - `backend/config.py` — 環境変数ベースの設定モジュール（MOUNT_BASE_DIR, MOUNT_CONFIG_PATH 等）
 - `backend/errors.py` — 共通エラーモデル + 独自例外 (NotADirectoryApiError, InvalidArchiveError, InvalidCursorError 等) + ハンドラ
@@ -57,6 +86,8 @@ cd e2e && npx playwright test --ui   # UI モード
 - `backend/services/dir_index.py` — DirIndex サービス（SQLite ディレクトリリスティング専用インデックス、browse 高速化）
 - `backend/services/browse_cursor.py` — カーソルベースページネーション（HMAC 署名、SortOrder、keyset ページング）
 - `backend/services/thumbnail_warmer.py` — サムネイルプリウォーム（バックグラウンド生成、重複排除）
+
+### 共通
 - `init.sh` — 初回セットアップ（.env コピー + manage_mounts.sh）
 - `start.sh` — Docker コンテナ起動（docker compose up --build）
 - `manage_mounts.sh` — マウントポイント管理 Bash TUI（ホスト側で実行、docker-compose.override.yml + mounts.json を更新）
@@ -70,7 +101,9 @@ cd e2e && npx playwright test --ui   # UI モード
 - `e2e/playwright.config.ts` — E2E テスト設定
 
 ## 注意事項
-- **uvicorn はプロジェクトルートから実行** — Docker 内で自動実行。ローカル開発時は `uvicorn backend.main:app`
+- **Rust バックエンド移行中** — `rust-backend/` が新バックエンド、`backend/` は参照用レガシー。E2E テスト全通過をもって切替完了
+- **Rust バイナリはプロジェクトルートから実行** — `MOUNT_BASE_DIR` 等の環境変数で設定。CLI: `./rust-backend/target/release/local-viewer-backend --port 8000`
+- **uvicorn はプロジェクトルートから実行** — Docker 内で自動実行。ローカル開発時は `uvicorn backend.main:app` (レガシー)
 - **Tailwind v4** — `tailwind.config.js` や `postcss.config.js` は不要、`@tailwindcss/vite` プラグインを使用
 - **lint-staged は venv パスを使用** — `package.json` 内で `backend/.venv/bin/ruff` として呼び出し
 - **node_id 不透明ID** — API はクライアントに実ファイルパスを公開しない。生成時にルートパスを含めて複数マウントポイント間の衝突を回避
