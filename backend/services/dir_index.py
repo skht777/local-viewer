@@ -47,7 +47,6 @@ class DirIndex:
         self._db_path = db_path
         self._is_ready = False
         self._is_stale = True
-        self._lock = threading.Lock()
         # バルクモード用 (begin_bulk/end_bulk で管理, スレッドごとに独立)
         self._tls = threading.local()
 
