@@ -188,3 +188,44 @@ def test_ディレクトリ優先のnameソート(
     # ディレクトリが最初
     assert kinds[0] == "directory"
     assert kinds[1] == "image"
+
+
+def test_DirIndexのバルクモードが複数スレッドで安全に動作する(
+    dir_index: DirIndex,
+) -> None:
+    """複数スレッドが同時に begin_bulk/ingest/end_bulk しても干渉しない."""
+    import threading
+
+    errors: list[Exception] = []
+
+    def bulk_ingest(mount_id: str, count: int) -> None:
+        try:
+            dir_index.begin_bulk()
+            for i in range(count):
+                dir_index.ingest_walk_entry(
+                    walk_entry_path=f"/root/{mount_id}/dir_{i}",
+                    root_dir=f"/root/{mount_id}",
+                    mount_id=mount_id,
+                    dir_mtime_ns=1700000000_000000000 + i,
+                    subdirs=[],
+                    files=[
+                        (f"file_{j}.jpg", 100, 1700000000_000000000 + j)
+                        for j in range(5)
+                    ],
+                )
+            dir_index.end_bulk()
+        except Exception as e:
+            errors.append(e)
+
+    threads = [
+        threading.Thread(target=bulk_ingest, args=("mount_a", 50)),
+        threading.Thread(target=bulk_ingest, args=("mount_b", 50)),
+    ]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    assert not errors, f"スレッドエラー: {errors}"
+    assert dir_index.child_count("mount_a") > 0
+    assert dir_index.child_count("mount_b") > 0
