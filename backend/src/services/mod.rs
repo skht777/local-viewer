@@ -21,3 +21,5 @@ pub(crate) mod path_security;
 pub(crate) mod temp_file_cache;
 #[allow(dead_code, reason = "Phase 5 のサムネイルルーターで使用")]
 pub(crate) mod thumbnail_service;
+#[allow(dead_code, reason = "Phase 5 のサムネイルルーターで使用")]
+pub(crate) mod video_converter;
