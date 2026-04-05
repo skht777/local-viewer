@@ -257,6 +257,30 @@ async def test_既存のファイル配信が引き続き動作する(
     assert response.text == "hello"
 
 
+# --- アーカイブエントリの Range リクエストテスト ---
+
+
+async def test_アーカイブ内動画エントリのRangeリクエストで206を返す(
+    client: AsyncClient,
+    test_node_registry: NodeRegistry,
+    test_root: Path,
+) -> None:
+    """mixed.zip 内の clip.mp4 (動画) に Range リクエスト.
+
+    動画エントリは TempFileCache → FileResponse 経由で配信されるため Range 対応。
+    """
+    archive_path = test_root / "dir_a" / "mixed.zip"
+    entry_node_id = test_node_registry.register_archive_entry(
+        archive_path, "clip.mp4"
+    )
+    response = await client.get(
+        f"/api/file/{entry_node_id}",
+        headers={"Range": "bytes=0-3"},
+    )
+    assert response.status_code == 206
+    assert len(response.content) == 4
+
+
 # --- 抽出時サイズ上限超過のAPIテスト ---
 
 

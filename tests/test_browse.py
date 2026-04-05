@@ -262,3 +262,65 @@ async def test_既存のディレクトリbrowseが引き続き動作する(
     data = response.json()
     # dir_a には image.jpg, nested/, archive.zip がある
     assert len(data["entries"]) >= 2
+
+
+# --- ETag 304 テスト ---
+
+
+async def test_browseでETagが返りIfNoneMatchで304を返す(
+    client: AsyncClient,
+    test_node_registry: NodeRegistry,
+    test_root: Path,
+) -> None:
+    """browse エンドポイントが ETag を返し、If-None-Match で 304 を返す."""
+    dir_node_id = test_node_registry.register(test_root / "dir_a")
+
+    # 1回目: ETag 取得
+    resp1 = await client.get(f"/api/browse/{dir_node_id}")
+    assert resp1.status_code == 200
+    etag = resp1.headers.get("etag")
+    assert etag is not None
+
+    # 2回目: If-None-Match で 304
+    resp2 = await client.get(
+        f"/api/browse/{dir_node_id}",
+        headers={"If-None-Match": etag},
+    )
+    assert resp2.status_code == 304
+
+
+# --- modified_at nullability テスト ---
+
+
+async def test_ディレクトリエントリのmodified_atが数値である(
+    client: AsyncClient,
+    test_node_registry: NodeRegistry,
+    test_root: Path,
+) -> None:
+    """仕様注記: 現行実装ではディレクトリも modified_at が数値で返る.
+
+    spec-architecture では「ディレクトリ/アーカイブは null」とあるが、
+    NodeRegistry.list_directory は stat() を実行するため数値が返る。
+    この差異を明示的に記録するテスト。
+    """
+    root_id = test_node_registry.register(test_root)
+    resp = await client.get(f"/api/browse/{root_id}")
+    data = resp.json()
+    dir_entry = next(e for e in data["entries"] if e["kind"] == "directory")
+    # 現行動作: ディレクトリも modified_at が数値 (仕様とは異なる)
+    assert dir_entry["modified_at"] is not None
+    assert isinstance(dir_entry["modified_at"], float)
+
+
+async def test_アーカイブ内エントリのmodified_atがNullである(
+    client: AsyncClient,
+    test_node_registry: NodeRegistry,
+    test_root: Path,
+) -> None:
+    """アーカイブ内エントリの modified_at は None."""
+    archive_path = test_root / "dir_a" / "archive.zip"
+    archive_node_id = test_node_registry.register(archive_path)
+    resp = await client.get(f"/api/browse/{archive_node_id}")
+    data = resp.json()
+    for entry in data["entries"]:
+        assert entry["modified_at"] is None
