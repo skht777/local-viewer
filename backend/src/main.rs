@@ -11,7 +11,9 @@ use serde::Serialize;
 use tower_http::trace::TraceLayer;
 use tracing_subscriber::{EnvFilter, fmt, prelude::*};
 
+#[allow(dead_code, reason = "Phase 2+ で AppState 初期化時に使用")]
 mod config;
+#[allow(dead_code, reason = "Phase 2+ で routers のエラーハンドリングで使用")]
 mod errors;
 mod middleware;
 mod routers;
