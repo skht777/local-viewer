@@ -4,3 +4,4 @@
 
 pub(crate) mod reader;
 pub(crate) mod security;
+pub(crate) mod zip_reader;
