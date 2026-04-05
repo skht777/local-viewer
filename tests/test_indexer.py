@@ -861,3 +861,54 @@ class TestIndexerPragma:
             assert result[0] == 2
         finally:
             conn.close()
+
+
+class TestRebuildExclusion:
+    """rebuild 排他制御のテスト."""
+
+    def test_rebuild中にis_rebuildingがTrueになる(
+        self, indexer: Indexer, tmp_path: Path
+    ) -> None:
+        """rebuild 実行中は is_rebuilding が True を返す."""
+        from unittest.mock import patch
+
+        from backend.services.path_security import PathSecurity
+
+        root = tmp_path / "root"
+        root.mkdir()
+        (root / "test.zip").write_bytes(b"PK\x03\x04" + b"\x00" * 100)
+
+        ps = PathSecurity([root])
+
+        observed_during_rebuild = []
+
+        original_scan = indexer.scan_directory
+
+        def tracking_scan(*args: object, **kwargs: object) -> int:
+            observed_during_rebuild.append(indexer.is_rebuilding)
+            return original_scan(*args, **kwargs)
+
+        with patch.object(indexer, "scan_directory", side_effect=tracking_scan):
+            indexer.rebuild(root, ps)
+
+        # rebuild 中は is_rebuilding=True が観測される
+        assert any(observed_during_rebuild)
+        # rebuild 完了後は False に戻る
+        assert not indexer.is_rebuilding
+
+    def test_rebuildの前後でis_rebuildingが正しく遷移する(
+        self, indexer: Indexer, tmp_path: Path
+    ) -> None:
+        from backend.services.path_security import PathSecurity
+
+        root = tmp_path / "root"
+        root.mkdir()
+        ps = PathSecurity([root])
+
+        # 実行前: False
+        assert not indexer.is_rebuilding
+
+        indexer.rebuild(root, ps)
+
+        # 実行後: False
+        assert not indexer.is_rebuilding
