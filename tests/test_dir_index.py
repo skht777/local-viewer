@@ -227,5 +227,6 @@ def test_DirIndexのバルクモードが複数スレッドで安全に動作す
         t.join()
 
     assert not errors, f"スレッドエラー: {errors}"
-    assert dir_index.child_count("mount_a") > 0
-    assert dir_index.child_count("mount_b") > 0
+    # 各スレッドが dir_0 配下に 5 ファイルを書き込んでいる
+    assert dir_index.child_count("mount_a/dir_0") == 5
+    assert dir_index.child_count("mount_b/dir_0") == 5

@@ -48,10 +48,8 @@ class DirIndex:
         self._is_ready = False
         self._is_stale = True
         self._lock = threading.Lock()
-        # バルクモード用 (begin_bulk/end_bulk で管理)
-        self._bulk_conn: sqlite3.Connection | None = None
-        self._bulk_entries: list[tuple[str, str, str, str, int | None, int]] = []
-        self._bulk_meta: list[tuple[str, int]] = []
+        # バルクモード用 (begin_bulk/end_bulk で管理, スレッドごとに独立)
+        self._tls = threading.local()
 
     @property
     def is_ready(self) -> bool:
@@ -87,41 +85,48 @@ class DirIndex:
         単一接続 + synchronous=OFF + 1000 件バッチで INSERT。
         DirIndex はキャッシュ DB のため、中断時のデータ損失は許容。
         """
-        self._bulk_conn = self._connect_for_bulk()
-        self._bulk_entries = []
-        self._bulk_meta = []
+        self._tls.bulk_conn = self._connect_for_bulk()
+        self._tls.bulk_entries = []
+        self._tls.bulk_meta = []
 
     def end_bulk(self) -> None:
         """バルク挿入モードを終了する (残りフラッシュ + 接続クローズ)."""
-        if self._bulk_conn is None:
+        conn = getattr(self._tls, "bulk_conn", None)
+        if conn is None:
             return
-        if self._bulk_entries or self._bulk_meta:
+        if getattr(self._tls, "bulk_entries", None) or getattr(
+            self._tls, "bulk_meta", None
+        ):
             self._flush_bulk()
-        self._bulk_conn.close()
-        self._bulk_conn = None
+        conn.close()
+        self._tls.bulk_conn = None
 
     def _flush_bulk(self) -> None:
         """バルクバッチを SQLite にフラッシュする."""
-        conn = self._bulk_conn
+        conn = getattr(self._tls, "bulk_conn", None)
         if conn is None:
             return
-        if self._bulk_entries:
+        entries = getattr(self._tls, "bulk_entries", None)
+        meta = getattr(self._tls, "bulk_meta", None)
+        if entries:
             conn.executemany(
                 """
                 INSERT OR REPLACE INTO dir_entries
                     (parent_path, name, kind, sort_key, size_bytes, mtime_ns)
                 VALUES (?, ?, ?, ?, ?, ?)
                 """,
-                self._bulk_entries,
+                entries,
             )
-        if self._bulk_meta:
+        if meta:
             conn.executemany(
                 "INSERT OR REPLACE INTO dir_meta (path, mtime_ns) VALUES (?, ?)",
-                self._bulk_meta,
+                meta,
             )
         conn.commit()
-        self._bulk_entries.clear()
-        self._bulk_meta.clear()
+        if entries is not None:
+            entries.clear()
+        if meta is not None:
+            meta.clear()
 
     def init_db(self) -> None:
         """テーブルとインデックスを作成する."""
@@ -465,14 +470,14 @@ class DirIndex:
 
         # バルクモード: バッチに蓄積して 1000 件ごとにフラッシュ
         # 通常モード: per-directory コミット (FileWatcher 用)
-        if self._bulk_conn is not None:
+        bulk_conn = getattr(self._tls, "bulk_conn", None)
+        if bulk_conn is not None:
+            bulk_entries = self._tls.bulk_entries
             for e_name, e_kind, e_size, e_mtime in entries:
                 sk = encode_sort_key(e_name)
-                self._bulk_entries.append(
-                    (parent_path, e_name, e_kind, sk, e_size, e_mtime)
-                )
-            self._bulk_meta.append((parent_path, dir_mtime_ns))
-            if len(self._bulk_entries) >= self._BATCH_SIZE:
+                bulk_entries.append((parent_path, e_name, e_kind, sk, e_size, e_mtime))
+            self._tls.bulk_meta.append((parent_path, dir_mtime_ns))
+            if len(bulk_entries) >= self._BATCH_SIZE:
                 self._flush_bulk()
         else:
             if entries:
