@@ -62,6 +62,26 @@ pub(crate) enum AppError {
     /// ファイルではないパスへの file 配信操作
     #[error("ファイルではありません: {path}")]
     NotAFile { path: String },
+
+    /// サムネイル非対応のファイル形式 (ディレクトリ、テキスト等)
+    #[allow(dead_code, reason = "Phase 5 のサムネイルルーターで使用")]
+    #[error("{0}")]
+    NotSupported(String),
+
+    /// 画像として認識できないデータ
+    #[allow(dead_code, reason = "Phase 5 の ThumbnailService で使用")]
+    #[error("{0}")]
+    InvalidImage(String),
+
+    /// アーカイブ内に画像が見つからない
+    #[allow(dead_code, reason = "Phase 5 のサムネイルルーターで使用")]
+    #[error("{0}")]
+    NoImage(String),
+
+    /// 動画フレーム抽出失敗
+    #[allow(dead_code, reason = "Phase 5 のサムネイルルーターで使用")]
+    #[error("{0}")]
+    FrameExtractFailed(String),
 }
 
 impl AppError {
@@ -97,6 +117,12 @@ impl IntoResponse for AppError {
             Self::InvalidCursor(_) => (StatusCode::BAD_REQUEST, "INVALID_CURSOR"),
             Self::NotADirectory { .. } => (StatusCode::UNPROCESSABLE_ENTITY, "NOT_A_DIRECTORY"),
             Self::NotAFile { .. } => (StatusCode::UNPROCESSABLE_ENTITY, "NOT_A_FILE"),
+            Self::NotSupported(_) => (StatusCode::UNPROCESSABLE_ENTITY, "NOT_SUPPORTED"),
+            Self::InvalidImage(_) => (StatusCode::UNPROCESSABLE_ENTITY, "INVALID_IMAGE"),
+            Self::NoImage(_) => (StatusCode::NOT_FOUND, "NO_IMAGE"),
+            Self::FrameExtractFailed(_) => {
+                (StatusCode::UNPROCESSABLE_ENTITY, "FRAME_EXTRACT_FAILED")
+            }
         };
 
         let body = ErrorResponse {
@@ -165,6 +191,30 @@ mod tests {
     async fn invalid_cursor_handler() -> Result<String, AppError> {
         Err(AppError::InvalidCursor(
             "不正なカーソルフォーマットです".to_string(),
+        ))
+    }
+
+    async fn not_supported_handler() -> Result<String, AppError> {
+        Err(AppError::NotSupported(
+            "サムネイル非対応のファイル形式です".to_string(),
+        ))
+    }
+
+    async fn invalid_image_handler() -> Result<String, AppError> {
+        Err(AppError::InvalidImage(
+            "画像として認識できないデータです".to_string(),
+        ))
+    }
+
+    async fn no_image_handler() -> Result<String, AppError> {
+        Err(AppError::NoImage(
+            "アーカイブ内に画像が見つかりません".to_string(),
+        ))
+    }
+
+    async fn frame_extract_failed_handler() -> Result<String, AppError> {
+        Err(AppError::FrameExtractFailed(
+            "動画のフレーム抽出に失敗しました".to_string(),
         ))
     }
 
@@ -255,6 +305,38 @@ mod tests {
         let (status, body) = call(app, "/test").await;
         assert_eq!(status, StatusCode::BAD_REQUEST);
         assert!(body.contains("INVALID_CURSOR"));
+    }
+
+    #[tokio::test]
+    async fn not_supported_errorが422とnot_supportedを返す() {
+        let app = Router::new().route("/test", get(not_supported_handler));
+        let (status, body) = call(app, "/test").await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+        assert!(body.contains("NOT_SUPPORTED"));
+    }
+
+    #[tokio::test]
+    async fn invalid_image_errorが422とinvalid_imageを返す() {
+        let app = Router::new().route("/test", get(invalid_image_handler));
+        let (status, body) = call(app, "/test").await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+        assert!(body.contains("INVALID_IMAGE"));
+    }
+
+    #[tokio::test]
+    async fn no_image_errorが404とno_imageを返す() {
+        let app = Router::new().route("/test", get(no_image_handler));
+        let (status, body) = call(app, "/test").await;
+        assert_eq!(status, StatusCode::NOT_FOUND);
+        assert!(body.contains("NO_IMAGE"));
+    }
+
+    #[tokio::test]
+    async fn frame_extract_failed_errorが422とframe_extract_failedを返す() {
+        let app = Router::new().route("/test", get(frame_extract_failed_handler));
+        let (status, body) = call(app, "/test").await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+        assert!(body.contains("FRAME_EXTRACT_FAILED"));
     }
 
     #[test]

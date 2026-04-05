@@ -154,6 +154,73 @@ impl ArchiveService {
         Ok(data)
     }
 
+    /// パスがサポート対象のアーカイブ形式か判定する
+    pub(crate) fn is_supported(&self, path: &Path) -> bool {
+        self.get_reader(path).is_some()
+    }
+
+    /// 先頭の画像エントリを返す
+    ///
+    /// アーカイブファイル自体のサムネイル生成用。
+    /// 画像拡張子を持つ最初のエントリを返す (ディレクトリは除外)。
+    pub(crate) fn first_image_entry(
+        &self,
+        archive_path: &Path,
+    ) -> Result<Option<ArchiveEntry>, AppError> {
+        let entries = self.list_entries(archive_path)?;
+        Ok(entries
+            .iter()
+            .find(|e| !e.is_dir && is_image_entry(&e.name))
+            .cloned())
+    }
+
+    /// 複数エントリを一括抽出する (バッチサムネイル用)
+    ///
+    /// 同一アーカイブの複数エントリを 1 回のアーカイブ読み込みで抽出する。
+    /// キャッシュ済みエントリはスキップし、未キャッシュ分のみリーダーで抽出する。
+    pub(crate) fn extract_entries_batch(
+        &self,
+        archive_path: &Path,
+        entry_names: &[String],
+    ) -> Result<HashMap<String, Bytes>, AppError> {
+        let reader = self.get_reader(archive_path).ok_or_else(|| {
+            AppError::InvalidArchive(format!(
+                "サポートされていないアーカイブ形式です: {}",
+                archive_path.display()
+            ))
+        })?;
+
+        let mut results = HashMap::with_capacity(entry_names.len());
+        let mut uncached = Vec::new();
+
+        // キャッシュ済みエントリを収集
+        for name in entry_names {
+            if let Ok(cache_key) = make_entry_cache_key(archive_path, name) {
+                if let Some(cached) = self.entry_cache.get(&cache_key) {
+                    results.insert(name.clone(), cached);
+                    continue;
+                }
+            }
+            uncached.push(name.clone());
+        }
+
+        // 未キャッシュ分をリーダーで一括抽出
+        if !uncached.is_empty() {
+            let extracted = reader.extract_entries(archive_path, &uncached)?;
+            for (name, data) in extracted {
+                // 動画エントリ以外はキャッシュに登録
+                if !is_video_extension(&name) {
+                    if let Ok(cache_key) = make_entry_cache_key(archive_path, &name) {
+                        self.entry_cache.insert(cache_key, data.clone());
+                    }
+                }
+                results.insert(name, data);
+            }
+        }
+
+        Ok(results)
+    }
+
     /// 各アーカイブ形式の利用可否を返す
     pub(crate) fn get_diagnostics(&self) -> HashMap<String, bool> {
         let mut diag = HashMap::new();
@@ -171,6 +238,14 @@ impl ArchiveService {
         diag.entry("7z".to_string()).or_insert(false);
         diag
     }
+}
+
+/// エントリ名が画像拡張子を持つかチェ��クする
+fn is_image_entry(name: &str) -> bool {
+    let lower = name.to_lowercase();
+    crate::services::extensions::IMAGE_EXTENSIONS
+        .iter()
+        .any(|ext| lower.ends_with(ext))
 }
 
 /// `list_cache` のキーを生成する: `"{path}:{mtime_ns}"`
@@ -302,5 +377,62 @@ mod tests {
         let svc = ArchiveService::new(&test_settings());
         let diag = svc.get_diagnostics();
         assert!(diag["zip"]);
+    }
+
+    #[test]
+    fn is_supportedがzipでtrueを返す() {
+        let svc = ArchiveService::new(&test_settings());
+        assert!(svc.is_supported(Path::new("test.zip")));
+    }
+
+    #[test]
+    fn is_supportedがtxtでfalseを返す() {
+        let svc = ArchiveService::new(&test_settings());
+        assert!(!svc.is_supported(Path::new("test.txt")));
+    }
+
+    #[test]
+    fn first_image_entryが先頭画像を返す() {
+        let svc = ArchiveService::new(&test_settings());
+        let zip = create_test_zip(&[("a.jpg", b"img_a"), ("b.png", b"img_b")]);
+
+        let entry = svc.first_image_entry(zip.path()).unwrap();
+        assert!(entry.is_some());
+        assert_eq!(entry.unwrap().name, "a.jpg");
+    }
+
+    #[test]
+    fn first_image_entryが画像なしでnoneを返す() {
+        let svc = ArchiveService::new(&test_settings());
+        let zip = create_test_zip(&[("readme.txt", b"text")]);
+
+        // txt は拡張子フィルタで list_entries から除外されるため空リスト
+        let entry = svc.first_image_entry(zip.path()).unwrap();
+        assert!(entry.is_none());
+    }
+
+    #[test]
+    fn extract_entries_batchが複数エントリを一括抽出する() {
+        let svc = ArchiveService::new(&test_settings());
+        let zip = create_test_zip(&[("a.jpg", b"data_a"), ("b.png", b"data_b")]);
+
+        let names = vec!["a.jpg".to_string(), "b.png".to_string()];
+        let results = svc.extract_entries_batch(zip.path(), &names).unwrap();
+        assert_eq!(results.len(), 2);
+        assert_eq!(&results["a.jpg"][..], b"data_a");
+        assert_eq!(&results["b.png"][..], b"data_b");
+    }
+
+    #[test]
+    fn extract_entries_batchがキャッシュ済みエントリを再利用する() {
+        let svc = ArchiveService::new(&test_settings());
+        let zip = create_test_zip(&[("a.jpg", b"data_a")]);
+
+        // 事前にキャッシュにエントリを載せる
+        let _ = svc.extract_entry(zip.path(), "a.jpg").unwrap();
+
+        let names = vec!["a.jpg".to_string()];
+        let results = svc.extract_entries_batch(zip.path(), &names).unwrap();
+        assert_eq!(&results["a.jpg"][..], b"data_a");
     }
 }
