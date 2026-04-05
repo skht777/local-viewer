@@ -29,15 +29,10 @@ pub(crate) struct EntryMeta {
     pub node_id: String,
     pub name: String,
     pub kind: EntryKind,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub size_bytes: Option<u64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub mime_type: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub child_count: Option<usize>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub modified_at: Option<f64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub preview_node_ids: Option<Vec<String>>,
 }
 
@@ -52,17 +47,13 @@ pub(crate) struct EntryMeta {
 /// - `total_count`: 全エントリ数 (ページネーション使用時のみ)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub(crate) struct BrowseResponse {
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub current_node_id: Option<String>,
     pub current_name: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub parent_node_id: Option<String>,
     #[serde(default)]
     pub ancestors: Vec<AncestorEntry>,
     pub entries: Vec<EntryMeta>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub next_cursor: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub total_count: Option<usize>,
 }
 
@@ -71,7 +62,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn entrymeta_nullフィールドが省略される() {
+    fn entrymeta_nullフィールドがnullとして出力される() {
         let entry = EntryMeta {
             node_id: "abc123".to_string(),
             name: "test.jpg".to_string(),
@@ -83,9 +74,10 @@ mod tests {
             preview_node_ids: None,
         };
         let json = serde_json::to_string(&entry).unwrap();
-        assert!(!json.contains("child_count"));
-        assert!(!json.contains("modified_at"));
-        assert!(!json.contains("preview_node_ids"));
+        // None フィールドは null として常に出力 (フロントエンド T | null 互換)
+        assert!(json.contains(r#""child_count":null"#));
+        assert!(json.contains(r#""modified_at":null"#));
+        assert!(json.contains(r#""preview_node_ids":null"#));
         assert!(json.contains("size_bytes"));
         assert!(json.contains("mime_type"));
     }
@@ -107,7 +99,8 @@ mod tests {
         let json = serde_json::to_string(&resp).unwrap();
         assert!(json.contains("current_name"));
         assert!(json.contains("ancestors"));
-        assert!(!json.contains("next_cursor"));
+        // None フィールドは null として常に出力
+        assert!(json.contains(r#""next_cursor":null"#));
     }
 
     #[test]
