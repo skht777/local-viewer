@@ -1,23 +1,29 @@
 // first-viewable 自動遷移テスト
 // 仕様出典: spec-ui-behavior.md §セット概念, spec-architecture.md §first-viewable
-// ディレクトリダブルクリック → 再帰探索 → 最初の閲覧可能ファイルを自動オープン
+// ディレクトリ「▶ 開く」 → 再帰探索 → 最初の閲覧可能ファイルを自動オープン
+// ※ ダブルクリックは C2 仕様で「進入」（ディレクトリ遷移）のため、
+//    first-viewable は「▶ 開く」(Space) で発動する
 
 import { test, expect } from "@playwright/test";
 import { navigateToMount, clickFileCard } from "./helpers/navigation";
 
 test.describe("first-viewable 自動遷移", () => {
-  test("ネストされたディレクトリのダブルクリックでビューワーが自動で開く", async ({
+  test("ネストされたディレクトリを「▶ 開く」でビューワーが自動で開く", async ({
     page,
   }) => {
     // nested マウントポイントに移動
     await navigateToMount(page, "nested");
 
-    // dirs ディレクトリカードをダブルクリック
+    // dirs ディレクトリカードをクリックして選択
     // dirs/ 配下に sub1/deep.jpg, sub2/wide.jpg がある
     const dirsCard = page.locator("[data-testid^='file-card-']", {
       hasText: "dirs",
     });
-    await clickFileCard(dirsCard);
+    await expect(dirsCard).toBeVisible();
+    await dirsCard.click();
+
+    // Space キーで「▶ 開く」を実行 → first-viewable 再帰探索
+    await page.keyboard.press("Space");
 
     // first-viewable により再帰探索 → ビューワーが自動で開く
     // CG ビューワーまたは URL に index パラメータが付く

@@ -216,23 +216,28 @@ export function CgViewer({
         </div>
 
         {/* 画像表示エリア */}
+        {/* items-center ではなく子の my-auto で垂直中央配置 */}
+        {/* items-center はオーバーフロー時に上方向に溢れてスクロール不能になる */}
         <div
           ref={imageAreaRef}
           data-testid="cg-image-area"
-          className="flex flex-1 items-center justify-center overflow-auto"
+          className="flex flex-1 justify-center overflow-auto"
           onClick={handleImageClick}
           onMouseMove={resetCursorTimer}
         >
           {displayIndices.map((idx, position) => {
             const img = images[idx];
             if (!img) return null;
+            // fitMode "height" 時のみ h-full を付与（パーセンテージ基準の確立）
+            // "width" / "original" では外すことで画像が親を超えた際にスクロール可能にする
+            const needsFullHeight = fitMode === "height";
             return (
               <div
                 key={`page-${position}`}
                 className={
                   displayIndices.length > 1
-                    ? "flex min-w-0 flex-1 h-full items-center justify-center"
-                    : "flex h-full w-full items-center justify-center"
+                    ? `flex min-w-0 flex-1 my-auto justify-center${needsFullHeight ? " h-full" : ""}`
+                    : `flex w-full my-auto justify-center${needsFullHeight ? " h-full" : ""}`
                 }
               >
                 <img

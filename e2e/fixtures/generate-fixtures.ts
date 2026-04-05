@@ -2,17 +2,18 @@
 // 実行: npx tsx e2e/fixtures/generate-fixtures.ts
 //
 // 生成するファイル:
-// - pictures/ (JPEG x3 + large.jpg) — セットジャンプ + CGスクロールテスト
+// - pictures/ (JPEG x3 + large.png) — セットジャンプ + CGスクロールテスト
 // - gallery/ (JPEG x2) — セットジャンプテスト用セット2
 // - archive/images.zip (JPEG x3) — アーカイブテスト用
 // - archive/mixed.zip (JPEG + MP4) — アーカイブ+動画テスト用
 // - videos/ (MP4 x2 + unsupported.mkv) — 動画タブテスト用
 // - docs/sample.pdf (2ページ) + corrupted.pdf — PDFテスト用
-// - nested/sub/ (JPEG x1) — ネストナビゲーション用
+// - nested/dirs/sub1/ + nested/dirs/sub2/ + nested/extra/sub3/ — ネストナビゲーション用
 // - empty/ — エッジケース
 
 import fs from "node:fs";
 import path from "node:path";
+import { deflateSync } from "node:zlib";
 
 const OUT_DIR = path.resolve(import.meta.dirname, "test-data");
 
@@ -59,47 +60,39 @@ function generateMinimalPdf(): Buffer {
   return Buffer.from(lines.join("\n"));
 }
 
-// 大きい JPEG (2000x3000) — CG スクロールテスト用
-// 最小限の有効な JPEG: SOI + APP0 + SOF0 + SOS + EOI
-function generateLargeJpeg(width: number, height: number): Buffer {
-  const soi = Buffer.from([0xff, 0xd8]); // Start of Image
-  // APP0 (JFIF)
-  const app0 = Buffer.from([
-    0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46, 0x00, 0x01,
-    0x01, 0x00, 0x00, 0x01, 0x00, 0x01, 0x00, 0x00,
-  ]);
-  // DQT (量子化テーブル、全1)
-  const dqt = Buffer.alloc(69);
-  dqt[0] = 0xff; dqt[1] = 0xdb;
-  dqt.writeUInt16BE(67, 2); // length
-  dqt[4] = 0x00; // table 0, 8-bit
-  for (let i = 5; i < 69; i++) dqt[i] = 1;
-  // SOF0 (ベースライン、1コンポーネント グレースケール)
-  const sof0 = Buffer.alloc(11);
-  sof0[0] = 0xff; sof0[1] = 0xc0;
-  sof0.writeUInt16BE(8 + 1 * 3, 2); // length
-  sof0[4] = 8; // precision
-  sof0.writeUInt16BE(height, 5);
-  sof0.writeUInt16BE(width, 7);
-  sof0[9] = 1; // components
-  sof0[10] = 1; // component id
-  // SOF0 コンポーネントパラメータ
-  const sof0Comp = Buffer.from([0x11, 0x00]); // sampling=1x1, quant table=0
-  // DHT (ハフマンテーブル、最小の DC テーブル)
-  const dht = Buffer.from([
-    0xff, 0xc4, 0x00, 0x1f, 0x00,
-    0x00, 0x01, 0x05, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-    0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b,
-  ]);
-  // SOS (スキャンヘッダ + ダミースキャンデータ)
-  const sos = Buffer.from([
-    0xff, 0xda, 0x00, 0x08, 0x01, 0x01, 0x00, 0x00, 0x3f, 0x00,
-  ]);
-  // ダミースキャンデータ (0x00 でパディング、0xff は 0xff 0x00 にエスケープ)
-  const scanData = Buffer.alloc(100, 0x00);
-  const eoi = Buffer.from([0xff, 0xd9]);
+// CG スクロールテスト用の縦長 PNG (グレースケール、全黒)
+// ブラウザが確実にデコードできる有効な PNG を生成する
+// viewport width 1024 で表示すると、アスペクト比に応じて高さが viewport を超える
+function generateTallPng(width: number, height: number): Buffer {
+  const signature = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
 
-  return Buffer.concat([soi, app0, dqt, sof0, sof0Comp, dht, sos, scanData, eoi]);
+  // IHDR (13 bytes)
+  const ihdrData = Buffer.alloc(13);
+  ihdrData.writeUInt32BE(width, 0);
+  ihdrData.writeUInt32BE(height, 4);
+  ihdrData[8] = 8;  // bit depth
+  ihdrData[9] = 0;  // color type: greyscale
+  const ihdr = createPngChunk("IHDR", ihdrData);
+
+  // IDAT: 各行 = filter byte (0=None) + width ピクセル (全 0 = 黒)
+  const rawData = Buffer.alloc(height * (1 + width), 0);
+  const compressed = deflateSync(rawData);
+  const idat = createPngChunk("IDAT", compressed);
+
+  const iend = createPngChunk("IEND", Buffer.alloc(0));
+
+  return Buffer.concat([signature, ihdr, idat, iend]);
+}
+
+// PNG チャンク構築: length(4) + type(4) + data + crc32(4)
+function createPngChunk(type: string, data: Buffer): Buffer {
+  const typeBuffer = Buffer.from(type, "ascii");
+  const length = Buffer.alloc(4);
+  length.writeUInt32BE(data.length, 0);
+  const crcValue = crc32(Buffer.concat([typeBuffer, data]));
+  const crcBuf = Buffer.alloc(4);
+  crcBuf.writeUInt32BE(crcValue, 0);
+  return Buffer.concat([length, typeBuffer, data, crcBuf]);
 }
 
 // 最小 MKV (EBML ヘッダのみ) — ブラウザ非対応フォーマットテスト用
@@ -222,7 +215,7 @@ function main(): void {
   writeFile(path.join(OUT_DIR, "pictures", "photo1.jpg"), MINIMAL_JPEG);
   writeFile(path.join(OUT_DIR, "pictures", "photo2.jpg"), MINIMAL_JPEG);
   writeFile(path.join(OUT_DIR, "pictures", "photo3.jpg"), MINIMAL_JPEG);
-  writeFile(path.join(OUT_DIR, "pictures", "large.jpg"), generateLargeJpeg(2000, 3000));
+  writeFile(path.join(OUT_DIR, "pictures", "large.png"), generateTallPng(8, 24));
 
   // gallery/ — セットジャンプ対象 (セット2)
   writeFile(path.join(OUT_DIR, "gallery", "art1.jpg"), MINIMAL_JPEG);
@@ -253,9 +246,10 @@ function main(): void {
   writeFile(path.join(OUT_DIR, "docs", "corrupted.pdf"), CORRUPTED_PDF);
   writeFile(path.join(OUT_DIR, "docs", "zzz_next.pdf"), generateMinimalPdf());
 
-  // nested/sub1/ + nested/sub2/ — ネストナビゲーション + セット間ジャンプ用
-  writeFile(path.join(OUT_DIR, "nested", "sub1", "deep.jpg"), MINIMAL_JPEG);
-  writeFile(path.join(OUT_DIR, "nested", "sub2", "wide.jpg"), MINIMAL_JPEG);
+  // nested/dirs/ + nested/extra/ — ネストナビゲーション + first-viewable テスト用
+  writeFile(path.join(OUT_DIR, "nested", "dirs", "sub1", "deep.jpg"), MINIMAL_JPEG);
+  writeFile(path.join(OUT_DIR, "nested", "dirs", "sub2", "wide.jpg"), MINIMAL_JPEG);
+  writeFile(path.join(OUT_DIR, "nested", "extra", "sub3", "extra.jpg"), MINIMAL_JPEG);
 
   // empty/ — エッジケース
   ensureDir(path.join(OUT_DIR, "empty"));

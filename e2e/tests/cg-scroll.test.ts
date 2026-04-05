@@ -10,6 +10,9 @@ test.use({ viewport: { width: 1024, height: 200 } });
 test.describe("CG スクロール", () => {
   test("CS-1: S キーで下にスクロールする", async ({ page }) => {
     await openCgViewer(page);
+    // デフォルト fitMode は "height"（画像が viewport 高さにフィット → スクロール不要）
+    // "v" キーで "width" モードに切り替え → 縦長画像が viewport を超えてスクロール可能に
+    await page.keyboard.press("v");
     const imageArea = page.getByTestId("cg-image-area");
     await waitForScrollable(imageArea);
 
@@ -23,6 +26,7 @@ test.describe("CG スクロール", () => {
 
   test("CS-2: W キーで上にスクロールする", async ({ page }) => {
     await openCgViewer(page);
+    await page.keyboard.press("v");
     const imageArea = page.getByTestId("cg-image-area");
     await waitForScrollable(imageArea);
 
@@ -43,6 +47,7 @@ test.describe("CG スクロール", () => {
 
   test("CS-3: ↓キーで下にスクロールする", async ({ page }) => {
     await openCgViewer(page);
+    await page.keyboard.press("v");
     const imageArea = page.getByTestId("cg-image-area");
     await waitForScrollable(imageArea);
 
@@ -56,6 +61,7 @@ test.describe("CG スクロール", () => {
 
   test("CS-4: ↑キーで上にスクロールする", async ({ page }) => {
     await openCgViewer(page);
+    await page.keyboard.press("v");
     const imageArea = page.getByTestId("cg-image-area");
     await waitForScrollable(imageArea);
 
