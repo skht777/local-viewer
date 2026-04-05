@@ -161,13 +161,13 @@ def test_preview_entriesクエリがアーカイブとPDFを含む(
 
     previews = dir_index.preview_entries("mount1/mixed", limit=5)
     kinds = {p["kind"] for p in previews}
-    # image, archive, pdf が含まれる
+    # image, archive, pdf, video が含まれる
     assert "image" in kinds
     assert "archive" in kinds
     assert "pdf" in kinds
-    # directory と video は含まれない
+    assert "video" in kinds
+    # directory は含まれない
     assert "directory" not in kinds
-    assert "video" not in kinds
 
 
 def test_ディレクトリ優先のnameソート(

@@ -381,7 +381,7 @@ class DirIndex:
             rows = conn.execute(
                 """
                 SELECT * FROM dir_entries
-                WHERE parent_path = ? AND kind IN ('image', 'archive', 'pdf')
+                WHERE parent_path = ? AND kind IN ('image', 'archive', 'pdf', 'video')
                 ORDER BY sort_key ASC
                 LIMIT ?
                 """,
