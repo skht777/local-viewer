@@ -2,24 +2,17 @@
 //!
 //! レイヤード依存: `routers` → `services` → 外部ライブラリ/stdlib
 
-// Phase 1: 後続フェーズで使用する基盤モジュール (Phase 2+ で参照開始)
-#[allow(dead_code, reason = "Phase 2+ で routers から参照される")]
+// Phase 2 で使用中。Phase 3+ で追加 API が使われるまで一部が未使用。
+#[allow(dead_code, reason = "Phase 3+ で追加のAPI/定数を使用")]
 pub(crate) mod browse_cursor;
-#[allow(dead_code, reason = "Phase 2+ で routers / state から参照される")]
+#[allow(dead_code, reason = "Phase 3+ で追加のAPI/定数を使用")]
 pub(crate) mod extensions;
-#[allow(dead_code, reason = "Phase 2+ で routers / state から参照される")]
 pub(crate) mod models;
-#[allow(dead_code, reason = "Phase 2 の main.rs 初期化で使用")]
+#[allow(dead_code, reason = "Phase 3+ で save/add/remove を使用")]
 pub(crate) mod mount_config;
-#[allow(
-    dead_code,
-    reason = "Phase 2+ で node_registry / browse_cursor から参照される"
-)]
+#[allow(dead_code, reason = "Phase 6b で encode_sort_key を使用")]
 pub(crate) mod natural_sort;
-#[allow(dead_code, reason = "Phase 2+ で routers から参照される")]
+#[allow(dead_code, reason = "Phase 3+ でアーカイブ/追加メソッドを使用")]
 pub(crate) mod node_registry;
-#[allow(
-    dead_code,
-    reason = "Phase 2+ で node_registry / routers から参照される"
-)]
+#[allow(dead_code, reason = "Phase 3+ で追加メソッドを使用")]
 pub(crate) mod path_security;

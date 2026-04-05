@@ -29,6 +29,7 @@ pub(crate) enum ConfigError {
 ///
 /// 全フィールドは Python 版 `Settings` と同一のデフォルト値を持つ。
 #[derive(Debug)]
+#[allow(dead_code, reason = "Phase 3+ で追加のフィールドを使用")]
 pub(crate) struct Settings {
     // マウントポイント設定
     pub mount_base_dir: PathBuf,

@@ -7,7 +7,6 @@ use std::sync::{Arc, Mutex};
 use crate::config::Settings;
 use crate::services::node_registry::NodeRegistry;
 
-#[allow(dead_code, reason = "Step 7 の main.rs 統合で使用")]
 /// アプリケーション共有状態
 ///
 /// - `settings`: 環境変数ベースの設定 (不変)

@@ -33,10 +33,12 @@ pub(crate) enum AppError {
     NodeNotFound { node_id: String },
 
     /// アーカイブセキュリティ違反 (zip bomb, traversal 等)
+    #[allow(dead_code, reason = "Phase 4 で使用")]
     #[error("{0}")]
     ArchiveSecurity(String),
 
     /// パスワード付きアーカイブ
+    #[allow(dead_code, reason = "Phase 4 で使用")]
     #[error("{0}")]
     ArchivePassword(String),
 
