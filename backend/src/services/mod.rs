@@ -9,6 +9,8 @@ pub(crate) mod browse_cursor;
 pub(crate) mod extensions;
 #[allow(dead_code, reason = "Phase 2+ で routers / state から参照される")]
 pub(crate) mod models;
+#[allow(dead_code, reason = "Phase 2 の main.rs 初期化で使用")]
+pub(crate) mod mount_config;
 #[allow(
     dead_code,
     reason = "Phase 2+ で node_registry / browse_cursor から参照される"
