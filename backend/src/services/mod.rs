@@ -2,6 +2,8 @@
 //!
 //! レイヤード依存: `routers` → `services` → 外部ライブラリ/stdlib
 
+#[allow(dead_code, reason = "Phase 4 で段階的に使用開始")]
+pub(crate) mod archive;
 #[allow(dead_code, reason = "Phase 5+ で DEFAULT_LIMIT を使用")]
 pub(crate) mod browse_cursor;
 #[allow(dead_code, reason = "Phase 5 で REMUX_EXTENSIONS を使用")]

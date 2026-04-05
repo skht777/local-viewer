@@ -1,3 +1,5 @@
 //! アーカイブサービス
 //!
-//! ZIP/RAR/7z の統一インターフェース + ByteLRU キャッシュ。
+//! ZIP/RAR/7z の統一インターフェース + moka キャッシュ。
+
+pub(crate) mod security;
