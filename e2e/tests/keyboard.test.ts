@@ -40,7 +40,7 @@ test.describe("キーボード — CG モード", () => {
     await openCgInPictures(page);
     await page.keyboard.press("ArrowRight");
     await expect(page).toHaveURL(/index=1/);
-    await page.waitForTimeout(200);
+    // URL 更新の waitForURL で十分 (waitForTimeout 禁止: 10_e2e_testing)
     await page.keyboard.press("ArrowLeft");
     await expect(page).toHaveURL(/index=0/);
   });
@@ -50,7 +50,7 @@ test.describe("キーボード — CG モード", () => {
     // 数ページ進む（URL 更新 + ページ遷移を待ちながら）
     await page.keyboard.press("d");
     await expect(page).toHaveURL(/index=1/);
-    await page.waitForTimeout(200);
+    // URL 更新の expect で十分 (waitForTimeout 禁止: 10_e2e_testing)
     await page.keyboard.press("d");
     await expect(page).toHaveURL(/index=2/);
     await page.keyboard.press("Home");
