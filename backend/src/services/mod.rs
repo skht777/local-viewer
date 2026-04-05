@@ -17,3 +17,5 @@ pub(crate) mod natural_sort;
 pub(crate) mod node_registry;
 #[allow(dead_code, reason = "Phase 4+ で追加メソッドを使用")]
 pub(crate) mod path_security;
+#[allow(dead_code, reason = "Phase 5 のサムネイル・動画サービスで使用")]
+pub(crate) mod temp_file_cache;
