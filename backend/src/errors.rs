@@ -47,6 +47,10 @@ pub(crate) enum AppError {
     /// 不正なカーソル (改ざん、期限切れ等)
     #[error("{0}")]
     InvalidCursor(String),
+
+    /// ディレクトリではないパスへの browse 操作
+    #[error("ディレクトリではありません: {path}")]
+    NotADirectory { path: String },
 }
 
 impl AppError {
@@ -79,6 +83,7 @@ impl IntoResponse for AppError {
             ),
             Self::FileNotFound { .. } => (StatusCode::NOT_FOUND, "FILE_NOT_FOUND"),
             Self::InvalidCursor(_) => (StatusCode::BAD_REQUEST, "INVALID_CURSOR"),
+            Self::NotADirectory { .. } => (StatusCode::UNPROCESSABLE_ENTITY, "NOT_A_DIRECTORY"),
         };
 
         let body = ErrorResponse {
@@ -123,6 +128,12 @@ mod tests {
     async fn file_not_found_handler() -> Result<String, AppError> {
         Err(AppError::FileNotFound {
             path: "/mnt/data/missing.txt".to_string(),
+        })
+    }
+
+    async fn not_a_directory_handler() -> Result<String, AppError> {
+        Err(AppError::NotADirectory {
+            path: "/mnt/data/file.jpg".to_string(),
         })
     }
 
@@ -184,6 +195,15 @@ mod tests {
         let (status, body) = call(app, "/test").await;
         assert_eq!(status, StatusCode::NOT_FOUND);
         assert!(body.contains("FILE_NOT_FOUND"));
+    }
+
+    #[tokio::test]
+    async fn not_a_directory_errorが422とnot_a_directoryを返す() {
+        let app = Router::new().route("/test", get(not_a_directory_handler));
+        let (status, body) = call(app, "/test").await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+        assert!(body.contains("NOT_A_DIRECTORY"));
+        assert!(body.contains("ディレクトリではありません"));
     }
 
     #[tokio::test]
