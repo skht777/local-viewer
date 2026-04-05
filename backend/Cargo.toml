@@ -71,7 +71,7 @@ thiserror = "2"
 anyhow = "1"
 
 # キャッシュ (W-TinyLFU、バイトベース制限、非同期対応)
-moka = { version = "0.12", features = ["future"] }
+moka = { version = "0.12", features = ["future", "sync"] }
 
 # ユーティリティ
 regex = "1"
