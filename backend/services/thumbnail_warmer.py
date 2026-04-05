@@ -2,7 +2,7 @@
 
 browse レスポンス返却後にバックグラウンドでサムネイルを事前生成する。
 - asyncio.Semaphore(4) でユーザーリクエスト用スレッドプールを圧迫しない
-- kind=image/archive のエントリのみ対象
+- kind=image/archive/pdf のエントリのみ対象
 - ThumbnailService.is_cached() でキャッシュ済みをスキップ
 - _pending で重複排除
 """
@@ -61,13 +61,13 @@ class ThumbnailWarmer:
     async def warm(self, entries: list[EntryMeta]) -> None:
         """エントリのサムネイルをバックグラウンドで事前生成する.
 
-        kind=image/archive のみ対象。キャッシュ済み・処理中はスキップ。
+        kind=image/archive/pdf のみ対象。キャッシュ済み・処理中はスキップ。
         """
         from backend.routers.thumbnail import _generate_thumbnail_bytes
 
         targets: list[str] = []
         for entry in entries:
-            if entry.kind not in ("image", "archive"):
+            if entry.kind not in ("image", "archive", "pdf"):
                 continue
             # キャッシュ済みならスレッドプール投入をスキップ
             if self._is_likely_cached(entry.node_id, entry.modified_at):
