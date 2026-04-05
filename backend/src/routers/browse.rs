@@ -15,7 +15,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::errors::AppError;
 use crate::services::browse_cursor::{self, MAX_LIMIT, SortOrder};
-use crate::services::extensions::EntryKind;
+use crate::services::extensions::{self, EntryKind};
 use crate::services::models::{AncestorEntry, BrowseResponse, EntryMeta};
 use crate::services::node_registry::{NodeRegistry, PageOptions};
 use crate::state::AppState;
@@ -124,22 +124,60 @@ pub(crate) async fn browse_directory(
         }
     }
 
-    let registry = Arc::clone(&state.node_registry);
     let sort = query.sort;
     let limit = query.limit;
     let cursor = query.cursor.clone();
 
-    // spawn_blocking 内でファイルシステム操作を実行
-    let (response, etag) = tokio::task::spawn_blocking(move || {
+    // Step 1: node_id 解決 + アーカイブ判定 (短ロック)
+    let registry = Arc::clone(&state.node_registry);
+    let nid = node_id.clone();
+    let resolve_result = tokio::task::spawn_blocking(move || {
         #[allow(
             clippy::expect_used,
             reason = "Mutex poison は致命的エラー、パニックが適切"
         )]
-        let mut reg = registry.lock().expect("NodeRegistry Mutex poisoned");
-        browse_directory_blocking(&mut reg, &node_id, sort, limit, cursor.as_deref())
+        let reg = registry.lock().expect("NodeRegistry Mutex poisoned");
+
+        // アーカイブエントリの browse は拒否
+        if reg.is_archive_entry(&nid) {
+            return Err(AppError::NotADirectory {
+                path: format!("アーカイブエントリは browse 対象外です: {nid}"),
+            });
+        }
+        let path = reg.resolve(&nid)?.to_path_buf();
+        let is_archive = path.is_file() && extensions::is_archive_extension(&path);
+        Ok((path, is_archive))
     })
     .await
-    .map_err(|e| AppError::path_security(format!("タスク実行エラー: {e}")))??;
+    .map_err(|e| AppError::path_security(format!("タスク実行エラー: {e}")))?;
+    let (resolved_path, is_archive) = resolve_result?;
+
+    // Step 2: アーカイブの場合は browse_archive へ分岐
+    let (response, etag) = if is_archive {
+        browse_archive(
+            &state,
+            &resolved_path,
+            &node_id,
+            sort,
+            limit,
+            cursor.as_deref(),
+        )
+        .await?
+    } else {
+        // ディレクトリの通常ブラウズ
+        let registry = Arc::clone(&state.node_registry);
+        let nid = node_id.clone();
+        tokio::task::spawn_blocking(move || {
+            #[allow(
+                clippy::expect_used,
+                reason = "Mutex poison は致命的エラー、パニックが適切"
+            )]
+            let mut reg = registry.lock().expect("NodeRegistry Mutex poisoned");
+            browse_directory_blocking(&mut reg, &nid, sort, limit, cursor.as_deref())
+        })
+        .await
+        .map_err(|e| AppError::path_security(format!("タスク実行エラー: {e}")))??
+    };
 
     // `ETag` 比較 → 304 Not Modified
     if let Some(if_none_match) = headers.get("if-none-match") {
@@ -220,6 +258,109 @@ fn browse_directory_blocking(
         } else {
             None
         },
+    };
+
+    Ok((response, etag))
+}
+
+/// アーカイブファイルをディレクトリとして閲覧する
+///
+/// - `archive_service.list_entries()` でエントリ一覧取得 (ロック外)
+/// - `NodeRegistry` にアーカイブエントリを登録 (短ロック)
+/// - `BrowseResponse` を構築して返す
+async fn browse_archive(
+    state: &Arc<AppState>,
+    archive_path: &std::path::Path,
+    archive_node_id: &str,
+    _sort: SortOrder,
+    _limit: Option<usize>,
+    _cursor: Option<&str>,
+) -> Result<(BrowseResponse, String), AppError> {
+    // Step 1: アーカイブエントリ一覧を取得 (ロック外で I/O)
+    let svc = Arc::clone(&state.archive_service);
+    let path = archive_path.to_path_buf();
+    let arc_entries = tokio::task::spawn_blocking(move || svc.list_entries(&path))
+        .await
+        .map_err(|e| AppError::path_security(format!("タスク実行エラー: {e}")))?
+        .map_err(|e| match e {
+            // zip/rar/7z ライブラリのエラーを InvalidArchive に正規化
+            AppError::ArchiveSecurity(_) | AppError::ArchivePassword(_) => e,
+            _ => AppError::InvalidArchive(e.to_string()),
+        })?;
+
+    // Step 2: NodeRegistry にエントリを登録して EntryMeta を構築 (短ロック)
+    let registry = Arc::clone(&state.node_registry);
+    let a_path = archive_path.to_path_buf();
+    let a_nid = archive_node_id.to_string();
+    let entries_clone = Arc::clone(&arc_entries);
+
+    let (entry_metas, parent_node_id, ancestors) =
+        tokio::task::spawn_blocking(move || -> Result<_, AppError> {
+            #[allow(
+                clippy::expect_used,
+                reason = "Mutex poison は致命的エラー、パニックが適切"
+            )]
+            let mut reg = registry.lock().expect("NodeRegistry Mutex poisoned");
+
+            let mut metas = Vec::with_capacity(entries_clone.len());
+            for entry in entries_clone.iter() {
+                // アーカイブエントリの node_id を登録
+                let entry_node_id = reg.register_archive_entry(&a_path, &entry.name)?;
+
+                // エントリ名からファイル名部分を取得 (パスの最後の要素)
+                let display_name = entry
+                    .name
+                    .rsplit('/')
+                    .next()
+                    .unwrap_or(&entry.name)
+                    .to_string();
+
+                // 拡張子から kind と mime_type を判定
+                let ext = extensions::extract_extension(&display_name).to_ascii_lowercase();
+                let kind = EntryKind::from_extension(&ext);
+                let mime_type = extensions::mime_for_extension(&ext).map(String::from);
+
+                metas.push(EntryMeta {
+                    node_id: entry_node_id,
+                    name: display_name,
+                    kind,
+                    size_bytes: Some(entry.size_uncompressed),
+                    mime_type,
+                    child_count: None,
+                    modified_at: None,
+                    preview_node_ids: None,
+                });
+            }
+
+            // パンくずリスト
+            let parent_node_id = reg.get_parent_node_id(&a_path);
+            let ancestors = reg
+                .get_ancestors(&a_path)
+                .into_iter()
+                .map(|(nid, name)| AncestorEntry { node_id: nid, name })
+                .collect::<Vec<_>>();
+
+            Ok((metas, parent_node_id, ancestors))
+        })
+        .await
+        .map_err(|e| AppError::path_security(format!("タスク実行エラー: {e}")))??;
+
+    // ETag: アーカイブの mtime ベース
+    let etag = compute_etag(&entry_metas);
+
+    let archive_name = archive_path
+        .file_name()
+        .map_or_else(String::new, |n| n.to_string_lossy().to_string());
+
+    // アーカイブでは全件返却 (ページネーションは将来対応)
+    let response = BrowseResponse {
+        current_node_id: Some(a_nid.clone()),
+        current_name: archive_name,
+        parent_node_id,
+        ancestors,
+        entries: entry_metas,
+        next_cursor: None,
+        total_count: None,
     };
 
     Ok((response, etag))
@@ -919,5 +1060,85 @@ mod tests {
             preview_node_ids: None,
         }];
         assert_ne!(compute_etag(&entries_a), compute_etag(&entries_b));
+    }
+
+    // --- アーカイブ閲覧 ---
+
+    fn create_archive_setup() -> (Router, Arc<AppState>, tempfile::TempDir) {
+        use std::io::Write;
+        let dir = tempfile::TempDir::new().unwrap();
+        let root = std::fs::canonicalize(dir.path()).unwrap();
+
+        // テスト用 ZIP ファイルを作成
+        let zip_path = root.join("images.zip");
+        let file = std::fs::File::create(&zip_path).unwrap();
+        let mut writer = zip::ZipWriter::new(file);
+        let options = zip::write::SimpleFileOptions::default()
+            .compression_method(zip::CompressionMethod::Stored);
+        writer.start_file("img01.jpg", options).unwrap();
+        writer.write_all(b"fake jpg").unwrap();
+        writer.start_file("img02.png", options).unwrap();
+        writer.write_all(b"fake png").unwrap();
+        writer.finish().unwrap();
+
+        let state = test_state(&root, HashMap::from([(root.clone(), "test".to_string())]));
+        let app = Router::new()
+            .route("/api/browse/{node_id}", get(browse_directory))
+            .with_state(Arc::clone(&state));
+
+        (app, state, dir)
+    }
+
+    #[tokio::test]
+    async fn アーカイブファイルのnode_idでエントリ一覧を返す() {
+        let (app, state, dir) = create_archive_setup();
+        let root = std::fs::canonicalize(dir.path()).unwrap();
+        let zip_node_id = register_node_id(&state, &root.join("images.zip"));
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri(format!("/api/browse/{zip_node_id}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let resp: BrowseResponse = serde_json::from_slice(&body).unwrap();
+        assert_eq!(resp.entries.len(), 2);
+        assert_eq!(resp.current_name, "images.zip");
+        // エントリ名はファイル名部分のみ
+        let names: Vec<&str> = resp.entries.iter().map(|e| e.name.as_str()).collect();
+        assert!(names.contains(&"img01.jpg"));
+        assert!(names.contains(&"img02.png"));
+    }
+
+    #[tokio::test]
+    async fn アーカイブのbrowse_responseにparent_node_idが設定される() {
+        let (app, state, dir) = create_archive_setup();
+        let root = std::fs::canonicalize(dir.path()).unwrap();
+        let zip_node_id = register_node_id(&state, &root.join("images.zip"));
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri(format!("/api/browse/{zip_node_id}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let resp: BrowseResponse = serde_json::from_slice(&body).unwrap();
+        // parent_node_id はルートディレクトリの node_id
+        assert!(resp.parent_node_id.is_some());
     }
 }
