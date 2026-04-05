@@ -26,11 +26,16 @@ export default defineConfig({
 
   webServer: [
     {
-      command: `bash -c 'source ${projectRoot}/py_backend/.venv/bin/activate && MOUNT_BASE_DIR=${testDataDir} MOUNT_CONFIG_PATH=${mountsPath} NODE_SECRET=e2e-test-secret uvicorn py_backend.main:app --port ${BACKEND_PORT}'`,
+      command: `cargo run --manifest-path ${projectRoot}/backend/Cargo.toml -- --port ${BACKEND_PORT}`,
       cwd: projectRoot,
       port: BACKEND_PORT,
       reuseExistingServer: false,
-      timeout: 15_000,
+      timeout: 120_000,
+      env: {
+        MOUNT_BASE_DIR: testDataDir,
+        MOUNT_CONFIG_PATH: mountsPath,
+        NODE_SECRET: "e2e-test-secret",
+      },
     },
     {
       command: `VITE_API_PORT=${BACKEND_PORT} npx vite --port ${FRONTEND_PORT}`,
