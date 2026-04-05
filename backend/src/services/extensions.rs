@@ -80,6 +80,17 @@ impl EntryKind {
     }
 }
 
+/// パスがアーカイブ拡張子かどうかを判定する
+///
+/// browse/file ルーターでアーカイブファイルを検出するために使用
+pub(crate) fn is_archive_extension(path: &std::path::Path) -> bool {
+    let Some(ext) = path.extension() else {
+        return false;
+    };
+    let ext_lower = format!(".{}", ext.to_string_lossy().to_lowercase());
+    ARCHIVE_EXTENSIONS.contains(&ext_lower.as_str())
+}
+
 /// ファイル名から拡張子を安全に取得するヘルパー
 ///
 /// `dot_idx` > 0 で隠しファイル (.bashrc 等) の誤認を防止
@@ -210,6 +221,24 @@ mod tests {
     #[test]
     fn remux_extensionsがmkvを含む() {
         assert!(REMUX_EXTENSIONS.contains(&".mkv"));
+    }
+
+    // --- is_archive_extension ---
+
+    #[rstest]
+    #[case("archive.zip", true)]
+    #[case("archive.rar", true)]
+    #[case("archive.7z", true)]
+    #[case("comic.cbz", true)]
+    #[case("comic.cbr", true)]
+    #[case("archive.ZIP", true)]
+    #[case("image.jpg", false)]
+    #[case("noext", false)]
+    fn アーカイブ拡張子判定が正しく動作する(
+        #[case] name: &str,
+        #[case] expected: bool,
+    ) {
+        assert_eq!(is_archive_extension(std::path::Path::new(name)), expected);
     }
 
     // --- extract_extension ---
