@@ -19,3 +19,5 @@ pub(crate) mod node_registry;
 pub(crate) mod path_security;
 #[allow(dead_code, reason = "Phase 5 のサムネイル・動画サービスで使用")]
 pub(crate) mod temp_file_cache;
+#[allow(dead_code, reason = "Phase 5 のサムネイルルーターで使用")]
+pub(crate) mod thumbnail_service;
