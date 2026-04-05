@@ -27,6 +27,8 @@ class Settings:
 
     # 動画変換設定
     video_remux_timeout: int  # FFmpeg remux タイムアウト (秒)
+    video_thumb_seek_seconds: int  # サムネイル抽出シーク位置 (秒)
+    video_thumb_timeout: int  # サムネイル抽出タイムアウト (秒)
 
     # マウントポイント設定
     mount_base_dir: Path  # マウント許可親ディレクトリ (MOUNT_BASE_DIR)
@@ -77,6 +79,10 @@ class Settings:
 
         # 動画変換設定
         self.video_remux_timeout = int(os.environ.get("VIDEO_REMUX_TIMEOUT", "120"))
+        self.video_thumb_seek_seconds = int(
+            os.environ.get("VIDEO_THUMB_SEEK_SECONDS", "1")
+        )
+        self.video_thumb_timeout = int(os.environ.get("VIDEO_THUMB_TIMEOUT", "10"))
 
         # 検索/インデックス設定
         self.index_db_path = os.environ.get(

@@ -133,3 +133,8 @@ class ThumbnailService:
     def is_cached(self, cache_key: str) -> bool:
         """キャッシュにサムネイルが存在するかを返す."""
         return self._cache.get(cache_key) is not None
+
+    def get_cached_bytes(self, cache_key: str) -> bytes | None:
+        """キャッシュにサムネイルがあれば bytes を返す。なければ None."""
+        cached = self._cache.get(cache_key)
+        return cached.read_bytes() if cached is not None else None
