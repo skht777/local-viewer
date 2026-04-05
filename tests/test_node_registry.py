@@ -2,6 +2,7 @@
 
 import io
 import os
+import zipfile
 from collections.abc import Generator
 from pathlib import Path
 
@@ -512,6 +513,56 @@ def test_ファイルエントリのpreview_node_idsがNone(
     entries = registry.list_directory(root_dir)
     file_entry = next(e for e in entries if e.name == "file.txt")
     assert file_entry.preview_node_ids is None
+
+
+def test_ディレクトリエントリのpreview_node_idsにアーカイブnode_idが含まれる(
+    registry: NodeRegistry, root_dir: Path
+) -> None:
+    # アーカイブのみを含むディレクトリ
+    archive_only = root_dir / "archive_only"
+    archive_only.mkdir()
+    minimal_jpeg = (root_dir / "dir_a" / "image.jpg").read_bytes()
+    zip_path = archive_only / "comic.zip"
+    with zipfile.ZipFile(zip_path, "w") as zf:
+        zf.writestr("page01.jpg", minimal_jpeg)
+
+    entries = registry.list_directory(root_dir)
+    d = next(e for e in entries if e.name == "archive_only")
+    assert d.preview_node_ids is not None
+    assert len(d.preview_node_ids) >= 1
+
+
+def test_ディレクトリエントリのpreview_node_idsにPDFのnode_idが含まれる(
+    registry: NodeRegistry, root_dir: Path
+) -> None:
+    # PDF のみを含むディレクトリ
+    pdf_only = root_dir / "pdf_only"
+    pdf_only.mkdir()
+    (pdf_only / "document.pdf").write_bytes(b"%PDF-1.4 dummy")
+
+    entries = registry.list_directory(root_dir)
+    d = next(e for e in entries if e.name == "pdf_only")
+    assert d.preview_node_ids is not None
+    assert len(d.preview_node_ids) >= 1
+
+
+def test_preview_node_idsで画像とアーカイブとPDFが混在する場合最大3件まで(
+    registry: NodeRegistry, root_dir: Path
+) -> None:
+    mixed_dir = root_dir / "mixed_types"
+    mixed_dir.mkdir()
+    minimal_jpeg = (root_dir / "dir_a" / "image.jpg").read_bytes()
+    (mixed_dir / "a.jpg").write_bytes(minimal_jpeg)
+    (mixed_dir / "b.png").write_bytes(b"\x89PNG\r\n\x1a\n" + b"\x00" * 100)
+    with zipfile.ZipFile(mixed_dir / "c.zip", "w") as zf:
+        zf.writestr("p.jpg", minimal_jpeg)
+    (mixed_dir / "d.pdf").write_bytes(b"%PDF-1.4 dummy")
+    (mixed_dir / "e.pdf").write_bytes(b"%PDF-1.4 dummy2")
+
+    entries = registry.list_directory(root_dir)
+    d = next(e for e in entries if e.name == "mixed_types")
+    assert d.preview_node_ids is not None
+    assert len(d.preview_node_ids) == 3
 
 
 def test_list_archive_entriesで画像のみがkind_imageになる(

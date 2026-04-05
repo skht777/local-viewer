@@ -25,6 +25,7 @@ from backend.services.extensions import (
     IMAGE_EXTENSIONS,
     MIME_MAP,
     PDF_EXTENSIONS,
+    THUMBNAIL_EXTENSIONS,
     VIDEO_EXTENSIONS,
     EntryKind,
 )
@@ -650,7 +651,7 @@ class NodeRegistry:
                     name = de.name
                     dot_idx = name.rfind(".")
                     ext = name[dot_idx:].lower() if dot_idx > 0 else ""
-                    if ext not in IMAGE_EXTENSIONS:
+                    if ext not in THUMBNAIL_EXTENSIONS:
                         continue
                     child = Path(de.path)
                     try:
