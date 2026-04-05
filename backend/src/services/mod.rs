@@ -12,6 +12,8 @@ pub(crate) mod models;
     reason = "Phase 2+ で node_registry / browse_cursor から参照される"
 )]
 pub(crate) mod natural_sort;
+#[allow(dead_code, reason = "Phase 2+ で routers から参照される")]
+pub(crate) mod node_registry;
 #[allow(
     dead_code,
     reason = "Phase 2+ で node_registry / routers から参照される"
