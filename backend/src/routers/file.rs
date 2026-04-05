@@ -11,15 +11,28 @@ use std::sync::Arc;
 use std::time::UNIX_EPOCH;
 
 use axum::extract::{Path, State};
-use axum::http::header;
-use axum::http::{HeaderValue, Request, StatusCode};
+use axum::http::{HeaderMap, HeaderValue, Request, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use md5::{Digest, Md5};
 use tower::ServiceExt as _;
 use tower_http::services::ServeFile;
 
+use bytes::Bytes;
+
 use crate::errors::AppError;
+use crate::services::extensions;
 use crate::state::AppState;
+
+/// `node_id` 解決結果
+enum ResolveResult {
+    /// 通常ファイル
+    File(PathBuf),
+    /// アーカイブ内エントリ
+    ArchiveEntry {
+        archive_path: PathBuf,
+        entry_name: String,
+    },
+}
 
 /// `ETag` を計算する (Python 互換)
 ///
@@ -51,29 +64,46 @@ pub(crate) async fn serve_file(
     let original_headers = req.headers().clone();
     let original_uri = req.uri().clone();
 
-    // spawn_blocking 内で node_id 解決 + メタデータ取得
-    let (file_path, is_archive) =
-        tokio::task::spawn_blocking(move || -> Result<(PathBuf, bool), AppError> {
+    // spawn_blocking 内で node_id 解決 + アーカイブエントリ判定
+    let resolve_result = tokio::task::spawn_blocking({
+        let nid = node_id.clone();
+        move || -> Result<ResolveResult, AppError> {
             let mut reg = registry
                 .lock()
                 .map_err(|e| AppError::path_security(format!("ロック取得失敗: {e}")))?;
 
             // アーカイブエントリかチェック
-            if reg.resolve_archive_entry(&node_id).is_some() {
-                return Ok((PathBuf::new(), true));
+            if let Some((archive_path, entry_name)) = reg.resolve_archive_entry(&nid) {
+                return Ok(ResolveResult::ArchiveEntry {
+                    archive_path,
+                    entry_name,
+                });
             }
 
-            let path = reg.resolve(&node_id)?.to_path_buf();
-            Ok((path, false))
-        })
-        .await
-        .map_err(|e| AppError::path_security(format!("タスク実行失敗: {e}")))??;
+            let path = reg.resolve(&nid)?.to_path_buf();
+            Ok(ResolveResult::File(path))
+        }
+    })
+    .await
+    .map_err(|e| AppError::path_security(format!("タスク実行失敗: {e}")))??;
 
-    // アーカイブエントリは Phase 4 で実装
-    if is_archive {
-        return Ok(StatusCode::NOT_IMPLEMENTED.into_response());
+    match resolve_result {
+        ResolveResult::ArchiveEntry {
+            archive_path,
+            entry_name,
+        } => serve_archive_entry(&state, &archive_path, &entry_name, &original_headers).await,
+        ResolveResult::File(file_path) => {
+            serve_regular_file(file_path, &original_headers, &original_uri).await
+        }
     }
+}
 
+/// 通常ファイルを配信する (`ETag` + Range + `ServeFile`)
+async fn serve_regular_file(
+    file_path: PathBuf,
+    original_headers: &HeaderMap,
+    original_uri: &axum::http::Uri,
+) -> Result<Response, AppError> {
     // ディレクトリチェック
     if file_path.is_dir() {
         return Err(AppError::NotAFile {
@@ -113,9 +143,8 @@ pub(crate) async fn serve_file(
     }
 
     // ServeFile で配信 (Range 自動処理)
-    // 元リクエストの Range/If-Range ヘッダを転送する
     let mut serve_req = Request::builder()
-        .uri(&original_uri)
+        .uri(original_uri)
         .body(axum::body::Body::empty())
         .map_err(|e| AppError::path_security(format!("リクエスト構築失敗: {e}")))?;
 
@@ -131,7 +160,7 @@ pub(crate) async fn serve_file(
         .map_err(|e| AppError::path_security(format!("ファイル配信失敗: {e}")))?
         .into_response();
 
-    // ETag + Cache-Control を上書き (ServeFile のデフォルトを置き換え)
+    // ETag + Cache-Control を上書き
     let headers = response.headers_mut();
     headers.insert(
         header::ETAG,
@@ -144,6 +173,76 @@ pub(crate) async fn serve_file(
     );
 
     Ok(response)
+}
+
+/// アーカイブエントリをインメモリ配信する
+///
+/// - `archive_service.extract_entry()` でバイト抽出 (キャッシュ付き)
+/// - `Content-Type` は拡張子から判定
+/// - `ETag` は `md5("{archive_mtime_ns}:{entry_name}")` で計算
+/// - `If-None-Match` → 304
+async fn serve_archive_entry(
+    state: &Arc<AppState>,
+    archive_path: &std::path::Path,
+    entry_name: &str,
+    headers: &HeaderMap,
+) -> Result<Response, AppError> {
+    // ETag: アーカイブの mtime + エントリ名
+    let a_path = archive_path.to_path_buf();
+    let e_name = entry_name.to_string();
+    let etag = tokio::task::spawn_blocking({
+        let ap = a_path.clone();
+        let en = e_name.clone();
+        move || -> Result<String, AppError> {
+            let meta = std::fs::metadata(&ap)
+                .map_err(|e| AppError::InvalidArchive(format!("メタデータ取得失敗: {e}")))?;
+            let mtime_ns = meta
+                .modified()
+                .ok()
+                .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
+                .map_or(0, |d| d.as_nanos());
+            let raw = format!("{mtime_ns}:{en}");
+            let digest = Md5::digest(raw.as_bytes());
+            Ok(format!("{digest:x}"))
+        }
+    })
+    .await
+    .map_err(|e| AppError::path_security(format!("タスク実行失敗: {e}")))??;
+
+    let etag_quoted = format!("\"{etag}\"");
+
+    // If-None-Match → 304
+    if let Some(if_none_match) = headers.get(header::IF_NONE_MATCH) {
+        if let Ok(val) = if_none_match.to_str() {
+            if val.trim_matches('"') == etag {
+                return Ok((
+                    StatusCode::NOT_MODIFIED,
+                    [(header::ETAG, etag_quoted.clone())],
+                )
+                    .into_response());
+            }
+        }
+    }
+
+    // アーカイブエントリを抽出 (キャッシュ付き)
+    let svc = Arc::clone(&state.archive_service);
+    let data: Bytes = tokio::task::spawn_blocking(move || svc.extract_entry(&a_path, &e_name))
+        .await
+        .map_err(|e| AppError::path_security(format!("タスク実行失敗: {e}")))??;
+
+    // Content-Type を拡張子から判定
+    let ext = extensions::extract_extension(entry_name).to_ascii_lowercase();
+    let content_type = extensions::mime_for_extension(&ext).unwrap_or("application/octet-stream");
+
+    Ok((
+        [
+            (header::CONTENT_TYPE, content_type),
+            (header::CACHE_CONTROL, "private, max-age=3600"),
+            (header::ETAG, &etag_quoted),
+        ],
+        data,
+    )
+        .into_response())
 }
 
 #[cfg(test)]
@@ -443,5 +542,140 @@ mod tests {
         let actual_etag = resp.headers().get(header::ETAG).unwrap().to_str().unwrap();
         // 自前 ETag (Python 互換) が使われていること
         assert_eq!(actual_etag, format!("\"{expected_etag}\""));
+    }
+
+    // --- アーカイブエントリ配信 ---
+
+    fn create_archive_setup() -> (Router, Arc<AppState>, tempfile::TempDir) {
+        use std::io::Write;
+        let dir = tempfile::TempDir::new().unwrap();
+        let root = std::fs::canonicalize(dir.path()).unwrap();
+
+        // テスト用 ZIP ファイルを作成
+        let zip_path = root.join("photos.zip");
+        let file = std::fs::File::create(&zip_path).unwrap();
+        let mut writer = zip::ZipWriter::new(file);
+        let options = zip::write::SimpleFileOptions::default()
+            .compression_method(zip::CompressionMethod::Stored);
+        writer.start_file("photo.jpg", options).unwrap();
+        writer.write_all(b"fake jpeg data here").unwrap();
+        writer.start_file("video.mp4", options).unwrap();
+        writer.write_all(b"fake video data").unwrap();
+        writer.finish().unwrap();
+
+        let settings = Settings::from_map(&HashMap::from([(
+            "MOUNT_BASE_DIR".to_string(),
+            root.to_string_lossy().to_string(),
+        )]))
+        .unwrap();
+
+        let ps = Arc::new(PathSecurity::new(vec![root], false).unwrap());
+        let registry = NodeRegistry::new(ps, 100_000, HashMap::new());
+        let archive_service = Arc::new(crate::services::archive::ArchiveService::new(&settings));
+
+        let app_state = Arc::new(AppState {
+            settings: Arc::new(settings),
+            node_registry: Arc::new(Mutex::new(registry)),
+            archive_service,
+        });
+
+        let app = Router::new()
+            .route("/api/file/{node_id}", get(serve_file))
+            .with_state(Arc::clone(&app_state));
+
+        (app, app_state, dir)
+    }
+
+    /// アーカイブエントリの `node_id` を取得するヘルパー
+    fn register_archive_entry(
+        state: &Arc<AppState>,
+        archive_path: &std::path::Path,
+        entry_name: &str,
+    ) -> String {
+        let mut reg = state.node_registry.lock().unwrap();
+        reg.register_archive_entry(archive_path, entry_name)
+            .unwrap()
+    }
+
+    #[tokio::test]
+    async fn アーカイブエントリのnode_idで画像データを返す() {
+        let (app, state, dir) = create_archive_setup();
+        let root = std::fs::canonicalize(dir.path()).unwrap();
+        let entry_nid = register_archive_entry(&state, &root.join("photos.zip"), "photo.jpg");
+
+        let resp = app
+            .oneshot(
+                Request::get(format!("/api/file/{entry_nid}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body_bytes = body::to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+        assert_eq!(&body_bytes[..], b"fake jpeg data here");
+    }
+
+    #[tokio::test]
+    async fn アーカイブエントリに正しいcontent_typeを返す() {
+        let (app, state, dir) = create_archive_setup();
+        let root = std::fs::canonicalize(dir.path()).unwrap();
+        let entry_nid = register_archive_entry(&state, &root.join("photos.zip"), "photo.jpg");
+
+        let resp = app
+            .oneshot(
+                Request::get(format!("/api/file/{entry_nid}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        let ct = resp
+            .headers()
+            .get(header::CONTENT_TYPE)
+            .unwrap()
+            .to_str()
+            .unwrap();
+        assert_eq!(ct, "image/jpeg");
+    }
+
+    #[tokio::test]
+    async fn アーカイブエントリのetag_304が機能する() {
+        let (app, state, dir) = create_archive_setup();
+        let root = std::fs::canonicalize(dir.path()).unwrap();
+        let entry_nid = register_archive_entry(&state, &root.join("photos.zip"), "photo.jpg");
+
+        // 1回目: ETag を取得
+        let resp = app
+            .clone()
+            .oneshot(
+                Request::get(format!("/api/file/{entry_nid}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let etag = resp
+            .headers()
+            .get(header::ETAG)
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .to_string();
+
+        // 2回目: If-None-Match で 304
+        let resp = app
+            .oneshot(
+                Request::get(format!("/api/file/{entry_nid}"))
+                    .header(header::IF_NONE_MATCH, &etag)
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::NOT_MODIFIED);
     }
 }
