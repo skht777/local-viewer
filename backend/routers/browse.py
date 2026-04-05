@@ -99,11 +99,14 @@ def _dir_index_to_entries(
     rows: list[dict[str, object]],
     parent_path_real: Path,
     registry: NodeRegistry,
+    dir_index: DirIndex | None = None,
+    parent_path_key: str = "",
 ) -> list[EntryMeta]:
     """DirIndex の SQL 結果を EntryMeta に変換する.
 
     - 各行のパスを validate_existing() で検証 (stale 行を除外)
     - register_resolved() で node_id を登録
+    - ディレクトリエントリは child_count + preview_node_ids を DirIndex から取得
     """
     import mimetypes
     from typing import cast
@@ -111,6 +114,7 @@ def _dir_index_to_entries(
     from backend.services.extensions import MIME_MAP
 
     entries: list[EntryMeta] = []
+    dir_count = 0
     for row in rows:
         name = str(row["name"])
         kind = str(row["kind"])
@@ -125,12 +129,30 @@ def _dir_index_to_entries(
         node_id = registry.register_resolved(resolved)
 
         if kind == "directory":
+            child_count: int | None = None
+            preview_ids: list[str] | None = None
+            dir_count += 1
+            # DirIndex から child_count と preview_node_ids を取得
+            if dir_index is not None and dir_count <= 100:
+                child_key = f"{parent_path_key}/{name}" if parent_path_key else name
+                child_count = dir_index.child_count(child_key)
+                previews = dir_index.preview_entries(child_key, limit=3)
+                if previews:
+                    ids: list[str] = []
+                    for prev_row in previews:
+                        prev_child = resolved / str(prev_row["name"])
+                        if prev_child.exists():
+                            prev_resolved = prev_child.resolve()
+                            ids.append(registry.register_resolved(prev_resolved))
+                    preview_ids = ids if ids else None
             entries.append(
                 EntryMeta(
                     node_id=node_id,
                     name=name,
                     kind=kind,  # type: ignore[arg-type]
+                    child_count=child_count,
                     modified_at=mtime_ns / 1e9 if mtime_ns else None,
+                    preview_node_ids=preview_ids,
                 )
             )
         else:
@@ -406,8 +428,10 @@ async def _try_dir_index_query(
         cursor_sort_key,
     )
 
-    # EntryMeta に変換 (path_security 検証付き)
-    all_entries = await run_in_threadpool(_dir_index_to_entries, rows, path, registry)
+    # EntryMeta に変換 (path_security 検証付き、ディレクトリは preview_node_ids 付き)
+    all_entries = await run_in_threadpool(
+        _dir_index_to_entries, rows, path, registry, dir_index, parent_path_key
+    )
 
     total_count = await run_in_threadpool(dir_index.total_count, parent_path_key)
 
