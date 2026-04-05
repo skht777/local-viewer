@@ -2,7 +2,7 @@
 
 ## 命名規則
 
-### Rust (rust-backend)
+### Rust (backend)
 - モジュール / ファイル: `snake_case.rs`
 - 構造体 / 列挙型 / トレイト: `PascalCase`
 - 関数 / 変数 / フィールド: `snake_case`
@@ -41,7 +41,7 @@
 
 ## フォーマット
 
-### Rust (rust-backend)
+### Rust (backend)
 - rustfmt デフォルト (4-space indent, 100 文字行)
 - `use` 順序: std → external crates → crate-internal (rustfmt 自動)
 - `clippy::pedantic` を基本とし、許容する lint は `#[allow()]` で明示

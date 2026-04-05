@@ -5,8 +5,8 @@ from pathlib import Path
 
 import pytest
 
-from backend.errors import PathSecurityError
-from backend.services.mount_config import MountConfigService, MountPoint
+from py_backend.errors import PathSecurityError
+from py_backend.services.mount_config import MountConfigService, MountPoint
 
 
 @pytest.fixture

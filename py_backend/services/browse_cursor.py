@@ -16,10 +16,10 @@ import os
 from enum import StrEnum
 from typing import TYPE_CHECKING
 
-from backend.services.natural_sort import natural_sort_key
+from py_backend.services.natural_sort import natural_sort_key
 
 if TYPE_CHECKING:
-    from backend.services.node_registry import EntryMeta
+    from py_backend.services.node_registry import EntryMeta
 
 
 class SortOrder(StrEnum):

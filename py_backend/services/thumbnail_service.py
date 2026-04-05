@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pyvips
 
-from backend.services.temp_file_cache import TempFileCache
+from py_backend.services.temp_file_cache import TempFileCache
 
 # サムネイルのデフォルト設定
 DEFAULT_WIDTH = 300

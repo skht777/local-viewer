@@ -21,16 +21,16 @@ from fastapi.responses import Response
 from pydantic import BaseModel, Field
 from starlette.concurrency import run_in_threadpool
 
-from backend.errors import NodeNotFoundError
-from backend.services.archive_service import ArchiveService
-from backend.services.extensions import (
+from py_backend.errors import NodeNotFoundError
+from py_backend.services.archive_service import ArchiveService
+from py_backend.services.extensions import (
     IMAGE_EXTENSIONS,
     PDF_EXTENSIONS,
     VIDEO_EXTENSIONS,
 )
-from backend.services.node_registry import NodeRegistry
-from backend.services.thumbnail_service import ThumbnailService
-from backend.services.video_converter import VideoConverter
+from py_backend.services.node_registry import NodeRegistry
+from py_backend.services.thumbnail_service import ThumbnailService
+from py_backend.services.video_converter import VideoConverter
 
 logger = logging.getLogger(__name__)
 

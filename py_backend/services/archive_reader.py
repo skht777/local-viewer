@@ -14,12 +14,12 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from pathlib import Path
 
-from backend.services.archive_security import (
+from py_backend.services.archive_security import (
     ArchiveEntryValidator,
     ArchivePasswordError,
     ArchiveSecurityError,
 )
-from backend.services.natural_sort import natural_sort_key
+from py_backend.services.natural_sort import natural_sort_key
 
 # extract_entry のチャンク読みサイズ (64KiB)
 _EXTRACT_CHUNK_SIZE = 64 * 1024

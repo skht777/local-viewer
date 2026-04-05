@@ -9,12 +9,12 @@ import pytest
 
 _has_7z = shutil.which("7z") is not None
 
-from backend.services.archive_reader import (
+from py_backend.services.archive_reader import (
     RarArchiveReader,
     SevenZipArchiveReader,
     ZipArchiveReader,
 )
-from backend.services.archive_security import (
+from py_backend.services.archive_security import (
     ArchiveEntryValidator,
     ArchivePasswordError,
     ArchiveSecurityError,

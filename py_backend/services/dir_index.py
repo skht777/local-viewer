@@ -453,7 +453,7 @@ class DirIndex:
         # parent_path: "{mount_id}/relative/path" (ルート自体は mount_id)
         from pathlib import Path
 
-        from backend.services.indexer import _classify_by_extension
+        from py_backend.services.indexer import _classify_by_extension
 
         rel = str(Path(walk_entry_path).relative_to(root_dir))
         parent_path = f"{mount_id}/{rel}" if rel != "." else mount_id

@@ -8,8 +8,8 @@ from pathlib import Path
 
 from httpx import AsyncClient
 
-from backend.services.indexer import IndexEntry, Indexer
-from backend.services.node_registry import NodeRegistry
+from py_backend.services.indexer import IndexEntry, Indexer
+from py_backend.services.node_registry import NodeRegistry
 
 
 async def test_検索APIが結果を返す(

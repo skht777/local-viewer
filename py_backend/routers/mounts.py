@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 from starlette.concurrency import run_in_threadpool
 
-from backend.services.node_registry import NodeRegistry
+from py_backend.services.node_registry import NodeRegistry
 
 router = APIRouter(prefix="/api", tags=["mounts"])
 

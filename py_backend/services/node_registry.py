@@ -19,8 +19,8 @@ from typing import TYPE_CHECKING
 
 from pydantic import BaseModel
 
-from backend.errors import NodeNotFoundError, PathSecurityError
-from backend.services.extensions import (
+from py_backend.errors import NodeNotFoundError, PathSecurityError
+from py_backend.services.extensions import (
     ARCHIVE_EXTENSIONS,
     IMAGE_EXTENSIONS,
     MIME_MAP,
@@ -29,11 +29,11 @@ from backend.services.extensions import (
     VIDEO_EXTENSIONS,
     EntryKind,
 )
-from backend.services.natural_sort import natural_sort_key
-from backend.services.path_security import PathSecurity
+from py_backend.services.natural_sort import natural_sort_key
+from py_backend.services.path_security import PathSecurity
 
 if TYPE_CHECKING:
-    from backend.services.archive_reader import ArchiveEntry
+    from py_backend.services.archive_reader import ArchiveEntry
 
 # 再エクスポート (既存の外部 import を壊さないため)
 __all__ = [
@@ -676,7 +676,7 @@ class NodeRegistry:
 
         DirIndex が未 ready の場合は None を返す (フォールバック用)。
         """
-        from backend.services.dir_index import DirIndex
+        from py_backend.services.dir_index import DirIndex
 
         di = self._dir_index
         if not isinstance(di, DirIndex) or not di.is_ready:

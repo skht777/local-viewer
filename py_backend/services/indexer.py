@@ -17,16 +17,16 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from backend.services.extensions import (
+from py_backend.services.extensions import (
     ARCHIVE_EXTENSIONS,
     IMAGE_EXTENSIONS,
     PDF_EXTENSIONS,
     VIDEO_EXTENSIONS,
 )
-from backend.services.parallel_walk import parallel_walk
+from py_backend.services.parallel_walk import parallel_walk
 
 if TYPE_CHECKING:
-    from backend.services.path_security import PathSecurity
+    from py_backend.services.path_security import PathSecurity
 
 logger = logging.getLogger(__name__)
 

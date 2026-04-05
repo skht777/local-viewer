@@ -1,11 +1,12 @@
 .git
 **/node_modules
-backend/.venv
+py_backend/.venv
 **/__pycache__
 **/.pytest_cache
 **/.mypy_cache
 **/.ruff_cache
 frontend/dist
+rust-py_backend/target
 .env
 .DS_Store
 docs

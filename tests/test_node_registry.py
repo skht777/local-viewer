@@ -10,10 +10,10 @@ from PIL import Image
 
 import pytest
 
-from backend.config import Settings
-from backend.errors import NodeNotFoundError
-from backend.services.node_registry import EntryKind, NodeRegistry
-from backend.services.path_security import PathSecurity
+from py_backend.config import Settings
+from py_backend.errors import NodeNotFoundError
+from py_backend.services.node_registry import EntryKind, NodeRegistry
+from py_backend.services.path_security import PathSecurity
 
 
 @pytest.fixture
@@ -271,7 +271,7 @@ def test_ディレクトリのmodified_atが設定されている(
 def test_list_archive_entriesのmodified_atがNoneである(
     registry: NodeRegistry, root_dir: Path
 ) -> None:
-    from backend.services.archive_reader import ArchiveEntry
+    from py_backend.services.archive_reader import ArchiveEntry
 
     archive = root_dir / "test.zip"
     archive.touch()
@@ -298,7 +298,7 @@ def test_list_mount_rootsのmodified_atがNoneである(
 def test_list_archive_entriesでEntryMetaリストを返す(
     registry: NodeRegistry, root_dir: Path
 ) -> None:
-    from backend.services.archive_reader import ArchiveEntry
+    from py_backend.services.archive_reader import ArchiveEntry
 
     archive = root_dir / "test.zip"
     archive.touch()
@@ -582,7 +582,7 @@ def test_ディレクトリエントリのpreview_node_idsに動画node_idが含
 def test_list_archive_entriesで画像のみがkind_imageになる(
     registry: NodeRegistry, root_dir: Path
 ) -> None:
-    from backend.services.archive_reader import ArchiveEntry
+    from py_backend.services.archive_reader import ArchiveEntry
 
     archive = root_dir / "test.zip"
     archive.touch()

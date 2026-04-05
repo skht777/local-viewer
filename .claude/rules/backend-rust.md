@@ -1,6 +1,6 @@
 ---
 paths:
-  - "rust-backend/**/*.rs"
+  - "backend/**/*.rs"
 ---
 
 # Rust バックエンド固有規約

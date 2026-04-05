@@ -6,9 +6,9 @@ from pathlib import Path
 
 import pytest
 
-from backend.config import Settings
-from backend.errors import PathSecurityError
-from backend.services.path_security import PathSecurity
+from py_backend.config import Settings
+from py_backend.errors import PathSecurityError
+from py_backend.services.path_security import PathSecurity
 
 
 @pytest.fixture

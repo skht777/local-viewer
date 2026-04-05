@@ -5,8 +5,8 @@ from pathlib import Path
 
 import pytest
 
-from backend.services.archive_security import ArchiveEntryValidator
-from backend.services.archive_service import ArchiveService, ByteLRUCache
+from py_backend.services.archive_security import ArchiveEntryValidator
+from py_backend.services.archive_service import ArchiveService, ByteLRUCache
 
 # 最小 JPEG
 MINIMAL_JPEG = bytes(

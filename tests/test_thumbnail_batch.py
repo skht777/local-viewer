@@ -8,7 +8,7 @@ from pathlib import Path
 from httpx import AsyncClient
 from PIL import Image
 
-from backend.services.node_registry import NodeRegistry
+from py_backend.services.node_registry import NodeRegistry
 
 
 async def test_バッチサムネイルが複数画像で200を返しbase64データを含む(
@@ -91,10 +91,10 @@ async def test_バッチサムネイルでアーカイブエントリが処理�
     test_node_registry: NodeRegistry,
     test_root: Path,
 ) -> None:
-    from backend.services.archive_security import ArchiveEntryValidator
-    from backend.services.archive_service import ArchiveService
+    from py_backend.services.archive_security import ArchiveEntryValidator
+    from py_backend.services.archive_service import ArchiveService
 
-    from backend.config import Settings
+    from py_backend.config import Settings
 
     settings = Settings()
     validator = ArchiveEntryValidator(settings)

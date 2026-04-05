@@ -7,15 +7,15 @@ from pathlib import Path
 import pytest
 from PIL import Image
 
-from backend.config import Settings
-from backend.services.archive_security import ArchiveEntryValidator
-from backend.services.archive_service import ArchiveService
-from backend.services.extensions import EntryKind
-from backend.services.node_registry import EntryMeta, NodeRegistry
-from backend.services.temp_file_cache import TempFileCache
-from backend.services.thumbnail_service import ThumbnailService
-from backend.services.thumbnail_warmer import ThumbnailWarmer
-from backend.services.video_converter import VideoConverter
+from py_backend.config import Settings
+from py_backend.services.archive_security import ArchiveEntryValidator
+from py_backend.services.archive_service import ArchiveService
+from py_backend.services.extensions import EntryKind
+from py_backend.services.node_registry import EntryMeta, NodeRegistry
+from py_backend.services.temp_file_cache import TempFileCache
+from py_backend.services.thumbnail_service import ThumbnailService
+from py_backend.services.thumbnail_warmer import ThumbnailWarmer
+from py_backend.services.video_converter import VideoConverter
 
 
 @pytest.fixture
@@ -140,7 +140,7 @@ async def test_プリウォームが動画エントリを処理する(
     from unittest.mock import patch
 
     with patch(
-        "backend.services.video_converter.VideoConverter.extract_frame",
+        "py_backend.services.video_converter.VideoConverter.extract_frame",
         return_value=fake_jpeg,
     ):
         await warmer.warm([video_entry])
@@ -188,7 +188,7 @@ async def test_プリウォームの重複排除が動作する(
         return b""  # ダミー
 
     with patch(
-        "backend.routers.thumbnail._generate_thumbnail_bytes",
+        "py_backend.routers.thumbnail._generate_thumbnail_bytes",
         side_effect=counting_generate,
     ):
         # 同じエントリを 2 回並行で warm
@@ -249,7 +249,7 @@ async def test_Semaphoreの並行度上限が守られる(
         )
 
     with patch(
-        "backend.routers.thumbnail._generate_thumbnail_bytes",
+        "py_backend.routers.thumbnail._generate_thumbnail_bytes",
         side_effect=tracking_generate,
     ):
         await warmer.warm(entries)

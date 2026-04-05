@@ -48,7 +48,7 @@ e2e/playwright-report/
 test-results/
 
 # Rust
-rust-backend/target/
+backend/target/
 
 # Build artifacts
 *.log

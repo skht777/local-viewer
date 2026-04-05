@@ -18,10 +18,10 @@ import pyvips
 from starlette.concurrency import run_in_threadpool
 
 if TYPE_CHECKING:
-    from backend.services.archive_service import ArchiveService
-    from backend.services.node_registry import EntryMeta, NodeRegistry
-    from backend.services.thumbnail_service import ThumbnailService
-    from backend.services.video_converter import VideoConverter
+    from py_backend.services.archive_service import ArchiveService
+    from py_backend.services.node_registry import EntryMeta, NodeRegistry
+    from py_backend.services.thumbnail_service import ThumbnailService
+    from py_backend.services.video_converter import VideoConverter
 
 logger = logging.getLogger(__name__)
 
@@ -66,7 +66,7 @@ class ThumbnailWarmer:
 
         kind=image/archive/pdf/video のみ対象。キャッシュ済み・処理中はスキップ。
         """
-        from backend.routers.thumbnail import _generate_thumbnail_bytes
+        from py_backend.routers.thumbnail import _generate_thumbnail_bytes
 
         targets: list[str] = []
         for entry in entries:

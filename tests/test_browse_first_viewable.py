@@ -57,7 +57,7 @@ async def test_画像のあるディレクトリで画像エントリを返す(
     client: AsyncClient, test_node_registry: "NodeRegistry", first_viewable_root: Path
 ) -> None:
     """dir_a にはアーカイブと画像がある → archive が優先される."""
-    from backend.services.node_registry import NodeRegistry
+    from py_backend.services.node_registry import NodeRegistry
 
     node_id = test_node_registry.register(first_viewable_root / "dir_a")
     resp = await client.get(f"/api/browse/{node_id}/first-viewable")
@@ -71,7 +71,7 @@ async def test_画像のあるディレクトリで画像エントリを返す(
 async def test_PDFのみのディレクトリでPDFエントリを返す(
     client: AsyncClient, test_node_registry: "NodeRegistry", first_viewable_root: Path
 ) -> None:
-    from backend.services.node_registry import NodeRegistry
+    from py_backend.services.node_registry import NodeRegistry
 
     node_id = test_node_registry.register(first_viewable_root / "pdf_dir")
     resp = await client.get(f"/api/browse/{node_id}/first-viewable")

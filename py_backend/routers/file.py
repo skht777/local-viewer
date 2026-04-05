@@ -11,11 +11,11 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import FileResponse, Response
 from starlette.concurrency import run_in_threadpool
 
-from backend.services.archive_service import ArchiveService
-from backend.services.extensions import MIME_MAP, PDF_EXTENSIONS, VIDEO_EXTENSIONS
-from backend.services.node_registry import NodeRegistry
-from backend.services.temp_file_cache import TempFileCache
-from backend.services.video_converter import VideoConverter
+from py_backend.services.archive_service import ArchiveService
+from py_backend.services.extensions import MIME_MAP, PDF_EXTENSIONS, VIDEO_EXTENSIONS
+from py_backend.services.node_registry import NodeRegistry
+from py_backend.services.temp_file_cache import TempFileCache
+from py_backend.services.video_converter import VideoConverter
 
 router = APIRouter(prefix="/api", tags=["file"])
 

@@ -2,7 +2,7 @@
 
 import pytest
 
-from backend.services.natural_sort import natural_sort_key
+from py_backend.services.natural_sort import natural_sort_key
 
 
 def _sort(names: list[str]) -> list[str]:

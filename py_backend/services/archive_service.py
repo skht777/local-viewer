@@ -10,15 +10,15 @@ import threading
 from collections import OrderedDict
 from pathlib import Path
 
-from backend.services.archive_reader import (
+from py_backend.services.archive_reader import (
     ArchiveEntry,
     ArchiveReader,
     RarArchiveReader,
     SevenZipArchiveReader,
     ZipArchiveReader,
 )
-from backend.services.archive_security import ArchiveEntryValidator
-from backend.services.extensions import VIDEO_EXTENSIONS
+from py_backend.services.archive_security import ArchiveEntryValidator
+from py_backend.services.extensions import VIDEO_EXTENSIONS
 
 
 class ByteLRUCache:

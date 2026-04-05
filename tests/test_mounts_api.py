@@ -2,7 +2,7 @@
 
 from httpx import AsyncClient
 
-from backend.services.node_registry import NodeRegistry
+from py_backend.services.node_registry import NodeRegistry
 
 
 async def test_マウント一覧が200を返す(client: AsyncClient) -> None:

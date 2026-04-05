@@ -6,8 +6,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from backend.services.temp_file_cache import TempFileCache
-from backend.services.video_converter import VideoConverter
+from py_backend.services.temp_file_cache import TempFileCache
+from py_backend.services.video_converter import VideoConverter
 
 
 @pytest.fixture

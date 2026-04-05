@@ -6,7 +6,7 @@ from pathlib import Path
 from httpx import AsyncClient
 from PIL import Image
 
-from backend.services.node_registry import NodeRegistry
+from py_backend.services.node_registry import NodeRegistry
 
 
 def _create_many_files(root: Path, count: int = 10) -> Path:

@@ -8,9 +8,9 @@ from pathlib import Path
 import pytest
 from PIL import Image
 
-from backend.config import Settings
-from backend.services.archive_security import ArchiveEntryValidator
-from backend.services.archive_service import ArchiveService
+from py_backend.config import Settings
+from py_backend.services.archive_security import ArchiveEntryValidator
+from py_backend.services.archive_service import ArchiveService
 
 
 def _make_test_zip(path: Path) -> None:

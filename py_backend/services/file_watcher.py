@@ -22,16 +22,20 @@ from watchdog.events import (
 from watchdog.observers import Observer
 from watchdog.observers.polling import PollingObserver
 
-from backend.services.extensions import (
+from py_backend.services.extensions import (
     ARCHIVE_EXTENSIONS,
     PDF_EXTENSIONS,
     VIDEO_EXTENSIONS,
 )
-from backend.services.indexer import INDEXABLE_KINDS, IndexEntry, _classify_by_extension
+from py_backend.services.indexer import (
+    INDEXABLE_KINDS,
+    IndexEntry,
+    _classify_by_extension,
+)
 
 if TYPE_CHECKING:
-    from backend.services.indexer import Indexer
-    from backend.services.path_security import PathSecurity
+    from py_backend.services.indexer import Indexer
+    from py_backend.services.path_security import PathSecurity
 
 logger = logging.getLogger(__name__)
 

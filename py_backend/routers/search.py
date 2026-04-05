@@ -13,11 +13,11 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from starlette.concurrency import run_in_threadpool
 
-from backend.config import Settings, get_settings
-from backend.errors import PathSecurityError
-from backend.services.indexer import Indexer
-from backend.services.node_registry import NodeRegistry
-from backend.services.path_security import PathSecurity
+from py_backend.config import Settings, get_settings
+from py_backend.errors import PathSecurityError
+from py_backend.services.indexer import Indexer
+from py_backend.services.node_registry import NodeRegistry
+from py_backend.services.path_security import PathSecurity
 
 logger = logging.getLogger(__name__)
 

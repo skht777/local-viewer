@@ -2,7 +2,7 @@
 
 import pytest
 
-from backend.services.archive_security import (
+from py_backend.services.archive_security import (
     ArchiveEntryValidator,
     ArchiveSecurityError,
 )

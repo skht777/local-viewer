@@ -26,7 +26,7 @@ export default defineConfig({
 
   webServer: [
     {
-      command: `bash -c 'source ${projectRoot}/backend/.venv/bin/activate && MOUNT_BASE_DIR=${testDataDir} MOUNT_CONFIG_PATH=${mountsPath} NODE_SECRET=e2e-test-secret uvicorn backend.main:app --port ${BACKEND_PORT}'`,
+      command: `bash -c 'source ${projectRoot}/py_backend/.venv/bin/activate && MOUNT_BASE_DIR=${testDataDir} MOUNT_CONFIG_PATH=${mountsPath} NODE_SECRET=e2e-test-secret uvicorn py_backend.main:app --port ${BACKEND_PORT}'`,
       cwd: projectRoot,
       port: BACKEND_PORT,
       reuseExistingServer: false,

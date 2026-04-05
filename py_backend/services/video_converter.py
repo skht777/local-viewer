@@ -12,8 +12,8 @@ import shutil
 import subprocess
 from pathlib import Path
 
-from backend.services.extensions import REMUX_EXTENSIONS
-from backend.services.temp_file_cache import TempFileCache
+from py_backend.services.extensions import REMUX_EXTENSIONS
+from py_backend.services.temp_file_cache import TempFileCache
 
 logger = logging.getLogger(__name__)
 

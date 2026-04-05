@@ -10,8 +10,8 @@ import pytest
 from httpx import ASGITransport, AsyncClient
 from PIL import Image
 
-from backend.config import Settings
-from backend.errors import (
+from py_backend.config import Settings
+from py_backend.errors import (
     NodeNotFoundError,
     PathSecurityError,
     archive_password_error_handler,
@@ -19,16 +19,16 @@ from backend.errors import (
     node_not_found_error_handler,
     path_security_error_handler,
 )
-from backend.main import app
-from backend.routers import browse, file
-from backend.services.archive_security import (
+from py_backend.main import app
+from py_backend.routers import browse, file
+from py_backend.services.archive_security import (
     ArchiveEntryValidator,
     ArchivePasswordError,
     ArchiveSecurityError,
 )
-from backend.services.archive_service import ArchiveService
-from backend.services.node_registry import NodeRegistry
-from backend.services.path_security import PathSecurity
+from py_backend.services.archive_service import ArchiveService
+from py_backend.services.node_registry import NodeRegistry
+from py_backend.services.path_security import PathSecurity
 
 
 async def test_ファイル配信が200を返す(
@@ -309,7 +309,7 @@ async def client_with_small_limit(
     validator = ArchiveEntryValidator(settings)
     archive_svc = ArchiveService(validator=validator)
 
-    from backend.services.temp_file_cache import TempFileCache
+    from py_backend.services.temp_file_cache import TempFileCache
 
     temp_cache = TempFileCache(
         cache_dir=tmp_path / ".disk-cache",
@@ -322,7 +322,7 @@ async def client_with_small_limit(
     app.dependency_overrides[file.get_archive_service] = lambda: archive_svc
     app.dependency_overrides[file.get_temp_file_cache] = lambda: temp_cache
 
-    from backend.services.video_converter import VideoConverter
+    from py_backend.services.video_converter import VideoConverter
 
     converter = VideoConverter(temp_cache=temp_cache, timeout=30)
     app.dependency_overrides[file.get_video_converter] = lambda: converter
@@ -380,7 +380,7 @@ async def remux_client(
     validator = ArchiveEntryValidator(settings)
     archive_svc = ArchiveService(validator=validator)
 
-    from backend.services.temp_file_cache import TempFileCache
+    from py_backend.services.temp_file_cache import TempFileCache
 
     temp_cache = TempFileCache(
         cache_dir=tmp_path / ".disk-cache",
@@ -393,7 +393,7 @@ async def remux_client(
         b"\x00\x00\x00\x14ftypisom\x00\x00\x00\x00isom" + b"\x00" * 50
     )
 
-    from backend.services.video_converter import VideoConverter
+    from py_backend.services.video_converter import VideoConverter
 
     converter = VideoConverter(temp_cache=temp_cache, timeout=30)
 
@@ -428,15 +428,15 @@ async def test_MKVファイルがremux成功時にMP4として配信される(
 
     with (
         patch(
-            "backend.routers.file.VideoConverter.needs_remux",
+            "py_backend.routers.file.VideoConverter.needs_remux",
             return_value=True,
         ),
         patch(
-            "backend.routers.file.VideoConverter.is_available",
+            "py_backend.routers.file.VideoConverter.is_available",
             new_callable=lambda: property(lambda self: True),
         ),
         patch(
-            "backend.routers.file.VideoConverter.get_remuxed",
+            "py_backend.routers.file.VideoConverter.get_remuxed",
             return_value=remuxed_mp4,
         ),
     ):
@@ -459,15 +459,15 @@ async def test_MKVファイルのremux失敗時に元ファイルが配信され
 
     with (
         patch(
-            "backend.routers.file.VideoConverter.needs_remux",
+            "py_backend.routers.file.VideoConverter.needs_remux",
             return_value=True,
         ),
         patch(
-            "backend.routers.file.VideoConverter.is_available",
+            "py_backend.routers.file.VideoConverter.is_available",
             new_callable=lambda: property(lambda self: True),
         ),
         patch(
-            "backend.routers.file.VideoConverter.get_remuxed",
+            "py_backend.routers.file.VideoConverter.get_remuxed",
             return_value=None,
         ),
     ):
@@ -491,11 +491,11 @@ async def test_FFmpeg未インストール時にremuxスキップで元ファイ
 
     with (
         patch(
-            "backend.routers.file.VideoConverter.needs_remux",
+            "py_backend.routers.file.VideoConverter.needs_remux",
             return_value=True,
         ),
         patch(
-            "backend.routers.file.VideoConverter.is_available",
+            "py_backend.routers.file.VideoConverter.is_available",
             new_callable=lambda: property(lambda self: False),
         ),
     ):

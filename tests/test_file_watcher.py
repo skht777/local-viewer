@@ -9,7 +9,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from backend.services.file_watcher import BatchFlushWorker, IndexEventHandler
+from py_backend.services.file_watcher import BatchFlushWorker, IndexEventHandler
 
 
 @pytest.fixture()
@@ -229,7 +229,7 @@ class TestFileWatcher:
         mock_path_security: MagicMock,
         tmp_path: Path,
     ) -> None:
-        from backend.services.file_watcher import FileWatcher
+        from py_backend.services.file_watcher import FileWatcher
 
         watcher = FileWatcher(
             indexer=mock_indexer,

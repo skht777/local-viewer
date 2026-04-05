@@ -10,8 +10,8 @@ import pytest
 from httpx import ASGITransport, AsyncClient
 from PIL import Image
 
-from backend.config import Settings
-from backend.errors import (
+from py_backend.config import Settings
+from py_backend.errors import (
     NodeNotFoundError,
     PathSecurityError,
     archive_password_error_handler,
@@ -19,17 +19,17 @@ from backend.errors import (
     node_not_found_error_handler,
     path_security_error_handler,
 )
-from backend.main import app
-from backend.routers import browse, file, mounts, search, thumbnail
-from backend.services.archive_security import (
+from py_backend.main import app
+from py_backend.routers import browse, file, mounts, search, thumbnail
+from py_backend.services.archive_security import (
     ArchiveEntryValidator,
     ArchivePasswordError,
     ArchiveSecurityError,
 )
-from backend.services.archive_service import ArchiveService
-from backend.services.indexer import Indexer
-from backend.services.node_registry import NodeRegistry
-from backend.services.path_security import PathSecurity
+from py_backend.services.archive_service import ArchiveService
+from py_backend.services.indexer import Indexer
+from py_backend.services.node_registry import NodeRegistry
+from py_backend.services.path_security import PathSecurity
 
 
 @pytest.fixture
@@ -132,7 +132,7 @@ async def client(
     app.dependency_overrides[file.get_archive_service] = lambda: test_archive_service
 
     # TempFileCache (テスト用)
-    from backend.services.temp_file_cache import TempFileCache
+    from py_backend.services.temp_file_cache import TempFileCache
 
     test_temp_cache = TempFileCache(
         cache_dir=test_root / ".disk-cache",
@@ -141,13 +141,13 @@ async def client(
     app.dependency_overrides[file.get_temp_file_cache] = lambda: test_temp_cache
 
     # VideoConverter (テスト用 — FFmpeg なし環境でも動作するよう無効化)
-    from backend.services.video_converter import VideoConverter
+    from py_backend.services.video_converter import VideoConverter
 
     test_converter = VideoConverter(temp_cache=test_temp_cache, timeout=30)
     app.dependency_overrides[file.get_video_converter] = lambda: test_converter
 
     # ThumbnailService (テスト用)
-    from backend.services.thumbnail_service import ThumbnailService
+    from py_backend.services.thumbnail_service import ThumbnailService
 
     test_thumb_service = ThumbnailService(temp_cache=test_temp_cache)
     app.dependency_overrides[thumbnail.get_node_registry] = lambda: test_node_registry
@@ -220,11 +220,11 @@ async def search_client(
     )
     # get_settings は config モジュール関数。test_settings フィクスチャが
     # init 済みだが、run_in_threadpool 内から呼ばれるため明示的に override
-    from backend.config import get_settings as _get_settings
+    from py_backend.config import get_settings as _get_settings
 
     app.dependency_overrides[_get_settings] = lambda: Settings()
 
-    from backend.services.temp_file_cache import TempFileCache
+    from py_backend.services.temp_file_cache import TempFileCache
 
     test_temp_cache = TempFileCache(
         cache_dir=test_root / ".disk-cache",
@@ -232,7 +232,7 @@ async def search_client(
     )
     app.dependency_overrides[file.get_temp_file_cache] = lambda: test_temp_cache
 
-    from backend.services.video_converter import VideoConverter
+    from py_backend.services.video_converter import VideoConverter
 
     test_converter = VideoConverter(temp_cache=test_temp_cache, timeout=30)
     app.dependency_overrides[file.get_video_converter] = lambda: test_converter

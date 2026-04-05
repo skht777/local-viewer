@@ -3,7 +3,7 @@
 import threading
 from pathlib import Path
 
-from backend.services.temp_file_cache import TempFileCache
+from py_backend.services.temp_file_cache import TempFileCache
 
 
 def test_キャッシュミスで新規ファイルが作成される(tmp_path: Path) -> None:

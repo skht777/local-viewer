@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from backend.services.indexer import IndexEntry, Indexer
+from py_backend.services.indexer import IndexEntry, Indexer
 
 
 @pytest.fixture()
@@ -872,7 +872,7 @@ class TestRebuildExclusion:
         """rebuild 実行中は is_rebuilding が True を返す."""
         from unittest.mock import patch
 
-        from backend.services.path_security import PathSecurity
+        from py_backend.services.path_security import PathSecurity
 
         root = tmp_path / "root"
         root.mkdir()
@@ -899,7 +899,7 @@ class TestRebuildExclusion:
     def test_rebuildの前後でis_rebuildingが正しく遷移する(
         self, indexer: Indexer, tmp_path: Path
     ) -> None:
-        from backend.services.path_security import PathSecurity
+        from py_backend.services.path_security import PathSecurity
 
         root = tmp_path / "root"
         root.mkdir()

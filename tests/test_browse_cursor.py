@@ -13,7 +13,7 @@ import json
 
 import pytest
 
-from backend.services.browse_cursor import (
+from py_backend.services.browse_cursor import (
     SortOrder,
     apply_cursor,
     decode_cursor,
@@ -21,7 +21,7 @@ from backend.services.browse_cursor import (
     paginate,
     sort_entries,
 )
-from backend.services.node_registry import EntryMeta
+from py_backend.services.node_registry import EntryMeta
 
 
 # ── ヘルパー ──

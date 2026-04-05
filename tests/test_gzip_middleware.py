@@ -8,7 +8,7 @@ from pathlib import Path
 
 from httpx import AsyncClient
 
-from backend.services.node_registry import NodeRegistry
+from py_backend.services.node_registry import NodeRegistry
 
 
 async def test_サムネイルレスポンスがgzip圧縮されない(

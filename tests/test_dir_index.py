@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from backend.services.dir_index import DirIndex
+from py_backend.services.dir_index import DirIndex
 
 
 @pytest.fixture
@@ -100,7 +100,7 @@ def test_DirIndexのquery_pageでname_ascが自然順で返る(
 def test_DirIndexのsort_keyで数値ゼロ埋めが正しい(
     dir_index: DirIndex,
 ) -> None:
-    from backend.services.dir_index import encode_sort_key
+    from py_backend.services.dir_index import encode_sort_key
 
     key = encode_sort_key("file2.jpg")
     assert "0000000002" in key

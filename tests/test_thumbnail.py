@@ -7,7 +7,7 @@ from pathlib import Path
 from httpx import AsyncClient
 from PIL import Image
 
-from backend.services.node_registry import NodeRegistry
+from py_backend.services.node_registry import NodeRegistry
 
 
 async def test_画像ファイルのサムネイルが200で返る(
@@ -179,7 +179,7 @@ async def test_動画ファイルのサムネイルが200で返る(
     from unittest.mock import patch
 
     with patch(
-        "backend.services.video_converter.VideoConverter.extract_frame",
+        "py_backend.services.video_converter.VideoConverter.extract_frame",
         return_value=fake_jpeg,
     ):
         response = await client.get(f"/api/thumbnail/{video_entry.node_id}")

@@ -9,8 +9,8 @@
 
 from pathlib import PurePosixPath
 
-from backend.config import Settings
-from backend.services.extensions import IMAGE_EXTENSIONS, VIDEO_EXTENSIONS
+from py_backend.config import Settings
+from py_backend.services.extensions import IMAGE_EXTENSIONS, VIDEO_EXTENSIONS
 
 # 許可拡張子 (画像 + 動画)
 _ALLOWED_EXTENSIONS = IMAGE_EXTENSIONS | VIDEO_EXTENSIONS

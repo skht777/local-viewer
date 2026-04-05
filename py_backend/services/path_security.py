@@ -12,10 +12,10 @@ import os
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from backend.errors import PathSecurityError
+from py_backend.errors import PathSecurityError
 
 if TYPE_CHECKING:
-    from backend.config import Settings
+    from py_backend.config import Settings
 
 
 class PathSecurity:

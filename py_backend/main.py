@@ -17,8 +17,8 @@ from fastapi.staticfiles import StaticFiles
 from starlette.datastructures import MutableHeaders
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
-from backend.config import init_settings
-from backend.errors import (
+from py_backend.config import init_settings
+from py_backend.errors import (
     InvalidArchiveError,
     InvalidCursorError,
     NodeNotFoundError,
@@ -32,21 +32,21 @@ from backend.errors import (
     not_a_directory_error_handler,
     path_security_error_handler,
 )
-from backend.routers import browse, file, mounts, search, thumbnail
-from backend.services.archive_security import (
+from py_backend.routers import browse, file, mounts, search, thumbnail
+from py_backend.services.archive_security import (
     ArchivePasswordError,
     ArchiveSecurityError,
 )
-from backend.services.archive_service import ArchiveService
-from backend.services.node_registry import NodeRegistry
-from backend.services.path_security import PathSecurity
-from backend.services.temp_file_cache import TempFileCache
-from backend.services.thumbnail_service import ThumbnailService
-from backend.services.video_converter import VideoConverter
+from py_backend.services.archive_service import ArchiveService
+from py_backend.services.node_registry import NodeRegistry
+from py_backend.services.path_security import PathSecurity
+from py_backend.services.temp_file_cache import TempFileCache
+from py_backend.services.thumbnail_service import ThumbnailService
+from py_backend.services.video_converter import VideoConverter
 
 if TYPE_CHECKING:
-    from backend.services.file_watcher import FileWatcher
-    from backend.services.indexer import Indexer
+    from py_backend.services.file_watcher import FileWatcher
+    from py_backend.services.indexer import Indexer
 
 logger = logging.getLogger(__name__)
 
@@ -126,8 +126,8 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
     global _video_converter, _thumbnail_service, _indexer, _file_watcher
 
     # アプリケーションロガーを uvicorn のハンドラに接続
-    # uvicorn はルートロガーを設定しないため、backend.* の出力先がない
-    app_logger = logging.getLogger("backend")
+    # uvicorn はルートロガーを設定しないため、py_backend.* の出力先がない
+    app_logger = logging.getLogger("py_backend")
     if not app_logger.handlers:
         app_logger.addHandler(logging.getLogger("uvicorn").handlers[0])
         app_logger.setLevel(logging.INFO)
@@ -142,7 +142,7 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
     settings = init_settings()
 
     # マウントポイント設定の読み込み
-    from backend.services.mount_config import MountConfigService
+    from py_backend.services.mount_config import MountConfigService
 
     base_dir = settings.mount_base_dir
     mount_service = MountConfigService(FilePath(settings.mount_config_path), base_dir)
@@ -179,7 +179,7 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
     # → lifespan の最後で設定する
 
     # アーカイブサービス初期化
-    from backend.services.archive_security import ArchiveEntryValidator
+    from py_backend.services.archive_security import ArchiveEntryValidator
 
     validator = ArchiveEntryValidator(settings)
     _archive_service = ArchiveService(
@@ -213,9 +213,9 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
         logger.log(level, "Archive: %s support: %s", fmt, status)
 
     # Indexer + DirIndex 初期化 + バックグラウンドスキャン
-    from backend.services.dir_index import DirIndex
-    from backend.services.file_watcher import FileWatcher
-    from backend.services.indexer import Indexer
+    from py_backend.services.dir_index import DirIndex
+    from py_backend.services.file_watcher import FileWatcher
+    from py_backend.services.indexer import Indexer
 
     _indexer = Indexer(settings.index_db_path)
     _indexer.init_db()
@@ -315,7 +315,7 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
     _app.dependency_overrides[thumbnail.get_video_converter] = get_video_converter
 
     # サムネイルプリウォーム初期化
-    from backend.services.thumbnail_warmer import ThumbnailWarmer
+    from py_backend.services.thumbnail_warmer import ThumbnailWarmer
 
     _thumbnail_warmer = ThumbnailWarmer(
         thumb_service=_thumbnail_service,
@@ -360,7 +360,7 @@ def _background_scan_sync(
     mount_id: str = "",
 ) -> None:
     """バックグラウンドスレッドで初回インデックススキャンを実行する."""
-    from backend.services.dir_index import DirIndex
+    from py_backend.services.dir_index import DirIndex
 
     di = dir_index if isinstance(dir_index, DirIndex) else None
     on_walk = di.ingest_walk_entry if di else None
@@ -394,7 +394,7 @@ def _background_incremental_scan_sync(
     mount_id: str = "",
 ) -> None:
     """バックグラウンドスレッドで差分インデックススキャンを実行する."""
-    from backend.services.dir_index import DirIndex
+    from py_backend.services.dir_index import DirIndex
 
     di = dir_index if isinstance(dir_index, DirIndex) else None
     # incremental_scan: 両方の DB が構築済みの場合のみ呼ばれる

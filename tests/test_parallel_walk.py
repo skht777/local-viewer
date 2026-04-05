@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from backend.services.parallel_walk import WalkEntry, parallel_walk
+from py_backend.services.parallel_walk import WalkEntry, parallel_walk
 
 
 @pytest.fixture()

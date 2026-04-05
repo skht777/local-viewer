@@ -1,6 +1,6 @@
 ---
 paths:
-  - "backend/**/*.py"
+  - "py_backend/**/*.py"
 ---
 
 # FastAPI Conventions

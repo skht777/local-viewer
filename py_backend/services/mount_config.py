@@ -16,8 +16,8 @@ import uuid
 from dataclasses import dataclass
 from pathlib import Path
 
-from backend.errors import PathSecurityError
-from backend.services.path_security import PathSecurity
+from py_backend.errors import PathSecurityError
+from py_backend.services.path_security import PathSecurity
 
 
 @dataclass

@@ -8,7 +8,7 @@ local-viewer/
 ├── manage_mounts.sh         # マウントポイント管理 Bash TUI (ホスト側)
 ├── config/
 │   └── mounts.json          # マウントポイント定義 (Docker: バインドマウント ./config:/app/config)
-├── rust-backend/            # Rust バックエンド (移行中)
+├── backend/                 # Rust バックエンド (移行中)
 │   ├── Cargo.toml           # 依存クレート定義
 │   ├── rust-toolchain.toml  # Rust ツールチェーン固定
 │   ├── clippy.toml          # Clippy 設定
@@ -22,7 +22,7 @@ local-viewer/
 │   │   ├── services/        # ビジネスロジック
 │   │   └── middleware/      # カスタムミドルウェア
 │   └── tests/               # 統合テスト + fixtures
-├── backend/                 # Python バックエンド (レガシー、移行完了後に削除)
+├── py_backend/              # Python バックエンド (レガシー、移行完了後に削除)
 │   ├── main.py              # FastAPI エントリポイント (DI 登録: DirIndex, ThumbnailWarmer 等)
 │   ├── routers/             # APIルーター (1リソース1ファイル)
 │   └── services/            # ビジネスロジック
@@ -44,8 +44,8 @@ local-viewer/
 │   ├── playwright.config.ts   # E2E テスト設定
 │   ├── fixtures/              # テスト用フィクスチャ
 │   └── tests/                 # Playwright テストファイル
-├── Dockerfile               # マルチステージビルド (Python 版)
-├── Dockerfile.rust          # マルチステージビルド (Rust 版、3段構成)
+├── Dockerfile               # マルチステージビルド (Rust 版、3段構成)
+├── Dockerfile.python        # マルチステージビルド (Python 版)
 ├── docker-compose.yml           # 静的設定 (git tracked)
 └── docker-compose.override.yml  # マウント定義 (manage_mounts.sh 自動生成, gitignored)
 ```

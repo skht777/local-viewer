@@ -5,8 +5,8 @@ from pathlib import Path
 
 from httpx import AsyncClient
 
-from backend.services.dir_index import DirIndex
-from backend.services.node_registry import NodeRegistry
+from py_backend.services.dir_index import DirIndex
+from py_backend.services.node_registry import NodeRegistry
 
 
 async def test_ディレクトリのbrowseが200を返す(
@@ -263,8 +263,8 @@ async def test_DirIndexパスでpreview_node_idsにアーカイブが含まれ�
 
     from PIL import Image
 
-    from backend.main import app
-    from backend.routers import browse
+    from py_backend.main import app
+    from py_backend.routers import browse
 
     # アーカイブのみを含むディレクトリを作成
     archive_dir = test_root / "archive_only"

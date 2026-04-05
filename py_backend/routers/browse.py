@@ -19,20 +19,20 @@ from fastapi.responses import Response
 from pydantic import BaseModel
 from starlette.concurrency import run_in_threadpool
 
-from backend.errors import (
+from py_backend.errors import (
     InvalidArchiveError,
     InvalidCursorError,
     NotADirectoryApiError,
 )
-from backend.services.archive_service import ArchiveService
-from backend.services.browse_cursor import (
+from py_backend.services.archive_service import ArchiveService
+from py_backend.services.browse_cursor import (
     MAX_LIMIT,
     SortOrder,
     paginate,
 )
-from backend.services.dir_index import DirIndex
-from backend.services.node_registry import BrowseResponse, EntryMeta, NodeRegistry
-from backend.services.thumbnail_warmer import ThumbnailWarmer
+from py_backend.services.dir_index import DirIndex
+from py_backend.services.node_registry import BrowseResponse, EntryMeta, NodeRegistry
+from py_backend.services.thumbnail_warmer import ThumbnailWarmer
 
 logger = logging.getLogger(__name__)
 
@@ -116,7 +116,7 @@ def _dir_index_to_entries(
     import mimetypes
     from typing import cast
 
-    from backend.services.extensions import MIME_MAP
+    from py_backend.services.extensions import MIME_MAP
 
     entries: list[EntryMeta] = []
     dir_count = 0
@@ -299,7 +299,7 @@ async def browse_directory(
 
         next_cursor_val = None
         if has_next and page_entries:
-            from backend.services.browse_cursor import encode_cursor
+            from py_backend.services.browse_cursor import encode_cursor
 
             next_cursor_val = encode_cursor(sort, page_entries[-1], etag)
     elif not _used_dir_index:
@@ -314,7 +314,7 @@ async def browse_directory(
             etag = _compute_etag(page_entries)
         else:
             # limit なしでもソートは適用 (name-desc, date-* 等)
-            from backend.services.browse_cursor import sort_entries
+            from py_backend.services.browse_cursor import sort_entries
 
             page_entries = sort_entries(entries, sort)
             total_count = len(entries)
@@ -329,7 +329,7 @@ async def browse_directory(
 
         # limit 指定時は etag を更新してカーソルに反映
         if limit is not None and next_cursor_val:
-            from backend.services.browse_cursor import encode_cursor
+            from py_backend.services.browse_cursor import encode_cursor
 
             next_cursor_val = encode_cursor(sort, page_entries[-1], etag)
 
@@ -368,7 +368,7 @@ async def _try_dir_index_query(
     DirIndex が stale (ディレクトリ mtime 不一致) の場合は None を返す。
     Returns: (page_entries, next_cursor, total_count, etag) or None
     """
-    from backend.services.browse_cursor import encode_cursor
+    from py_backend.services.browse_cursor import encode_cursor
 
     # ディレクトリの実 mtime を確認
     try:
@@ -400,13 +400,13 @@ async def _try_dir_index_query(
     cursor_sort_key = None
     if cursor:
         try:
-            from backend.services.browse_cursor import decode_cursor
+            from py_backend.services.browse_cursor import decode_cursor
 
             cursor_data = decode_cursor(cursor, sort)
             # cursor には node_id が入っているが、DirIndex は sort_key ベース
             # → DirIndex から該当 node_id の sort_key を取得
             cursor_name = str(cursor_data.get("n", ""))
-            from backend.services.dir_index import encode_sort_key
+            from py_backend.services.dir_index import encode_sort_key
 
             cursor_sort_key = encode_sort_key(cursor_name)
         except ValueError:
@@ -445,7 +445,7 @@ def _extract_cursor_node_id(cursor: str | None, sort: SortOrder) -> str | None:
     """カーソルから前ページ末尾の node_id を抽出する."""
     if cursor is None:
         return None
-    from backend.services.browse_cursor import decode_cursor
+    from py_backend.services.browse_cursor import decode_cursor
 
     try:
         data = decode_cursor(cursor, sort)
@@ -513,7 +513,7 @@ async def first_viewable(
         if entry_meta is None:
             # フォールバック: scandir
             entries = await run_in_threadpool(registry.list_directory, current_path)
-            from backend.services.browse_cursor import sort_entries
+            from py_backend.services.browse_cursor import sort_entries
 
             sorted_entries = sort_entries(entries, sort)
             entry_meta = _select_first_viewable(sorted_entries)
@@ -640,7 +640,7 @@ async def find_sibling(
 
     # フォールバック: 全件取得して検索
     entries = await run_in_threadpool(registry.list_directory, parent_path)
-    from backend.services.browse_cursor import sort_entries
+    from py_backend.services.browse_cursor import sort_entries
 
     sorted_entries = sort_entries(entries, sort)
     candidates = [
@@ -682,7 +682,7 @@ async def _find_sibling_from_index(
     rel = str(parent_path.relative_to(root))
     parent_key = f"{mount_id}/{rel}" if rel != "." else mount_id
 
-    from backend.services.dir_index import encode_sort_key
+    from py_backend.services.dir_index import encode_sort_key
 
     current_sort_key = encode_sort_key(current_name)
 

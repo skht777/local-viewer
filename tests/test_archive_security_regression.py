@@ -8,7 +8,7 @@ from pathlib import Path
 
 from httpx import AsyncClient
 
-from backend.services.node_registry import NodeRegistry
+from py_backend.services.node_registry import NodeRegistry
 
 # 最小 JPEG
 MINIMAL_JPEG = bytes(

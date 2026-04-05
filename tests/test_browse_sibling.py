@@ -12,7 +12,7 @@ from pathlib import Path
 import pytest
 from httpx import AsyncClient
 
-from backend.services.node_registry import NodeRegistry
+from py_backend.services.node_registry import NodeRegistry
 
 
 @pytest.fixture

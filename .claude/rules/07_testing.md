@@ -14,9 +14,9 @@ Red → Green → Refactor を小刻みに回す:
 成果物よりフィードバック速度を優先する。
 
 ## バックエンド — Rust (cargo test + rstest)
-- テストディレクトリ: `rust-backend/tests/` (統合テスト) + 各モジュール内 `#[cfg(test)]` (ユニットテスト)
+- テストディレクトリ: `backend/tests/` (統合テスト) + 各モジュール内 `#[cfg(test)]` (ユニットテスト)
 - HTTP 統合テスト: `tower::ServiceExt::oneshot` を基本に Router テストを書く。必要なら `axum-test` は補助的に検討してよい
-- テスト用フィクスチャ: `rust-backend/tests/fixtures/` にサンプルファイル配置
+- テスト用フィクスチャ: `backend/tests/fixtures/` にサンプルファイル配置
 - パラメータ化テスト: `rstest` クレート
 - スナップショットテスト: `insta` クレート (JSON レスポンス比較)
 - 一時ディレクトリ: `tempfile` クレート
@@ -29,9 +29,9 @@ Red → Green → Refactor を小刻みに回す:
 
 ### テスト実行
 ```bash
-cd rust-backend && cargo test                    # 全テスト
-cd rust-backend && cargo test -- --nocapture     # 標準出力付き
-cd rust-backend && cargo test test_node_registry # 特定モジュール
+cd backend && cargo test                    # 全テスト
+cd backend && cargo test -- --nocapture     # 標準出力付き
+cd backend && cargo test test_node_registry # 特定モジュール
 ```
 
 ## バックエンド — Python レガシー (pytest + httpx)

@@ -6,8 +6,8 @@ from pathlib import Path
 import pytest
 from PIL import Image
 
-from backend.services.temp_file_cache import TempFileCache
-from backend.services.thumbnail_service import ThumbnailService
+from py_backend.services.temp_file_cache import TempFileCache
+from py_backend.services.thumbnail_service import ThumbnailService
 
 
 @pytest.fixture
