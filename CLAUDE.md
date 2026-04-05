@@ -91,4 +91,3 @@ cd e2e && npx playwright test --ui   # UI モード
 ### ドキュメント
 - 仕様書: `docs/spec-*.md`（アーキテクチャ、UI、パフォーマンス）
 - 実装計画: `docs/plan-*.md` に保存（gitignored、ローカル保全のみ）
-- 完了済み計画: `docs/archive/` に移動済み
