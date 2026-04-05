@@ -22,7 +22,6 @@ const BINARY_CONTENT_PREFIXES: &[&str] = &[
 ];
 
 /// バイナリレスポンスに `content-encoding: identity` を付与して gzip をバイパスする
-#[allow(dead_code, reason = "Step 4 の main.rs 統合でレイヤー登録後に解消")]
 pub(crate) async fn skip_gzip_for_binary(request: axum::extract::Request, next: Next) -> Response {
     let mut response = next.run(request).await;
 

@@ -55,7 +55,6 @@ pub(crate) enum AppError {
     NotADirectory { path: String },
 
     /// ファイルではないパスへの file 配信操作
-    #[allow(dead_code, reason = "Step 2 の file ルーターで使用")]
     #[error("ファイルではありません: {path}")]
     NotAFile { path: String },
 }

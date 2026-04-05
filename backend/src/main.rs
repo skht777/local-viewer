@@ -9,11 +9,14 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 use axum::http::Method;
+use axum::middleware::from_fn;
 use axum::{Json, Router, routing::get};
 use clap::Parser;
 use serde::Serialize;
 use tower_http::compression::CompressionLayer;
 use tower_http::cors::{Any, CorsLayer};
+use tower_http::services::{ServeDir, ServeFile};
+use tower_http::set_header::SetResponseHeaderLayer;
 use tower_http::trace::TraceLayer;
 use tracing_subscriber::{EnvFilter, fmt, prelude::*};
 
@@ -130,8 +133,8 @@ fn build_app(settings: Settings) -> anyhow::Result<Router> {
         .allow_methods([Method::GET])
         .allow_headers(Any);
 
-    // ルーター構築
-    let app = Router::new()
+    // API ルーター構築
+    let api_router = Router::new()
         .route("/api/health", get(health))
         .route("/api/mounts", get(routers::mounts::list_mounts))
         .route(
@@ -146,12 +149,50 @@ fn build_app(settings: Settings) -> anyhow::Result<Router> {
             "/api/browse/{parent_node_id}/sibling",
             get(routers::browse::find_sibling),
         )
-        .with_state(app_state)
+        .route("/api/file/{node_id}", get(routers::file::serve_file))
+        .with_state(app_state);
+
+    // 静的ファイル配信 + SPA フォールバック
+    let app = attach_static_files(api_router);
+
+    // ミドルウェア層 (レスポンスパス: Handler → CORS → SkipGzipBinary → Compression → Trace)
+    let app = app
         .layer(cors)
+        .layer(from_fn(middleware::skip_gzip_binary::skip_gzip_for_binary))
         .layer(CompressionLayer::new())
         .layer(TraceLayer::new_for_http());
 
     Ok(app)
+}
+
+/// 静的ファイル配信 + SPA フォールバックを追加する
+///
+/// Docker 本番環境 (static/ が存在する場合) のみ有効。
+/// 開発時は Vite dev server がフロントエンドを処理する。
+fn attach_static_files(router: Router) -> Router {
+    let static_dir = std::env::current_dir().unwrap_or_default().join("static");
+
+    if !static_dir.exists() {
+        return router;
+    }
+
+    tracing::info!("静的ファイル配信有効: {}", static_dir.display());
+
+    // /assets/* — Vite ハッシュ付きアセット (immutable 長期キャッシュ)
+    let assets_service = tower::ServiceBuilder::new()
+        .layer(SetResponseHeaderLayer::overriding(
+            axum::http::header::CACHE_CONTROL,
+            axum::http::HeaderValue::from_static("public, max-age=31536000, immutable"),
+        ))
+        .service(ServeDir::new(static_dir.join("assets")));
+
+    // SPA フォールバック: non-API パスは index.html を返す
+    let spa_fallback =
+        ServeDir::new(&static_dir).not_found_service(ServeFile::new(static_dir.join("index.html")));
+
+    router
+        .nest_service("/assets", assets_service)
+        .fallback_service(spa_fallback)
 }
 
 #[tokio::main]

@@ -25,7 +25,6 @@ use crate::state::AppState;
 ///
 /// `md5("{mtime_ns}:{size}:{name}")` でメタ情報ベースのハッシュを生成。
 /// 全内容のハッシュは大きなファイルで遅いため避ける。
-#[allow(dead_code, reason = "Step 4 の main.rs 統合でルート登録後に解消")]
 fn compute_file_etag(metadata: &std::fs::Metadata, file_name: &str) -> String {
     let mtime_ns = metadata
         .modified()
@@ -43,7 +42,6 @@ fn compute_file_etag(metadata: &std::fs::Metadata, file_name: &str) -> String {
 /// - 通常ファイル: `ServeFile` で配信 (Range 自動処理)
 /// - アーカイブエントリ: Phase 4 で実装 (現在 501)
 /// - ディレクトリ: 422 `NOT_A_FILE`
-#[allow(dead_code, reason = "Step 4 の main.rs 統合でルート登録後に解消")]
 pub(crate) async fn serve_file(
     State(state): State<Arc<AppState>>,
     Path(node_id): Path<String>,
