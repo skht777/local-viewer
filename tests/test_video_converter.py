@@ -144,3 +144,71 @@ class TestGetRemuxed:
 
         result = converter.get_remuxed(source, source.stat().st_mtime_ns)
         assert result is None
+
+
+class TestExtractFrame:
+    """フレーム抽出."""
+
+    def test_extract_frameがJPEGバイト列を返す(
+        self, temp_cache: TempFileCache, tmp_path: Path
+    ) -> None:
+        source = tmp_path / "test.mp4"
+        source.write_bytes(b"fake mp4 data")
+
+        with patch("shutil.which", return_value="/usr/bin/ffmpeg"):
+            converter = VideoConverter(temp_cache=temp_cache, timeout=30)
+
+        fake_jpeg = b"\xff\xd8\xff\xe0" + b"\x00" * 100
+        mock_result = MagicMock(stdout=fake_jpeg)
+
+        with patch("subprocess.run", return_value=mock_result):
+            result = converter.extract_frame(source, seek_seconds=1, timeout=10)
+
+        assert result is not None
+        assert result == fake_jpeg
+
+    def test_extract_frameが失敗時にNoneを返す(
+        self, temp_cache: TempFileCache, tmp_path: Path
+    ) -> None:
+        source = tmp_path / "test.mp4"
+        source.write_bytes(b"fake mp4 data")
+
+        with patch("shutil.which", return_value="/usr/bin/ffmpeg"):
+            converter = VideoConverter(temp_cache=temp_cache, timeout=30)
+
+        with patch(
+            "subprocess.run",
+            side_effect=subprocess.CalledProcessError(1, "ffmpeg", stderr=b"error"),
+        ):
+            result = converter.extract_frame(source)
+
+        assert result is None
+
+    def test_extract_frameがタイムアウト時にNoneを返す(
+        self, temp_cache: TempFileCache, tmp_path: Path
+    ) -> None:
+        source = tmp_path / "test.mp4"
+        source.write_bytes(b"fake mp4 data")
+
+        with patch("shutil.which", return_value="/usr/bin/ffmpeg"):
+            converter = VideoConverter(temp_cache=temp_cache, timeout=30)
+
+        with patch(
+            "subprocess.run",
+            side_effect=subprocess.TimeoutExpired("ffmpeg", 10),
+        ):
+            result = converter.extract_frame(source, timeout=10)
+
+        assert result is None
+
+    def test_FFmpeg未インストール時にextract_frameがNoneを返す(
+        self, temp_cache: TempFileCache, tmp_path: Path
+    ) -> None:
+        source = tmp_path / "test.mp4"
+        source.write_bytes(b"fake mp4 data")
+
+        with patch("shutil.which", return_value=None):
+            converter = VideoConverter(temp_cache=temp_cache, timeout=30)
+
+        result = converter.extract_frame(source)
+        assert result is None

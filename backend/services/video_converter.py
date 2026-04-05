@@ -1,6 +1,7 @@
-"""MKV→MP4 remux サービス.
+"""FFmpeg ベースの動画処理サービス.
 
-- FFmpeg stream copy で MKV を MP4 コンテナに再パッケージ
+- MKV→MP4 remux: FFmpeg stream copy で再パッケージ
+- フレーム抽出: 動画から1フレームを JPEG として抽出 (サムネイル用)
 - 変換結果を TempFileCache でディスクキャッシュ
 - FFmpeg 未インストール時はグレースフルに無効化
 """
@@ -66,6 +67,41 @@ class VideoConverter:
             return self._temp_cache.put_with_writer(key, writer, 0, ".mp4")
         except subprocess.CalledProcessError, subprocess.TimeoutExpired:
             logger.warning("MKV remux 失敗: %s", source, exc_info=True)
+            return None
+
+    def extract_frame(
+        self, source: Path, seek_seconds: int = 1, timeout: int = 10
+    ) -> bytes | None:
+        """動画から1フレームを JPEG として抽出する.
+
+        ffmpeg で指定秒数にシークし、1フレームを JPEG として stdout に出力する。
+        失敗・タイムアウト時は None を返す。
+        run_in_threadpool で呼ぶ想定 (ブロッキング I/O)。
+        """
+        if not self.is_available:
+            return None
+        try:
+            result = subprocess.run(  # noqa: S603
+                [
+                    self._ffmpeg_path or "ffmpeg",
+                    "-ss",
+                    str(seek_seconds),
+                    "-i",
+                    str(source),
+                    "-vframes",
+                    "1",
+                    "-f",
+                    "image2pipe",
+                    "-vcodec",
+                    "mjpeg",
+                    "pipe:1",
+                ],
+                timeout=timeout,
+                capture_output=True,
+                check=True,
+            )
+            return result.stdout if result.stdout else None
+        except subprocess.CalledProcessError, subprocess.TimeoutExpired:
             return None
 
     def _run_ffmpeg(self, source: Path, dest: Path) -> None:
