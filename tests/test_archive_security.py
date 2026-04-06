@@ -76,7 +76,6 @@ def test_許可拡張子のファイルを通す(validator: ArchiveEntryValidato
 def test_許可外拡張子のファイルを拒否する(validator: ArchiveEntryValidator) -> None:
     assert validator.is_allowed_extension("readme.txt") is False
     assert validator.is_allowed_extension("script.py") is False
-    assert validator.is_allowed_extension("document.pdf") is False
     assert validator.is_allowed_extension("noextension") is False
 
 
@@ -86,6 +85,23 @@ def test_動画拡張子のファイルを許可する(validator: ArchiveEntryVa
     assert validator.is_allowed_extension("movie.MKV") is True
     assert validator.is_allowed_extension("file.avi") is True
     assert validator.is_allowed_extension("rec.mov") is True
+
+
+def test_PDF拡張子のファイルを許可する(validator: ArchiveEntryValidator) -> None:
+    assert validator.is_allowed_extension("document.pdf") is True
+    assert validator.is_allowed_extension("report.PDF") is True
+
+
+def test_PDFエントリのサイズ上限が動画と同じ(validator: ArchiveEntryValidator) -> None:
+    """PDF は画像上限ではなく動画/PDF 用の大容量上限が適用される."""
+    size = 100 * 1024 * 1024  # 100MB: 画像上限 (32MB) 超、動画上限 (500MB) 以内
+    # PDF 名なら許可される
+    validator.validate_entry_size(compressed=size, uncompressed=size, name="big.pdf")
+    # 画像名なら拒否される (画像の上限を超えているため)
+    with pytest.raises(ArchiveSecurityError):
+        validator.validate_entry_size(
+            compressed=size, uncompressed=size, name="big.jpg"
+        )
 
 
 # --- サイズ・圧縮率検証 ---
