@@ -749,6 +749,7 @@ pub(crate) async fn first_viewable(
     Query(query): Query<FirstViewableQuery>,
 ) -> Result<Json<FirstViewableResponse>, AppError> {
     let registry = Arc::clone(&state.node_registry);
+    let dir_index = Arc::clone(&state.dir_index);
     let sort = query.sort;
 
     let result = tokio::task::spawn_blocking(move || {
@@ -767,6 +768,16 @@ pub(crate) async fn first_viewable(
                 break;
             }
 
+            // DirIndex 高速パス: kind ごとに最初のエントリを SQL で取得
+            if dir_index.is_ready() {
+                if let Some(result) =
+                    try_first_viewable_from_index(&dir_index, &mut reg, &path, &current_id)
+                {
+                    return Ok(result);
+                }
+            }
+
+            // フォールバック: 全件取得 + ソート
             let entries = reg.list_directory(&path)?;
             let sorted = browse_cursor::sort_entries(entries, sort);
             let viewable = select_first_viewable(&sorted);
@@ -804,6 +815,36 @@ pub(crate) async fn first_viewable(
     Ok(Json(result?))
 }
 
+/// `DirIndex` から最初の閲覧対象を kind 優先で探索する
+///
+/// archive > pdf > image の順に `first_entry_by_kind` を試行。
+/// ヒットすればパス解決 + `NodeRegistry` 登録して返す。
+fn try_first_viewable_from_index(
+    dir_index: &DirIndex,
+    reg: &mut NodeRegistry,
+    path: &std::path::Path,
+    current_id: &str,
+) -> Option<FirstViewableResponse> {
+    let parent_key = reg.compute_parent_path_key(path)?;
+    let root = reg
+        .path_security()
+        .find_root_for(path)
+        .map(std::path::Path::to_path_buf)?;
+
+    for kind in ["archive", "pdf", "image"] {
+        if let Ok(Some(de)) = dir_index.first_entry_by_kind(&parent_key, kind) {
+            if let Some(meta) = dir_entry_to_entry_meta(&de, &root, &parent_key, reg) {
+                return Some(FirstViewableResponse {
+                    entry: Some(meta),
+                    parent_node_id: Some(current_id.to_string()),
+                });
+            }
+        }
+    }
+    // 閲覧対象なし — DirIndex ではディレクトリ再帰降下を行わない (フォールバックに任せる)
+    None
+}
+
 /// ソート済みエントリから最初の閲覧対象を選ぶ
 ///
 /// 優先順位: archive > pdf > image > directory (再帰降下用)
@@ -826,6 +867,7 @@ pub(crate) async fn find_sibling(
     Query(query): Query<SiblingQuery>,
 ) -> Result<Json<SiblingResponse>, AppError> {
     let registry = Arc::clone(&state.node_registry);
+    let dir_index = Arc::clone(&state.dir_index);
     let sort = query.sort;
     let current = query.current;
     let direction = query.direction;
@@ -845,7 +887,16 @@ pub(crate) async fn find_sibling(
             });
         }
 
-        // 全件取得してソート
+        // DirIndex 高速パス: sort_key ベースで隣接エントリを SQL で直接取得
+        if dir_index.is_ready() {
+            if let Some(resp) =
+                try_sibling_from_index(&dir_index, &mut reg, &parent_path, &current, &direction)
+            {
+                return Ok(resp);
+            }
+        }
+
+        // フォールバック: 全件取得してソート → 線形探索
         let entries = reg.list_directory(&parent_path)?;
         let sorted = browse_cursor::sort_entries(entries, sort);
 
@@ -891,6 +942,48 @@ pub(crate) async fn find_sibling(
     .map_err(|e| AppError::path_security(format!("タスク実行エラー: {e}")))?;
 
     Ok(Json(result?))
+}
+
+/// `DirIndex` から隣接エントリを `sort_key` ベースで直接取得する
+///
+/// `current` `node_id` からファイル名を取得し、`encode_sort_key` で `sort_key` を算出。
+/// `find_sibling_entry` で SQL 検索。
+fn try_sibling_from_index(
+    dir_index: &DirIndex,
+    reg: &mut NodeRegistry,
+    parent_path: &std::path::Path,
+    current_node_id: &str,
+    direction: &str,
+) -> Option<SiblingResponse> {
+    let parent_key = reg.compute_parent_path_key(parent_path)?;
+    let root = reg
+        .path_security()
+        .find_root_for(parent_path)
+        .map(std::path::Path::to_path_buf)?;
+
+    // current node_id からファイル名を取得して sort_key を計算
+    let current_path = reg.resolve(current_node_id).ok()?;
+    let current_name = current_path.file_name()?.to_string_lossy();
+    let current_kind = if current_path.is_dir() {
+        "directory"
+    } else {
+        "other"
+    };
+    // DirIndex の sort_key 形式: ディレクトリは "0\x00{sort_key}", その他は "1\x00{sort_key}"
+    let kind_flag = if current_kind == "directory" {
+        "0"
+    } else {
+        "1"
+    };
+    let current_sort_key = format!("{kind_flag}\x00{}", encode_sort_key(&current_name));
+
+    let kinds = &["directory", "archive", "pdf"];
+    let de = dir_index
+        .find_sibling_entry(&parent_key, &current_sort_key, direction, kinds)
+        .ok()??;
+
+    let meta = dir_entry_to_entry_meta(&de, &root, &parent_key, reg)?;
+    Some(SiblingResponse { entry: Some(meta) })
 }
 
 // --- テスト ---
