@@ -197,6 +197,77 @@ impl DirIndex {
             .map_err(DirIndexError::from)
     }
 
+    /// 指定 kind の最初のエントリを返す (`first-viewable` 高速パス用)
+    pub(crate) fn first_entry_by_kind(
+        &self,
+        parent_path: &str,
+        kind: &str,
+    ) -> Result<Option<DirEntry>, DirIndexError> {
+        let conn = self.connect()?;
+        let mut stmt = conn.prepare(
+            "SELECT parent_path, name, kind, sort_key, size_bytes, mtime_ns \
+             FROM dir_entries \
+             WHERE parent_path = ?1 AND kind = ?2 \
+             ORDER BY sort_key ASC \
+             LIMIT 1",
+        )?;
+        let mut rows = stmt.query_map(params![parent_path, kind], map_dir_entry)?;
+        match rows.next() {
+            Some(Ok(entry)) => Ok(Some(entry)),
+            Some(Err(e)) => Err(DirIndexError::from(e)),
+            None => Ok(None),
+        }
+    }
+
+    /// 次/前の兄弟エントリを返す (`sibling` 高速パス用)
+    ///
+    /// `direction` は `"next"` or `"prev"`。
+    /// `kinds` で対象 kind をフィルタ。
+    pub(crate) fn find_sibling_entry(
+        &self,
+        parent_path: &str,
+        current_sort_key: &str,
+        direction: &str,
+        kinds: &[&str],
+    ) -> Result<Option<DirEntry>, DirIndexError> {
+        let conn = self.connect()?;
+        // kind の IN 句を動的に構築
+        let placeholders: Vec<String> = (0..kinds.len()).map(|i| format!("?{}", i + 3)).collect();
+        let in_clause = placeholders.join(", ");
+
+        let (op, order) = if direction == "next" {
+            (">", "ASC")
+        } else {
+            ("<", "DESC")
+        };
+
+        let sql = format!(
+            "SELECT parent_path, name, kind, sort_key, size_bytes, mtime_ns \
+             FROM dir_entries \
+             WHERE parent_path = ?1 AND kind IN ({in_clause}) AND sort_key {op} ?2 \
+             ORDER BY sort_key {order} \
+             LIMIT 1"
+        );
+
+        let mut stmt = conn.prepare(&sql)?;
+        // パラメータ: ?1=parent_path, ?2=current_sort_key, ?3..=kinds
+        let mut params_vec: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
+        params_vec.push(Box::new(parent_path.to_string()));
+        params_vec.push(Box::new(current_sort_key.to_string()));
+        for kind in kinds {
+            params_vec.push(Box::new(kind.to_string()));
+        }
+        let params_ref: Vec<&dyn rusqlite::types::ToSql> =
+            params_vec.iter().map(std::convert::AsRef::as_ref).collect();
+
+        let mut rows = stmt.query_map(params_ref.as_slice(), map_dir_entry)?;
+        match rows.next() {
+            Some(Ok(entry)) => Ok(Some(entry)),
+            Some(Err(e)) => Err(DirIndexError::from(e)),
+            None => Ok(None),
+        }
+    }
+
     /// DB 内の全エントリ数を返す
     #[allow(clippy::cast_sign_loss, reason = "COUNT(*) は非負")]
     pub(crate) fn entry_count(&self) -> Result<usize, DirIndexError> {
@@ -982,5 +1053,134 @@ mod tests {
         let entries = idx.query_page("myMount", "name-asc", 100, None).unwrap();
         assert_eq!(entries.len(), 2);
         assert_eq!(entries[0].parent_path, "myMount");
+    }
+
+    // --- first_entry_by_kind ---
+
+    #[test]
+    fn first_entry_by_kindがarchiveを優先して返す() {
+        let (idx, _tmp) = setup();
+
+        let args = make_args(
+            "/data/photos",
+            "/data",
+            "m1",
+            vec![],
+            vec![
+                ("image1.jpg", 100, 1_000_000_000),
+                ("archive.zip", 200, 2_000_000_000),
+                ("doc.pdf", 300, 3_000_000_000),
+            ],
+        );
+        idx.ingest_walk_entry(&args).unwrap();
+
+        // archive が最初に見つかる
+        let entry = idx.first_entry_by_kind("m1/photos", "archive").unwrap();
+        assert!(entry.is_some());
+        assert_eq!(entry.unwrap().name, "archive.zip");
+    }
+
+    #[test]
+    fn first_entry_by_kindで該当なしはnoneを返す() {
+        let (idx, _tmp) = setup();
+
+        let args = make_args(
+            "/data/photos",
+            "/data",
+            "m1",
+            vec![],
+            vec![("image1.jpg", 100, 1_000_000_000)],
+        );
+        idx.ingest_walk_entry(&args).unwrap();
+
+        let entry = idx.first_entry_by_kind("m1/photos", "archive").unwrap();
+        assert!(entry.is_none());
+    }
+
+    // --- find_sibling_entry ---
+
+    #[test]
+    fn 次の兄弟をkindフィルタ付きで取得できる() {
+        let (idx, _tmp) = setup();
+
+        let args = make_args(
+            "/data",
+            "/data",
+            "m1",
+            vec![("a_dir", 1_000_000), ("c_dir", 3_000_000)],
+            vec![("b_file.jpg", 100, 2_000_000_000)],
+        );
+        idx.ingest_walk_entry(&args).unwrap();
+
+        // a_dir の次の directory は c_dir (b_file.jpg はスキップ)
+        let a_sort_key = {
+            let entries = idx.query_page("m1", "name-asc", 10, None).unwrap();
+            entries
+                .iter()
+                .find(|e| e.name == "a_dir")
+                .unwrap()
+                .sort_key
+                .clone()
+        };
+
+        let next = idx
+            .find_sibling_entry("m1", &a_sort_key, "next", &["directory"])
+            .unwrap();
+        assert!(next.is_some());
+        assert_eq!(next.unwrap().name, "c_dir");
+    }
+
+    #[test]
+    fn 前の兄弟をkindフィルタ付きで取得できる() {
+        let (idx, _tmp) = setup();
+
+        let args = make_args(
+            "/data",
+            "/data",
+            "m1",
+            vec![("a_dir", 1_000_000), ("c_dir", 3_000_000)],
+            vec![("b_file.jpg", 100, 2_000_000_000)],
+        );
+        idx.ingest_walk_entry(&args).unwrap();
+
+        let c_sort_key = {
+            let entries = idx.query_page("m1", "name-asc", 10, None).unwrap();
+            entries
+                .iter()
+                .find(|e| e.name == "c_dir")
+                .unwrap()
+                .sort_key
+                .clone()
+        };
+
+        let prev = idx
+            .find_sibling_entry("m1", &c_sort_key, "prev", &["directory"])
+            .unwrap();
+        assert!(prev.is_some());
+        assert_eq!(prev.unwrap().name, "a_dir");
+    }
+
+    #[test]
+    fn 該当なしでnoneを返す() {
+        let (idx, _tmp) = setup();
+
+        let args = make_args(
+            "/data",
+            "/data",
+            "m1",
+            vec![("only_dir", 1_000_000)],
+            vec![],
+        );
+        idx.ingest_walk_entry(&args).unwrap();
+
+        let sort_key = {
+            let entries = idx.query_page("m1", "name-asc", 10, None).unwrap();
+            entries[0].sort_key.clone()
+        };
+
+        let next = idx
+            .find_sibling_entry("m1", &sort_key, "next", &["directory"])
+            .unwrap();
+        assert!(next.is_none());
     }
 }
