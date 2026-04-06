@@ -130,3 +130,11 @@ async def test_空のnode_idsリストで空レスポンスが返る(
     assert response.status_code == 200
     data = response.json()
     assert data["thumbnails"] == {}
+
+
+def test_バッチサムネイルの並行度制限定数が存在する() -> None:
+    """_BATCH_CONCURRENCY 定数とセマフォが thumbnail モジュールに定義されている."""
+    from backend.routers import thumbnail
+
+    assert hasattr(thumbnail, "_BATCH_CONCURRENCY")
+    assert thumbnail._BATCH_CONCURRENCY == 8

@@ -36,6 +36,10 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api", tags=["thumbnail"])
 
+# バッチサムネイルの最大並行数 (Rust 版と同じ)
+_BATCH_CONCURRENCY = 8
+_batch_semaphore = asyncio.Semaphore(_BATCH_CONCURRENCY)
+
 
 def get_node_registry() -> NodeRegistry:
     """NodeRegistry の DI スタブ."""
@@ -461,25 +465,35 @@ async def serve_thumbnails_batch(
         else:
             regular_ids.append(nid)
 
+    # セマフォで並行度を制限するラッパー
+    async def _with_semaphore(coro):  # type: ignore[no-untyped-def]
+        async with _batch_semaphore:
+            return await coro
+
     # 非アーカイブエントリの個別処理タスク
     regular_tasks = [
-        _generate_one_thumbnail(
-            nid, registry, archive_service, thumb_service, video_converter
+        _with_semaphore(
+            _generate_one_thumbnail(
+                nid, registry, archive_service, thumb_service, video_converter
+            )
         )
         for nid in regular_ids
     ]
 
     # アーカイブグループの一括処理タスク
     archive_tasks = [
-        _generate_archive_group_thumbnails(
-            arc_path, entries, archive_service, thumb_service
+        _with_semaphore(
+            _generate_archive_group_thumbnails(
+                arc_path, entries, archive_service, thumb_service
+            )
         )
         for arc_path, entries in archive_groups.items()
     ]
 
-    # 並列実行: 通常エントリとアーカイブグループを別々に gather
-    regular_results = await asyncio.gather(*regular_tasks)
-    archive_results = await asyncio.gather(*archive_tasks)
+    # 並列実行: セマフォで並行度 _BATCH_CONCURRENCY に制限
+    all_results = await asyncio.gather(*regular_tasks, *archive_tasks)
+    regular_results = all_results[: len(regular_ids)]
+    archive_results = all_results[len(regular_ids) :]
 
     # 結果を統合
     thumbnails: dict[str, ThumbnailResult] = {}
