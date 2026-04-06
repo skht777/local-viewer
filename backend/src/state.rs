@@ -4,8 +4,11 @@
 
 use std::sync::{Arc, Mutex};
 
+use tokio::time::Instant;
+
 use crate::config::Settings;
 use crate::services::archive::ArchiveService;
+use crate::services::indexer::Indexer;
 use crate::services::node_registry::NodeRegistry;
 use crate::services::temp_file_cache::TempFileCache;
 use crate::services::thumbnail_service::ThumbnailService;
@@ -21,6 +24,8 @@ use crate::services::video_converter::VideoConverter;
 /// - `thumbnail_service`: 画像リサイズ + PDF サムネイル
 /// - `video_converter`: `FFmpeg` subprocess
 /// - `thumbnail_warmer`: バックグラウンドプリウォーム
+/// - `indexer`: FTS5 trigram 検索インデクサー
+/// - `last_rebuild`: 最後のインデックスリビルド時刻 (レート制限用)
 #[allow(
     dead_code,
     reason = "temp_file_cache と thumbnail_warmer は warm/browse 統合で使用"
@@ -33,4 +38,6 @@ pub(crate) struct AppState {
     pub thumbnail_service: Arc<ThumbnailService>,
     pub video_converter: Arc<VideoConverter>,
     pub thumbnail_warmer: Arc<ThumbnailWarmer>,
+    pub indexer: Arc<Indexer>,
+    pub last_rebuild: tokio::sync::Mutex<Option<Instant>>,
 }
