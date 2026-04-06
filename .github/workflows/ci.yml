@@ -15,13 +15,13 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      # pyvips (cffi) のランタイムライブラリ
-      - run: sudo apt-get update -qq && sudo apt-get install -y -qq libvips42
-
-      - uses: actions/setup-python@v6
+      - uses: dtolnay/rust-toolchain@stable
         with:
-          python-version-file: ".python-version"
-          cache: "pip"
+          components: clippy, rustfmt
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: backend
 
       - uses: actions/setup-node@v6
         with:
@@ -31,17 +31,13 @@ jobs:
             package-lock.json
             frontend/package-lock.json
 
-      # Python: 全依存インストール (mypy に型スタブが必要)
-      - run: pip install -r py_backend/requirements.txt -r py_backend/requirements-dev.txt
-
       # Node: ルート (oxlint/oxfmt) + フロントエンド
       - run: npm ci
       - run: cd frontend && npm ci
 
-      # Python lint
-      - run: ruff check py_backend/
-      - run: ruff format --check py_backend/
-      - run: mypy py_backend/
+      # Rust lint
+      - run: cd backend && cargo clippy --all-targets --all-features -- -D warnings
+      - run: cd backend && cargo fmt --check
 
       # Frontend lint
       - run: npx oxlint frontend/src/
@@ -53,16 +49,16 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      # pyvips (libvips42) + 7z アーカイブテスト (p7zip-full)
-      - run: sudo apt-get update -qq && sudo apt-get install -y -qq libvips42 p7zip-full
+      # アーカイブテスト (p7zip-full) + PDF サムネイル (poppler-utils)
+      - run: sudo apt-get update -qq && sudo apt-get install -y -qq p7zip-full poppler-utils
 
-      - uses: actions/setup-python@v6
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
         with:
-          python-version-file: ".python-version"
-          cache: "pip"
+          workspaces: backend
 
-      - run: pip install -r py_backend/requirements.txt -r py_backend/requirements-dev.txt
-      - run: pytest --cov
+      - run: cd backend && cargo test
 
   test-frontend:
     needs: lint
@@ -85,13 +81,14 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      # backend ランタイム依存 (pyvips + 7z + ffmpeg)
-      - run: sudo apt-get update -qq && sudo apt-get install -y -qq libvips42 p7zip-full ffmpeg
+      # バックエンドランタイム依存 (7z + ffmpeg + RAR + PDF サムネイル)
+      - run: sudo apt-get update -qq && sudo apt-get install -y -qq p7zip-full ffmpeg unrar-free poppler-utils
 
-      - uses: actions/setup-python@v6
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
         with:
-          python-version-file: ".python-version"
-          cache: "pip"
+          workspaces: backend
 
       - uses: actions/setup-node@v6
         with:
@@ -101,10 +98,6 @@ jobs:
             package-lock.json
             frontend/package-lock.json
             e2e/package-lock.json
-
-      # バックエンド依存 + venv 作成 (playwright.config.ts が venv を参照)
-      - run: python -m venv py_backend/.venv
-      - run: py_backend/.venv/bin/pip install -r py_backend/requirements.txt
 
       # フロントエンド依存
       - run: cd frontend && npm ci
@@ -132,7 +125,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - run: docker build -f Dockerfile.python -t local-viewer:ci .
+      - run: docker build -t local-viewer:ci .
 
       # スモークテスト: E2E フィクスチャを DATA_DIR に使用
       - run: mkdir -p e2e/fixtures/test-data/empty
