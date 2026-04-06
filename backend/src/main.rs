@@ -151,6 +151,12 @@ fn build_app(settings: Settings) -> anyhow::Result<Router> {
     ));
     let thumbnail_warmer = Arc::new(services::thumbnail_warmer::ThumbnailWarmer::new(4));
 
+    // 検索インデクサー初期化
+    let indexer = Arc::new(services::indexer::Indexer::new(&settings.index_db_path));
+    if let Err(e) = indexer.init_db() {
+        tracing::error!("インデックス DB 初期化失敗: {e}");
+    }
+
     let app_state = Arc::new(AppState {
         settings: Arc::new(settings),
         node_registry: Arc::new(Mutex::new(registry)),
@@ -159,6 +165,8 @@ fn build_app(settings: Settings) -> anyhow::Result<Router> {
         thumbnail_service,
         video_converter,
         thumbnail_warmer,
+        indexer,
+        last_rebuild: tokio::sync::Mutex::new(None),
     });
 
     // CORS: 開発用ポートを許可
@@ -196,6 +204,8 @@ fn build_app(settings: Settings) -> anyhow::Result<Router> {
             "/api/thumbnails/batch",
             post(routers::thumbnail::serve_thumbnails_batch),
         )
+        .route("/api/search", get(routers::search::search))
+        .route("/api/index/rebuild", post(routers::search::rebuild_index))
         .with_state(app_state);
 
     // 静的ファイル配信 + SPA フォールバック
@@ -302,6 +312,12 @@ mod tests {
             Arc::new(VideoConverter::new(Arc::clone(&temp_file_cache), &settings));
         let thumbnail_warmer = Arc::new(ThumbnailWarmer::new(4));
 
+        let index_db = tempfile::NamedTempFile::new().unwrap();
+        let indexer = Arc::new(services::indexer::Indexer::new(
+            index_db.path().to_str().unwrap(),
+        ));
+        indexer.init_db().unwrap();
+
         let app_state = Arc::new(AppState {
             settings: Arc::new(settings),
             node_registry: Arc::new(Mutex::new(registry)),
@@ -310,6 +326,8 @@ mod tests {
             thumbnail_service,
             video_converter,
             thumbnail_warmer,
+            indexer,
+            last_rebuild: tokio::sync::Mutex::new(None),
         });
 
         Router::new()
