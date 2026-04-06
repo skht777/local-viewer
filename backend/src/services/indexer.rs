@@ -392,9 +392,7 @@ impl Indexer {
         workers: usize,
         on_walk_entry: Option<&mut dyn FnMut(WalkCallbackArgs)>,
     ) -> Result<usize, IndexerError> {
-        // バッチ INSERT 用の高速接続 (synchronous=OFF)
         let conn = self.connect()?;
-        conn.execute_batch("PRAGMA synchronous=OFF;")?;
 
         let mut batch: Vec<IndexEntry> = Vec::with_capacity(BATCH_SIZE);
         let mut total: usize = 0;
