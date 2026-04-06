@@ -11,14 +11,6 @@
 - ライフタイム: `'a`, `'b` (短い名前)
 - Boolean 変数: `is_`, `has_`, `should_`, `can_` プレフィックス
 
-### Python (backend — レガシー)
-- モジュール / ファイル: `snake_case.py`
-- クラス: `PascalCase`
-- 関数 / 変数: `snake_case`
-- 定数: `UPPER_SNAKE_CASE`
-- プライベート: `_` プレフィックス
-- Boolean 変数: `is_`, `has_`, `should_`, `can_` プレフィックス
-
 ### TypeScript (frontend)
 - コンポーネント / ページ: `PascalCase.tsx`
 - フック: `use` プレフィックス + `camelCase.ts` (例: `useViewerState.ts`)
@@ -48,11 +40,6 @@
 - エラー型は `thiserror` で定義。`anyhow` はテストとバイナリエントリポイントのみ
 - `unwrap()` / `expect()` はテストコード以外では禁止。`?` 演算子で伝播
 - `clone()` の安易な使用を避け、借用で解決できないか検討
-
-### Python
-- double quotes, 88文字行, space indent (Ruff)
-- import順序: stdlib → third-party → local (Ruff isort)
-- `except OSError, ValueError:` — Python 3.14 では PEP 758 により括弧なしで複数例外をキャッチ可能。Ruff は括弧を外すフォーマットを行うが、これは正しい挙動であり、手動で括弧を追加しないこと（Python 2 の `as` 解釈ではない）
 
 ### TypeScript
 - double quotes, semicolons, 2-space indent (oxfmt)

@@ -1,6 +1,6 @@
 # 技術スタック
 
-## バックエンド (Rust — 移行中)
+## バックエンド (Rust)
 - Rust (stable, rust-toolchain.toml で固定)
 - axum + tokio (HTTP フレームワーク + 非同期ランタイム)
 - tower + tower-http (ミドルウェア: CORS, GZip, 静的ファイル)
@@ -13,14 +13,6 @@
 - rayon (並列ディレクトリ走査)
 - clap (CLI 引数パース)
 - tracing + tracing-subscriber (構造化ログ)
-
-## バックエンド (Python — レガシー、移行完了後に削除)
-- Python 3.14
-- FastAPI + uvicorn
-- pyvips (サムネイル生成)
-- zipfile (標準), rarfile + unrar-free (RAR), p7zip CLI (7z, subprocess)
-- SQLite FTS5 (検索インデックス)
-- watchdog (ファイル監視)
 
 ## フロントエンド
 - React 19 + TypeScript
@@ -37,13 +29,10 @@
 - clippy (Rust lint)
 - rustfmt (Rust format)
 - cargo-deny (脆弱性・ライセンスチェック)
-- Ruff (Python lint + format)
-- mypy (Python 型チェック)
 - oxlint (TypeScript lint)
 - oxfmt (TypeScript format)
 - Vitest + Testing Library (フロントエンドテスト)
 - cargo test + rstest (Rust バックエンドテスト)
-- pytest + httpx (Python バックエンドテスト — レガシー)
 - Husky + lint-staged (pre-commit)
 
 ## コンテナ
@@ -53,7 +42,6 @@
 ## 禁止事項
 - 上記以外のUIフレームワーク（Angular, Vue等）を提案しない
 - ESLint, Prettier, Biome を提案しない（oxlint + oxfmt を使用）
-- Black, isort を提案しない（Ruff を使用）
 - react-pdf を提案しない（pdfjs-dist を直接使用）
 - CSS Modules, styled-components, Emotion を提案しない（Tailwind のみ）
 - Redux, MobX, Recoil を提案しない（zustand + TanStack Query）

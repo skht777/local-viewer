@@ -25,26 +25,12 @@ Red → Green → Refactor を小刻みに回す:
 - **API テスト**: 各エンドポイントの正常系・異常系 (`tower::ServiceExt::oneshot`)
 - **サービステスト**: path_security, node_registry, archive, indexer のユニットテスト
 - **セキュリティ回帰テスト**: traversal, symlink, zip bomb, 壊れたアーカイブ
-- **互換性テスト**: Python 版と同一出力を検証するゴールデンベクターテスト (HMAC node_id, カーソル, ソート順)
-
 ### テスト実行
 ```bash
 cd backend && cargo test                    # 全テスト
 cd backend && cargo test -- --nocapture     # 標準出力付き
 cd backend && cargo test test_node_registry # 特定モジュール
 ```
-
-## バックエンド — Python レガシー (pytest + httpx)
-- テストディレクトリ: `tests/` (プロジェクトルート)
-- FastAPI `TestClient` (httpx) でAPIテスト
-- フィクスチャ: `tests/fixtures/` にサンプルファイル配置
-- テストファイル命名: `test_*.py`
-
-### テストカテゴリ
-- **APIテスト**: 各エンドポイントの正常系・異常系
-- **サービステスト**: archive_reader, indexer のユニットテスト
-- **セキュリティ回帰テスト**: traversal, symlink, zip bomb, 壊れたアーカイブ
-- **性能テスト** (CI外): 大規模アーカイブのP95応答時間、メモリ上限
 
 ## フロントエンド (Vitest + Testing Library)
 - テストディレクトリ: `frontend/tests/`

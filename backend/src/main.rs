@@ -1,7 +1,6 @@
 //! Local Content Viewer — Rust バックエンド エントリポイント
 //!
 //! ローカルディレクトリの画像・動画・PDFを閲覧する Web アプリのバックエンド。
-//! Python/FastAPI 版からの移行中。
 
 use std::collections::HashMap;
 use std::net::SocketAddr;

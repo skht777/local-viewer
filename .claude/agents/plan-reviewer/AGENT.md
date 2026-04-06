@@ -30,7 +30,7 @@ Read ツールでプランファイルを読み込む。
 
 `.claude/rules/` から関連ルールを読み込む:
 - 常時: `02_architecture.md`、`04_coding_principles.md`
-- 変更スコープに応じて: `09_security.md`、`07_testing.md`、`backend-fastapi.md`、`frontend-react.md` 等
+- 変更スコープに応じて: `09_security.md`、`07_testing.md`、`backend-rust.md`、`frontend-react.md` 等
 
 ### 4. チェック観点
 

@@ -8,7 +8,7 @@ local-viewer/
 ├── manage_mounts.sh         # マウントポイント管理 Bash TUI (ホスト側)
 ├── config/
 │   └── mounts.json          # マウントポイント定義 (Docker: バインドマウント ./config:/app/config)
-├── backend/                 # Rust バックエンド (移行中)
+├── backend/                 # Rust バックエンド
 │   ├── Cargo.toml           # 依存クレート定義
 │   ├── rust-toolchain.toml  # Rust ツールチェーン固定
 │   ├── clippy.toml          # Clippy 設定
@@ -22,14 +22,6 @@ local-viewer/
 │   │   ├── services/        # ビジネスロジック
 │   │   └── middleware/      # カスタムミドルウェア
 │   └── tests/               # 統合テスト + fixtures
-├── py_backend/              # Python バックエンド (レガシー、移行完了後に削除)
-│   ├── main.py              # FastAPI エントリポイント (DI 登録: DirIndex, ThumbnailWarmer 等)
-│   ├── routers/             # APIルーター (1リソース1ファイル)
-│   └── services/            # ビジネスロジック
-│       ├── mount_config.py  # MountConfigService (mounts.json 読み書き)
-│       ├── dir_index.py     # DirIndex (SQLite ディレクトリリスティング専用インデックス)
-│       ├── browse_cursor.py # カーソルベースページネーション (HMAC 署名)
-│       └── thumbnail_warmer.py # サムネイルプリウォーム (バックグラウンド生成)
 ├── frontend/
 │   ├── src/
 │   │   ├── pages/           # ページコンポーネント (1ルート1ファイル)
@@ -44,30 +36,21 @@ local-viewer/
 │   ├── playwright.config.ts   # E2E テスト設定
 │   ├── fixtures/              # テスト用フィクスチャ
 │   └── tests/                 # Playwright テストファイル
-├── Dockerfile               # マルチステージビルド (Rust 版、3段構成)
-├── Dockerfile.python        # マルチステージビルド (Python 版)
+├── Dockerfile               # マルチステージビルド (3段構成: Node → Rust → debian-slim)
 ├── docker-compose.yml           # 静的設定 (git tracked)
 └── docker-compose.override.yml  # マウント定義 (manage_mounts.sh 自動生成, gitignored)
 ```
 
 ## 依存関係ルール
 
-### Backend (Rust — 移行中)
+### Backend (Rust)
 ```
 routers → services → 外部クレート/std
 ```
-- Python 版と同一のレイヤード依存方向を維持
-- 状態管理: `AppState` 構造体 + `Arc<T>` (FastAPI DI overrides に相当)
+- レイヤード依存方向を維持
+- 状態管理: `AppState` 構造体 + `Arc<T>`
 - CPU バウンド処理: `tokio::task::spawn_blocking`
 - SQLite 操作: `spawn_blocking` 内で同期 rusqlite
-
-### Backend (Python — レガシー)
-```
-routers → services → 外部ライブラリ/stdlib
-```
-- routers は services を呼ぶ。直接ファイルシステムやDBにアクセスしない
-- services は他の services に依存してよいが、routers に依存しない
-- path_security は全てのファイルアクセスの前に必ず経由する（全マウントポイント root_dirs を管理し、find_root_for() で対象ルートを特定）
 
 ### Frontend
 ```
@@ -82,8 +65,6 @@ stores → (外部依存なし、純粋なUI状態)
 - stores は TanStack Query のデータを複製しない
 
 ## アーキテクチャパターン
-- Backend (Rust): レイヤードアーキテクチャ (Router → Service → Infrastructure)、axum + tower ミドルウェア
-- Backend (Python): レイヤードアーキテクチャ (Router → Service → Infrastructure)、FastAPI DI
+- Backend: レイヤードアーキテクチャ (Router → Service → Infrastructure)、axum + tower ミドルウェア
 - Frontend: Feature-based + Hooks パターン
-- Docker (Rust): フロントエンドビルド → Rust ビルド → debian-slim ランタイム (Python 不要)
-- Docker (Python): フロントエンドビルド → Python ランタイムが静的ファイル + API を配信
+- Docker: フロントエンドビルド → Rust ビルド → debian-slim ランタイム

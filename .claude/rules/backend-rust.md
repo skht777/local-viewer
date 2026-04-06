@@ -9,7 +9,7 @@ paths:
 ```
 routers → services → 外部クレート/std
 ```
-- Python 版と同じレイヤード依存方向を維持
+- レイヤード依存方向を維持
 - routers は services を呼ぶ。直接ファイルシステムや DB にアクセスしない
 - services は他の services に依存してよいが、routers に依存しない
 - path_security は全てのファイルアクセスの前に必ず経由する
@@ -73,7 +73,7 @@ routers → services → 外部クレート/std
 - `println!` / `eprintln!` は禁止 (`print_stdout` / `print_stderr` lint で検出)
 
 ## 設定
-- 環境変数ベース (Python 版 config.py と同一変数名・デフォルト値)
+- 環境変数ベース
 - `clap` で CLI 引数 (`--port`, `--bind`)
 - 起動時にバリデーション、不正値は panic ではなくエラーメッセージ付き終了
 
@@ -82,9 +82,8 @@ routers → services → 外部クレート/std
 - `md-5` (Cargo パッケージ名) / `md5` (クレートパス): ETag 生成専用。セキュリティ用途ではない
 - 外部ランタイム依存: `unrar-free`, `p7zip-full`, `ffmpeg`, `poppler-utils` (Docker イメージに同梱)
 
-## Python 互換性 (移行期間中)
+## データフォーマット
 - HMAC node_id: `"{root}::{relative}"` フォーマット、SHA256 先頭 16 hex 文字
-- カーソル: `json(sort_keys=True, separators=(",",":"))` → base64 URL-safe。`BTreeMap` でキーソート保証
+- カーソル: compact JSON → base64 URL-safe。`BTreeMap` でキーソート保証
 - 自然順ソート: `[0-9]+` で分割 (Unicode `\d` ではない)、小文字化
 - DirIndex sort_key: 10 桁ゼロ埋め + `\x00` 区切り
-- エラーコード: `FORBIDDEN_PATH`, `NOT_FOUND`, `ARCHIVE_SECURITY_ERROR` 等を Python 版と一致させる
