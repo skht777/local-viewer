@@ -96,6 +96,23 @@ impl NodeRegistry {
         &self.mount_id_map
     }
 
+    /// パスの `parent_path_key` (`DirIndex` 用) を計算する
+    ///
+    /// `"{mount_id}/{relative}"` 形式。ルート直下の場合は `mount_id` のみ。
+    /// どのマウントにも属さない場合は `None`。
+    pub(crate) fn compute_parent_path_key(&self, dir_path: &Path) -> Option<String> {
+        for (mount_id, root) in &self.mount_id_map {
+            if let Ok(rel) = dir_path.strip_prefix(root) {
+                let rel_str = rel.to_string_lossy();
+                if rel_str.is_empty() {
+                    return Some(mount_id.clone());
+                }
+                return Some(format!("{mount_id}/{rel_str}"));
+            }
+        }
+        None
+    }
+
     /// テスト用: secret を明示的に指定して作成
     #[cfg(test)]
     fn with_secret(

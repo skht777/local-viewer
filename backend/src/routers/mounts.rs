@@ -72,6 +72,7 @@ mod tests {
 
     use super::*;
     use crate::config::Settings;
+    use crate::services::dir_index::DirIndex;
     use crate::services::node_registry::NodeRegistry;
     use crate::services::path_security::PathSecurity;
     use crate::services::temp_file_cache::TempFileCache;
@@ -103,6 +104,9 @@ mod tests {
             index_db.path().to_str().unwrap(),
         ));
         indexer.init_db().unwrap();
+        let dir_index_db = tempfile::NamedTempFile::new().unwrap();
+        let dir_index = Arc::new(DirIndex::new(dir_index_db.path().to_str().unwrap()));
+        dir_index.init_db().unwrap();
         Arc::new(AppState {
             settings: Arc::new(settings),
             node_registry: Arc::new(Mutex::new(registry)),
@@ -112,6 +116,7 @@ mod tests {
             video_converter,
             thumbnail_warmer,
             indexer,
+            dir_index,
             last_rebuild: tokio::sync::Mutex::new(None),
         })
     }

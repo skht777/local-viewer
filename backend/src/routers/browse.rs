@@ -15,8 +15,10 @@ use serde::{Deserialize, Serialize};
 
 use crate::errors::AppError;
 use crate::services::browse_cursor::{self, MAX_LIMIT, SortOrder};
+use crate::services::dir_index::DirIndex;
 use crate::services::extensions::{self, EntryKind};
 use crate::services::models::{AncestorEntry, BrowseResponse, EntryMeta};
+use crate::services::natural_sort::encode_sort_key;
 use crate::services::node_registry::{NodeRegistry, PageOptions};
 use crate::state::AppState;
 
@@ -109,6 +111,7 @@ fn compute_etag(entries: &[EntryMeta]) -> String {
 ///
 /// ディレクトリ一覧を返す。`ETag` + 304 対応。
 /// カーソルベースページネーション (limit + cursor + sort)。
+#[allow(clippy::too_many_lines, reason = "DirIndex 高速パスの分岐で増加")]
 pub(crate) async fn browse_directory(
     State(state): State<Arc<AppState>>,
     Path(node_id): Path<String>,
@@ -164,15 +167,38 @@ pub(crate) async fn browse_directory(
         )
         .await?
     } else {
-        // ディレクトリの通常ブラウズ
+        // ディレクトリの通常ブラウズ (DirIndex 高速パス → フォールバック)
         let registry = Arc::clone(&state.node_registry);
+        let dir_index = Arc::clone(&state.dir_index);
         let nid = node_id.clone();
+        let is_dir_index_ready = state.dir_index.is_ready();
+        let has_limit = limit.is_some();
         tokio::task::spawn_blocking(move || {
             #[allow(
                 clippy::expect_used,
                 reason = "Mutex poison は致命的エラー、パニックが適切"
             )]
             let mut reg = registry.lock().expect("NodeRegistry Mutex poisoned");
+
+            // DirIndex 高速パス: ready かつ limit 指定時に試行
+            if is_dir_index_ready && has_limit {
+                let path = reg.resolve(&nid)?.to_path_buf();
+                if path.is_dir() {
+                    if let Some(result) = try_dir_index_browse(
+                        &mut reg,
+                        &dir_index,
+                        &path,
+                        &nid,
+                        sort,
+                        limit.unwrap_or(0),
+                        cursor.as_deref(),
+                    ) {
+                        return Ok(result);
+                    }
+                }
+            }
+
+            // フォールバック: 従来の scandir パス
             browse_directory_blocking(&mut reg, &nid, sort, limit, cursor.as_deref())
         })
         .await
@@ -264,6 +290,228 @@ fn browse_directory_blocking(
     };
 
     Ok((response, etag))
+}
+
+/// `DirIndex` 高速パスでディレクトリ一覧を取得する
+///
+/// `DirIndex` が ready かつ mtime が一致する場合のみ `Some` を返す。
+/// - `DirEntry` → `EntryMeta` への変換 (`node_id` 登録含む)
+/// - ディレクトリエントリの `child_count` / `preview_node_ids` を `DirIndex` から取得
+/// - カーソルは `DirIndex` 固有形式 (`sort_key` ベース)
+#[allow(
+    clippy::too_many_lines,
+    clippy::too_many_arguments,
+    reason = "DirIndex → EntryMeta 変換ロジック、引数は browse パラメータの透過渡し"
+)]
+fn try_dir_index_browse(
+    reg: &mut NodeRegistry,
+    dir_index: &DirIndex,
+    path: &std::path::Path,
+    node_id: &str,
+    sort: SortOrder,
+    limit: usize,
+    cursor: Option<&str>,
+) -> Option<(BrowseResponse, String)> {
+    // parent_path_key を計算 (mount_id/relative 形式)
+    let parent_key = reg.compute_parent_path_key(path)?;
+
+    // mtime ガード: ファイルシステムの mtime と DirIndex の mtime を比較
+    let fs_mtime_ns = std::fs::metadata(path)
+        .ok()
+        .and_then(|m| m.modified().ok())
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|d| {
+            #[allow(
+                clippy::cast_possible_wrap,
+                reason = "UNIX タイムスタンプは i64 範囲内"
+            )]
+            let ns = d.as_nanos() as i64;
+            ns
+        })?;
+
+    let stored_mtime = dir_index.get_dir_mtime(&parent_key).ok().flatten()?;
+    if fs_mtime_ns != stored_mtime {
+        return None; // mtime 不一致 → DirIndex が古い
+    }
+
+    // ソート指定文字列
+    let sort_str = match sort {
+        SortOrder::NameAsc => "name-asc",
+        SortOrder::NameDesc => "name-desc",
+        SortOrder::DateAsc => "date-asc",
+        SortOrder::DateDesc => "date-desc",
+    };
+
+    // DirIndex カーソルデコード:
+    // browse_cursor 形式のカーソルから DirIndex 用の sort_key カーソルを抽出する
+    let dir_index_cursor = cursor.and_then(|c| {
+        let decoded = browse_cursor::decode_cursor(c, sort).ok()?;
+        let entry_path = reg.resolve(&decoded.node_id).ok()?.to_path_buf();
+        let name = entry_path.file_name()?.to_string_lossy().to_string();
+
+        if matches!(sort, SortOrder::NameAsc | SortOrder::NameDesc) {
+            // name 系ソート: カーソルの node_id から sort_key を構築
+            let entry_sort_key = encode_sort_key(&name);
+            let is_dir = entry_path.is_dir();
+            let kind_flag = if is_dir { "0" } else { "1" };
+            Some(format!("{kind_flag}\x00{entry_sort_key}"))
+        } else {
+            // date 系ソート: ファイルの mtime をナノ秒文字列で返す
+            let mtime_ns = std::fs::metadata(&entry_path)
+                .ok()?
+                .modified()
+                .ok()?
+                .duration_since(std::time::UNIX_EPOCH)
+                .ok()?;
+            #[allow(
+                clippy::cast_possible_wrap,
+                reason = "UNIX タイムスタンプは i64 範囲内"
+            )]
+            let ns = mtime_ns.as_nanos() as i64;
+            Some(ns.to_string())
+        }
+    });
+
+    // +1 で次ページ有無を判定
+    let query_limit = limit + 1;
+    let entries = dir_index
+        .query_page(
+            &parent_key,
+            sort_str,
+            query_limit,
+            dir_index_cursor.as_deref(),
+        )
+        .ok()?;
+
+    let has_next = entries.len() > limit;
+    let page_entries: Vec<_> = entries.into_iter().take(limit).collect();
+
+    // total_count は DirIndex の child_count で取得
+    let total_count = dir_index.child_count(&parent_key).ok()?;
+
+    // DirEntry → EntryMeta 変換
+    let root = reg
+        .path_security()
+        .find_root_for(path)
+        .map(std::path::Path::to_path_buf)?;
+    let mut entry_metas = Vec::with_capacity(page_entries.len());
+
+    for de in &page_entries {
+        let abs_path = root
+            .join(
+                parent_key
+                    .strip_prefix(&parent_key[..parent_key.find('/').unwrap_or(parent_key.len())])
+                    .unwrap_or("")
+                    .trim_start_matches('/'),
+            )
+            .join(&de.name);
+
+        // node_id 登録 (検証済みパス)
+        // パスが存在しない場合はスキップ
+        if !abs_path.exists() {
+            continue;
+        }
+        let Ok(abs_resolved) = std::fs::canonicalize(&abs_path) else {
+            continue;
+        };
+        let entry_node_id = reg.register_resolved(&abs_resolved);
+
+        let kind = if de.kind == "directory" {
+            EntryKind::Directory
+        } else {
+            EntryKind::from_extension(&extensions::extract_extension(&de.name).to_ascii_lowercase())
+        };
+
+        let mime_type = if kind == EntryKind::Directory {
+            None
+        } else {
+            let ext = extensions::extract_extension(&de.name).to_ascii_lowercase();
+            extensions::mime_for_extension(&ext).map(String::from)
+        };
+
+        // ディレクトリの child_count と preview_node_ids
+        let (child_count, preview_node_ids) = if kind == EntryKind::Directory {
+            let child_key = format!("{parent_key}/{}", de.name);
+            let cc = dir_index.child_count(&child_key).ok();
+            let previews = dir_index
+                .preview_entries(&child_key, 3)
+                .ok()
+                .map(|pvs| {
+                    pvs.iter()
+                        .filter_map(|pv| {
+                            let pv_abs = root
+                                .join(
+                                    child_key
+                                        .strip_prefix(
+                                            &child_key
+                                                [..child_key.find('/').unwrap_or(child_key.len())],
+                                        )
+                                        .unwrap_or("")
+                                        .trim_start_matches('/'),
+                                )
+                                .join(&pv.name);
+                            let pv_resolved = std::fs::canonicalize(&pv_abs).ok()?;
+                            Some(reg.register_resolved(&pv_resolved))
+                        })
+                        .collect::<Vec<_>>()
+                })
+                .filter(|v| !v.is_empty());
+            (cc, previews)
+        } else {
+            (None, None)
+        };
+
+        #[allow(clippy::cast_precision_loss, reason = "mtime_ns → f64 秒は十分な精度")]
+        let modified_at = Some(de.mtime_ns as f64 / 1_000_000_000.0);
+
+        entry_metas.push(EntryMeta {
+            node_id: entry_node_id,
+            name: de.name.clone(),
+            kind,
+            size_bytes: de.size_bytes.map(|v| {
+                #[allow(clippy::cast_sign_loss, reason = "size_bytes は非負")]
+                let u = v as u64;
+                u
+            }),
+            mime_type,
+            child_count,
+            modified_at,
+            preview_node_ids,
+        });
+    }
+
+    let etag = compute_etag(&entry_metas);
+
+    // 次ページカーソル生成
+    let next_cursor = if has_next {
+        entry_metas
+            .last()
+            .map(|last| browse_cursor::encode_cursor(sort, last, &etag))
+    } else {
+        None
+    };
+
+    // パンくずリスト
+    let parent_node_id = reg.get_parent_node_id(path);
+    let ancestors = reg
+        .get_ancestors(path)
+        .into_iter()
+        .map(|(nid, name)| AncestorEntry { node_id: nid, name })
+        .collect();
+
+    let response = BrowseResponse {
+        current_node_id: Some(node_id.to_string()),
+        current_name: path
+            .file_name()
+            .map_or_else(String::new, |n| n.to_string_lossy().to_string()),
+        parent_node_id,
+        ancestors,
+        entries: entry_metas,
+        next_cursor,
+        total_count: Some(total_count),
+    };
+
+    Some((response, etag))
 }
 
 /// アーカイブファイルをディレクトリとして閲覧する
@@ -637,6 +885,7 @@ mod tests {
 
     use super::*;
     use crate::config::Settings;
+    use crate::services::dir_index::DirIndex;
     use crate::services::node_registry::NodeRegistry;
     use crate::services::path_security::PathSecurity;
     use crate::services::temp_file_cache::TempFileCache;
@@ -670,6 +919,9 @@ mod tests {
             index_db.path().to_str().unwrap(),
         ));
         indexer.init_db().unwrap();
+        let dir_index_db = tempfile::NamedTempFile::new().unwrap();
+        let dir_index = Arc::new(DirIndex::new(dir_index_db.path().to_str().unwrap()));
+        dir_index.init_db().unwrap();
         Arc::new(AppState {
             settings: Arc::new(settings),
             node_registry: Arc::new(Mutex::new(registry)),
@@ -679,6 +931,7 @@ mod tests {
             video_converter,
             thumbnail_warmer,
             indexer,
+            dir_index,
             last_rebuild: tokio::sync::Mutex::new(None),
         })
     }

@@ -8,6 +8,7 @@ use tokio::time::Instant;
 
 use crate::config::Settings;
 use crate::services::archive::ArchiveService;
+use crate::services::dir_index::DirIndex;
 use crate::services::indexer::Indexer;
 use crate::services::node_registry::NodeRegistry;
 use crate::services::temp_file_cache::TempFileCache;
@@ -25,6 +26,7 @@ use crate::services::video_converter::VideoConverter;
 /// - `video_converter`: `FFmpeg` subprocess
 /// - `thumbnail_warmer`: バックグラウンドプリウォーム
 /// - `indexer`: FTS5 trigram 検索インデクサー
+/// - `dir_index`: ディレクトリリスティングインデックス (browse 高速化)
 /// - `last_rebuild`: 最後のインデックスリビルド時刻 (レート制限用)
 #[allow(
     dead_code,
@@ -39,5 +41,6 @@ pub(crate) struct AppState {
     pub video_converter: Arc<VideoConverter>,
     pub thumbnail_warmer: Arc<ThumbnailWarmer>,
     pub indexer: Arc<Indexer>,
+    pub dir_index: Arc<DirIndex>,
     pub last_rebuild: tokio::sync::Mutex<Option<Instant>>,
 }
