@@ -240,7 +240,7 @@ impl ArchiveService {
     }
 }
 
-/// エントリ名が画像拡張子を持つかチェ��クする
+/// エントリ名が画像拡張子を持つかチェックする
 fn is_image_entry(name: &str) -> bool {
     let lower = name.to_lowercase();
     crate::services::extensions::IMAGE_EXTENSIONS

@@ -16,7 +16,7 @@ use std::sync::Mutex;
 /// - `get`: キャッシュヒット時にパスを返す (LRU 更新)
 /// - `put`: バイト列をアトミックに書き込み、キャッシュに登録
 /// - `put_with_writer`: コールバックで一時ファイルに書き込み、キャッシュに登録
-/// - 合計サイズが `max_size_bytes` を超えると最古エ��トリを eviction
+/// - 合計サイズが `max_size_bytes` を超えると最古エントリを eviction
 pub(crate) struct TempFileCache {
     inner: Mutex<CacheInner>,
 }
@@ -133,7 +133,7 @@ impl TempFileCache {
 
         let actual_size = fs::metadata(&tmp_path)?.len();
 
-        // アトミックに最終パスへ移���
+        // アトミックに最終パスへ移動
         // persist_noclobber ではなく persist で上書き許可
         tmp.persist(&final_path).map_err(std::io::Error::other)?;
 

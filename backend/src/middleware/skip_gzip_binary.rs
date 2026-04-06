@@ -2,7 +2,7 @@
 //!
 //! `CompressionLayer` は `Content-Encoding` が設定済みのレスポンスをスキップする。
 //! バイナリ `Content-Type` (画像/動画/PDF 等) に `identity` を設定して
-//! 無駄な圧縮を防止する。Python 版 `_SkipGzipForBinaryMiddleware` と��一ロジック。
+//! 無駄な圧縮を防止する。Python 版 `_SkipGzipForBinaryMiddleware` と同一ロジック。
 
 use axum::http::HeaderValue;
 use axum::http::header;
