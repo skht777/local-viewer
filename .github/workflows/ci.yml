@@ -133,6 +133,5 @@ jobs:
       # スモークテスト: E2E フィクスチャを DATA_DIR に使用
       - run: mkdir -p e2e/fixtures/test-data/empty
       - run: DATA_DIR=./e2e/fixtures/test-data docker compose up -d
-      - run: sleep 5
-      - run: curl -f http://localhost:8000/api/health
+      - run: curl -f --retry 10 --retry-delay 2 --retry-connrefused http://localhost:8000/api/health
       - run: docker compose down
