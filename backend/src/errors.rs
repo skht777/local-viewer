@@ -82,6 +82,26 @@ pub(crate) enum AppError {
     #[allow(dead_code, reason = "Phase 5 のサムネイルルーターで使用")]
     #[error("{0}")]
     FrameExtractFailed(String),
+
+    /// 検索インデックスが未準備 (スキャン中)
+    #[allow(dead_code, reason = "Phase 6a の search ルーターで使用")]
+    #[error("{0}")]
+    IndexNotReady(String),
+
+    /// 不正な検索クエリ (文字数制限違反、無効な kind 等)
+    #[allow(dead_code, reason = "Phase 6a の search ルーターで使用")]
+    #[error("{0}")]
+    InvalidQuery(String),
+
+    /// インデックスリビルドが既に実行中
+    #[allow(dead_code, reason = "Phase 6a の search ルーターで使用")]
+    #[error("{0}")]
+    RebuildInProgress(String),
+
+    /// リビルドのレート制限
+    #[allow(dead_code, reason = "Phase 6a の search ルーターで使用")]
+    #[error("{0}")]
+    RateLimited(String),
 }
 
 impl AppError {
@@ -123,6 +143,10 @@ impl IntoResponse for AppError {
             Self::FrameExtractFailed(_) => {
                 (StatusCode::UNPROCESSABLE_ENTITY, "FRAME_EXTRACT_FAILED")
             }
+            Self::IndexNotReady(_) => (StatusCode::SERVICE_UNAVAILABLE, "INDEX_NOT_READY"),
+            Self::InvalidQuery(_) => (StatusCode::UNPROCESSABLE_ENTITY, "INVALID_QUERY"),
+            Self::RebuildInProgress(_) => (StatusCode::CONFLICT, "REBUILD_IN_PROGRESS"),
+            Self::RateLimited(_) => (StatusCode::TOO_MANY_REQUESTS, "RATE_LIMITED"),
         };
 
         let body = ErrorResponse {
@@ -216,6 +240,28 @@ mod tests {
         Err(AppError::FrameExtractFailed(
             "動画のフレーム抽出に失敗しました".to_string(),
         ))
+    }
+
+    async fn index_not_ready_handler() -> Result<String, AppError> {
+        Err(AppError::IndexNotReady(
+            "インデックスが準備中です".to_string(),
+        ))
+    }
+
+    async fn invalid_query_handler() -> Result<String, AppError> {
+        Err(AppError::InvalidQuery(
+            "クエリは2文字以上で指定してください".to_string(),
+        ))
+    }
+
+    async fn rebuild_in_progress_handler() -> Result<String, AppError> {
+        Err(AppError::RebuildInProgress(
+            "リビルドが実行中です".to_string(),
+        ))
+    }
+
+    async fn rate_limited_handler() -> Result<String, AppError> {
+        Err(AppError::RateLimited("レート制限に達しました".to_string()))
     }
 
     async fn call(app: Router, uri: &str) -> (StatusCode, String) {
@@ -337,6 +383,38 @@ mod tests {
         let (status, body) = call(app, "/test").await;
         assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
         assert!(body.contains("FRAME_EXTRACT_FAILED"));
+    }
+
+    #[tokio::test]
+    async fn index_not_ready_errorが503とindex_not_readyを返す() {
+        let app = Router::new().route("/test", get(index_not_ready_handler));
+        let (status, body) = call(app, "/test").await;
+        assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
+        assert!(body.contains("INDEX_NOT_READY"));
+    }
+
+    #[tokio::test]
+    async fn invalid_query_errorが422とinvalid_queryを返す() {
+        let app = Router::new().route("/test", get(invalid_query_handler));
+        let (status, body) = call(app, "/test").await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+        assert!(body.contains("INVALID_QUERY"));
+    }
+
+    #[tokio::test]
+    async fn rebuild_in_progress_errorが409とrebuild_in_progressを返す() {
+        let app = Router::new().route("/test", get(rebuild_in_progress_handler));
+        let (status, body) = call(app, "/test").await;
+        assert_eq!(status, StatusCode::CONFLICT);
+        assert!(body.contains("REBUILD_IN_PROGRESS"));
+    }
+
+    #[tokio::test]
+    async fn rate_limited_errorが429とrate_limitedを返す() {
+        let app = Router::new().route("/test", get(rate_limited_handler));
+        let (status, body) = call(app, "/test").await;
+        assert_eq!(status, StatusCode::TOO_MANY_REQUESTS);
+        assert!(body.contains("RATE_LIMITED"));
     }
 
     #[test]
