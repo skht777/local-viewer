@@ -39,6 +39,8 @@ pub(crate) struct NodeRegistry {
     root_entries: Vec<(String, String, PathBuf)>,
     // マウントポイント名マッピング
     mount_names: HashMap<PathBuf, String>,
+    // `mount_id` → 解決済みルートパス (検索結果の `relative_path` 解決用)
+    mount_id_map: HashMap<String, PathBuf>,
     // アーカイブエントリ用 LRU
     id_to_archive_entry: HashMap<String, (PathBuf, String)>,
     archive_entry_to_id: HashMap<String, String>,
@@ -75,12 +77,23 @@ impl NodeRegistry {
             path_to_id: HashMap::new(),
             root_entries,
             mount_names,
+            mount_id_map: HashMap::new(),
             id_to_archive_entry: HashMap::new(),
             archive_entry_to_id: HashMap::new(),
             id_to_composite_key: HashMap::new(),
             archive_order: VecDeque::new(),
             archive_registry_max: archive_registry_max_entries,
         }
+    }
+
+    /// `mount_id` → ルートパスのマッピングを設定する (検索結果の `relative_path` 解決用)
+    pub(crate) fn set_mount_id_map(&mut self, map: HashMap<String, PathBuf>) {
+        self.mount_id_map = map;
+    }
+
+    /// `mount_id` → ルートパスのマッピングを参照する
+    pub(crate) fn mount_id_map(&self) -> &HashMap<String, PathBuf> {
+        &self.mount_id_map
     }
 
     /// テスト用: secret を明示的に指定して作成
@@ -107,6 +120,7 @@ impl NodeRegistry {
             path_to_id: HashMap::new(),
             root_entries,
             mount_names,
+            mount_id_map: HashMap::new(),
             id_to_archive_entry: HashMap::new(),
             archive_entry_to_id: HashMap::new(),
             id_to_composite_key: HashMap::new(),

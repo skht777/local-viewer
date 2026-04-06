@@ -77,9 +77,10 @@ fn build_app(settings: Settings) -> anyhow::Result<Router> {
     let config = load_mount_config(&config_path, &settings.mount_base_dir)
         .map_err(|e| anyhow::anyhow!("マウント設定の読み込みに失敗: {e}"))?;
 
-    // root_dirs と mount_names を構築
+    // root_dirs, mount_names, mount_id_map を構築
     let mut root_dirs = Vec::new();
     let mut mount_names: HashMap<PathBuf, String> = HashMap::new();
+    let mut mount_id_map: HashMap<String, PathBuf> = HashMap::new();
 
     if config.mounts.is_empty() {
         // マウント定義なし → base_dir 自体をルートとして使用
@@ -95,6 +96,7 @@ fn build_app(settings: Settings) -> anyhow::Result<Router> {
             match mp.resolve_path(&settings.mount_base_dir) {
                 Ok(resolved) => {
                     mount_names.insert(resolved.clone(), mp.name.clone());
+                    mount_id_map.insert(mp.mount_id.clone(), resolved.clone());
                     root_dirs.push(resolved);
                 }
                 Err(e) => {
@@ -116,11 +118,12 @@ fn build_app(settings: Settings) -> anyhow::Result<Router> {
 
     // サービス初期化
     let path_security = Arc::new(PathSecurity::new(root_dirs, settings.is_allow_symlinks)?);
-    let registry = NodeRegistry::new(
+    let mut registry = NodeRegistry::new(
         Arc::clone(&path_security),
         settings.archive_registry_max_entries,
         mount_names,
     );
+    registry.set_mount_id_map(mount_id_map);
 
     // アーカイブサービス構築 + diagnostics ログ
     let archive_service = Arc::new(services::archive::ArchiveService::new(&settings));
