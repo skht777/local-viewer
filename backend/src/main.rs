@@ -60,6 +60,14 @@ async fn health() -> Json<HealthResponse> {
     })
 }
 
+/// バックグラウンドタスク (ウォームスタート判定 + インデックススキャン) のコンテキスト
+struct BackgroundContext {
+    indexer: Arc<services::indexer::Indexer>,
+    dir_index: Arc<services::dir_index::DirIndex>,
+    path_security: Arc<PathSecurity>,
+    mount_id_map: HashMap<String, PathBuf>,
+}
+
 /// サービス初期化 + ルーター構築
 ///
 /// 初期化順序:
@@ -71,7 +79,7 @@ async fn health() -> Json<HealthResponse> {
 /// 6. `AppState` 構築
 /// 7. ルーター + ミドルウェア登録
 #[allow(clippy::too_many_lines, reason = "サービス初期化は一箇所にまとめる")]
-fn build_app(settings: Settings) -> anyhow::Result<Router> {
+fn build_app(settings: Settings) -> anyhow::Result<(Router, BackgroundContext)> {
     // マウントポイント設定読み込み
     let config_path = PathBuf::from(&settings.mount_config_path);
     let config = load_mount_config(&config_path, &settings.mount_base_dir)
@@ -123,7 +131,7 @@ fn build_app(settings: Settings) -> anyhow::Result<Router> {
         settings.archive_registry_max_entries,
         mount_names,
     );
-    registry.set_mount_id_map(mount_id_map);
+    registry.set_mount_id_map(mount_id_map.clone());
 
     // アーカイブサービス構築 + diagnostics ログ
     let archive_service = Arc::new(services::archive::ArchiveService::new(&settings));
@@ -157,6 +165,21 @@ fn build_app(settings: Settings) -> anyhow::Result<Router> {
         tracing::error!("インデックス DB 初期化失敗: {e}");
     }
 
+    // DirIndex 初期化
+    let dir_index_path = settings.index_db_path.replace(".db", "-dir.db");
+    let dir_index = Arc::new(services::dir_index::DirIndex::new(&dir_index_path));
+    if let Err(e) = dir_index.init_db() {
+        tracing::error!("DirIndex DB 初期化失敗: {e}");
+    }
+
+    // バックグラウンドタスク用コンテキストを先に構築
+    let bg_context = BackgroundContext {
+        indexer: Arc::clone(&indexer),
+        dir_index: Arc::clone(&dir_index),
+        path_security: Arc::clone(&path_security),
+        mount_id_map: mount_id_map.clone(),
+    };
+
     let app_state = Arc::new(AppState {
         settings: Arc::new(settings),
         node_registry: Arc::new(Mutex::new(registry)),
@@ -166,6 +189,7 @@ fn build_app(settings: Settings) -> anyhow::Result<Router> {
         video_converter,
         thumbnail_warmer,
         indexer,
+        dir_index,
         last_rebuild: tokio::sync::Mutex::new(None),
     });
 
@@ -218,7 +242,7 @@ fn build_app(settings: Settings) -> anyhow::Result<Router> {
         .layer(CompressionLayer::new())
         .layer(TraceLayer::new_for_http());
 
-    Ok(app)
+    Ok((app, bg_context))
 }
 
 /// 静的ファイル配信 + SPA フォールバックを追加する
@@ -251,6 +275,136 @@ fn attach_static_files(router: Router) -> Router {
         .fallback_service(spa_fallback)
 }
 
+/// ウォームスタート判定 + バックグラウンドインデックススキャンを起動する
+///
+/// - ウォームスタート条件: Indexer にエントリあり + `DirIndex` フルスキャン完了 + マウントフィンガープリント一致
+/// - フルスキャン: 全マウントを並列走査、Indexer + `DirIndex` に格納
+/// - ウォームスタート: 差分スキャンで変更分のみ更新
+/// - 全スキャン完了後に `FileWatcher` を起動
+#[allow(
+    clippy::too_many_lines,
+    clippy::needless_pass_by_value,
+    reason = "スキャン起動の分岐ロジックは一箇所にまとめる、Arc フィールドを spawn に移動するため所有権が必要"
+)]
+fn spawn_background_tasks(bg: BackgroundContext) {
+    let mount_ids: Vec<String> = bg.mount_id_map.keys().cloned().collect();
+    let mount_id_refs: Vec<&str> = mount_ids.iter().map(String::as_str).collect();
+
+    let is_warm_start = bg.indexer.entry_count().unwrap_or(0) > 0
+        && bg.dir_index.is_full_scan_done().unwrap_or(false)
+        && bg
+            .indexer
+            .check_mount_fingerprint(&mount_id_refs)
+            .unwrap_or(false);
+
+    if is_warm_start {
+        tracing::info!("Warm Start: 既存インデックスを使用");
+        bg.indexer.mark_warm_start();
+        bg.dir_index.mark_warm_start();
+    } else {
+        tracing::info!("フルスキャンを開始");
+    }
+
+    // マウントフィンガープリントを保存
+    if let Err(e) = bg.indexer.save_mount_fingerprint(&mount_id_refs) {
+        tracing::error!("マウントフィンガープリント保存失敗: {e}");
+    }
+
+    // バックグラウンドスキャン (マウントごとに tokio::spawn)
+    let mut scan_handles = tokio::task::JoinSet::new();
+
+    for (mount_id, root) in &bg.mount_id_map {
+        let indexer = Arc::clone(&bg.indexer);
+        let dir_index = Arc::clone(&bg.dir_index);
+        let path_security = Arc::clone(&bg.path_security);
+        let mount_id = mount_id.clone();
+        let root = root.clone();
+
+        scan_handles.spawn(async move {
+            let m_id = mount_id.clone();
+            let result = tokio::task::spawn_blocking(move || {
+                if is_warm_start {
+                    // 差分スキャン + DirIndex コールバック
+                    let mut bulk = dir_index.begin_bulk().ok();
+                    let result = indexer.incremental_scan(
+                        &root,
+                        &path_security,
+                        &mount_id,
+                        8,
+                        Some(&mut |args| {
+                            if let Some(bulk) = bulk.as_mut() {
+                                let _ = bulk.ingest_walk_entry(&args);
+                            }
+                        }),
+                    );
+                    if let Some(mut bulk) = bulk {
+                        let _ = bulk.flush();
+                    }
+                    if let Err(e) = &result {
+                        tracing::error!("Incremental scan 失敗 ({mount_id}): {e}");
+                    }
+                    dir_index.mark_ready();
+                } else {
+                    // フルスキャン + DirIndex コールバック
+                    let mut bulk = dir_index.begin_bulk().ok();
+                    let result = indexer.scan_directory(
+                        &root,
+                        &path_security,
+                        &mount_id,
+                        8,
+                        Some(&mut |args| {
+                            if let Some(bulk) = bulk.as_mut() {
+                                let _ = bulk.ingest_walk_entry(&args);
+                            }
+                        }),
+                    );
+                    if let Some(mut bulk) = bulk {
+                        let _ = bulk.flush();
+                    }
+                    if let Err(e) = &result {
+                        tracing::error!("Full scan 失敗 ({mount_id}): {e}");
+                    }
+                    let _ = dir_index.mark_full_scan_done();
+                    dir_index.mark_ready();
+                }
+            })
+            .await;
+
+            if let Err(e) = result {
+                tracing::error!("バックグラウンドスキャンタスクがパニック: {e}");
+            }
+            m_id
+        });
+    }
+
+    // 全スキャン完了後に FileWatcher を起動
+    let indexer = Arc::clone(&bg.indexer);
+    let path_security = Arc::clone(&bg.path_security);
+    let mounts: Vec<(String, PathBuf)> = bg
+        .mount_id_map
+        .iter()
+        .map(|(id, p)| (id.clone(), p.clone()))
+        .collect();
+
+    tokio::spawn(async move {
+        while let Some(result) = scan_handles.join_next().await {
+            match result {
+                Ok(mount_id) => tracing::info!("スキャン完了: {mount_id}"),
+                Err(e) => tracing::error!("スキャン join エラー: {e}"),
+            }
+        }
+        tracing::info!("全マウントのスキャン完了、FileWatcher を起動");
+
+        let file_watcher = services::file_watcher::FileWatcher::new(indexer, path_security, mounts);
+        if let Err(e) = file_watcher.start() {
+            tracing::error!("FileWatcher 起動失敗: {e}");
+        }
+        // FileWatcher を維持 (drop で停止するため)
+        // ここで永久に保持する必要がある
+        std::mem::forget(file_watcher);
+    });
+}
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     // ログ初期化
@@ -262,7 +416,10 @@ async fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
 
     let settings = Settings::new().map_err(|e| anyhow::anyhow!("設定エラー: {e}"))?;
-    let app = build_app(settings)?;
+    let (app, bg) = build_app(settings)?;
+
+    // ウォームスタート判定 + バックグラウンドスキャン起動
+    spawn_background_tasks(bg);
 
     let addr: SocketAddr = format!("{}:{}", cli.bind, cli.port).parse()?;
     tracing::info!("サーバー起動: {addr}");
@@ -282,6 +439,7 @@ mod tests {
     use axum::http::{Request, StatusCode};
     use tower::ServiceExt;
 
+    use crate::services::dir_index::DirIndex;
     use crate::services::temp_file_cache::TempFileCache;
     use crate::services::thumbnail_service::ThumbnailService;
     use crate::services::thumbnail_warmer::ThumbnailWarmer;
@@ -318,6 +476,10 @@ mod tests {
         ));
         indexer.init_db().unwrap();
 
+        let dir_index_db = tempfile::NamedTempFile::new().unwrap();
+        let dir_index = Arc::new(DirIndex::new(dir_index_db.path().to_str().unwrap()));
+        dir_index.init_db().unwrap();
+
         let app_state = Arc::new(AppState {
             settings: Arc::new(settings),
             node_registry: Arc::new(Mutex::new(registry)),
@@ -327,6 +489,7 @@ mod tests {
             video_converter,
             thumbnail_warmer,
             indexer,
+            dir_index,
             last_rebuild: tokio::sync::Mutex::new(None),
         });
 
