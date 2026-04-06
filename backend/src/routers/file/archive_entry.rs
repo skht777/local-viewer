@@ -16,6 +16,7 @@ use tower_http::services::ServeFile;
 
 use crate::errors::AppError;
 use crate::services::extensions::{self, PDF_EXTENSIONS, VIDEO_EXTENSIONS};
+use crate::services::video_converter::VideoConverter;
 use crate::state::AppState;
 
 /// アーカイブエントリ `ETag` + `mtime_ns` の計算結果
@@ -188,6 +189,21 @@ async fn serve_archive_large_entry(
         .map_err(|e| AppError::InvalidArchive(format!("エントリ展開失敗: {e}")))?
     };
 
+    // MKV remux: アーカイブ内 MKV エントリを MP4 に変換
+    let ext_with_dot = format!(".{}", ctx.ext.trim_start_matches('.'));
+    let remuxed_path =
+        if VideoConverter::needs_remux(&ext_with_dot) && state.video_converter.is_available() {
+            let vc = Arc::clone(&state.video_converter);
+            let p = entry_path.clone();
+            let mtime = ctx.meta.mtime_ns;
+            tokio::task::spawn_blocking(move || vc.get_remuxed(&p, mtime))
+                .await
+                .map_err(|e| AppError::path_security(format!("タスク実行失敗: {e}")))?
+        } else {
+            None
+        };
+    let serve_path = remuxed_path.as_deref().unwrap_or(&entry_path);
+
     // ServeFile で配信 (Range 対応)
     let mut serve_req = Request::builder()
         .uri(ctx.original_uri)
@@ -199,15 +215,19 @@ async fn serve_archive_large_entry(
         }
     }
 
-    let mut response = ServeFile::new(&entry_path)
+    let mut response = ServeFile::new(serve_path)
         .oneshot(serve_req)
         .await
         .map_err(|e| AppError::path_security(format!("ファイル配信失敗: {e}")))?
         .into_response();
 
     // Content-Type + ETag + Cache-Control を上書き
-    let content_type =
-        extensions::mime_for_extension(ctx.ext).unwrap_or("application/octet-stream");
+    // remux 成功時は video/mp4 に上書き
+    let content_type = if remuxed_path.is_some() {
+        "video/mp4"
+    } else {
+        extensions::mime_for_extension(ctx.ext).unwrap_or("application/octet-stream")
+    };
     let resp_headers = response.headers_mut();
     resp_headers.insert(
         header::CONTENT_TYPE,
@@ -268,6 +288,8 @@ mod tests {
             .unwrap();
         writer.start_file("document.pdf", options).unwrap();
         writer.write_all(b"fake pdf content here").unwrap();
+        writer.start_file("movie.mkv", options).unwrap();
+        writer.write_all(b"fake mkv data here").unwrap();
         writer.finish().unwrap();
 
         let settings = Settings::from_map(&HashMap::from([(
@@ -521,5 +543,28 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(resp.status(), StatusCode::NOT_MODIFIED);
+    }
+
+    // --- MKV remux ---
+
+    #[tokio::test]
+    async fn アーカイブ内mkv_remux対象でffmpegがない場合はフォールバック配信する() {
+        let (app, state, dir) = create_archive_setup();
+        let root = std::fs::canonicalize(dir.path()).unwrap();
+        let entry_nid = register_archive_entry(&state, &root.join("photos.zip"), "movie.mkv");
+
+        let resp = app
+            .oneshot(
+                Request::get(format!("/api/file/{entry_nid}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        // ffmpeg がない環境では remux 失敗 → フォールバックで元データを配信
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body_bytes = body::to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+        assert_eq!(&body_bytes[..], b"fake mkv data here");
     }
 }
