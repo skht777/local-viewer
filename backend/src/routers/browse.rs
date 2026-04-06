@@ -105,6 +105,68 @@ fn compute_etag(entries: &[EntryMeta]) -> String {
     format!("{:x}", hasher.finalize())
 }
 
+// --- DirEntry → EntryMeta 変換ヘルパー ---
+
+use crate::services::dir_index::DirEntry;
+
+/// `parent_key` (`"{mount_id}/relative/path"`) から `mount_id` 以降の相対パスを取得する
+fn parent_key_relative(parent_key: &str) -> &str {
+    parent_key
+        .find('/')
+        .map_or("", |i| parent_key[i..].trim_start_matches('/'))
+}
+
+/// `DirEntry` を `EntryMeta` に変換する (`node_id` 登録含む)
+///
+/// パスが存在しない場合は `None` を返す。
+/// `child_count` / `preview_node_ids` はこの関数では設定しない (呼び出し側で必要に応じて補完)。
+fn dir_entry_to_entry_meta(
+    de: &DirEntry,
+    root: &std::path::Path,
+    parent_key: &str,
+    reg: &mut NodeRegistry,
+) -> Option<EntryMeta> {
+    let rel = parent_key_relative(parent_key);
+    let abs_path = root.join(rel).join(&de.name);
+
+    if !abs_path.exists() {
+        return None;
+    }
+    let abs_resolved = std::fs::canonicalize(&abs_path).ok()?;
+    let entry_node_id = reg.register_resolved(&abs_resolved);
+
+    let kind = if de.kind == "directory" {
+        EntryKind::Directory
+    } else {
+        EntryKind::from_extension(&extensions::extract_extension(&de.name).to_ascii_lowercase())
+    };
+
+    let mime_type = if kind == EntryKind::Directory {
+        None
+    } else {
+        let ext = extensions::extract_extension(&de.name).to_ascii_lowercase();
+        extensions::mime_for_extension(&ext).map(String::from)
+    };
+
+    #[allow(clippy::cast_precision_loss, reason = "mtime_ns → f64 秒は十分な精度")]
+    let modified_at = Some(de.mtime_ns as f64 / 1_000_000_000.0);
+
+    Some(EntryMeta {
+        node_id: entry_node_id,
+        name: de.name.clone(),
+        kind,
+        size_bytes: de.size_bytes.map(|v| {
+            #[allow(clippy::cast_sign_loss, reason = "size_bytes は非負")]
+            let u = v as u64;
+            u
+        }),
+        mime_type,
+        child_count: None,
+        modified_at,
+        preview_node_ids: None,
+    })
+}
+
 // --- ハンドラ ---
 
 /// `GET /api/browse/{node_id}`
@@ -389,7 +451,7 @@ fn try_dir_index_browse(
     // total_count は DirIndex の child_count で取得
     let total_count = dir_index.child_count(&parent_key).ok()?;
 
-    // DirEntry → EntryMeta 変換
+    // DirEntry → EntryMeta 変換 (共通関数 + ディレクトリ固有の child_count/preview 補完)
     let root = reg
         .path_security()
         .find_root_for(path)
@@ -397,87 +459,31 @@ fn try_dir_index_browse(
     let mut entry_metas = Vec::with_capacity(page_entries.len());
 
     for de in &page_entries {
-        let abs_path = root
-            .join(
-                parent_key
-                    .strip_prefix(&parent_key[..parent_key.find('/').unwrap_or(parent_key.len())])
-                    .unwrap_or("")
-                    .trim_start_matches('/'),
-            )
-            .join(&de.name);
-
-        // node_id 登録 (検証済みパス)
-        // パスが存在しない場合はスキップ
-        if !abs_path.exists() {
-            continue;
-        }
-        let Ok(abs_resolved) = std::fs::canonicalize(&abs_path) else {
+        let Some(mut meta) = dir_entry_to_entry_meta(de, &root, &parent_key, reg) else {
             continue;
         };
-        let entry_node_id = reg.register_resolved(&abs_resolved);
 
-        let kind = if de.kind == "directory" {
-            EntryKind::Directory
-        } else {
-            EntryKind::from_extension(&extensions::extract_extension(&de.name).to_ascii_lowercase())
-        };
-
-        let mime_type = if kind == EntryKind::Directory {
-            None
-        } else {
-            let ext = extensions::extract_extension(&de.name).to_ascii_lowercase();
-            extensions::mime_for_extension(&ext).map(String::from)
-        };
-
-        // ディレクトリの child_count と preview_node_ids
-        let (child_count, preview_node_ids) = if kind == EntryKind::Directory {
+        // ディレクトリの child_count と preview_node_ids を DirIndex から補完
+        if meta.kind == EntryKind::Directory {
             let child_key = format!("{parent_key}/{}", de.name);
-            let cc = dir_index.child_count(&child_key).ok();
-            let previews = dir_index
+            meta.child_count = dir_index.child_count(&child_key).ok();
+            meta.preview_node_ids = dir_index
                 .preview_entries(&child_key, 3)
                 .ok()
                 .map(|pvs| {
                     pvs.iter()
                         .filter_map(|pv| {
-                            let pv_abs = root
-                                .join(
-                                    child_key
-                                        .strip_prefix(
-                                            &child_key
-                                                [..child_key.find('/').unwrap_or(child_key.len())],
-                                        )
-                                        .unwrap_or("")
-                                        .trim_start_matches('/'),
-                                )
-                                .join(&pv.name);
+                            let pv_rel = parent_key_relative(&child_key);
+                            let pv_abs = root.join(pv_rel).join(&pv.name);
                             let pv_resolved = std::fs::canonicalize(&pv_abs).ok()?;
                             Some(reg.register_resolved(&pv_resolved))
                         })
                         .collect::<Vec<_>>()
                 })
                 .filter(|v| !v.is_empty());
-            (cc, previews)
-        } else {
-            (None, None)
-        };
+        }
 
-        #[allow(clippy::cast_precision_loss, reason = "mtime_ns → f64 秒は十分な精度")]
-        let modified_at = Some(de.mtime_ns as f64 / 1_000_000_000.0);
-
-        entry_metas.push(EntryMeta {
-            node_id: entry_node_id,
-            name: de.name.clone(),
-            kind,
-            size_bytes: de.size_bytes.map(|v| {
-                #[allow(clippy::cast_sign_loss, reason = "size_bytes は非負")]
-                let u = v as u64;
-                u
-            }),
-            mime_type,
-            child_count,
-            modified_at,
-            preview_node_ids,
-        });
+        entry_metas.push(meta);
     }
 
     let etag = compute_etag(&entry_metas);
