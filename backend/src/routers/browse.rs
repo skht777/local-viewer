@@ -519,13 +519,17 @@ fn try_dir_index_browse(
 /// - `archive_service.list_entries()` でエントリ一覧取得 (ロック外)
 /// - `NodeRegistry` にアーカイブエントリを登録 (短ロック)
 /// - `BrowseResponse` を構築して返す
+#[allow(
+    clippy::too_many_lines,
+    reason = "ページネーション追加で一時的に超過、将来分割予定"
+)]
 async fn browse_archive(
     state: &Arc<AppState>,
     archive_path: &std::path::Path,
     archive_node_id: &str,
-    _sort: SortOrder,
-    _limit: Option<usize>,
-    _cursor: Option<&str>,
+    sort: SortOrder,
+    limit: Option<usize>,
+    cursor: Option<&str>,
 ) -> Result<(BrowseResponse, String), AppError> {
     // Step 1: アーカイブエントリ一覧を取得 (ロック外で I/O)
     let svc = Arc::clone(&state.archive_service);
@@ -596,22 +600,37 @@ async fn browse_archive(
         .await
         .map_err(|e| AppError::path_security(format!("タスク実行エラー: {e}")))??;
 
-    // ETag: アーカイブの mtime ベース
-    let etag = compute_etag(&entry_metas);
+    // ソート・ページネーション (fetch_page_full と同じパターン)
+    let total = entry_metas.len();
+    let (page_entries, next_cursor, etag) = if let Some(limit_val) = limit {
+        let (page, next, _) =
+            browse_cursor::paginate(entry_metas, sort, Some(limit_val), cursor, "")?;
+        let etag = compute_etag(&page);
+        let next = if next.is_some() {
+            page.last()
+                .map(|last| browse_cursor::encode_cursor(sort, last, &etag))
+        } else {
+            None
+        };
+        (page, next, etag)
+    } else {
+        let sorted = browse_cursor::sort_entries(entry_metas, sort);
+        let etag = compute_etag(&sorted);
+        (sorted, None, etag)
+    };
 
     let archive_name = archive_path
         .file_name()
         .map_or_else(String::new, |n| n.to_string_lossy().to_string());
 
-    // アーカイブでは全件返却 (ページネーションは将来対応)
     let response = BrowseResponse {
         current_node_id: Some(a_nid.clone()),
         current_name: archive_name,
         parent_node_id,
         ancestors,
-        entries: entry_metas,
-        next_cursor: None,
-        total_count: None,
+        entries: page_entries,
+        next_cursor,
+        total_count: if limit.is_some() { Some(total) } else { None },
     };
 
     Ok((response, etag))
@@ -1394,6 +1413,78 @@ mod tests {
         let names: Vec<&str> = resp.entries.iter().map(|e| e.name.as_str()).collect();
         assert!(names.contains(&"img01.jpg"));
         assert!(names.contains(&"img02.png"));
+    }
+
+    #[tokio::test]
+    async fn アーカイブ閲覧でlimit指定時にページネーションされる() {
+        let (app, state, dir) = create_archive_setup();
+        let root = std::fs::canonicalize(dir.path()).unwrap();
+        let zip_node_id = register_node_id(&state, &root.join("images.zip"));
+
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri(format!("/api/browse/{zip_node_id}?limit=1"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let resp: BrowseResponse = serde_json::from_slice(&body).unwrap();
+        assert_eq!(resp.entries.len(), 1, "limit=1 なので 1 件のみ");
+        assert!(resp.next_cursor.is_some(), "次ページがあるはず");
+        assert_eq!(resp.total_count, Some(2), "全エントリ数は 2");
+
+        // next_cursor で2ページ目を取得
+        let cursor = resp.next_cursor.unwrap();
+        let response2 = app
+            .oneshot(
+                Request::builder()
+                    .uri(format!("/api/browse/{zip_node_id}?limit=1&cursor={cursor}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let body2 = axum::body::to_bytes(response2.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let resp2: BrowseResponse = serde_json::from_slice(&body2).unwrap();
+        assert_eq!(resp2.entries.len(), 1, "2ページ目も 1 件");
+        assert!(resp2.next_cursor.is_none(), "最終ページ");
+
+        // 重複なし
+        assert_ne!(resp.entries[0].name, resp2.entries[0].name);
+    }
+
+    #[tokio::test]
+    async fn アーカイブ閲覧でtotal_countが返される() {
+        let (app, state, dir) = create_archive_setup();
+        let root = std::fs::canonicalize(dir.path()).unwrap();
+        let zip_node_id = register_node_id(&state, &root.join("images.zip"));
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri(format!("/api/browse/{zip_node_id}?limit=10"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let resp: BrowseResponse = serde_json::from_slice(&body).unwrap();
+        assert_eq!(resp.total_count, Some(2));
+        assert!(resp.next_cursor.is_none(), "全件収まるので次ページなし");
     }
 
     #[tokio::test]
