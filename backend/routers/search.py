@@ -95,6 +95,11 @@ async def search(
     - 各結果に node_id を付与 (NodeRegistry 経由)
     - 削除済みファイルはスキップし、limit まで結果を埋める
     """
+    # 前後空白を除去し、strip 後の文字数を再チェック
+    q = q.strip()
+    if len(q) < 2:
+        raise HTTPException(status_code=422, detail="検索クエリは2文字以上必要です")
+
     if not indexer.is_ready:
         raise HTTPException(status_code=503, detail="インデックス構築中です")
 
