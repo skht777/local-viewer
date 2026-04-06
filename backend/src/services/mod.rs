@@ -6,8 +6,12 @@
 pub(crate) mod archive;
 #[allow(dead_code, reason = "Phase 5+ で DEFAULT_LIMIT を使用")]
 pub(crate) mod browse_cursor;
+#[allow(dead_code, reason = "Phase 6b で browse ルーターから使用")]
+pub(crate) mod dir_index;
 #[allow(dead_code, reason = "Phase 5 で REMUX_EXTENSIONS を使用")]
 pub(crate) mod extensions;
+#[allow(dead_code, reason = "Phase 6b の main.rs 統合で使用")]
+pub(crate) mod file_watcher;
 #[allow(dead_code, reason = "Phase 6a の search ルーターで使用")]
 pub(crate) mod indexer;
 pub(crate) mod models;
