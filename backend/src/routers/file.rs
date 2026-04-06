@@ -21,6 +21,7 @@ use bytes::Bytes;
 
 use crate::errors::AppError;
 use crate::services::extensions;
+use crate::services::video_converter::VideoConverter;
 use crate::state::AppState;
 
 /// `node_id` 解決結果
@@ -93,13 +94,14 @@ pub(crate) async fn serve_file(
             entry_name,
         } => serve_archive_entry(&state, &archive_path, &entry_name, &original_headers).await,
         ResolveResult::File(file_path) => {
-            serve_regular_file(file_path, &original_headers, &original_uri).await
+            serve_regular_file(&state, file_path, &original_headers, &original_uri).await
         }
     }
 }
 
 /// 通常ファイルを配信する (`ETag` + Range + `ServeFile`)
 async fn serve_regular_file(
+    state: &Arc<AppState>,
     file_path: PathBuf,
     original_headers: &HeaderMap,
     original_uri: &axum::http::Uri,
@@ -142,6 +144,25 @@ async fn serve_regular_file(
         }
     }
 
+    // MKV remux: ブラウザ非対応コンテナを MP4 に変換して配信
+    let ext = extensions::extract_extension(&file_name).to_ascii_lowercase();
+    let remuxed_path = if VideoConverter::needs_remux(&ext) && state.video_converter.is_available()
+    {
+        let vc = Arc::clone(&state.video_converter);
+        let p = file_path.clone();
+        let mtime_ns = metadata
+            .modified()
+            .ok()
+            .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
+            .map_or(0, |d| d.as_nanos());
+        tokio::task::spawn_blocking(move || vc.get_remuxed(&p, mtime_ns))
+            .await
+            .map_err(|e| AppError::path_security(format!("タスク実行失敗: {e}")))?
+    } else {
+        None
+    };
+    let serve_path = remuxed_path.as_deref().unwrap_or(&file_path);
+
     // ServeFile で配信 (Range 自動処理)
     let mut serve_req = Request::builder()
         .uri(original_uri)
@@ -154,13 +175,20 @@ async fn serve_regular_file(
         }
     }
 
-    let mut response = ServeFile::new(&file_path)
+    let mut response = ServeFile::new(serve_path)
         .oneshot(serve_req)
         .await
         .map_err(|e| AppError::path_security(format!("ファイル配信失敗: {e}")))?
         .into_response();
 
-    // ETag + Cache-Control を上書き
+    // remux 成功時は Content-Type を video/mp4 に上書き
+    if remuxed_path.is_some() {
+        response
+            .headers_mut()
+            .insert(header::CONTENT_TYPE, HeaderValue::from_static("video/mp4"));
+    }
+
+    // ETag + Cache-Control を上書き (Python 互換: 元ファイルの ETag を使用)
     let headers = response.headers_mut();
     headers.insert(
         header::ETAG,
@@ -569,6 +597,58 @@ mod tests {
         let actual_etag = resp.headers().get(header::ETAG).unwrap().to_str().unwrap();
         // 自前 ETag (Python 互換) が使われていること
         assert_eq!(actual_etag, format!("\"{expected_etag}\""));
+    }
+
+    // --- MKV remux ---
+
+    #[tokio::test]
+    async fn mkv_remuxが不要な拡張子ではそのまま配信される() {
+        let (app, state, dir) = full_setup();
+        let file_path = dir.path().join("clip.mp4");
+        std::fs::write(&file_path, b"fake-mp4").unwrap();
+        let node_id = register_file(&state, &file_path);
+
+        let resp = app
+            .oneshot(
+                Request::get(format!("/api/file/{node_id}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let ct = resp
+            .headers()
+            .get(header::CONTENT_TYPE)
+            .unwrap()
+            .to_str()
+            .unwrap();
+        // mp4 はそのまま配信 (remux されない)
+        assert!(
+            ct.contains("mp4"),
+            "Content-Type に mp4 が含まれるべき: {ct}"
+        );
+    }
+
+    #[tokio::test]
+    async fn mkv_remux対象でffmpegがない場合は元ファイルをフォールバック配信する() {
+        let (app, state, dir) = full_setup();
+        let file_path = dir.path().join("movie.mkv");
+        std::fs::write(&file_path, b"fake-mkv-data").unwrap();
+        let node_id = register_file(&state, &file_path);
+
+        let resp = app
+            .oneshot(
+                Request::get(format!("/api/file/{node_id}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        // ffmpeg がない環境では remux 失敗 → フォールバックで 200 返却
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body_bytes = body::to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+        assert_eq!(&body_bytes[..], b"fake-mkv-data");
     }
 
     // --- アーカイブエントリ配信 ---
