@@ -15,6 +15,8 @@ pub(crate) mod mount_config;
 pub(crate) mod natural_sort;
 #[allow(dead_code, reason = "Phase 4 でアーカイブメソッドを使用")]
 pub(crate) mod node_registry;
+#[allow(dead_code, reason = "Phase 6a の Indexer スキャンで使用")]
+pub(crate) mod parallel_walk;
 #[allow(dead_code, reason = "Phase 4+ で追加メソッドを使用")]
 pub(crate) mod path_security;
 #[allow(dead_code, reason = "Phase 5 のサムネイル・動画サービスで使用")]
