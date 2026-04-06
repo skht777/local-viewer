@@ -165,6 +165,51 @@ impl ArchiveReader for ZipArchiveReader {
         Ok(results)
     }
 
+    /// ZIP エントリをファイルにストリーミング展開する (メモリに全展開しない)
+    fn extract_entry_to_file(
+        &self,
+        archive_path: &Path,
+        entry_name: &str,
+        dest: &Path,
+    ) -> Result<(), AppError> {
+        let max_size = self.validator.max_entry_size_for(entry_name);
+        let file = std::fs::File::open(archive_path)
+            .map_err(|e| AppError::InvalidArchive(format!("ファイルを開けません: {e}")))?;
+        let mut archive = zip::ZipArchive::new(file)
+            .map_err(|e| AppError::InvalidArchive(format!("ZIP を読み取れません: {e}")))?;
+
+        let mut entry = archive.by_name(entry_name).map_err(|e| match e {
+            zip::result::ZipError::FileNotFound => {
+                AppError::InvalidArchive(format!("エントリが見つかりません: {entry_name}"))
+            }
+            _ => AppError::InvalidArchive(format!("ZIP エントリ読み取りエラー: {e}")),
+        })?;
+
+        let mut dest_file = std::fs::File::create(dest)
+            .map_err(|e| AppError::InvalidArchive(format!("ファイル作成エラー: {e}")))?;
+        let mut chunk = vec![0u8; EXTRACT_CHUNK_SIZE];
+        let mut total: u64 = 0;
+
+        loop {
+            let n = entry
+                .read(&mut chunk)
+                .map_err(|e| AppError::InvalidArchive(format!("ZIP 読み取りエラー: {e}")))?;
+            if n == 0 {
+                break;
+            }
+            total += n as u64;
+            if total > max_size {
+                return Err(AppError::ArchiveSecurity(format!(
+                    "抽出時にサイズ上限を超えました: {entry_name}"
+                )));
+            }
+            std::io::Write::write_all(&mut dest_file, &chunk[..n])
+                .map_err(|e| AppError::InvalidArchive(format!("書き込みエラー: {e}")))?;
+        }
+
+        Ok(())
+    }
+
     fn supports(&self, path: &Path) -> bool {
         let Some(ext) = path.extension() else {
             return false;
@@ -350,5 +395,38 @@ mod tests {
     fn rar拡張子でfalseを返す() {
         let reader = ZipArchiveReader::new(test_validator());
         assert!(!reader.supports(Path::new("archive.rar")));
+    }
+
+    // --- extract_entry_to_file ---
+
+    #[test]
+    fn extract_entry_to_fileがファイルにストリーミング展開する() {
+        let reader = ZipArchiveReader::new(test_validator());
+        let data = b"streaming test data for video";
+        let zip = create_test_zip(&[("video.mp4", data)]);
+
+        let dest = tempfile::NamedTempFile::new().unwrap();
+        reader
+            .extract_entry_to_file(zip.path(), "video.mp4", dest.path())
+            .unwrap();
+
+        let written = std::fs::read(dest.path()).unwrap();
+        assert_eq!(&written[..], data);
+    }
+
+    #[test]
+    fn extract_entry_to_fileのサイズ上限超過でエラーになる() {
+        let mut vars = HashMap::from([("MOUNT_BASE_DIR".to_string(), "/tmp".to_string())]);
+        vars.insert("ARCHIVE_MAX_VIDEO_ENTRY_SIZE".to_string(), "10".to_string());
+        let settings = Settings::from_map(&vars).unwrap();
+        let validator = ArchiveEntryValidator::new(&settings);
+        let reader = ZipArchiveReader::new(validator);
+
+        let zip = create_test_zip(&[("big.mp4", &[0u8; 100])]);
+        let dest = tempfile::NamedTempFile::new().unwrap();
+        let result = reader.extract_entry_to_file(zip.path(), "big.mp4", dest.path());
+        assert!(result.is_err());
+        let err = format!("{}", result.unwrap_err());
+        assert!(err.contains("サイズ上限を超えました"));
     }
 }

@@ -55,6 +55,22 @@ pub(crate) trait ArchiveReader: Send + Sync {
         Ok(results)
     }
 
+    /// 1 エントリをファイルに直接展開する
+    ///
+    /// デフォルト実装は `extract_entry` でメモリに読み込み、ファイルに書き出す。
+    /// 大きなエントリではリーダー固有のストリーミング実装でオーバーライド可能。
+    fn extract_entry_to_file(
+        &self,
+        archive_path: &Path,
+        entry_name: &str,
+        dest: &Path,
+    ) -> Result<(), AppError> {
+        let data = self.extract_entry(archive_path, entry_name)?;
+        std::fs::write(dest, &data)
+            .map_err(|e| AppError::InvalidArchive(format!("ファイル書き込みエラー: {e}")))?;
+        Ok(())
+    }
+
     /// 指定パスのアーカイブ形式をサポートするか
     fn supports(&self, path: &Path) -> bool;
 }

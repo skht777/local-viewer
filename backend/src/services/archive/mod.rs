@@ -154,6 +154,24 @@ impl ArchiveService {
         Ok(data)
     }
 
+    /// エントリをファイルに直接展開する (メモリキャッシュなし)
+    ///
+    /// 動画/PDF 等の大きなエントリを `TempFileCache` 経由でディスクに保存する際に使用。
+    pub(crate) fn extract_entry_to_file(
+        &self,
+        archive_path: &Path,
+        entry_name: &str,
+        dest: &Path,
+    ) -> Result<(), AppError> {
+        let reader = self.get_reader(archive_path).ok_or_else(|| {
+            AppError::InvalidArchive(format!(
+                "サポートされていないアーカイブ形式です: {}",
+                archive_path.display()
+            ))
+        })?;
+        reader.extract_entry_to_file(archive_path, entry_name, dest)
+    }
+
     /// パスがサポート対象のアーカイブ形式か判定する
     pub(crate) fn is_supported(&self, path: &Path) -> bool {
         self.get_reader(path).is_some()
