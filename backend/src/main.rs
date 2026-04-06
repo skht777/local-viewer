@@ -279,8 +279,8 @@ fn attach_static_files(router: Router) -> Router {
 /// ウォームスタート判定 + バックグラウンドインデックススキャンを起動する
 ///
 /// - ウォームスタート条件: Indexer にエントリあり + `DirIndex` フルスキャン完了 + マウントフィンガープリント一致
-/// - マウントごとに `spawn_blocking` タスクを生成し並列スキャン (WAL + `busy_timeout` で競合回避)
-/// - `JoinSet` で全マウント完了を待機後、`DirIndex` のフラグ設定 + `FileWatcher` 起動
+/// - マウントごとに `spawn_blocking` タスクを逐次実行 (`SQLite` 並行書き込み競合を回避)
+/// - 全マウント完了後、`DirIndex` のフラグ設定 + `FileWatcher` 起動
 #[allow(
     clippy::too_many_lines,
     clippy::needless_pass_by_value,
@@ -310,7 +310,7 @@ fn spawn_background_tasks(bg: BackgroundContext) {
         tracing::error!("マウントフィンガープリント保存失敗: {e}");
     }
 
-    // マウントごとの並列バックグラウンドスキャン (WAL + busy_timeout で競合回避)
+    // マウントごとの逐次バックグラウンドスキャン (SQLite 並行書き込み競合を回避)
     let scan_mounts: Vec<(String, PathBuf)> = bg
         .mount_id_map
         .iter()
@@ -330,15 +330,16 @@ fn spawn_background_tasks(bg: BackgroundContext) {
         .map(|(id, p)| (id.clone(), p.clone()))
         .collect();
 
+    // マウントごとのスキャンを逐次実行
+    // Indexer と DirIndex は同一 SQLite DB を共有するため、並行書き込みで
+    // SQLITE_BUSY によるトランザクション失敗を回避する
     let scan_handle = tokio::spawn(async move {
-        let mut join_set = tokio::task::JoinSet::new();
-
         for (mount_id, root) in scan_mounts {
             let indexer = Arc::clone(&bg.indexer);
             let dir_index = Arc::clone(&bg.dir_index);
             let path_security = Arc::clone(&bg.path_security);
 
-            join_set.spawn_blocking(move || {
+            let result = tokio::task::spawn_blocking(move || {
                 if is_warm_start {
                     // 差分スキャン + DirIndex コールバック
                     let mut bulk = dir_index.begin_bulk().ok();
@@ -381,11 +382,9 @@ fn spawn_background_tasks(bg: BackgroundContext) {
                     }
                 }
                 tracing::info!("スキャン完了: {mount_id}");
-            });
-        }
+            })
+            .await;
 
-        // 全マウントの完了を待機
-        while let Some(result) = join_set.join_next().await {
             if let Err(e) = result {
                 tracing::error!("バックグラウンドスキャンタスクがパニック: {e}");
             }
