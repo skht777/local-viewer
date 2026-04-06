@@ -109,6 +109,9 @@ jobs:
       # Git は空ディレクトリを追跡できないため手動作成
       - run: mkdir -p e2e/fixtures/test-data/empty
 
+      # Playwright webServer タイムアウト防止: 事前ビルド
+      - run: cd backend && cargo build
+
       # テスト実行 (webServer が backend + frontend を自動起動)
       - run: cd e2e && npx playwright test
 

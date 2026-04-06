@@ -30,7 +30,7 @@ export default defineConfig({
       cwd: projectRoot,
       port: BACKEND_PORT,
       reuseExistingServer: false,
-      timeout: 120_000,
+      timeout: 300_000,
       env: {
         MOUNT_BASE_DIR: testDataDir,
         MOUNT_CONFIG_PATH: mountsPath,
