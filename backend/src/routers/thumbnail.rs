@@ -235,6 +235,129 @@ struct BatchResponse {
     thumbnails: HashMap<String, BatchThumbnailEntry>,
 }
 
+/// アーカイブグループ: アーカイブパス → `[(node_id, entry_name)]`
+type ArchiveGroups = HashMap<std::path::PathBuf, Vec<(String, String)>>;
+
+/// アーカイブエントリをアーカイブパスごとにグループ化する
+fn classify_node_ids(state: &AppState, node_ids: &[String]) -> (ArchiveGroups, Vec<String>) {
+    let mut registry = state
+        .node_registry
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+
+    let mut archive_groups: HashMap<std::path::PathBuf, Vec<(String, String)>> = HashMap::new();
+    let mut regular_ids = Vec::new();
+
+    for nid in node_ids {
+        if let Some((archive_path, entry_name)) = registry.resolve_archive_entry(nid) {
+            archive_groups
+                .entry(archive_path)
+                .or_default()
+                .push((nid.clone(), entry_name));
+        } else {
+            regular_ids.push(nid.clone());
+        }
+    }
+
+    (archive_groups, regular_ids)
+}
+
+/// 同一アーカイブの複数エントリを一括展開してサムネイル生成する
+///
+/// アーカイブオープン失敗時は該当グループ全エントリに `INVALID_ARCHIVE` エラーを返す。
+fn generate_archive_group_thumbnails(
+    state: &AppState,
+    archive_path: &std::path::Path,
+    entries: &[(String, String)],
+) -> HashMap<String, BatchThumbnailEntry> {
+    use base64::Engine;
+
+    let mut results = HashMap::with_capacity(entries.len());
+
+    let Ok(mtime_ns) = get_mtime_ns(archive_path) else {
+        // アーカイブファイルが読めない → 全エントリにエラー
+        for (nid, _) in entries {
+            results.insert(
+                nid.clone(),
+                BatchThumbnailEntry {
+                    data: None,
+                    etag: None,
+                    error: Some("アーカイブファイルが見つかりません".to_string()),
+                    code: Some("INVALID_ARCHIVE".to_string()),
+                },
+            );
+        }
+        return results;
+    };
+
+    // 一括抽出
+    let entry_names: Vec<String> = entries.iter().map(|(_, name)| name.clone()).collect();
+    let batch_result = state
+        .archive_service
+        .extract_entries_batch(archive_path, &entry_names);
+
+    let extracted = match batch_result {
+        Ok(data) => data,
+        Err(err) => {
+            // 一括抽出失敗 → 全エントリにエラー
+            let (code, msg) = error_to_code_message(&err);
+            for (nid, _) in entries {
+                results.insert(
+                    nid.clone(),
+                    BatchThumbnailEntry {
+                        data: None,
+                        etag: None,
+                        error: Some(msg.clone()),
+                        code: Some(code.clone()),
+                    },
+                );
+            }
+            return results;
+        }
+    };
+
+    // 個別エントリのサムネイル生成
+    let thumb_svc = &state.thumbnail_service;
+    for (nid, entry_name) in entries {
+        let etag = compute_thumb_etag(mtime_ns, nid);
+        let cache_key = thumb_svc.make_cache_key(nid, mtime_ns);
+
+        let entry = if let Some(data) = extracted.get(entry_name) {
+            match thumb_svc.generate_from_bytes(data, &cache_key) {
+                Ok(thumb) => {
+                    let b64 = base64::engine::general_purpose::STANDARD.encode(&thumb);
+                    BatchThumbnailEntry {
+                        data: Some(b64),
+                        etag: Some(etag),
+                        error: None,
+                        code: None,
+                    }
+                }
+                Err(err) => {
+                    let (code, msg) = error_to_code_message(&err);
+                    BatchThumbnailEntry {
+                        data: None,
+                        etag: None,
+                        error: Some(msg),
+                        code: Some(code),
+                    }
+                }
+            }
+        } else {
+            BatchThumbnailEntry {
+                data: None,
+                etag: None,
+                error: Some(format!("エントリが見つかりません: {entry_name}")),
+                code: Some("NOT_FOUND".to_string()),
+            }
+        };
+
+        results.insert(nid.clone(), entry);
+    }
+
+    results
+}
+
 /// `POST /api/thumbnails/batch` — バッチサムネイルを返す
 ///
 /// - 最大 50 件、重複排除
@@ -255,16 +378,28 @@ pub(crate) async fn serve_thumbnails_batch(
         .take(50)
         .collect();
 
-    // spawn_blocking で並行処理
-    let semaphore = Arc::new(tokio::sync::Semaphore::new(8));
-    let mut handles = Vec::with_capacity(unique_ids.len());
+    // アーカイブエントリをグループ化 (registry ロックは 1 回のみ)
+    let (archive_groups, regular_ids) = classify_node_ids(&state, &unique_ids);
 
-    for nid in &unique_ids {
+    // アーカイブグループの一括処理タスク (1 タスク/アーカイブ)
+    let mut archive_handles = Vec::new();
+    for (arc_path, entries) in archive_groups {
+        let state = Arc::clone(&state);
+        archive_handles.push(tokio::task::spawn_blocking(move || {
+            generate_archive_group_thumbnails(&state, &arc_path, &entries)
+        }));
+    }
+
+    // 非アーカイブエントリの個別処理タスク (Semaphore(8) で並行度制限)
+    let semaphore = Arc::new(tokio::sync::Semaphore::new(8));
+    let mut regular_handles = Vec::with_capacity(regular_ids.len());
+
+    for nid in &regular_ids {
         let state = Arc::clone(&state);
         let nid = nid.clone();
         let sem = Arc::clone(&semaphore);
 
-        handles.push(tokio::spawn(async move {
+        regular_handles.push(tokio::spawn(async move {
             let _permit = sem.acquire().await;
             let result =
                 tokio::task::spawn_blocking(move || generate_thumbnail_bytes(&state, &nid)).await;
@@ -298,9 +433,18 @@ pub(crate) async fn serve_thumbnails_batch(
         }));
     }
 
-    // 全結果を収集
+    // 結果を統合
     let mut thumbnails = HashMap::with_capacity(unique_ids.len());
-    for (nid, handle) in unique_ids.into_iter().zip(handles) {
+
+    // アーカイブグループ結果
+    for handle in archive_handles {
+        if let Ok(group_map) = handle.await {
+            thumbnails.extend(group_map);
+        }
+    }
+
+    // 非アーカイブ結果
+    for (nid, handle) in regular_ids.into_iter().zip(regular_handles) {
         let entry = handle.await.unwrap_or(BatchThumbnailEntry {
             data: None,
             etag: None,
