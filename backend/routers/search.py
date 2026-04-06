@@ -222,10 +222,12 @@ def _resolve_hit_path(relative_path: str, mount_map: dict[str, Path]) -> Path | 
 async def rebuild_index(
     indexer: Indexer = Depends(get_indexer),
     path_security: PathSecurity = Depends(get_path_security),
+    registry: NodeRegistry = Depends(get_node_registry),
     settings: Settings = Depends(get_settings),
 ) -> dict[str, str]:
     """インデックス再構築をバックグラウンドで開始する.
 
+    - 全マウントポイントを対象にリビルド
     - asyncio.create_task でバックグラウンド実行
     - Indexer.is_rebuilding で排他制御 (409)
     - 前回再構築から REBUILD_RATE_LIMIT_SECONDS 秒以内は 429
@@ -244,9 +246,13 @@ async def rebuild_index(
 
     _last_rebuild_time = now
 
+    # mount_id → root_dir マッピング (全マウント対象)
+    mount_map = registry.mount_id_map
+    if not mount_map:
+        mount_map = {"": path_security.root_dirs[0]}
+
     # バックグラウンドで再構築 (参照保持で GC 防止)
-    root_dir = path_security.root_dirs[0]
-    task = asyncio.create_task(_background_rebuild(indexer, root_dir, path_security))
+    task = asyncio.create_task(_background_rebuild(indexer, mount_map, path_security))
     _background_tasks.add(task)
     task.add_done_callback(_background_tasks.discard)
 
@@ -258,12 +264,12 @@ async def rebuild_index(
 
 async def _background_rebuild(
     indexer: Indexer,
-    root_dir: Path,
+    mounts: dict[str, Path],
     path_security: PathSecurity,
 ) -> None:
-    """バックグラウンドでインデックスを再構築する."""
+    """バックグラウンドで全マウントのインデックスを再構築する."""
     try:
-        count = await run_in_threadpool(indexer.rebuild, root_dir, path_security)
+        count = await run_in_threadpool(indexer.rebuild, mounts, path_security)
         logger.info("インデックス再構築完了: %d エントリ", count)
     except Exception:
         logger.exception("インデックス再構築に失敗しました")
