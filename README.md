@@ -16,7 +16,7 @@
 
 ## Tech Stack
 
-- **Backend**: FastAPI (Python 3.14)
+- **Backend**: axum (Rust)
 - **Frontend**: React + Vite + TypeScript + Tailwind CSS v4
 - **Container**: Docker
 
@@ -40,15 +40,13 @@ http://localhost:8000 にアクセス。
 
 ```bash
 # Backend
-python -m venv backend/.venv
-source backend/.venv/bin/activate
-pip install -r backend/requirements-dev.txt
+cd backend && cargo build
 
 # Frontend
-cd frontend && npm install && cd ..
+cd frontend && npm install
 
 # 起動（バックエンド）
-uvicorn backend.main:app
+cd backend && cargo run -- --port 8000
 
 # 起動（フロントエンド）
 cd frontend && npm run dev
@@ -61,8 +59,9 @@ cd frontend && npm run dev
 
 ```bash
 # Backend
-ruff check backend/ && ruff format --check backend/ && mypy backend/
-source backend/.venv/bin/activate && pytest
+cd backend && cargo clippy --all-targets --all-features -- -D warnings
+cd backend && cargo fmt --check
+cd backend && cargo test
 
 # Frontend
 npx oxlint frontend/src/ && npx oxfmt --check frontend/src/
