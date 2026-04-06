@@ -1,16 +1,3 @@
-# Python
-__pycache__/
-*.py[cod]
-*.pyo
-.venv/
-*.egg-info/
-dist/
-.mypy_cache/
-.ruff_cache/
-.pytest_cache/
-htmlcov/
-.coverage
-
 # Node
 node_modules/
 frontend/dist/
