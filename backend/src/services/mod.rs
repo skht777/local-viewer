@@ -8,6 +8,8 @@ pub(crate) mod archive;
 pub(crate) mod browse_cursor;
 #[allow(dead_code, reason = "Phase 5 で REMUX_EXTENSIONS を使用")]
 pub(crate) mod extensions;
+#[allow(dead_code, reason = "Phase 6a の search ルーターで使用")]
+pub(crate) mod indexer;
 pub(crate) mod models;
 #[allow(dead_code, reason = "Phase 5+ で save/add/remove を使用")]
 pub(crate) mod mount_config;
