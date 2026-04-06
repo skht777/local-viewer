@@ -2,13 +2,13 @@
 //!
 //! - エントリ名: traversal, 絶対パス, NUL バイトを拒否
 //! - バックスラッシュを `/` に正規化 (Windows 生成アーカイブ互換)
-//! - 拡張子ホワイトリスト (画像 + 動画)
+//! - 拡張子ホワイトリスト (画像 + 動画 + PDF)
 //! - zip bomb 検出 (展開後サイズ上限、圧縮率上限)
 //! - 動画エントリには画像とは別のサイズ上限を適用
 
 use crate::config::Settings;
 use crate::errors::AppError;
-use crate::services::extensions::{IMAGE_EXTENSIONS, VIDEO_EXTENSIONS};
+use crate::services::extensions::{IMAGE_EXTENSIONS, PDF_EXTENSIONS, VIDEO_EXTENSIONS};
 
 /// アーカイブエントリの安全性バリデータ
 ///
@@ -35,9 +35,9 @@ impl ArchiveEntryValidator {
         }
     }
 
-    /// エントリ名に応じたサイズ上限を返す (動画は別上限)
+    /// エントリ名に応じたサイズ上限を返す (動画/PDF は別上限)
     pub(crate) fn max_entry_size_for(&self, name: &str) -> u64 {
-        if is_video_extension(name) {
+        if is_video_extension(name) || is_pdf_extension(name) {
             self.max_video_entry_size
         } else {
             self.max_entry_size
@@ -130,7 +130,7 @@ impl ArchiveEntryValidator {
         Ok(())
     }
 
-    /// 許可拡張子かどうかを判定する (画像 + 動画)
+    /// 許可拡張子かどうかを判定する (画像 + 動画 + PDF)
     pub(crate) fn is_allowed_extension(name: &str) -> bool {
         let Some(dot_idx) = name.rfind('.') else {
             return false;
@@ -140,8 +140,22 @@ impl ArchiveEntryValidator {
             return false;
         }
         let ext = name[dot_idx..].to_ascii_lowercase();
-        IMAGE_EXTENSIONS.contains(&ext.as_str()) || VIDEO_EXTENSIONS.contains(&ext.as_str())
+        IMAGE_EXTENSIONS.contains(&ext.as_str())
+            || VIDEO_EXTENSIONS.contains(&ext.as_str())
+            || PDF_EXTENSIONS.contains(&ext.as_str())
     }
+}
+
+/// PDF 拡張子かどうかを判定する (サイズ上限判定で使用)
+fn is_pdf_extension(name: &str) -> bool {
+    let Some(dot_idx) = name.rfind('.') else {
+        return false;
+    };
+    if dot_idx == 0 {
+        return false;
+    }
+    let ext = name[dot_idx..].to_ascii_lowercase();
+    PDF_EXTENSIONS.contains(&ext.as_str())
 }
 
 /// 動画拡張子かどうかを判定する (キャッシュバイパス判定で使用)
@@ -308,6 +322,7 @@ mod tests {
     #[case("video.mp4", true)]
     #[case("video.webm", true)]
     #[case("video.mkv", true)]
+    #[case("document.pdf", true)]
     #[case("readme.txt", false)]
     #[case("program.exe", false)]
     #[case(".bashrc", false)]
@@ -337,6 +352,12 @@ mod tests {
     fn 動画エントリに動画用上限を返す() {
         let v = test_validator();
         assert_eq!(v.max_entry_size_for("video.mp4"), 500 * 1024 * 1024);
+    }
+
+    #[test]
+    fn pdfエントリに動画用上限を返す() {
+        let v = test_validator();
+        assert_eq!(v.max_entry_size_for("document.pdf"), 500 * 1024 * 1024);
     }
 
     // --- is_video_extension ---
