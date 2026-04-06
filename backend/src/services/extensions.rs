@@ -80,6 +80,25 @@ impl EntryKind {
     }
 }
 
+/// インデックス対象のファイル種別を返す
+///
+/// - directory, video, archive, pdf のみインデックス対象
+/// - 画像はファイル数が膨大になるため除外
+/// - 対象外の拡張子には `None` を返す
+pub(crate) fn classify_for_index(name: &str, is_dir: bool) -> Option<&'static str> {
+    if is_dir {
+        return Some("directory");
+    }
+    let ext = extract_extension(name).to_lowercase();
+    let kind = EntryKind::from_extension(&ext);
+    match kind {
+        EntryKind::Video => Some("video"),
+        EntryKind::Archive => Some("archive"),
+        EntryKind::Pdf => Some("pdf"),
+        EntryKind::Image | EntryKind::Directory | EntryKind::Other => None,
+    }
+}
+
 /// パスがアーカイブ拡張子かどうかを判定する
 ///
 /// browse/file ルーターでアーカイブファイルを検出するために使用
@@ -250,5 +269,30 @@ mod tests {
     #[case("noext", "")]
     fn 拡張子抽出が正しく動作する(#[case] name: &str, #[case] expected: &str) {
         assert_eq!(extract_extension(name), expected);
+    }
+
+    // --- classify_for_index ---
+
+    #[test]
+    fn ディレクトリがdirectoryに分類される() {
+        assert_eq!(classify_for_index("subdir", true), Some("directory"));
+    }
+
+    #[rstest]
+    #[case("movie.mp4", Some("video"))]
+    #[case("clip.mkv", Some("video"))]
+    #[case("archive.zip", Some("archive"))]
+    #[case("comics.cbz", Some("archive"))]
+    #[case("book.rar", Some("archive"))]
+    #[case("doc.pdf", Some("pdf"))]
+    #[case("photo.jpg", None)]
+    #[case("image.png", None)]
+    #[case("readme.txt", None)]
+    #[case("noext", None)]
+    fn ファイル名からインデックス対象種別を判定する(
+        #[case] name: &str,
+        #[case] expected: Option<&str>,
+    ) {
+        assert_eq!(classify_for_index(name, false), expected);
     }
 }
