@@ -889,7 +889,7 @@ class TestRebuildExclusion:
             return original_scan(*args, **kwargs)
 
         with patch.object(indexer, "scan_directory", side_effect=tracking_scan):
-            indexer.rebuild(root, ps)
+            indexer.rebuild({"": root}, ps)
 
         # rebuild 中は is_rebuilding=True が観測される
         assert any(observed_during_rebuild)
@@ -908,7 +908,55 @@ class TestRebuildExclusion:
         # 実行前: False
         assert not indexer.is_rebuilding
 
-        indexer.rebuild(root, ps)
+        indexer.rebuild({"": root}, ps)
 
         # 実行後: False
         assert not indexer.is_rebuilding
+
+    def test_rebuildが複数マウントを全てスキャンする(
+        self, indexer: Indexer, tmp_path: Path
+    ) -> None:
+        """複数マウントを渡すと全マウントのエントリがインデックスされる."""
+        from backend.services.path_security import PathSecurity
+
+        # 2つのマウントポイントを作成 (INDEXABLE_KINDS: video, archive, pdf)
+        mount_a = tmp_path / "mount_a"
+        mount_a.mkdir()
+        (mount_a / "clip.mp4").write_bytes(b"\x00" * 10)
+
+        mount_b = tmp_path / "mount_b"
+        mount_b.mkdir()
+        (mount_b / "doc.pdf").write_bytes(b"%PDF-1.4")
+
+        ps = PathSecurity([mount_a, mount_b])
+        mounts = {"ma": mount_a, "mb": mount_b}
+
+        count = indexer.rebuild(mounts, ps)
+
+        # 両マウントのエントリがスキャンされている
+        assert count == 2
+        assert indexer.entry_count() == 2
+
+    def test_rebuildが既存エントリを全て削除してから再スキャンする(
+        self, indexer: Indexer, tmp_path: Path
+    ) -> None:
+        """rebuild は既存エントリを全て削除してから再スキャンする."""
+        from backend.services.path_security import PathSecurity
+
+        root = tmp_path / "root"
+        root.mkdir()
+        (root / "old.mp4").write_bytes(b"\x00" * 10)
+
+        ps = PathSecurity([root])
+
+        # 初回スキャン
+        indexer.rebuild({"": root}, ps)
+        assert indexer.entry_count() == 1
+
+        # ファイルを入れ替え
+        (root / "old.mp4").unlink()
+        (root / "new.pdf").write_bytes(b"%PDF-1.4")
+
+        # 再 rebuild
+        indexer.rebuild({"": root}, ps)
+        assert indexer.entry_count() == 1

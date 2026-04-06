@@ -616,11 +616,14 @@ class Indexer:
 
     def rebuild(
         self,
-        root_dir: Path,
+        mounts: dict[str, Path],
         path_security: PathSecurity,
-        mount_id: str = "",
     ) -> int:
-        """全エントリを削除して再スキャンする."""
+        """全エントリを削除して全マウントを再スキャン��る.
+
+        - mounts: mount_id → root_dir のマッピング
+        - 全エントリ削除後、各マウントを scan_directory でスキャン
+        """
         self._is_rebuilding = True
         try:
             conn = self._connect()
@@ -629,7 +632,10 @@ class Indexer:
                 conn.commit()
             finally:
                 conn.close()
-            return self.scan_directory(root_dir, path_security, mount_id)
+            total = 0
+            for mount_id, root_dir in mounts.items():
+                total += self.scan_directory(root_dir, path_security, mount_id)
+            return total
         finally:
             self._is_rebuilding = False
 
