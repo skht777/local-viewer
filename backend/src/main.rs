@@ -66,6 +66,7 @@ struct BackgroundContext {
     dir_index: Arc<services::dir_index::DirIndex>,
     path_security: Arc<PathSecurity>,
     mount_id_map: HashMap<String, PathBuf>,
+    scan_workers: usize,
 }
 
 /// サービス初期化 + ルーター構築
@@ -178,6 +179,7 @@ fn build_app(settings: Settings) -> anyhow::Result<(Router, BackgroundContext)> 
         dir_index: Arc::clone(&dir_index),
         path_security: Arc::clone(&path_security),
         mount_id_map: mount_id_map.clone(),
+        scan_workers: settings.scan_workers,
     };
 
     let app_state = Arc::new(AppState {
@@ -278,9 +280,8 @@ fn attach_static_files(router: Router) -> Router {
 /// ウォームスタート判定 + バックグラウンドインデックススキャンを起動する
 ///
 /// - ウォームスタート条件: Indexer にエントリあり + `DirIndex` フルスキャン完了 + マウントフィンガープリント一致
-/// - フルスキャン: 全マウントを並列走査、Indexer + `DirIndex` に格納
-/// - ウォームスタート: 差分スキャンで変更分のみ更新
-/// - 全スキャン完了後に `FileWatcher` を起動
+/// - マウントごとに `spawn_blocking` タスクを生成し並列スキャン (WAL + `busy_timeout` で競合回避)
+/// - `JoinSet` で全マウント完了を待機後、`DirIndex` のフラグ設定 + `FileWatcher` 起動
 #[allow(
     clippy::too_many_lines,
     clippy::needless_pass_by_value,
@@ -310,27 +311,43 @@ fn spawn_background_tasks(bg: BackgroundContext) {
         tracing::error!("マウントフィンガープリント保存失敗: {e}");
     }
 
-    // バックグラウンドスキャン (シーケンシャル実行 — SQLite 書き込みロック競合を回避)
+    // マウントごとの並列バックグラウンドスキャン (WAL + busy_timeout で競合回避)
     let scan_mounts: Vec<(String, PathBuf)> = bg
         .mount_id_map
         .iter()
         .map(|(id, p)| (id.clone(), p.clone()))
         .collect();
-    let scan_indexer = Arc::clone(&bg.indexer);
+    let mount_count = scan_mounts.len().max(1);
+    let workers_per_mount = (bg.scan_workers / mount_count).max(2);
+
     let scan_dir_index = Arc::clone(&bg.dir_index);
-    let scan_path_security = Arc::clone(&bg.path_security);
+
+    // FileWatcher 用に先に clone (bg は scan_handle の async move で消費されるため)
+    let watcher_indexer = Arc::clone(&bg.indexer);
+    let watcher_path_security = Arc::clone(&bg.path_security);
+    let watcher_mounts: Vec<(String, PathBuf)> = bg
+        .mount_id_map
+        .iter()
+        .map(|(id, p)| (id.clone(), p.clone()))
+        .collect();
 
     let scan_handle = tokio::spawn(async move {
-        let result = tokio::task::spawn_blocking(move || {
-            for (mount_id, root) in &scan_mounts {
+        let mut join_set = tokio::task::JoinSet::new();
+
+        for (mount_id, root) in scan_mounts {
+            let indexer = Arc::clone(&bg.indexer);
+            let dir_index = Arc::clone(&bg.dir_index);
+            let path_security = Arc::clone(&bg.path_security);
+
+            join_set.spawn_blocking(move || {
                 if is_warm_start {
                     // 差分スキャン + DirIndex コールバック
-                    let mut bulk = scan_dir_index.begin_bulk().ok();
-                    let result = scan_indexer.incremental_scan(
-                        root,
-                        &scan_path_security,
-                        mount_id,
-                        8,
+                    let mut bulk = dir_index.begin_bulk().ok();
+                    let result = indexer.incremental_scan(
+                        &root,
+                        &path_security,
+                        &mount_id,
+                        workers_per_mount,
                         Some(&mut |args| {
                             if let Some(bulk) = bulk.as_mut() {
                                 let _ = bulk.ingest_walk_entry(&args);
@@ -345,12 +362,12 @@ fn spawn_background_tasks(bg: BackgroundContext) {
                     }
                 } else {
                     // フルスキャン + DirIndex コールバック
-                    let mut bulk = scan_dir_index.begin_bulk().ok();
-                    let result = scan_indexer.scan_directory(
-                        root,
-                        &scan_path_security,
-                        mount_id,
-                        8,
+                    let mut bulk = dir_index.begin_bulk().ok();
+                    let result = indexer.scan_directory(
+                        &root,
+                        &path_security,
+                        &mount_id,
+                        workers_per_mount,
                         Some(&mut |args| {
                             if let Some(bulk) = bulk.as_mut() {
                                 let _ = bulk.ingest_walk_entry(&args);
@@ -365,35 +382,33 @@ fn spawn_background_tasks(bg: BackgroundContext) {
                     }
                 }
                 tracing::info!("スキャン完了: {mount_id}");
-            }
-            // 全マウントスキャン完了後にフラグを設定
-            if !is_warm_start {
-                let _ = scan_dir_index.mark_full_scan_done();
-            }
-            scan_dir_index.mark_ready();
-        })
-        .await;
-
-        if let Err(e) = result {
-            tracing::error!("バックグラウンドスキャンタスクがパニック: {e}");
+            });
         }
+
+        // 全マウントの完了を待機
+        while let Some(result) = join_set.join_next().await {
+            if let Err(e) = result {
+                tracing::error!("バックグラウンドスキャンタスクがパニック: {e}");
+            }
+        }
+
+        // 全マウントスキャン完了後にフラグを設定
+        if !is_warm_start {
+            let _ = scan_dir_index.mark_full_scan_done();
+        }
+        scan_dir_index.mark_ready();
     });
 
     // スキャン完了後に FileWatcher を起動
-    let indexer = Arc::clone(&bg.indexer);
-    let path_security = Arc::clone(&bg.path_security);
-    let mounts: Vec<(String, PathBuf)> = bg
-        .mount_id_map
-        .iter()
-        .map(|(id, p)| (id.clone(), p.clone()))
-        .collect();
-
     tokio::spawn(async move {
-        // スキャン完了を待機
         let _ = scan_handle.await;
         tracing::info!("全マウントのスキャン完了、FileWatcher を起動");
 
-        let file_watcher = services::file_watcher::FileWatcher::new(indexer, path_security, mounts);
+        let file_watcher = services::file_watcher::FileWatcher::new(
+            watcher_indexer,
+            watcher_path_security,
+            watcher_mounts,
+        );
         if let Err(e) = file_watcher.start() {
             tracing::error!("FileWatcher 起動失敗: {e}");
         }
