@@ -2,7 +2,7 @@ services:
   viewer:
     build:
       context: .
-      dockerfile: Dockerfile.python
+      dockerfile: Dockerfile
     ports:
       - "${HOST_PORT:-8000}:8000"
     volumes:
