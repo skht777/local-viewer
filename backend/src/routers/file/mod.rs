@@ -4,7 +4,9 @@
 //!
 //! - `ServeFile` (tower-http) で配信し、Range リクエスト (206) を自動処理
 //! - `ETag` は Python 互換: `md5("{mtime_ns}:{size}:{name}")`
-//! - アーカイブエントリは Phase 4、MKV remux は Phase 5 で対応
+//! - アーカイブエントリは `archive_entry` サブモジュールで処理
+
+mod archive_entry;
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -16,8 +18,6 @@ use axum::response::{IntoResponse, Response};
 use md5::{Digest, Md5};
 use tower::ServiceExt as _;
 use tower_http::services::ServeFile;
-
-use bytes::Bytes;
 
 use crate::errors::AppError;
 use crate::services::extensions;
@@ -54,7 +54,7 @@ fn compute_file_etag(metadata: &std::fs::Metadata, file_name: &str) -> String {
 /// ファイルまたはアーカイブエントリを配信する
 ///
 /// - 通常ファイル: `ServeFile` で配信 (Range 自動処理)
-/// - アーカイブエントリ: Phase 4 で実装 (現在 501)
+/// - アーカイブエントリ: `archive_entry::serve_archive_entry` で処理
 /// - ディレクトリ: 422 `NOT_A_FILE`
 pub(crate) async fn serve_file(
     State(state): State<Arc<AppState>>,
@@ -92,7 +92,15 @@ pub(crate) async fn serve_file(
         ResolveResult::ArchiveEntry {
             archive_path,
             entry_name,
-        } => serve_archive_entry(&state, &archive_path, &entry_name, &original_headers).await,
+        } => {
+            archive_entry::serve_archive_entry(
+                &state,
+                &archive_path,
+                &entry_name,
+                &original_headers,
+            )
+            .await
+        }
         ResolveResult::File(file_path) => {
             serve_regular_file(&state, file_path, &original_headers, &original_uri).await
         }
@@ -201,76 +209,6 @@ async fn serve_regular_file(
     );
 
     Ok(response)
-}
-
-/// アーカイブエントリをインメモリ配信する
-///
-/// - `archive_service.extract_entry()` でバイト抽出 (キャッシュ付き)
-/// - `Content-Type` は拡張子から判定
-/// - `ETag` は `md5("{archive_mtime_ns}:{entry_name}")` で計算
-/// - `If-None-Match` → 304
-async fn serve_archive_entry(
-    state: &Arc<AppState>,
-    archive_path: &std::path::Path,
-    entry_name: &str,
-    headers: &HeaderMap,
-) -> Result<Response, AppError> {
-    // ETag: アーカイブの mtime + エントリ名
-    let a_path = archive_path.to_path_buf();
-    let e_name = entry_name.to_string();
-    let etag = tokio::task::spawn_blocking({
-        let ap = a_path.clone();
-        let en = e_name.clone();
-        move || -> Result<String, AppError> {
-            let meta = std::fs::metadata(&ap)
-                .map_err(|e| AppError::InvalidArchive(format!("メタデータ取得失敗: {e}")))?;
-            let mtime_ns = meta
-                .modified()
-                .ok()
-                .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
-                .map_or(0, |d| d.as_nanos());
-            let raw = format!("{mtime_ns}:{en}");
-            let digest = Md5::digest(raw.as_bytes());
-            Ok(format!("{digest:x}"))
-        }
-    })
-    .await
-    .map_err(|e| AppError::path_security(format!("タスク実行失敗: {e}")))??;
-
-    let etag_quoted = format!("\"{etag}\"");
-
-    // If-None-Match → 304
-    if let Some(if_none_match) = headers.get(header::IF_NONE_MATCH) {
-        if let Ok(val) = if_none_match.to_str() {
-            if val.trim_matches('"') == etag {
-                return Ok((
-                    StatusCode::NOT_MODIFIED,
-                    [(header::ETAG, etag_quoted.clone())],
-                )
-                    .into_response());
-            }
-        }
-    }
-
-    // アーカイブエントリを抽出 (キャッシュ付き)
-    let svc = Arc::clone(&state.archive_service);
-    let data: Bytes = tokio::task::spawn_blocking(move || svc.extract_entry(&a_path, &e_name))
-        .await
-        .map_err(|e| AppError::path_security(format!("タスク実行失敗: {e}")))??;
-
-    // Content-Type を拡張子から判定
-    let ext = extensions::extract_extension(entry_name).to_ascii_lowercase();
-    let content_type = extensions::mime_for_extension(&ext).unwrap_or("application/octet-stream");
-
-    Ok((
-        [
-            (header::CONTENT_TYPE, content_type),
-            (header::CACHE_CONTROL, "private, max-age=3600"),
-            (header::ETAG, &etag_quoted),
-        ],
-        data,
-    )
-        .into_response())
 }
 
 #[cfg(test)]
@@ -649,162 +587,5 @@ mod tests {
         assert_eq!(resp.status(), StatusCode::OK);
         let body_bytes = body::to_bytes(resp.into_body(), usize::MAX).await.unwrap();
         assert_eq!(&body_bytes[..], b"fake-mkv-data");
-    }
-
-    // --- アーカイブエントリ配信 ---
-
-    fn create_archive_setup() -> (Router, Arc<AppState>, tempfile::TempDir) {
-        use std::io::Write;
-        let dir = tempfile::TempDir::new().unwrap();
-        let root = std::fs::canonicalize(dir.path()).unwrap();
-
-        // テスト用 ZIP ファイルを作成
-        let zip_path = root.join("photos.zip");
-        let file = std::fs::File::create(&zip_path).unwrap();
-        let mut writer = zip::ZipWriter::new(file);
-        let options = zip::write::SimpleFileOptions::default()
-            .compression_method(zip::CompressionMethod::Stored);
-        writer.start_file("photo.jpg", options).unwrap();
-        writer.write_all(b"fake jpeg data here").unwrap();
-        writer.start_file("video.mp4", options).unwrap();
-        writer.write_all(b"fake video data").unwrap();
-        writer.finish().unwrap();
-
-        let settings = Settings::from_map(&HashMap::from([(
-            "MOUNT_BASE_DIR".to_string(),
-            root.to_string_lossy().to_string(),
-        )]))
-        .unwrap();
-
-        let ps = Arc::new(PathSecurity::new(vec![root], false).unwrap());
-        let registry = NodeRegistry::new(ps, 100_000, HashMap::new());
-        let archive_service = Arc::new(crate::services::archive::ArchiveService::new(&settings));
-        let temp_file_cache = Arc::new(
-            TempFileCache::new(tempfile::TempDir::new().unwrap().keep(), 10 * 1024 * 1024).unwrap(),
-        );
-        let thumbnail_service = Arc::new(ThumbnailService::new(Arc::clone(&temp_file_cache)));
-        let video_converter =
-            Arc::new(VideoConverter::new(Arc::clone(&temp_file_cache), &settings));
-        let thumbnail_warmer = Arc::new(ThumbnailWarmer::new(4));
-        let index_db = tempfile::NamedTempFile::new().unwrap();
-        let indexer = Arc::new(crate::services::indexer::Indexer::new(
-            index_db.path().to_str().unwrap(),
-        ));
-        indexer.init_db().unwrap();
-        let dir_index_db = tempfile::NamedTempFile::new().unwrap();
-        let dir_index = Arc::new(DirIndex::new(dir_index_db.path().to_str().unwrap()));
-        dir_index.init_db().unwrap();
-
-        let app_state = Arc::new(AppState {
-            settings: Arc::new(settings),
-            node_registry: Arc::new(Mutex::new(registry)),
-            archive_service,
-            temp_file_cache,
-            thumbnail_service,
-            video_converter,
-            thumbnail_warmer,
-            indexer,
-            dir_index,
-            last_rebuild: tokio::sync::Mutex::new(None),
-        });
-
-        let app = Router::new()
-            .route("/api/file/{node_id}", get(serve_file))
-            .with_state(Arc::clone(&app_state));
-
-        (app, app_state, dir)
-    }
-
-    /// アーカイブエントリの `node_id` を取得するヘルパー
-    fn register_archive_entry(
-        state: &Arc<AppState>,
-        archive_path: &std::path::Path,
-        entry_name: &str,
-    ) -> String {
-        let mut reg = state.node_registry.lock().unwrap();
-        reg.register_archive_entry(archive_path, entry_name)
-            .unwrap()
-    }
-
-    #[tokio::test]
-    async fn アーカイブエントリのnode_idで画像データを返す() {
-        let (app, state, dir) = create_archive_setup();
-        let root = std::fs::canonicalize(dir.path()).unwrap();
-        let entry_nid = register_archive_entry(&state, &root.join("photos.zip"), "photo.jpg");
-
-        let resp = app
-            .oneshot(
-                Request::get(format!("/api/file/{entry_nid}"))
-                    .body(Body::empty())
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-
-        assert_eq!(resp.status(), StatusCode::OK);
-        let body_bytes = body::to_bytes(resp.into_body(), usize::MAX).await.unwrap();
-        assert_eq!(&body_bytes[..], b"fake jpeg data here");
-    }
-
-    #[tokio::test]
-    async fn アーカイブエントリに正しいcontent_typeを返す() {
-        let (app, state, dir) = create_archive_setup();
-        let root = std::fs::canonicalize(dir.path()).unwrap();
-        let entry_nid = register_archive_entry(&state, &root.join("photos.zip"), "photo.jpg");
-
-        let resp = app
-            .oneshot(
-                Request::get(format!("/api/file/{entry_nid}"))
-                    .body(Body::empty())
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-
-        let ct = resp
-            .headers()
-            .get(header::CONTENT_TYPE)
-            .unwrap()
-            .to_str()
-            .unwrap();
-        assert_eq!(ct, "image/jpeg");
-    }
-
-    #[tokio::test]
-    async fn アーカイブエントリのetag_304が機能する() {
-        let (app, state, dir) = create_archive_setup();
-        let root = std::fs::canonicalize(dir.path()).unwrap();
-        let entry_nid = register_archive_entry(&state, &root.join("photos.zip"), "photo.jpg");
-
-        // 1回目: ETag を取得
-        let resp = app
-            .clone()
-            .oneshot(
-                Request::get(format!("/api/file/{entry_nid}"))
-                    .body(Body::empty())
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-        assert_eq!(resp.status(), StatusCode::OK);
-        let etag = resp
-            .headers()
-            .get(header::ETAG)
-            .unwrap()
-            .to_str()
-            .unwrap()
-            .to_string();
-
-        // 2回目: If-None-Match で 304
-        let resp = app
-            .oneshot(
-                Request::get(format!("/api/file/{entry_nid}"))
-                    .header(header::IF_NONE_MATCH, &etag)
-                    .body(Body::empty())
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-        assert_eq!(resp.status(), StatusCode::NOT_MODIFIED);
     }
 }
