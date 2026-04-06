@@ -26,11 +26,11 @@ export default defineConfig({
 
   webServer: [
     {
-      command: `cargo run --manifest-path ${projectRoot}/backend/Cargo.toml -- --port ${BACKEND_PORT}`,
-      cwd: projectRoot,
+      command: `cargo run -- --port ${BACKEND_PORT}`,
+      cwd: path.join(projectRoot, "backend"),
       port: BACKEND_PORT,
       reuseExistingServer: false,
-      timeout: 300_000,
+      timeout: 30_000,
       env: {
         MOUNT_BASE_DIR: testDataDir,
         MOUNT_CONFIG_PATH: mountsPath,

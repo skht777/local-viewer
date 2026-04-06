@@ -962,20 +962,10 @@ fn try_sibling_from_index(
         .map(std::path::Path::to_path_buf)?;
 
     // current node_id からファイル名を取得して sort_key を計算
+    // DirIndex の sort_key 列はプレフィックスなしの encode_sort_key(name) で格納されている
     let current_path = reg.resolve(current_node_id).ok()?;
     let current_name = current_path.file_name()?.to_string_lossy();
-    let current_kind = if current_path.is_dir() {
-        "directory"
-    } else {
-        "other"
-    };
-    // DirIndex の sort_key 形式: ディレクトリは "0\x00{sort_key}", その他は "1\x00{sort_key}"
-    let kind_flag = if current_kind == "directory" {
-        "0"
-    } else {
-        "1"
-    };
-    let current_sort_key = format!("{kind_flag}\x00{}", encode_sort_key(&current_name));
+    let current_sort_key = encode_sort_key(&current_name);
 
     let kinds = &["directory", "archive", "pdf"];
     let de = dir_index
