@@ -98,6 +98,7 @@ pub(crate) async fn serve_file(
                 &archive_path,
                 &entry_name,
                 &original_headers,
+                &original_uri,
             )
             .await
         }
