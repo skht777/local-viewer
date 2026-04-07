@@ -893,11 +893,16 @@ pub(crate) async fn find_sibling(
             });
         }
 
-        // DirIndex 高速パス: sort_key ベースで隣接エントリを SQL で直接取得
+        // DirIndex 高速パス: sort 対応のクエリで隣接エントリを SQL で直接取得
         if dir_index.is_ready() {
-            if let Some(resp) =
-                try_sibling_from_index(&dir_index, &mut reg, &parent_path, &current, &direction)
-            {
+            if let Some(resp) = try_sibling_from_index(
+                &dir_index,
+                &mut reg,
+                &parent_path,
+                &current,
+                &direction,
+                sort,
+            ) {
                 return Ok(resp);
             }
         }
@@ -950,16 +955,17 @@ pub(crate) async fn find_sibling(
     Ok(Json(result?))
 }
 
-/// `DirIndex` から隣接エントリを `sort_key` ベースで直接取得する
+/// `DirIndex` から隣接エントリを sort 対応のクエリで直接取得する
 ///
-/// `current` `node_id` からファイル名を取得し、`encode_sort_key` で `sort_key` を算出。
-/// `find_sibling_entry` で SQL 検索。
+/// `current` `node_id` からファイル名と `is_dir` を取得し、
+/// `query_sibling` で sort に応じた SQL 検索を実行。
 fn try_sibling_from_index(
     dir_index: &DirIndex,
     reg: &mut NodeRegistry,
     parent_path: &std::path::Path,
     current_node_id: &str,
     direction: &str,
+    sort: SortOrder,
 ) -> Option<SiblingResponse> {
     let parent_key = reg.compute_parent_path_key(parent_path)?;
     let root = reg
@@ -967,15 +973,28 @@ fn try_sibling_from_index(
         .find_root_for(parent_path)
         .map(std::path::Path::to_path_buf)?;
 
-    // current node_id からファイル名を取得して sort_key を計算
-    // DirIndex の sort_key 列はプレフィックスなしの encode_sort_key(name) で格納されている
+    // current node_id からファイル名と is_dir を取得
     let current_path = reg.resolve(current_node_id).ok()?;
-    let current_name = current_path.file_name()?.to_string_lossy();
-    let current_sort_key = encode_sort_key(&current_name);
+    let current_name = current_path.file_name()?.to_string_lossy().into_owned();
+    let current_is_dir = current_path.is_dir();
+
+    let sort_str = match sort {
+        SortOrder::NameAsc => "name-asc",
+        SortOrder::NameDesc => "name-desc",
+        SortOrder::DateAsc => "date-asc",
+        SortOrder::DateDesc => "date-desc",
+    };
 
     let kinds = &["directory", "archive", "pdf"];
     let de = dir_index
-        .find_sibling_entry(&parent_key, &current_sort_key, direction, kinds)
+        .query_sibling(
+            &parent_key,
+            &current_name,
+            current_is_dir,
+            direction,
+            sort_str,
+            kinds,
+        )
         .ok()??;
 
     let meta = dir_entry_to_entry_meta(&de, &root, &parent_key, reg)?;

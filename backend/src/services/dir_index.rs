@@ -221,50 +221,45 @@ impl DirIndex {
 
     /// 次/前の兄弟エントリを返す (`sibling` 高速パス用)
     ///
+    /// sort に応じて name 系 / date 系のクエリに分岐する。
     /// `direction` は `"next"` or `"prev"`。
     /// `kinds` で対象 kind をフィルタ。
-    pub(crate) fn find_sibling_entry(
+    #[allow(clippy::too_many_arguments, reason = "sort 分岐に必要なパラメータ群")]
+    pub(crate) fn query_sibling(
         &self,
         parent_path: &str,
-        current_sort_key: &str,
+        current_name: &str,
+        current_is_dir: bool,
         direction: &str,
+        sort: &str,
         kinds: &[&str],
     ) -> Result<Option<DirEntry>, DirIndexError> {
         let conn = self.connect()?;
-        // kind の IN 句を動的に構築
-        let placeholders: Vec<String> = (0..kinds.len()).map(|i| format!("?{}", i + 3)).collect();
-        let in_clause = placeholders.join(", ");
+        let current_sort_key = encode_sort_key(current_name);
 
-        let (op, order) = if direction == "next" {
-            (">", "ASC")
-        } else {
-            ("<", "DESC")
-        };
-
-        let sql = format!(
-            "SELECT parent_path, name, kind, sort_key, size_bytes, mtime_ns \
-             FROM dir_entries \
-             WHERE parent_path = ?1 AND kind IN ({in_clause}) AND sort_key {op} ?2 \
-             ORDER BY sort_key {order} \
-             LIMIT 1"
-        );
-
-        let mut stmt = conn.prepare(&sql)?;
-        // パラメータ: ?1=parent_path, ?2=current_sort_key, ?3..=kinds
-        let mut params_vec: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
-        params_vec.push(Box::new(parent_path.to_string()));
-        params_vec.push(Box::new(current_sort_key.to_string()));
-        for kind in kinds {
-            params_vec.push(Box::new(kind.to_string()));
-        }
-        let params_ref: Vec<&dyn rusqlite::types::ToSql> =
-            params_vec.iter().map(std::convert::AsRef::as_ref).collect();
-
-        let mut rows = stmt.query_map(params_ref.as_slice(), map_dir_entry)?;
-        match rows.next() {
-            Some(Ok(entry)) => Ok(Some(entry)),
-            Some(Err(e)) => Err(DirIndexError::from(e)),
-            None => Ok(None),
+        match sort {
+            "name-asc" | "name-desc" => query_sibling_name(
+                &conn,
+                parent_path,
+                &current_sort_key,
+                current_is_dir,
+                direction,
+                sort,
+                kinds,
+            ),
+            "date-asc" | "date-desc" => {
+                query_sibling_date(&conn, parent_path, current_name, direction, sort, kinds)
+            }
+            // 未知のソートは name-asc にフォールバック
+            _ => query_sibling_name(
+                &conn,
+                parent_path,
+                &current_sort_key,
+                current_is_dir,
+                direction,
+                "name-asc",
+                kinds,
+            ),
         }
     }
 
@@ -747,6 +742,124 @@ fn query_date_asc(
 }
 
 // ===================================================================
+// sibling クエリ実装
+// ===================================================================
+
+/// name 系ソートでの sibling クエリ
+///
+/// 初期実装: `sort_key` のみで比較 (振る舞い維持)
+#[allow(clippy::too_many_arguments, reason = "sort 分岐に必要なパラメータ群")]
+fn query_sibling_name(
+    conn: &Connection,
+    parent_path: &str,
+    current_sort_key: &str,
+    _current_is_dir: bool,
+    direction: &str,
+    _sort: &str,
+    kinds: &[&str],
+) -> Result<Option<DirEntry>, DirIndexError> {
+    let placeholders: Vec<String> = (0..kinds.len()).map(|i| format!("?{}", i + 3)).collect();
+    let in_clause = placeholders.join(", ");
+
+    let (op, order) = if direction == "next" {
+        (">", "ASC")
+    } else {
+        ("<", "DESC")
+    };
+
+    let sql = format!(
+        "SELECT parent_path, name, kind, sort_key, size_bytes, mtime_ns \
+         FROM dir_entries \
+         WHERE parent_path = ?1 AND kind IN ({in_clause}) AND sort_key {op} ?2 \
+         ORDER BY sort_key {order} \
+         LIMIT 1"
+    );
+
+    let mut stmt = conn.prepare(&sql)?;
+    let mut params_vec: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
+    params_vec.push(Box::new(parent_path.to_string()));
+    params_vec.push(Box::new(current_sort_key.to_string()));
+    for kind in kinds {
+        params_vec.push(Box::new(kind.to_string()));
+    }
+    let params_ref: Vec<&dyn rusqlite::types::ToSql> =
+        params_vec.iter().map(std::convert::AsRef::as_ref).collect();
+
+    let mut rows = stmt.query_map(params_ref.as_slice(), map_dir_entry)?;
+    match rows.next() {
+        Some(Ok(entry)) => Ok(Some(entry)),
+        Some(Err(e)) => Err(DirIndexError::from(e)),
+        None => Ok(None),
+    }
+}
+
+/// date 系ソートでの sibling クエリ
+///
+/// 初期実装: `mtime_ns` のみで比較 (振る舞い維持)
+fn query_sibling_date(
+    conn: &Connection,
+    parent_path: &str,
+    current_name: &str,
+    direction: &str,
+    sort: &str,
+    kinds: &[&str],
+) -> Result<Option<DirEntry>, DirIndexError> {
+    // current_name から mtime_ns を逆引き (sort_key は大文字小文字衝突のため name で検索)
+    let cur_row: Option<i64> = conn
+        .query_row(
+            "SELECT mtime_ns FROM dir_entries WHERE parent_path = ?1 AND name = ?2 LIMIT 1",
+            params![parent_path, current_name],
+            |row| row.get(0),
+        )
+        .ok();
+
+    let Some(current_mtime) = cur_row else {
+        return Ok(None);
+    };
+
+    let placeholders: Vec<String> = (0..kinds.len()).map(|i| format!("?{}", i + 3)).collect();
+    let in_clause = placeholders.join(", ");
+
+    let is_asc = sort == "date-asc";
+    let (cmp, order) = if is_asc {
+        if direction == "next" {
+            ("mtime_ns > ?2", "mtime_ns ASC")
+        } else {
+            ("mtime_ns < ?2", "mtime_ns DESC")
+        }
+    } else if direction == "next" {
+        ("mtime_ns < ?2", "mtime_ns DESC")
+    } else {
+        ("mtime_ns > ?2", "mtime_ns ASC")
+    };
+
+    let sql = format!(
+        "SELECT parent_path, name, kind, sort_key, size_bytes, mtime_ns \
+         FROM dir_entries \
+         WHERE parent_path = ?1 AND kind IN ({in_clause}) AND {cmp} \
+         ORDER BY {order} \
+         LIMIT 1"
+    );
+
+    let mut stmt = conn.prepare(&sql)?;
+    let mut params_vec: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
+    params_vec.push(Box::new(parent_path.to_string()));
+    params_vec.push(Box::new(current_mtime));
+    for kind in kinds {
+        params_vec.push(Box::new(kind.to_string()));
+    }
+    let params_ref: Vec<&dyn rusqlite::types::ToSql> =
+        params_vec.iter().map(std::convert::AsRef::as_ref).collect();
+
+    let mut rows = stmt.query_map(params_ref.as_slice(), map_dir_entry)?;
+    match rows.next() {
+        Some(Ok(entry)) => Ok(Some(entry)),
+        Some(Err(e)) => Err(DirIndexError::from(e)),
+        None => Ok(None),
+    }
+}
+
+// ===================================================================
 // テスト
 // ===================================================================
 
@@ -1098,7 +1211,7 @@ mod tests {
         assert!(entry.is_none());
     }
 
-    // --- find_sibling_entry ---
+    // --- query_sibling ---
 
     #[test]
     fn 次の兄弟をkindフィルタ付きで取得できる() {
@@ -1114,18 +1227,8 @@ mod tests {
         idx.ingest_walk_entry(&args).unwrap();
 
         // a_dir の次の directory は c_dir (b_file.jpg はスキップ)
-        let a_sort_key = {
-            let entries = idx.query_page("m1", "name-asc", 10, None).unwrap();
-            entries
-                .iter()
-                .find(|e| e.name == "a_dir")
-                .unwrap()
-                .sort_key
-                .clone()
-        };
-
         let next = idx
-            .find_sibling_entry("m1", &a_sort_key, "next", &["directory"])
+            .query_sibling("m1", "a_dir", true, "next", "name-asc", &["directory"])
             .unwrap();
         assert!(next.is_some());
         assert_eq!(next.unwrap().name, "c_dir");
@@ -1144,18 +1247,8 @@ mod tests {
         );
         idx.ingest_walk_entry(&args).unwrap();
 
-        let c_sort_key = {
-            let entries = idx.query_page("m1", "name-asc", 10, None).unwrap();
-            entries
-                .iter()
-                .find(|e| e.name == "c_dir")
-                .unwrap()
-                .sort_key
-                .clone()
-        };
-
         let prev = idx
-            .find_sibling_entry("m1", &c_sort_key, "prev", &["directory"])
+            .query_sibling("m1", "c_dir", true, "prev", "name-asc", &["directory"])
             .unwrap();
         assert!(prev.is_some());
         assert_eq!(prev.unwrap().name, "a_dir");
@@ -1174,13 +1267,8 @@ mod tests {
         );
         idx.ingest_walk_entry(&args).unwrap();
 
-        let sort_key = {
-            let entries = idx.query_page("m1", "name-asc", 10, None).unwrap();
-            entries[0].sort_key.clone()
-        };
-
         let next = idx
-            .find_sibling_entry("m1", &sort_key, "next", &["directory"])
+            .query_sibling("m1", "only_dir", true, "next", "name-asc", &["directory"])
             .unwrap();
         assert!(next.is_none());
     }
