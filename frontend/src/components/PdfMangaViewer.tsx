@@ -142,7 +142,7 @@ export function PdfMangaViewer({
     mode,
     sort,
   });
-  useSiblingPrefetch({ currentNodeId: pdfNodeId, parentNodeId, ancestors });
+  useSiblingPrefetch({ currentNodeId: pdfNodeId, parentNodeId, ancestors, sort });
 
   // Escape 優先順位: (1) ヘルプ閉じ → (2) プロンプト → (3) フルスクリーン → (4) ビューワー閉じ
   const handleEscape = useCallback(() => {
