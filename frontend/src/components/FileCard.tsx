@@ -25,6 +25,7 @@ interface FileCardProps {
   isSelected?: boolean;
   ref?: Ref<HTMLDivElement>;
   batchThumbnailUrl?: string;
+  batchThumbnails?: Map<string, string>;
 }
 
 // kind に応じたアイコン
@@ -54,6 +55,7 @@ export const FileCard = memo(function FileCard({
   isSelected,
   ref,
   batchThumbnailUrl,
+  batchThumbnails,
 }: FileCardProps) {
   const [hasImageError, setHasImageError] = useState(false);
   const [hasPreviewError, setHasPreviewError] = useState(false);
@@ -118,6 +120,7 @@ export const FileCard = memo(function FileCard({
             previewNodeIds={entry.preview_node_ids!}
             modifiedAt={entry.modified_at}
             onAllError={() => setHasPreviewError(true)}
+            batchThumbnails={batchThumbnails}
           />
         ) : hasArchivePreview ? (
           <img

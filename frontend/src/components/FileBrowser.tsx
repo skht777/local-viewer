@@ -82,14 +82,25 @@ export function FileBrowser({
   // サーバーサイドソート済みのため sortEntries はスキップ
   const filtered = useMemo(() => filterByTab(entries, tab, sort), [entries, tab, sort]);
 
-  // バッチサムネイル: image/archive/video エントリの node_ids を収集
-  const thumbnailNodeIds = useMemo(
-    () =>
-      filtered
-        .filter((e) => e.kind === "image" || e.kind === "archive" || e.kind === "video")
-        .map((e) => e.node_id),
-    [filtered],
-  );
+  // バッチサムネイル: カードサムネイル + ディレクトリプレビューの node_ids を収集
+  // 本体カードを先にし、バッチ API の件数上限でも優先的に取得されるようにする
+  const thumbnailNodeIds = useMemo(() => {
+    const ids: string[] = [];
+    for (const e of filtered) {
+      if (e.kind === "image" || e.kind === "archive" || e.kind === "video") {
+        ids.push(e.node_id);
+      }
+    }
+    // ディレクトリのプレビュー画像 node_ids を後ろに追加
+    for (const e of filtered) {
+      if (e.kind === "directory" && e.preview_node_ids) {
+        for (const pid of e.preview_node_ids) {
+          ids.push(pid);
+        }
+      }
+    }
+    return ids;
+  }, [filtered]);
   const batchThumbnails = useBatchThumbnails(thumbnailNodeIds);
 
   // 無限スクロール: センチネル要素の IntersectionObserver
@@ -288,6 +299,7 @@ export function FileBrowser({
               onEnter={getEnterHandler(entry)}
               isSelected={entry.node_id === effectiveSelectedId}
               batchThumbnailUrl={batchThumbnails.get(entry.node_id)}
+              batchThumbnails={batchThumbnails}
             />
           ))}
         </div>

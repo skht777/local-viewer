@@ -11,9 +11,15 @@ interface PreviewGridProps {
   previewNodeIds: string[];
   modifiedAt?: number | null;
   onAllError?: () => void;
+  batchThumbnails?: Map<string, string>;
 }
 
-export function PreviewGrid({ previewNodeIds, modifiedAt, onAllError }: PreviewGridProps) {
+export function PreviewGrid({
+  previewNodeIds,
+  modifiedAt,
+  onAllError,
+  batchThumbnails,
+}: PreviewGridProps) {
   const [errorSet, setErrorSet] = useState<Set<string>>(new Set());
 
   const handleError = (nodeId: string) => {
@@ -28,6 +34,9 @@ export function PreviewGrid({ previewNodeIds, modifiedAt, onAllError }: PreviewG
     });
   };
 
+  // バッチ URL 優先、なければ個別 URL にフォールバック
+  const thumbSrc = (id: string) => batchThumbnails?.get(id) ?? thumbnailUrl(id, modifiedAt);
+
   // エラーでない画像のみ表示
   const validIds = previewNodeIds.filter((id) => !errorSet.has(id));
 
@@ -38,7 +47,7 @@ export function PreviewGrid({ previewNodeIds, modifiedAt, onAllError }: PreviewG
   if (validIds.length === 1) {
     return (
       <img
-        src={thumbnailUrl(validIds[0], modifiedAt)}
+        src={thumbSrc(validIds[0])}
         alt=""
         className="h-full w-full object-cover"
         loading="lazy"
@@ -54,7 +63,7 @@ export function PreviewGrid({ previewNodeIds, modifiedAt, onAllError }: PreviewG
         {validIds.map((id) => (
           <img
             key={id}
-            src={thumbnailUrl(id, modifiedAt)}
+            src={thumbSrc(id)}
             alt=""
             className="h-full w-full object-cover"
             loading="lazy"
@@ -70,7 +79,7 @@ export function PreviewGrid({ previewNodeIds, modifiedAt, onAllError }: PreviewG
   return (
     <div className="grid h-full w-full grid-cols-2 grid-rows-2 gap-0.5">
       <img
-        src={thumbnailUrl(validIds[0], modifiedAt)}
+        src={thumbSrc(validIds[0])}
         alt=""
         className="row-span-2 h-full w-full object-cover"
         loading="lazy"
@@ -78,7 +87,7 @@ export function PreviewGrid({ previewNodeIds, modifiedAt, onAllError }: PreviewG
         onError={() => handleError(validIds[0])}
       />
       <img
-        src={thumbnailUrl(validIds[1], modifiedAt)}
+        src={thumbSrc(validIds[1])}
         alt=""
         className="h-full w-full object-cover"
         loading="lazy"
@@ -86,7 +95,7 @@ export function PreviewGrid({ previewNodeIds, modifiedAt, onAllError }: PreviewG
         onError={() => handleError(validIds[1])}
       />
       <img
-        src={thumbnailUrl(validIds[2], modifiedAt)}
+        src={thumbSrc(validIds[2])}
         alt=""
         className="h-full w-full object-cover"
         loading="lazy"
