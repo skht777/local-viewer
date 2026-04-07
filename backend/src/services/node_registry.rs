@@ -247,18 +247,16 @@ impl NodeRegistry {
         }
 
         let mut ancestors: Vec<(String, String)> = Vec::new();
-        let mut current = resolved.parent().map(Path::to_path_buf);
-        while let Some(ref cur) = current {
-            if *cur == root {
+        for ancestor in resolved.ancestors().skip(1) {
+            if ancestor == root {
                 break;
             }
-            let node_id = self.register_resolved(cur);
-            let name = cur.file_name().map_or_else(
-                || cur.to_string_lossy().into_owned(),
+            let node_id = self.register_resolved(ancestor);
+            let name = ancestor.file_name().map_or_else(
+                || ancestor.to_string_lossy().into_owned(),
                 |n| n.to_string_lossy().into_owned(),
             );
             ancestors.push((node_id, name));
-            current = cur.parent().map(Path::to_path_buf);
         }
 
         // マウントルート自体を追加

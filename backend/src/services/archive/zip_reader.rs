@@ -31,7 +31,9 @@ impl ZipArchiveReader {
         Self { validator }
     }
 
-    /// ZIP エントリをチャンク読みで抽出する (サイズ上限付き)
+    /// ZIP エントリを抽出する (サイズ上限付き)
+    ///
+    /// `Read::take()` で上限+1 バイトまで読み、超過時はエラーを返す。
     fn extract_from_zip(
         &self,
         archive: &mut zip::ZipArchive<std::fs::File>,
@@ -39,31 +41,23 @@ impl ZipArchiveReader {
     ) -> Result<Bytes, AppError> {
         let max_size = self.validator.max_entry_size_for(entry_name);
 
-        let mut file = archive.by_name(entry_name).map_err(|e| match e {
+        let file = archive.by_name(entry_name).map_err(|e| match e {
             zip::result::ZipError::FileNotFound => {
                 AppError::InvalidArchive(format!("エントリが見つかりません: {entry_name}"))
             }
             _ => AppError::InvalidArchive(format!("ZIP エントリ読み取りエラー: {e}")),
         })?;
 
-        let mut buf = Vec::with_capacity(file.size() as usize);
-        let mut chunk = vec![0u8; EXTRACT_CHUNK_SIZE];
-        let mut total: u64 = 0;
+        let capacity = (file.size()).min(max_size + 1) as usize;
+        let mut buf = Vec::with_capacity(capacity);
+        file.take(max_size + 1)
+            .read_to_end(&mut buf)
+            .map_err(|e| AppError::InvalidArchive(format!("ZIP 読み取りエラー: {e}")))?;
 
-        loop {
-            let n = file
-                .read(&mut chunk)
-                .map_err(|e| AppError::InvalidArchive(format!("ZIP 読み取りエラー: {e}")))?;
-            if n == 0 {
-                break;
-            }
-            total += n as u64;
-            if total > max_size {
-                return Err(AppError::ArchiveSecurity(format!(
-                    "抽出時にサイズ上限を超えました: {entry_name}"
-                )));
-            }
-            buf.extend_from_slice(&chunk[..n]);
+        if buf.len() as u64 > max_size {
+            return Err(AppError::ArchiveSecurity(format!(
+                "抽出時にサイズ上限を超えました: {entry_name}"
+            )));
         }
 
         Ok(Bytes::from(buf))
