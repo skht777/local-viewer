@@ -747,9 +747,14 @@ fn fetch_page_full(
 
 /// `GET /api/browse/{node_id}/first-viewable`
 ///
-/// ディレクトリ内の最初の閲覧対象を再帰的に探索する。
+/// ディレクトリまたはアーカイブ内の最初の閲覧対象を再帰的に探索する。
 /// 優先順位: archive > pdf > image > directory (再帰降下)
+/// アーカイブの `node_id` が渡された場合は中身を探索。
 /// 最大 10 レベルまで再帰。
+#[allow(
+    clippy::too_many_lines,
+    reason = "アーカイブ対応追加で一時的に超過、将来ヘルパー抽出予定"
+)]
 pub(crate) async fn first_viewable(
     State(state): State<Arc<AppState>>,
     Path(node_id): Path<String>,
@@ -757,6 +762,7 @@ pub(crate) async fn first_viewable(
 ) -> Result<Json<FirstViewableResponse>, AppError> {
     let registry = Arc::clone(&state.node_registry);
     let dir_index = Arc::clone(&state.dir_index);
+    let archive_service = Arc::clone(&state.archive_service);
     let sort = query.sort;
 
     let result = tokio::task::spawn_blocking(move || {
@@ -771,6 +777,52 @@ pub(crate) async fn first_viewable(
 
         for _ in 0..max_depth {
             let path = reg.resolve(&current_id)?.to_path_buf();
+
+            // アーカイブファイルの場合: 中身から最初の閲覧対象を探す
+            // (既に spawn_blocking 内なので list_entries を同期呼び出し可能)
+            if path.is_file() && extensions::is_archive_extension(&path) {
+                match archive_service.list_entries(&path) {
+                    Ok(arc_entries) => {
+                        let mut metas = Vec::with_capacity(arc_entries.len());
+                        for entry in arc_entries.iter() {
+                            let entry_node_id = reg.register_archive_entry(&path, &entry.name)?;
+                            let display_name = entry
+                                .name
+                                .rsplit('/')
+                                .next()
+                                .unwrap_or(&entry.name)
+                                .to_string();
+                            let ext =
+                                extensions::extract_extension(&display_name).to_ascii_lowercase();
+                            let kind = EntryKind::from_extension(&ext);
+                            let mime_type = extensions::mime_for_extension(&ext).map(String::from);
+                            metas.push(EntryMeta {
+                                node_id: entry_node_id,
+                                name: display_name,
+                                kind,
+                                size_bytes: Some(entry.size_uncompressed),
+                                mime_type,
+                                child_count: None,
+                                modified_at: None,
+                                preview_node_ids: None,
+                            });
+                        }
+                        let sorted = browse_cursor::sort_entries(metas, sort);
+                        let viewable = select_first_viewable(&sorted);
+                        return Ok(FirstViewableResponse {
+                            entry: viewable.cloned(),
+                            parent_node_id: Some(current_id),
+                        });
+                    }
+                    Err(_) => {
+                        return Ok(FirstViewableResponse {
+                            entry: None,
+                            parent_node_id: None,
+                        });
+                    }
+                }
+            }
+
             if !path.is_dir() {
                 break;
             }
@@ -1714,5 +1766,28 @@ mod tests {
         let resp: BrowseResponse = serde_json::from_slice(&body).unwrap();
         // parent_node_id はルートディレクトリの node_id
         assert!(resp.parent_node_id.is_some());
+    }
+
+    // --- first-viewable アーカイブ対応 ---
+
+    #[tokio::test]
+    async fn first_viewableがアーカイブの中身から最初の閲覧対象を返す() {
+        let (_app, state, dir) = create_archive_setup();
+        let root = std::fs::canonicalize(dir.path()).unwrap();
+        let zip_node_id = register_node_id(&state, &root.join("images.zip"));
+
+        let app = Router::new()
+            .route("/api/browse/{node_id}/first-viewable", get(first_viewable))
+            .with_state(Arc::clone(&state));
+
+        let (status, json) =
+            get_json(app, &format!("/api/browse/{zip_node_id}/first-viewable")).await;
+
+        assert_eq!(status, StatusCode::OK);
+        let entry = &json["entry"];
+        assert!(!entry.is_null(), "アーカイブ内の画像が返されるはず");
+        assert_eq!(entry["kind"], "image");
+        // parent_node_id はアーカイブ自体の node_id
+        assert_eq!(json["parent_node_id"], zip_node_id);
     }
 }
