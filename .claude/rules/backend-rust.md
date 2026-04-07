@@ -78,7 +78,7 @@ routers → services → 外部クレート/std
 - 起動時にバリデーション、不正値は panic ではなくエラーメッセージ付き終了
 
 ## 依存クレート補足
-- `rusqlite` の `bundled-full`: FTS5 trigram トークナイザが必要なため `bundled` では不足。`bundled-full` で FTS5 + その他拡張を有効化
+- `rusqlite` の `bundled`: FTS5 trigram トークナイザを含む (`libsqlite3-sys` が無条件で `-DSQLITE_ENABLE_FTS5` を有効化)。`bundled-full` は不要な依存 (jiff, chrono, ICU 等) を追加するため使用しない
 - `md-5` (Cargo パッケージ名) / `md5` (クレートパス): ETag 生成専用。セキュリティ用途ではない
 - 外部ランタイム依存: `unrar-free`, `p7zip-full`, `ffmpeg`, `poppler-utils` (Docker イメージに同梱)
 
