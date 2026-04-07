@@ -80,19 +80,28 @@ pub(crate) fn natural_sort_key(name: &str) -> Vec<NaturalSortPart> {
 /// 要素間を NUL 文字で区切る。
 /// 例: "file2.jpg" → "file\x000000000002\x00.jpg"
 pub(crate) fn encode_sort_key(name: &str) -> String {
+    use std::fmt::Write as _;
+
     let lower = name.to_lowercase();
-    let mut encoded: Vec<String> = Vec::new();
+    let mut result = String::with_capacity(lower.len() + 20);
     let mut last_end = 0;
 
     for m in SPLIT_RE.find_iter(&lower) {
-        encoded.push(lower[last_end..m.start()].to_string());
+        if !result.is_empty() {
+            result.push('\x00');
+        }
+        result.push_str(&lower[last_end..m.start()]);
+        result.push('\x00');
         // 10 桁ゼロ埋め
-        encoded.push(format!("{:0>10}", m.as_str()));
+        let _ = write!(result, "{:0>10}", m.as_str());
         last_end = m.end();
     }
 
-    encoded.push(lower[last_end..].to_string());
-    encoded.join("\x00")
+    if !result.is_empty() {
+        result.push('\x00');
+    }
+    result.push_str(&lower[last_end..]);
+    result
 }
 
 #[cfg(test)]
