@@ -8,12 +8,16 @@ on:
 
 env:
   HUSKY: "0"
+  CARGO_INCREMENTAL: 0
 
 jobs:
-  lint:
+  lint-and-test-backend:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+
+      # mold リンカー + テスト用ランタイム依存
+      - run: sudo apt-get update -qq && sudo apt-get install -y -qq mold p7zip-full poppler-utils
 
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -22,6 +26,17 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: backend
+          shared-key: rust-backend
+
+      # Rust lint + test を1ジョブで実行（ビルド1回で済む）
+      - run: cd backend && cargo fmt --check
+      - run: cd backend && cargo clippy --all-targets --all-features -- -D warnings
+      - run: cd backend && cargo test
+
+  lint-frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
 
       - uses: actions/setup-node@v6
         with:
@@ -35,33 +50,12 @@ jobs:
       - run: npm ci
       - run: cd frontend && npm ci
 
-      # Rust lint
-      - run: cd backend && cargo clippy --all-targets --all-features -- -D warnings
-      - run: cd backend && cargo fmt --check
-
       # Frontend lint
       - run: npx oxlint frontend/src/
       - run: npx oxfmt --check frontend/src/
 
-  test-backend:
-    needs: lint
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-
-      # アーカイブテスト (p7zip-full) + PDF サムネイル (poppler-utils)
-      - run: sudo apt-get update -qq && sudo apt-get install -y -qq p7zip-full poppler-utils
-
-      - uses: dtolnay/rust-toolchain@stable
-
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: backend
-
-      - run: cd backend && cargo test
-
   test-frontend:
-    needs: lint
+    needs: lint-frontend
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -76,19 +70,20 @@ jobs:
       - run: cd frontend && npx vitest run
 
   e2e:
-    needs: [test-backend, test-frontend]
+    needs: [lint-and-test-backend, test-frontend]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
 
-      # バックエンドランタイム依存 (7z + ffmpeg + RAR + PDF サムネイル)
-      - run: sudo apt-get update -qq && sudo apt-get install -y -qq p7zip-full ffmpeg unrar-free poppler-utils
+      # バックエンドランタイム依存 (7z + ffmpeg + RAR + PDF サムネイル + mold)
+      - run: sudo apt-get update -qq && sudo apt-get install -y -qq mold p7zip-full ffmpeg unrar-free poppler-utils
 
       - uses: dtolnay/rust-toolchain@stable
 
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: backend
+          shared-key: rust-backend
 
       - uses: actions/setup-node@v6
         with:
