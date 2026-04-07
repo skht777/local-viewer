@@ -9,7 +9,7 @@
 // - kind === "pdf": usePdfThumbnail で先頭ページサムネイル表示
 
 import type { KeyboardEvent, Ref } from "react";
-import { useState } from "react";
+import { memo, useState } from "react";
 import { usePdfThumbnail } from "../hooks/usePdfThumbnail";
 import type { BrowseEntry } from "../types/api";
 import { formatFileSize } from "../utils/format";
@@ -45,7 +45,7 @@ function kindIcon(kind: BrowseEntry["kind"]): string {
   }
 }
 
-export function FileCard({
+export const FileCard = memo(function FileCard({
   entry,
   onSelect,
   onDoubleClick,
@@ -192,4 +192,4 @@ export function FileCard({
       </div>
     </div>
   );
-}
+});

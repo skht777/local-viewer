@@ -80,7 +80,7 @@ export function FileBrowser({
   onLoadMore,
 }: FileBrowserProps) {
   // サーバーサイドソート済みのため sortEntries はスキップ
-  const filtered = filterByTab(entries, tab, sort);
+  const filtered = useMemo(() => filterByTab(entries, tab, sort), [entries, tab, sort]);
 
   // バッチサムネイル: image/archive/video エントリの node_ids を収集
   const thumbnailNodeIds = useMemo(
@@ -131,44 +131,53 @@ export function FileBrowser({
   }, [firstEntryId]);
 
   // シングルクリック: カード選択
-  const handleSelect = (entry: BrowseEntry) => {
+  const handleSelect = useCallback((entry: BrowseEntry) => {
     setLocalSelectedId(entry.node_id);
-  };
+  }, []);
 
   // ダブルクリック / Enter / g: アクション実行（進入/ビューワー起動）
-  const handleAction = (entry: BrowseEntry) => {
-    if (entry.kind === "archive") {
-      onNavigate(entry.node_id, { tab: "images" });
-    } else if (entry.kind === "directory") {
-      onNavigate(entry.node_id);
-    } else if (entry.kind === "pdf") {
-      onPdfClick?.(entry.node_id);
-    } else if (entry.kind === "image" && onImageClick) {
-      const imageIndex = filtered.findIndex((e) => e.node_id === entry.node_id);
-      if (imageIndex >= 0) onImageClick(imageIndex);
-    }
-  };
+  const handleAction = useCallback(
+    (entry: BrowseEntry) => {
+      if (entry.kind === "archive") {
+        onNavigate(entry.node_id, { tab: "images" });
+      } else if (entry.kind === "directory") {
+        onNavigate(entry.node_id);
+      } else if (entry.kind === "pdf") {
+        onPdfClick?.(entry.node_id);
+      } else if (entry.kind === "image" && onImageClick) {
+        const imageIndex = filtered.findIndex((e) => e.node_id === entry.node_id);
+        if (imageIndex >= 0) onImageClick(imageIndex);
+      }
+    },
+    [filtered, onNavigate, onPdfClick, onImageClick],
+  );
 
   // オーバーレイ「▶ 開く」/ Space: kind に応じて適切なアクションを呼び分け
-  const handleOpen = (entry: BrowseEntry) => {
-    if (entry.kind === "directory" || entry.kind === "archive") {
-      onOpenViewer?.(entry.node_id);
-    } else if (entry.kind === "image" && onImageClick) {
-      const imageIndex = filtered.findIndex((e) => e.node_id === entry.node_id);
-      if (imageIndex >= 0) onImageClick(imageIndex);
-    } else if (entry.kind === "pdf") {
-      onPdfClick?.(entry.node_id);
-    }
-  };
+  const handleOpen = useCallback(
+    (entry: BrowseEntry) => {
+      if (entry.kind === "directory" || entry.kind === "archive") {
+        onOpenViewer?.(entry.node_id);
+      } else if (entry.kind === "image" && onImageClick) {
+        const imageIndex = filtered.findIndex((e) => e.node_id === entry.node_id);
+        if (imageIndex >= 0) onImageClick(imageIndex);
+      } else if (entry.kind === "pdf") {
+        onPdfClick?.(entry.node_id);
+      }
+    },
+    [filtered, onOpenViewer, onImageClick, onPdfClick],
+  );
 
   // オーバーレイ「→ 進入」: directory/archive のナビゲーション
-  const handleEnter = (entry: BrowseEntry) => {
-    if (entry.kind === "archive") {
-      onNavigate(entry.node_id, { tab: "images" });
-    } else if (entry.kind === "directory") {
-      onNavigate(entry.node_id);
-    }
-  };
+  const handleEnter = useCallback(
+    (entry: BrowseEntry) => {
+      if (entry.kind === "archive") {
+        onNavigate(entry.node_id, { tab: "images" });
+      } else if (entry.kind === "directory") {
+        onNavigate(entry.node_id);
+      }
+    },
+    [onNavigate],
+  );
 
   // グリッドの実際の列数をオンデマンド取得
   const getColumnCount = useCallback(() => {
