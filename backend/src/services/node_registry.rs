@@ -134,6 +134,11 @@ impl NodeRegistry {
         &self.path_security
     }
 
+    /// ロック外で `PathSecurity` を使うための `Arc` クローン取得
+    pub(crate) fn path_security_arc(&self) -> Arc<PathSecurity> {
+        Arc::clone(&self.path_security)
+    }
+
     /// パスから決定的な `node_id` を生成する (内部用)
     ///
     /// `HMAC-SHA256(secret, "{root}::{relative_path}")` の先頭16文字。
