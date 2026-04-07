@@ -19,7 +19,7 @@ use crate::services::dir_index::DirIndex;
 use crate::services::extensions::{self, EntryKind};
 use crate::services::models::{AncestorEntry, BrowseResponse, EntryMeta};
 use crate::services::natural_sort::encode_sort_key;
-use crate::services::node_registry::{NodeRegistry, PageOptions};
+use crate::services::node_registry::{NodeRegistry, scan_entries, scan_entry_metas, stat_entries};
 use crate::state::AppState;
 
 // --- クエリパラメータ ---
@@ -229,39 +229,55 @@ pub(crate) async fn browse_directory(
         )
         .await?
     } else {
-        // ディレクトリの通常ブラウズ (DirIndex 高速パス → フォールバック)
+        // ディレクトリの通常ブラウズ (DirIndex 高速パス → Two-Phase フォールバック)
         let registry = Arc::clone(&state.node_registry);
         let dir_index = Arc::clone(&state.dir_index);
         let nid = node_id.clone();
         let is_dir_index_ready = state.dir_index.is_ready();
         let has_limit = limit.is_some();
         tokio::task::spawn_blocking(move || {
+            // Phase 0: 短時間ロックでパス解決 + PathSecurity 取得
             #[allow(
                 clippy::expect_used,
                 reason = "Mutex poison は致命的エラー、パニックが適切"
             )]
-            let mut reg = registry.lock().expect("NodeRegistry Mutex poisoned");
-
-            // DirIndex 高速パス: ready かつ limit 指定時に試行
-            if is_dir_index_ready && has_limit {
+            let (path, path_security) = {
+                let reg = registry.lock().expect("NodeRegistry Mutex poisoned");
                 let path = reg.resolve(&nid)?.to_path_buf();
-                if path.is_dir() {
-                    if let Some(result) = try_dir_index_browse(
-                        &mut reg,
-                        &dir_index,
-                        &path,
-                        &nid,
-                        sort,
-                        limit.unwrap_or(0),
-                        cursor.as_deref(),
-                    ) {
-                        return Ok(result);
-                    }
+                let ps = reg.path_security_arc();
+                (path, ps)
+            };
+
+            // DirIndex 高速パス: ready かつ limit 指定時に試行 (既存ロックパターン維持)
+            if is_dir_index_ready && has_limit && path.is_dir() {
+                #[allow(
+                    clippy::expect_used,
+                    reason = "Mutex poison は致命的エラー、パニックが適切"
+                )]
+                let mut reg = registry.lock().expect("NodeRegistry Mutex poisoned");
+                if let Some(result) = try_dir_index_browse(
+                    &mut reg,
+                    &dir_index,
+                    &path,
+                    &nid,
+                    sort,
+                    limit.unwrap_or(0),
+                    cursor.as_deref(),
+                ) {
+                    return Ok(result);
                 }
             }
 
-            // フォールバック: 従来の scandir パス
-            browse_directory_blocking(&mut reg, &nid, sort, limit, cursor.as_deref())
+            // Two-Phase フォールバック: I/O をロック外で実行
+            browse_directory_blocking(
+                &registry,
+                &path_security,
+                &path,
+                &nid,
+                sort,
+                limit,
+                cursor.as_deref(),
+            )
         })
         .await
         .map_err(|e| AppError::path_security(format!("タスク実行エラー: {e}")))??
@@ -297,26 +313,23 @@ pub(crate) async fn browse_directory(
         .into_response())
 }
 
-/// `browse_directory` のブロッキング処理本体
+/// `browse_directory` のブロッキング処理本体 (Two-Phase Lock Splitting)
 ///
-/// ディレクトリの検証、エントリ取得、ソート/ページネーション、パンくずリスト構築を行う。
+/// Phase 1: ロック外で filesystem I/O (scan + stat + canonicalize)
+/// Phase 2: 短時間ロックで `HashMap` 登録 + パンくずリスト構築
+#[allow(
+    clippy::too_many_arguments,
+    reason = "Two-Phase パターンで registry + path_security + path を分離して受け取る"
+)]
 fn browse_directory_blocking(
-    reg: &mut NodeRegistry,
+    registry: &std::sync::Mutex<NodeRegistry>,
+    path_security: &crate::services::path_security::PathSecurity,
+    path: &std::path::Path,
     node_id: &str,
     sort: SortOrder,
     limit: Option<usize>,
     cursor: Option<&str>,
 ) -> Result<(BrowseResponse, String), AppError> {
-    // node_id → パス解決
-    let path = reg.resolve(node_id)?.to_path_buf();
-
-    // アーカイブエントリのチェック
-    if reg.is_archive_entry(node_id) {
-        return Err(AppError::NotADirectory {
-            path: format!("アーカイブエントリは browse 対象外です: {node_id}"),
-        });
-    }
-
     // ディレクトリかチェック
     if !path.is_dir() {
         return Err(AppError::NotADirectory {
@@ -324,16 +337,25 @@ fn browse_directory_blocking(
         });
     }
 
+    // Phase 1 (ロック外): スキャン + ソート/ページネーション
     let (page_entries, next_cursor, total_count, etag) =
-        fetch_page(reg, &path, sort, limit, cursor)?;
+        fetch_page(registry, path_security, path, sort, limit, cursor)?;
 
-    // パンくずリスト用の parent_node_id と ancestors
-    let parent_node_id = reg.get_parent_node_id(&path);
-    let ancestors = reg
-        .get_ancestors(&path)
-        .into_iter()
-        .map(|(nid, name)| AncestorEntry { node_id: nid, name })
-        .collect();
+    // Phase 2 (短時間ロック): パンくずリスト
+    #[allow(
+        clippy::expect_used,
+        reason = "Mutex poison は致命的エラー、パニックが適切"
+    )]
+    let (parent_node_id, ancestors) = {
+        let mut reg = registry.lock().expect("NodeRegistry Mutex poisoned");
+        let pnid = reg.get_parent_node_id(path);
+        let anc = reg
+            .get_ancestors_from_resolved(path)
+            .into_iter()
+            .map(|(nid, name)| AncestorEntry { node_id: nid, name })
+            .collect();
+        (pnid, anc)
+    };
 
     let response = BrowseResponse {
         current_node_id: Some(node_id.to_string()),
@@ -649,16 +671,17 @@ async fn browse_archive(
     Ok((response, etag))
 }
 
-/// ディレクトリエントリを取得し、ソート/ページネーションを適用する
+/// ディレクトリエントリを取得し、ソート/ページネーションを適用する (Two-Phase)
 ///
-/// name ソート + limit 指定時は `list_directory_page` で最適化。
-/// それ以外は全件取得 + `paginate` で処理。
+/// Phase 1: ロック外で scan + stat + `scan_entry_metas`
+/// Phase 2: 短時間ロックで `register_scanned_entries`
 #[allow(
     clippy::type_complexity,
     reason = "ページネーション結果のタプルが自然な構造"
 )]
 fn fetch_page(
-    reg: &mut NodeRegistry,
+    registry: &std::sync::Mutex<NodeRegistry>,
+    path_security: &crate::services::path_security::PathSecurity,
     path: &std::path::Path,
     sort: SortOrder,
     limit: Option<usize>,
@@ -667,19 +690,27 @@ fn fetch_page(
     let is_name_sort = matches!(sort, SortOrder::NameAsc | SortOrder::NameDesc);
 
     if is_name_sort && limit.is_some() {
-        fetch_page_name_sort(reg, path, sort, limit.unwrap_or(0), cursor)
+        fetch_page_name_sort(
+            registry,
+            path_security,
+            path,
+            sort,
+            limit.unwrap_or(0),
+            cursor,
+        )
     } else {
-        fetch_page_full(reg, path, sort, limit, cursor)
+        fetch_page_full(registry, path_security, path, sort, limit, cursor)
     }
 }
 
-/// name ソート + limit 指定時: `list_directory_page` で必要分だけ stat する最適化パス
+/// name ソート + limit 指定時: ページ分だけ stat する最適化パス (Two-Phase)
 #[allow(
     clippy::type_complexity,
     reason = "ページネーション結果のタプルが自然な構造"
 )]
 fn fetch_page_name_sort(
-    reg: &mut NodeRegistry,
+    registry: &std::sync::Mutex<NodeRegistry>,
+    path_security: &crate::services::path_security::PathSecurity,
     path: &std::path::Path,
     sort: SortOrder,
     limit_val: usize,
@@ -690,13 +721,71 @@ fn fetch_page_name_sort(
         .map(|c| browse_cursor::decode_cursor(c, sort).map(|d| d.node_id))
         .transpose()?;
 
-    let options = PageOptions {
-        limit: limit_val + 1, // +1 で次ページ有無を判定
-        cursor_node_id: cursor_node_id.as_deref(),
-        reverse: sort == SortOrder::NameDesc,
+    // Phase 1 (ロック外): scan + sort + page slice + stat + build ScannedEntry
+    let mut raw = scan_entries(path_security, path)?;
+    let total_count = raw.len();
+    let reverse = sort == SortOrder::NameDesc;
+
+    // ディレクトリ優先 + 自然順ソート
+    use crate::services::natural_sort::natural_sort_key;
+    raw.sort_by(|(a_path, a_kind, _), (b_path, b_kind, _)| {
+        let a_is_dir = *a_kind == EntryKind::Directory;
+        let b_is_dir = *b_kind == EntryKind::Directory;
+        b_is_dir.cmp(&a_is_dir).then_with(|| {
+            let a_name = a_path.file_name().unwrap_or_default().to_string_lossy();
+            let b_name = b_path.file_name().unwrap_or_default().to_string_lossy();
+            natural_sort_key(&a_name).cmp(&natural_sort_key(&b_name))
+        })
+    });
+
+    if reverse {
+        let dir_count = raw
+            .iter()
+            .filter(|(_, k, _)| *k == EntryKind::Directory)
+            .count();
+        raw[..dir_count].reverse();
+        raw[dir_count..].reverse();
+    }
+
+    // カーソル位置を検索 (短時間ロック: path_to_id 参照)
+    let start_idx = if let Some(ref cursor_id) = cursor_node_id {
+        #[allow(
+            clippy::expect_used,
+            reason = "Mutex poison は致命的エラー、パニックが適切"
+        )]
+        let reg = registry.lock().expect("NodeRegistry Mutex poisoned");
+        raw.iter()
+            .position(|(p, _, _)| {
+                let key = p.to_string_lossy();
+                reg.path_to_id_get(key.as_ref())
+                    .is_some_and(|id| id == *cursor_id)
+            })
+            .map_or(0, |pos| pos + 1)
+    } else {
+        0
     };
 
-    let (all_entries, total) = reg.list_directory_page(path, &options)?;
+    let fetch_limit = limit_val + 1; // +1 で次ページ有無を判定
+    let end_idx = (start_idx + fetch_limit).min(raw.len());
+    let page_raw = &raw[start_idx..end_idx];
+
+    // ページ分だけ stat + scan_entry_metas
+    let stated: Vec<_> = page_raw
+        .iter()
+        .map(|(p, k, _)| (p.clone(), *k, std::fs::metadata(p).ok()))
+        .collect();
+    let scanned = scan_entry_metas(path_security, stated, 3);
+
+    // Phase 2 (短時間ロック): register
+    #[allow(
+        clippy::expect_used,
+        reason = "Mutex poison は致命的エラー、パニックが適切"
+    )]
+    let all_entries = {
+        let mut reg = registry.lock().expect("NodeRegistry Mutex poisoned");
+        reg.register_scanned_entries(scanned)?
+    };
+
     let has_next = all_entries.len() > limit_val;
     let page: Vec<EntryMeta> = all_entries.into_iter().take(limit_val).collect();
 
@@ -708,22 +797,37 @@ fn fetch_page_name_sort(
         None
     };
 
-    Ok((page, next, total, etag))
+    Ok((page, next, total_count, etag))
 }
 
-/// date ソート or limit なし: 全件取得してからページネーション
+/// date ソート or limit なし: 全件取得してからページネーション (Two-Phase)
 #[allow(
     clippy::type_complexity,
     reason = "ページネーション結果のタプルが自然な構造"
 )]
 fn fetch_page_full(
-    reg: &mut NodeRegistry,
+    registry: &std::sync::Mutex<NodeRegistry>,
+    path_security: &crate::services::path_security::PathSecurity,
     path: &std::path::Path,
     sort: SortOrder,
     limit: Option<usize>,
     cursor: Option<&str>,
 ) -> Result<(Vec<EntryMeta>, Option<String>, usize, String), AppError> {
-    let entries = reg.list_directory(path)?;
+    // Phase 1 (ロック外): scan + stat + build ScannedEntry
+    let raw = scan_entries(path_security, path)?;
+    let stated = stat_entries(&raw);
+    let scanned = scan_entry_metas(path_security, stated, 3);
+
+    // Phase 2 (短時間ロック): register
+    #[allow(
+        clippy::expect_used,
+        reason = "Mutex poison は致命的エラー、パニックが適切"
+    )]
+    let entries = {
+        let mut reg = registry.lock().expect("NodeRegistry Mutex poisoned");
+        reg.register_scanned_entries(scanned)?
+    };
+
     let total = entries.len();
 
     if let Some(limit_val) = limit {
@@ -766,47 +870,69 @@ pub(crate) async fn first_viewable(
     let sort = query.sort;
 
     let result = tokio::task::spawn_blocking(move || {
+        // PathSecurity を短時間ロックで取得 (ループ外)
         #[allow(
             clippy::expect_used,
             reason = "Mutex poison は致命的エラー、パニックが適切"
         )]
-        let mut reg = registry.lock().expect("NodeRegistry Mutex poisoned");
+        let path_security = {
+            let reg = registry.lock().expect("NodeRegistry Mutex poisoned");
+            reg.path_security_arc()
+        };
 
         let max_depth = 10;
         let mut current_id = node_id;
 
         for _ in 0..max_depth {
-            let path = reg.resolve(&current_id)?.to_path_buf();
+            // 短時間ロック: resolve のみ
+            #[allow(
+                clippy::expect_used,
+                reason = "Mutex poison は致命的エラー、パニックが適切"
+            )]
+            let path = {
+                let reg = registry.lock().expect("NodeRegistry Mutex poisoned");
+                reg.resolve(&current_id)?.to_path_buf()
+            };
 
-            // アーカイブファイルの場合: 中身から最初の閲覧対象を探す
-            // (既に spawn_blocking 内なので list_entries を同期呼び出し可能)
+            // アーカイブファイルの場合: 中身から最初の閲覧対象を探す (ロック外で I/O)
             if path.is_file() && extensions::is_archive_extension(&path) {
                 match archive_service.list_entries(&path) {
                     Ok(arc_entries) => {
-                        let mut metas = Vec::with_capacity(arc_entries.len());
-                        for entry in arc_entries.iter() {
-                            let entry_node_id = reg.register_archive_entry(&path, &entry.name)?;
-                            let display_name = entry
-                                .name
-                                .rsplit('/')
-                                .next()
-                                .unwrap_or(&entry.name)
-                                .to_string();
-                            let ext =
-                                extensions::extract_extension(&display_name).to_ascii_lowercase();
-                            let kind = EntryKind::from_extension(&ext);
-                            let mime_type = extensions::mime_for_extension(&ext).map(String::from);
-                            metas.push(EntryMeta {
-                                node_id: entry_node_id,
-                                name: display_name,
-                                kind,
-                                size_bytes: Some(entry.size_uncompressed),
-                                mime_type,
-                                child_count: None,
-                                modified_at: None,
-                                preview_node_ids: None,
-                            });
-                        }
+                        // 短時間ロック: アーカイブエントリ登録のみ
+                        #[allow(
+                            clippy::expect_used,
+                            reason = "Mutex poison は致命的エラー、パニックが適切"
+                        )]
+                        let metas = {
+                            let mut reg = registry.lock().expect("NodeRegistry Mutex poisoned");
+                            let mut metas = Vec::with_capacity(arc_entries.len());
+                            for entry in arc_entries.iter() {
+                                let entry_node_id =
+                                    reg.register_archive_entry(&path, &entry.name)?;
+                                let display_name = entry
+                                    .name
+                                    .rsplit('/')
+                                    .next()
+                                    .unwrap_or(&entry.name)
+                                    .to_string();
+                                let ext = extensions::extract_extension(&display_name)
+                                    .to_ascii_lowercase();
+                                let kind = EntryKind::from_extension(&ext);
+                                let mime_type =
+                                    extensions::mime_for_extension(&ext).map(String::from);
+                                metas.push(EntryMeta {
+                                    node_id: entry_node_id,
+                                    name: display_name,
+                                    kind,
+                                    size_bytes: Some(entry.size_uncompressed),
+                                    mime_type,
+                                    child_count: None,
+                                    modified_at: None,
+                                    preview_node_ids: None,
+                                });
+                            }
+                            metas
+                        };
                         let sorted = browse_cursor::sort_entries(metas, sort);
                         let viewable = select_first_viewable(&sorted);
                         return Ok(FirstViewableResponse {
@@ -827,8 +953,13 @@ pub(crate) async fn first_viewable(
                 break;
             }
 
-            // DirIndex 高速パス: kind ごとに最初のエントリを SQL で取得
+            // DirIndex 高速パス (既存ロックパターン維持)
             if dir_index.is_ready() {
+                #[allow(
+                    clippy::expect_used,
+                    reason = "Mutex poison は致命的エラー、パニックが適切"
+                )]
+                let mut reg = registry.lock().expect("NodeRegistry Mutex poisoned");
                 if let Some(result) =
                     try_first_viewable_from_index(&dir_index, &mut reg, &path, &current_id)
                 {
@@ -836,8 +967,20 @@ pub(crate) async fn first_viewable(
                 }
             }
 
-            // フォールバック: 全件取得 + ソート
-            let entries = reg.list_directory(&path)?;
+            // Two-Phase フォールバック: scan 外、register 内
+            let raw = scan_entries(&path_security, &path)?;
+            let stated = stat_entries(&raw);
+            let scanned = scan_entry_metas(&path_security, stated, 3);
+
+            #[allow(
+                clippy::expect_used,
+                reason = "Mutex poison は致命的エラー、パニックが適切"
+            )]
+            let entries = {
+                let mut reg = registry.lock().expect("NodeRegistry Mutex poisoned");
+                reg.register_scanned_entries(scanned)?
+            };
+
             let sorted = browse_cursor::sort_entries(entries, sort);
             let viewable = select_first_viewable(&sorted);
 
@@ -920,6 +1063,10 @@ fn select_first_viewable(entries: &[EntryMeta]) -> Option<&EntryMeta> {
 /// `GET /api/browse/{parent_node_id}/sibling`
 ///
 /// 次または前の兄弟セット (directory/archive/pdf) を返す。
+#[allow(
+    clippy::too_many_lines,
+    reason = "Two-Phase Lock Splitting で DirIndex パスとフォールバックパスが分離"
+)]
 pub(crate) async fn find_sibling(
     State(state): State<Arc<AppState>>,
     Path(parent_node_id): Path<String>,
@@ -932,22 +1079,30 @@ pub(crate) async fn find_sibling(
     let direction = query.direction;
 
     let result = tokio::task::spawn_blocking(move || {
+        // Phase 0: 短時間ロックでパス解決 + PathSecurity 取得
         #[allow(
             clippy::expect_used,
             reason = "Mutex poison は致命的エラー、パニックが適切"
         )]
-        let mut reg = registry.lock().expect("NodeRegistry Mutex poisoned");
-
-        // 親ディレクトリのパスを解決
-        let parent_path = reg.resolve(&parent_node_id)?.to_path_buf();
+        let (parent_path, path_security) = {
+            let reg = registry.lock().expect("NodeRegistry Mutex poisoned");
+            let path = reg.resolve(&parent_node_id)?.to_path_buf();
+            let ps = reg.path_security_arc();
+            (path, ps)
+        };
         if !parent_path.is_dir() {
             return Err(AppError::NotADirectory {
                 path: parent_path.display().to_string(),
             });
         }
 
-        // DirIndex 高速パス: sort 対応のクエリで隣接エントリを SQL で直接取得
+        // DirIndex 高速パス (既存ロックパターン維持)
         if dir_index.is_ready() {
+            #[allow(
+                clippy::expect_used,
+                reason = "Mutex poison は致命的エラー、パニックが適切"
+            )]
+            let mut reg = registry.lock().expect("NodeRegistry Mutex poisoned");
             if let Some(resp) = try_sibling_from_index(
                 &dir_index,
                 &mut reg,
@@ -960,8 +1115,20 @@ pub(crate) async fn find_sibling(
             }
         }
 
-        // フォールバック: 全件取得してソート → 線形探索
-        let entries = reg.list_directory(&parent_path)?;
+        // Two-Phase フォールバック: scan 外、register 内
+        let raw = scan_entries(&path_security, &parent_path)?;
+        let stated = stat_entries(&raw);
+        let scanned = scan_entry_metas(&path_security, stated, 3);
+
+        #[allow(
+            clippy::expect_used,
+            reason = "Mutex poison は致命的エラー、パニックが適切"
+        )]
+        let entries = {
+            let mut reg = registry.lock().expect("NodeRegistry Mutex poisoned");
+            reg.register_scanned_entries(scanned)?
+        };
+
         let sorted = browse_cursor::sort_entries(entries, sort);
 
         // 閲覧可能なエントリ (directory, archive, pdf) のみフィルタ

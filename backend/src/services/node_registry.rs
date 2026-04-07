@@ -139,6 +139,11 @@ impl NodeRegistry {
         Arc::clone(&self.path_security)
     }
 
+    /// パス文字列から登録済み `node_id` を検索する (読み取り専用)
+    pub(crate) fn path_to_id_get(&self, path_key: &str) -> Option<&str> {
+        self.path_to_id.get(path_key).map(String::as_str)
+    }
+
     /// パスから決定的な `node_id` を生成する (内部用)
     ///
     /// `HMAC-SHA256(secret, "{root}::{relative_path}")` の先頭16文字。
@@ -906,7 +911,9 @@ pub(crate) fn scan_entry_metas(
 /// 200 件超で rayon 並列 stat
 const PARALLEL_STAT_THRESHOLD: usize = 200;
 
-fn stat_entries(raw: &[(PathBuf, EntryKind, bool)]) -> Vec<(PathBuf, EntryKind, Option<Metadata>)> {
+pub(crate) fn stat_entries(
+    raw: &[(PathBuf, EntryKind, bool)],
+) -> Vec<(PathBuf, EntryKind, Option<Metadata>)> {
     if raw.len() > PARALLEL_STAT_THRESHOLD {
         raw.par_iter()
             .map(|(p, k, _)| (p.clone(), *k, std::fs::metadata(p).ok()))
