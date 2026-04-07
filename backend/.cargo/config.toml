@@ -1,6 +1,6 @@
 [build]
-# リンカ高速化 (mold が利用可能な場合)
-# rustflags = ["-C", "link-arg=-fuse-ld=mold"]
+# リンカ高速化 (mold が必要: sudo apt-get install mold)
+rustflags = ["-C", "link-arg=-fuse-ld=mold"]
 
 [target.x86_64-unknown-linux-gnu]
 rustflags = ["-C", "target-cpu=native"]
