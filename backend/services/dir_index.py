@@ -421,6 +421,157 @@ class DirIndex:
         finally:
             conn.close()
 
+    def query_sibling(
+        self,
+        parent_path: str,
+        current_name: str,
+        current_is_dir: bool,
+        direction: str,
+        sort: str,
+        set_kinds: tuple[str, ...] = ("directory", "archive", "pdf"),
+    ) -> dict[str, object] | None:
+        """次/前の兄弟セット候補を返す (sibling エンドポイント用).
+
+        browse クエリと同じソート順で比較する:
+        - name-asc/desc: (kind != 'directory'), sort_key の複合ソート
+        - date-asc/desc: (mtime_ns, sort_key ASC) Windows Explorer 準拠
+        """
+        conn = self._connect()
+        try:
+            current_sort_key = encode_sort_key(current_name)
+            kinds_sql = "(" + ", ".join(f"'{k}'" for k in set_kinds) + ")"
+            is_next = direction == "next"
+
+            if sort in ("name-asc", "name-desc"):
+                row = self._sibling_name(
+                    conn,
+                    parent_path,
+                    current_sort_key,
+                    0 if current_is_dir else 1,
+                    is_next,
+                    sort == "name-asc",
+                    kinds_sql,
+                )
+            else:
+                row = self._sibling_date(
+                    conn,
+                    parent_path,
+                    current_name,
+                    is_next,
+                    sort == "date-asc",
+                    kinds_sql,
+                )
+            return dict(row) if row else None
+        finally:
+            conn.close()
+
+    @staticmethod
+    def _sibling_name(
+        conn: sqlite3.Connection,
+        parent_path: str,
+        current_sort_key: str,
+        current_kind_flag: int,
+        is_next: bool,
+        is_asc: bool,
+        set_kinds: str,
+    ) -> sqlite3.Row | None:
+        """name ソートでの sibling クエリ.
+
+        ソート順: (kind != 'directory') ASC, sort_key ASC/DESC
+        混合方向のため、明示的な OR 条件でタプル比較を表現する。
+        """
+        if is_asc:
+            if is_next:
+                cmp = """(
+                    (kind != 'directory') > ?
+                    OR ((kind != 'directory') = ? AND sort_key > ?)
+                )"""
+                order = "(kind != 'directory') ASC, sort_key ASC"
+            else:
+                cmp = """(
+                    (kind != 'directory') < ?
+                    OR ((kind != 'directory') = ? AND sort_key < ?)
+                )"""
+                order = "(kind != 'directory') DESC, sort_key DESC"
+        else:
+            if is_next:
+                cmp = """(
+                    (kind != 'directory') > ?
+                    OR ((kind != 'directory') = ? AND sort_key < ?)
+                )"""
+                order = "(kind != 'directory') ASC, sort_key DESC"
+            else:
+                cmp = """(
+                    (kind != 'directory') < ?
+                    OR ((kind != 'directory') = ? AND sort_key > ?)
+                )"""
+                order = "(kind != 'directory') DESC, sort_key ASC"
+
+        sql = f"""
+            SELECT * FROM dir_entries
+            WHERE parent_path = ?
+              AND kind IN {set_kinds}
+              AND {cmp}
+            ORDER BY {order}
+            LIMIT 1
+        """  # noqa: S608
+        result: sqlite3.Row | None = conn.execute(
+            sql, (parent_path, current_kind_flag, current_kind_flag, current_sort_key)
+        ).fetchone()
+        return result
+
+    @staticmethod
+    def _sibling_date(
+        conn: sqlite3.Connection,
+        parent_path: str,
+        current_name: str,
+        is_next: bool,
+        is_asc: bool,
+        set_kinds: str,
+    ) -> sqlite3.Row | None:
+        """date ソートでの sibling クエリ.
+
+        Windows Explorer 準拠の正準順序: (mtime_ns, sort_key ASC)
+        name で逆引き (UNIQUE(parent_path, name) が保証)。
+        """
+        cur_row = conn.execute(
+            "SELECT mtime_ns, sort_key FROM dir_entries"
+            " WHERE parent_path = ? AND name = ? LIMIT 1",
+            (parent_path, current_name),
+        ).fetchone()
+        if cur_row is None:
+            return None
+        current_mtime = cur_row[0] or 0
+        current_sort_key = cur_row[1] or ""
+
+        if is_asc:
+            if is_next:
+                cmp = "(mtime_ns > ? OR (mtime_ns = ? AND sort_key > ?))"
+                order = "mtime_ns ASC, sort_key ASC"
+            else:
+                cmp = "(mtime_ns < ? OR (mtime_ns = ? AND sort_key < ?))"
+                order = "mtime_ns DESC, sort_key DESC"
+        else:
+            if is_next:
+                cmp = "(mtime_ns < ? OR (mtime_ns = ? AND sort_key > ?))"
+                order = "mtime_ns DESC, sort_key ASC"
+            else:
+                cmp = "(mtime_ns > ? OR (mtime_ns = ? AND sort_key < ?))"
+                order = "mtime_ns ASC, sort_key DESC"
+
+        sql = f"""
+            SELECT * FROM dir_entries
+            WHERE parent_path = ?
+              AND kind IN {set_kinds}
+              AND {cmp}
+            ORDER BY {order}
+            LIMIT 1
+        """  # noqa: S608
+        result: sqlite3.Row | None = conn.execute(
+            sql, (parent_path, current_mtime, current_mtime, current_sort_key)
+        ).fetchone()
+        return result
+
     def child_count(self, parent_path: str) -> int:
         """ディレクトリの子エントリ数を返す."""
         conn = self._connect()
