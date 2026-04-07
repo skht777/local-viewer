@@ -208,16 +208,18 @@ impl ArchiveService {
             ))
         })?;
 
+        // mtime を1回だけ取得してバッチ全体で使い回す
+        let mtime_ns = get_archive_mtime_ns(archive_path)?;
+
         let mut results = HashMap::with_capacity(entry_names.len());
         let mut uncached = Vec::new();
 
         // キャッシュ済みエントリを収集
         for name in entry_names {
-            if let Ok(cache_key) = make_entry_cache_key(archive_path, name) {
-                if let Some(cached) = self.entry_cache.get(&cache_key) {
-                    results.insert(name.clone(), cached);
-                    continue;
-                }
+            let cache_key = make_entry_cache_key_with_mtime(archive_path, name, mtime_ns);
+            if let Some(cached) = self.entry_cache.get(&cache_key) {
+                results.insert(name.clone(), cached);
+                continue;
             }
             uncached.push(name.clone());
         }
@@ -228,9 +230,8 @@ impl ArchiveService {
             for (name, data) in extracted {
                 // 動画エントリ以外はキャッシュに登録
                 if !is_video_extension(&name) {
-                    if let Ok(cache_key) = make_entry_cache_key(archive_path, &name) {
-                        self.entry_cache.insert(cache_key, data.clone());
-                    }
+                    let cache_key = make_entry_cache_key_with_mtime(archive_path, &name, mtime_ns);
+                    self.entry_cache.insert(cache_key, data.clone());
                 }
                 results.insert(name, data);
             }
@@ -266,34 +267,41 @@ fn is_image_entry(name: &str) -> bool {
         .any(|ext| lower.ends_with(ext))
 }
 
-/// `list_cache` のキーを生成する: `"{path}:{mtime_ns}"`
-fn make_list_cache_key(archive_path: &Path) -> Result<String, AppError> {
+/// アーカイブファイルの mtime (ナノ秒) を取得する
+fn get_archive_mtime_ns(archive_path: &Path) -> Result<u128, AppError> {
     let meta = std::fs::metadata(archive_path)
         .map_err(|e| AppError::InvalidArchive(format!("メタデータ取得失敗: {e}")))?;
     let mtime = meta
         .modified()
         .map_err(|e| AppError::InvalidArchive(format!("mtime 取得失敗: {e}")))?;
-    let mtime_ns = mtime
+    Ok(mtime
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
-        .as_nanos();
+        .as_nanos())
+}
+
+/// `list_cache` のキーを生成する: `"{path}:{mtime_ns}"`
+fn make_list_cache_key(archive_path: &Path) -> Result<String, AppError> {
+    let mtime_ns = get_archive_mtime_ns(archive_path)?;
     Ok(format!("{}:{mtime_ns}", archive_path.display()))
+}
+
+/// `entry_cache` のキーを生成する (事前取得した mtime を使用)
+fn make_entry_cache_key_with_mtime(
+    archive_path: &Path,
+    entry_name: &str,
+    mtime_ns: u128,
+) -> String {
+    format!("{}:{mtime_ns}:{entry_name}", archive_path.display())
 }
 
 /// `entry_cache` のキーを生成する: `"{path}:{mtime_ns}:{entry_name}"`
 fn make_entry_cache_key(archive_path: &Path, entry_name: &str) -> Result<String, AppError> {
-    let meta = std::fs::metadata(archive_path)
-        .map_err(|e| AppError::InvalidArchive(format!("メタデータ取得失敗: {e}")))?;
-    let mtime = meta
-        .modified()
-        .map_err(|e| AppError::InvalidArchive(format!("mtime 取得失敗: {e}")))?;
-    let mtime_ns = mtime
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_nanos();
-    Ok(format!(
-        "{}:{mtime_ns}:{entry_name}",
-        archive_path.display()
+    let mtime_ns = get_archive_mtime_ns(archive_path)?;
+    Ok(make_entry_cache_key_with_mtime(
+        archive_path,
+        entry_name,
+        mtime_ns,
     ))
 }
 

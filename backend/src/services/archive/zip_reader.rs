@@ -132,12 +132,11 @@ impl ArchiveReader for ZipArchiveReader {
     }
 
     fn extract_entry(&self, archive_path: &Path, entry_name: &str) -> Result<Bytes, AppError> {
-        let file = std::fs::File::open(archive_path)
-            .map_err(|e| AppError::InvalidArchive(format!("ファイルを開けません: {e}")))?;
-        let mut archive = zip::ZipArchive::new(file)
-            .map_err(|e| AppError::InvalidArchive(format!("ZIP を読み取れません: {e}")))?;
-
-        self.extract_from_zip(&mut archive, entry_name)
+        // バッチパスに統合: ZIP を1回だけ開いて抽出
+        let mut results = self.extract_entries(archive_path, &[entry_name.to_string()])?;
+        results.remove(entry_name).ok_or_else(|| {
+            AppError::InvalidArchive(format!("エントリが見つかりません: {entry_name}"))
+        })
     }
 
     /// ZIP を 1 回だけ開いて複数エントリを抽出する
