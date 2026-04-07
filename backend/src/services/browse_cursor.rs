@@ -9,7 +9,7 @@ use std::cmp::Reverse;
 use std::collections::BTreeMap;
 
 use base64::Engine;
-use base64::engine::general_purpose::URL_SAFE;
+use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use hmac::{Hmac, Mac};
 use serde::{Deserialize, Serialize};
 use sha2::Sha256;
@@ -98,7 +98,7 @@ pub(crate) fn encode_cursor(sort: SortOrder, last_entry: &EntryMeta, etag: &str)
     payload.insert("sig".to_string(), serde_json::Value::String(sig));
     let signed_json = serde_json::to_string(&payload).unwrap_or_default();
 
-    URL_SAFE.encode(signed_json.as_bytes())
+    URL_SAFE_NO_PAD.encode(signed_json.as_bytes())
 }
 
 /// カーソルをデコードし、署名と整合性を検証する
@@ -109,7 +109,7 @@ pub(crate) fn decode_cursor(
     let secret = get_secret();
 
     // base64 デコード
-    let raw = URL_SAFE
+    let raw = URL_SAFE_NO_PAD
         .decode(cursor_str)
         .map_err(|_| cursor_error("不正なカーソルフォーマットです"))?;
     let json_str =
@@ -283,6 +283,8 @@ fn cursor_error(msg: &str) -> AppError {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use base64::Engine;
+    use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 
     // --- ヘルパー ---
 
@@ -340,14 +342,14 @@ mod tests {
         let e = entry("a.jpg");
         let cursor = encode_cursor(SortOrder::NameAsc, &e, "etag");
         // base64 デコード → JSON 改ざん → 再エンコード
-        let raw = URL_SAFE.decode(&cursor).unwrap();
+        let raw = URL_SAFE_NO_PAD.decode(&cursor).unwrap();
         let mut data: BTreeMap<String, serde_json::Value> = serde_json::from_slice(&raw).unwrap();
         data.insert(
             "n".to_string(),
             serde_json::Value::String("tampered.jpg".to_string()),
         );
         let tampered_json = serde_json::to_string(&data).unwrap();
-        let tampered = URL_SAFE.encode(tampered_json.as_bytes());
+        let tampered = URL_SAFE_NO_PAD.encode(tampered_json.as_bytes());
         let err = decode_cursor(&tampered, SortOrder::NameAsc).unwrap_err();
         assert!(err.to_string().contains("署名が不正"));
     }
@@ -355,7 +357,7 @@ mod tests {
     #[test]
     fn 署名がないカーソルでエラー() {
         let payload = r#"{"s":"name-asc","id":"x"}"#;
-        let cursor = URL_SAFE.encode(payload.as_bytes());
+        let cursor = URL_SAFE_NO_PAD.encode(payload.as_bytes());
         let err = decode_cursor(&cursor, SortOrder::NameAsc).unwrap_err();
         assert!(err.to_string().contains("署名がありません"));
     }

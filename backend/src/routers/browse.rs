@@ -434,6 +434,12 @@ fn try_dir_index_browse(
         }
     });
 
+    // カーソルが指定されたが DirIndex 用カーソルに変換できない場合は
+    // scandir パスにフォールバックする (黙殺してページ先頭から返すのを防止)
+    if cursor.is_some() && dir_index_cursor.is_none() {
+        return None;
+    }
+
     // +1 で次ページ有無を判定
     let query_limit = limit + 1;
     let entries = dir_index
@@ -1209,6 +1215,96 @@ mod tests {
         assert_eq!(entries.len(), 2);
         assert!(json["next_cursor"].is_string());
         assert_eq!(json["total_count"], 3);
+    }
+
+    #[tokio::test]
+    async fn cursorで2ページ目を取得して重複がない() {
+        // 4ファイルのディレクトリを作成
+        let dir = TempDir::new().unwrap();
+        let root = fs::canonicalize(dir.path()).unwrap();
+        fs::write(root.join("large.png"), "fake-png").unwrap();
+        fs::write(root.join("photo1.jpg"), "fake-jpg-1").unwrap();
+        fs::write(root.join("photo2.jpg"), "fake-jpg-2").unwrap();
+        fs::write(root.join("photo3.jpg"), "fake-jpg-3").unwrap();
+
+        let state = test_state(&root, HashMap::new());
+        let node_id = register_node_id(&state, &root);
+
+        // 1ページ目: limit=2, sort=name-asc
+        let (status1, json1) = get_json(
+            app(Arc::clone(&state)),
+            &format!("/api/browse/{node_id}?limit=2&sort=name-asc"),
+        )
+        .await;
+        assert_eq!(status1, StatusCode::OK);
+        let entries1 = json1["entries"].as_array().unwrap();
+        assert_eq!(entries1.len(), 2);
+        let cursor = json1["next_cursor"].as_str().unwrap();
+
+        // 2ページ目: cursor 使用
+        let (status2, json2) = get_json(
+            app(Arc::clone(&state)),
+            &format!("/api/browse/{node_id}?limit=2&sort=name-asc&cursor={cursor}"),
+        )
+        .await;
+        assert_eq!(status2, StatusCode::OK);
+        let entries2 = json2["entries"].as_array().unwrap();
+        assert!(!entries2.is_empty(), "2ページ目にエントリがあるはず");
+
+        // 重複なし
+        let ids1: Vec<&str> = entries1
+            .iter()
+            .map(|e| e["node_id"].as_str().unwrap())
+            .collect();
+        let ids2: Vec<&str> = entries2
+            .iter()
+            .map(|e| e["node_id"].as_str().unwrap())
+            .collect();
+        let overlap: Vec<&&str> = ids1.iter().filter(|id| ids2.contains(id)).collect();
+        assert!(
+            overlap.is_empty(),
+            "ページ間に重複があってはならない: {overlap:?}"
+        );
+
+        // 全4ファイルが網羅されている
+        assert_eq!(ids1.len() + ids2.len(), 4);
+    }
+
+    #[tokio::test]
+    async fn cursorのbase64がクエリパラメータで正しくデコードされる() {
+        let dir = TempDir::new().unwrap();
+        let root = fs::canonicalize(dir.path()).unwrap();
+        fs::write(root.join("a.jpg"), "1").unwrap();
+        fs::write(root.join("b.jpg"), "2").unwrap();
+        fs::write(root.join("c.jpg"), "3").unwrap();
+
+        let state = test_state(&root, HashMap::new());
+        let node_id = register_node_id(&state, &root);
+
+        let (_, json1) = get_json(
+            app(Arc::clone(&state)),
+            &format!("/api/browse/{node_id}?limit=1&sort=name-asc"),
+        )
+        .await;
+        let cursor = json1["next_cursor"].as_str().unwrap();
+        // URL_SAFE_NO_PAD のためパディングなし
+        assert!(
+            !cursor.ends_with('='),
+            "カーソルに base64 パディングがないこと"
+        );
+
+        let (status2, json2) = get_json(
+            app(Arc::clone(&state)),
+            &format!("/api/browse/{node_id}?limit=1&sort=name-asc&cursor={cursor}"),
+        )
+        .await;
+        assert_eq!(status2, StatusCode::OK);
+        let entries2 = json2["entries"].as_array().unwrap();
+        assert_eq!(
+            entries2[0]["name"].as_str().unwrap(),
+            "b.jpg",
+            "カーソルで正しい位置から取得できるはず"
+        );
     }
 
     #[tokio::test]
