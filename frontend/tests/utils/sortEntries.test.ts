@@ -46,11 +46,11 @@ describe("sortEntries", () => {
   });
 
   describe("name-desc", () => {
-    test("compareByName 全体が反転されるためディレクトリ優先は維持されない", () => {
-      // -compareByName() なので directory 優先のスコアも反転される
-      const entries = [entry("a-dir", "directory"), entry("z.jpg")];
+    test("ディレクトリがファイルより先に来る（バックエンドと一致）", () => {
+      const entries = [entry("z.jpg"), entry("a-dir", "directory")];
       const result = sortEntries(entries, "name-desc");
-      expect(result[0].name).toBe("z.jpg");
+      expect(result[0].kind).toBe("directory");
+      expect(result[1].name).toBe("z.jpg");
     });
 
     test("ファイルが名前の降順にソートされる", () => {
@@ -93,6 +93,20 @@ describe("sortEntries", () => {
       const entries = [entry("first", "directory"), entry("second", "directory")];
       const result = sortEntries(entries, "date-asc");
       expect(result.map((e) => e.name)).toEqual(["first", "second"]);
+    });
+  });
+
+  describe("date タイブレーカー", () => {
+    test("同一日時は名前昇順でソートされる (date-desc)", () => {
+      const entries = [entry("beta", "image", 100), entry("alpha", "image", 100)];
+      const result = sortEntries(entries, "date-desc");
+      expect(result.map((e) => e.name)).toEqual(["alpha", "beta"]);
+    });
+
+    test("同一日時は名前昇順でソートされる (date-asc)", () => {
+      const entries = [entry("beta", "image", 100), entry("alpha", "image", 100)];
+      const result = sortEntries(entries, "date-asc");
+      expect(result.map((e) => e.name)).toEqual(["alpha", "beta"]);
     });
   });
 
