@@ -1,7 +1,19 @@
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import type { ReactElement } from "react";
 import { FileBrowser } from "../../src/components/FileBrowser";
 import type { BrowseEntry } from "../../src/types/api";
+
+const testQueryClient = new QueryClient({
+  defaultOptions: { queries: { retry: false } },
+});
+
+function renderWithQuery(ui: ReactElement) {
+  return render(
+    <QueryClientProvider client={testQueryClient}>{ui}</QueryClientProvider>,
+  );
+}
 
 vi.mock("../../src/lib/pdfjs", () => ({
   getDocument: vi.fn(),
@@ -49,7 +61,7 @@ const mockEntries: BrowseEntry[] = [
 
 describe("FileBrowser", () => {
   test("filesetsタブでディレクトリとPDFが表示される", () => {
-    render(
+    renderWithQuery(
       <FileBrowser entries={mockEntries} isLoading={false} onNavigate={() => {}} tab="filesets" sort="name-asc" />,
     );
     expect(screen.getByText("photos")).toBeInTheDocument();
@@ -59,7 +71,7 @@ describe("FileBrowser", () => {
   });
 
   test("imagesタブで画像のみ表示される", () => {
-    render(
+    renderWithQuery(
       <FileBrowser entries={mockEntries} isLoading={false} onNavigate={() => {}} tab="images" sort="name-asc" />,
     );
     expect(screen.getByText("image.jpg")).toBeInTheDocument();
@@ -68,7 +80,7 @@ describe("FileBrowser", () => {
   });
 
   test("videosタブで動画のみ表示される", () => {
-    render(
+    renderWithQuery(
       <FileBrowser entries={mockEntries} isLoading={false} onNavigate={() => {}} tab="videos" sort="name-asc" />,
     );
     expect(screen.getByText("movie.mp4")).toBeInTheDocument();
@@ -77,19 +89,19 @@ describe("FileBrowser", () => {
   });
 
   test("ローディング中にメッセージが表示される", () => {
-    render(
+    renderWithQuery(
       <FileBrowser entries={[]} isLoading={true} onNavigate={() => {}} tab="filesets" sort="name-asc" />,
     );
     expect(screen.getByText("読み込み中...")).toBeInTheDocument();
   });
 
   test("フィルタ後0件で空状態メッセージが表示される", () => {
-    render(
+    renderWithQuery(
       <FileBrowser entries={mockEntries} isLoading={false} onNavigate={() => {}} tab="videos" sort="name-asc" />,
     );
     // videos タブには movie.mp4 があるので空にはならない
     // 空の entries で確認
-    const { unmount } = render(
+    const { unmount } = renderWithQuery(
       <FileBrowser entries={[]} isLoading={false} onNavigate={() => {}} tab="filesets" sort="name-asc" />,
     );
     expect(screen.getAllByText("ファイルがありません").length).toBeGreaterThan(0);
@@ -104,7 +116,7 @@ describe("FileBrowser", () => {
       { node_id: "a1", name: "bbb.zip", kind: "archive", size_bytes: 500, mime_type: "application/zip", child_count: null, modified_at: 1700000100, preview_node_ids: null },
       { node_id: "p1", name: "ccc.pdf", kind: "pdf", size_bytes: 300, mime_type: "application/pdf", child_count: null, modified_at: 1700000200, preview_node_ids: null },
     ];
-    render(
+    renderWithQuery(
       <FileBrowser entries={entries} isLoading={false} onNavigate={() => {}} tab="filesets" sort="name-asc" />,
     );
     // DOM 上の順序: archive/PDF が先、directory が後
@@ -120,7 +132,7 @@ describe("FileBrowser", () => {
   // --- オートフォーカス ---
 
   test("entriesが渡された時に最初のFileCardにfocusされる", async () => {
-    render(
+    renderWithQuery(
       <FileBrowser entries={mockEntries} isLoading={false} onNavigate={() => {}} tab="filesets" sort="name-asc" />,
     );
     // filesets タブのソート: archive/PDF 優先 → directory 後。先頭は file3(doc.pdf)
@@ -129,7 +141,7 @@ describe("FileBrowser", () => {
   });
 
   test("entriesが空の場合focusされない", () => {
-    render(
+    renderWithQuery(
       <FileBrowser entries={[]} isLoading={false} onNavigate={() => {}} tab="filesets" sort="name-asc" />,
     );
     expect(document.activeElement).toBe(document.body);
@@ -142,7 +154,7 @@ describe("FileBrowser", () => {
       { node_id: "i2", name: "b.jpg", kind: "image", size_bytes: 200, mime_type: "image/jpeg", child_count: null, modified_at: 1700000200, preview_node_ids: null },
     ];
     const onImageClick = vi.fn();
-    render(
+    renderWithQuery(
       <FileBrowser entries={entries} isLoading={false} onNavigate={() => {}} onImageClick={onImageClick} tab="images" sort="name-asc" />,
     );
     // 2番目の画像 (b.jpg) をダブルクリック → フィルタ済み画像配列での index=1
@@ -159,7 +171,7 @@ describe("FileBrowser", () => {
       { node_id: "i3", name: "mid.jpg", kind: "image", size_bytes: 100, mime_type: "image/jpeg", child_count: null, modified_at: 2000, preview_node_ids: null },
       { node_id: "i1", name: "old.jpg", kind: "image", size_bytes: 100, mime_type: "image/jpeg", child_count: null, modified_at: 1000, preview_node_ids: null },
     ];
-    render(
+    renderWithQuery(
       <FileBrowser entries={entries} isLoading={false} onNavigate={() => {}} tab="images" sort="date-desc" />,
     );
     const cards = screen.getAllByTestId(/^file-card-/);
@@ -175,7 +187,7 @@ describe("FileBrowser", () => {
       { node_id: "i2", name: "old.jpg", kind: "image", size_bytes: 100, mime_type: "image/jpeg", child_count: null, modified_at: 1000, preview_node_ids: null },
       { node_id: "i1", name: "new.jpg", kind: "image", size_bytes: 100, mime_type: "image/jpeg", child_count: null, modified_at: 3000, preview_node_ids: null },
     ];
-    render(
+    renderWithQuery(
       <FileBrowser entries={entries} isLoading={false} onNavigate={() => {}} tab="images" sort="date-asc" />,
     );
     const cards = screen.getAllByTestId(/^file-card-/);
@@ -189,7 +201,7 @@ describe("FileBrowser", () => {
       { node_id: "i2", name: "beta.jpg", kind: "image", size_bytes: 100, mime_type: "image/jpeg", child_count: null, modified_at: 2000, preview_node_ids: null },
       { node_id: "i1", name: "alpha.jpg", kind: "image", size_bytes: 100, mime_type: "image/jpeg", child_count: null, modified_at: 1000, preview_node_ids: null },
     ];
-    render(
+    renderWithQuery(
       <FileBrowser entries={entries} isLoading={false} onNavigate={() => {}} tab="images" sort="name-desc" />,
     );
     const cards = screen.getAllByTestId(/^file-card-/);
@@ -202,7 +214,7 @@ describe("FileBrowser", () => {
       { node_id: "f1", name: "aaa.pdf", kind: "pdf", size_bytes: 100, mime_type: "application/pdf", child_count: null, modified_at: 1000, preview_node_ids: null },
       { node_id: "d1", name: "bbb_dir", kind: "directory", size_bytes: null, mime_type: null, child_count: 5, modified_at: 2000, preview_node_ids: null },
     ];
-    render(
+    renderWithQuery(
       <FileBrowser entries={entries} isLoading={false} onNavigate={() => {}} tab="filesets" sort="name-asc" />,
     );
     const cards = screen.getAllByTestId(/^file-card-/);
@@ -216,7 +228,7 @@ describe("FileBrowser", () => {
   // --- オートセレクト ---
 
   test("selectedNodeIdが未指定の場合、先頭のFileCardがselected状態になる", () => {
-    render(
+    renderWithQuery(
       <FileBrowser entries={mockEntries} isLoading={false} onNavigate={() => {}} tab="filesets" sort="name-asc" />,
     );
     // filesets タブ: archive/PDF 優先 → 先頭は file3(doc.pdf)
@@ -225,7 +237,7 @@ describe("FileBrowser", () => {
   });
 
   test("selectedNodeIdが指定されている場合はそちらが優先される", () => {
-    render(
+    renderWithQuery(
       <FileBrowser entries={mockEntries} isLoading={false} onNavigate={() => {}} tab="filesets" sort="name-asc" selectedNodeId="dir1" />,
     );
     expect(screen.getByTestId("file-card-dir1")).toHaveAttribute("aria-current", "true");
@@ -238,7 +250,7 @@ describe("FileBrowser", () => {
       { node_id: "i2", name: "has-date.jpg", kind: "image", size_bytes: 100, mime_type: "image/jpeg", child_count: null, modified_at: 1000, preview_node_ids: null },
       { node_id: "i1", name: "no-date.jpg", kind: "image", size_bytes: 100, mime_type: "image/jpeg", child_count: null, modified_at: null, preview_node_ids: null },
     ];
-    render(
+    renderWithQuery(
       <FileBrowser entries={entries} isLoading={false} onNavigate={() => {}} tab="images" sort="date-desc" />,
     );
     const cards = screen.getAllByTestId(/^file-card-/);
@@ -251,7 +263,7 @@ describe("FileBrowser", () => {
 
 describe("FileBrowser 選択・ダブルクリック・オーバーレイ", () => {
   test("シングルクリックでカードが選択状態になる", async () => {
-    render(
+    renderWithQuery(
       <FileBrowser entries={mockEntries} isLoading={false} onNavigate={() => {}} tab="filesets" sort="name-asc" />,
     );
     await userEvent.click(screen.getByTestId("file-card-dir1"));
@@ -260,7 +272,7 @@ describe("FileBrowser 選択・ダブルクリック・オーバーレイ", () =
 
   test("ダブルクリックでディレクトリにonNavigateが呼ばれる", async () => {
     const onNavigate = vi.fn();
-    render(
+    renderWithQuery(
       <FileBrowser entries={mockEntries} isLoading={false} onNavigate={onNavigate} tab="filesets" sort="name-asc" />,
     );
     await userEvent.dblClick(screen.getByTestId("file-card-dir1"));
@@ -269,7 +281,7 @@ describe("FileBrowser 選択・ダブルクリック・オーバーレイ", () =
 
   test("ダブルクリックで画像にonImageClickが呼ばれる", async () => {
     const onImageClick = vi.fn();
-    render(
+    renderWithQuery(
       <FileBrowser entries={mockEntries} isLoading={false} onNavigate={() => {}} onImageClick={onImageClick} tab="images" sort="name-asc" />,
     );
     await userEvent.dblClick(screen.getByTestId("file-card-file1"));
@@ -277,7 +289,7 @@ describe("FileBrowser 選択・ダブルクリック・オーバーレイ", () =
   });
 
   test("選択中にEscapeで選択解除される", async () => {
-    render(
+    renderWithQuery(
       <FileBrowser entries={mockEntries} isLoading={false} onNavigate={() => {}} tab="filesets" sort="name-asc" />,
     );
     // カードを選択
@@ -291,7 +303,7 @@ describe("FileBrowser 選択・ダブルクリック・オーバーレイ", () =
   });
 
   test("カード外クリックで選択解除される", async () => {
-    render(
+    renderWithQuery(
       <FileBrowser entries={mockEntries} isLoading={false} onNavigate={() => {}} tab="filesets" sort="name-asc" />,
     );
     // カードを選択
@@ -306,7 +318,7 @@ describe("FileBrowser 選択・ダブルクリック・オーバーレイ", () =
 
   test("ディレクトリの開くボタンでonOpenViewerが呼ばれる", async () => {
     const onOpenViewer = vi.fn();
-    render(
+    renderWithQuery(
       <FileBrowser entries={mockEntries} isLoading={false} onNavigate={() => {}} onOpenViewer={onOpenViewer} tab="filesets" sort="name-asc" />,
     );
     // ディレクトリを選択してオーバーレイ表示
@@ -321,7 +333,7 @@ describe("FileBrowser 選択・ダブルクリック・オーバーレイ", () =
       { node_id: "a1", name: "photos.zip", kind: "archive", size_bytes: 500, mime_type: "application/zip", child_count: null, modified_at: 1700000000, preview_node_ids: null },
     ];
     const onOpenViewer = vi.fn();
-    render(
+    renderWithQuery(
       <FileBrowser entries={entries} isLoading={false} onNavigate={() => {}} onOpenViewer={onOpenViewer} tab="filesets" sort="name-asc" />,
     );
     await userEvent.click(screen.getByTestId("file-card-a1"));
@@ -331,7 +343,7 @@ describe("FileBrowser 選択・ダブルクリック・オーバーレイ", () =
 
   test("ディレクトリの進入ボタンでonNavigateが呼ばれる", async () => {
     const onNavigate = vi.fn();
-    render(
+    renderWithQuery(
       <FileBrowser entries={mockEntries} isLoading={false} onNavigate={onNavigate} tab="filesets" sort="name-asc" />,
     );
     await userEvent.click(screen.getByTestId("file-card-dir1"));
@@ -341,7 +353,7 @@ describe("FileBrowser 選択・ダブルクリック・オーバーレイ", () =
 
   test("画像の開くボタンでonImageClickが呼ばれる", async () => {
     const onImageClick = vi.fn();
-    render(
+    renderWithQuery(
       <FileBrowser entries={mockEntries} isLoading={false} onNavigate={() => {}} onImageClick={onImageClick} tab="images" sort="name-asc" />,
     );
     await userEvent.click(screen.getByTestId("file-card-file1"));
@@ -351,7 +363,7 @@ describe("FileBrowser 選択・ダブルクリック・オーバーレイ", () =
 
   test("PDFの開くボタンでonPdfClickが呼ばれる", async () => {
     const onPdfClick = vi.fn();
-    render(
+    renderWithQuery(
       <FileBrowser entries={mockEntries} isLoading={false} onNavigate={() => {}} onPdfClick={onPdfClick} tab="filesets" sort="name-asc" />,
     );
     await userEvent.click(screen.getByTestId("file-card-file3"));

@@ -4,9 +4,19 @@
 // - 空 node_ids で空マップが返る
 // - revokeObjectURL によるクリーンアップ
 
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, renderHook, waitFor } from "@testing-library/react";
+import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { useBatchThumbnails } from "../../src/hooks/api/thumbnailQueries";
+
+const queryClient = new QueryClient({
+  defaultOptions: { queries: { retry: false } },
+});
+
+function wrapper({ children }: { children: ReactNode }) {
+  return <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>;
+}
 
 // apiPost をモック
 vi.mock("../../src/hooks/api/apiClient", () => ({
@@ -26,6 +36,7 @@ const revokedUrls: string[] = [];
 let urlCounter = 0;
 
 beforeEach(() => {
+  queryClient.clear();
   createdUrls.length = 0;
   revokedUrls.length = 0;
   urlCounter = 0;
@@ -49,7 +60,7 @@ afterEach(() => {
 
 describe("useBatchThumbnails", () => {
   test("空の node_ids で空マップを返す", () => {
-    const { result } = renderHook(() => useBatchThumbnails([]));
+    const { result } = renderHook(() => useBatchThumbnails([]), { wrapper });
     expect(result.current.size).toBe(0);
   });
 
@@ -62,7 +73,7 @@ describe("useBatchThumbnails", () => {
       },
     });
 
-    const { result } = renderHook(() => useBatchThumbnails(["node-1", "node-2"]));
+    const { result } = renderHook(() => useBatchThumbnails(["node-1", "node-2"]), { wrapper });
 
     await waitFor(() => {
       expect(result.current.size).toBe(2);
@@ -81,7 +92,7 @@ describe("useBatchThumbnails", () => {
       },
     });
 
-    const { result } = renderHook(() => useBatchThumbnails(["node-ok", "node-err"]));
+    const { result } = renderHook(() => useBatchThumbnails(["node-ok", "node-err"]), { wrapper });
 
     await waitFor(() => {
       expect(result.current.size).toBe(1);
@@ -101,7 +112,7 @@ describe("useBatchThumbnails", () => {
 
     const { result, rerender } = renderHook(
       ({ ids }: { ids: string[] }) => useBatchThumbnails(ids),
-      { initialProps: { ids: ["node-1"] } },
+      { initialProps: { ids: ["node-1"] }, wrapper },
     );
 
     await waitFor(() => {
@@ -131,7 +142,7 @@ describe("useBatchThumbnails", () => {
     const { apiPost } = await import("../../src/hooks/api/apiClient");
     vi.mocked(apiPost).mockRejectedValue(new Error("network error"));
 
-    const { result } = renderHook(() => useBatchThumbnails(["node-1"]));
+    const { result } = renderHook(() => useBatchThumbnails(["node-1"]), { wrapper });
 
     // エラー後も空マップ (クラッシュしない)
     await act(async () => {
