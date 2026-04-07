@@ -727,6 +727,7 @@ async def _find_sibling_from_index(
             conn,
             parent_key,
             current_sort_key,
+            current_name,
             current_kind_flag,
             direction,
             sort,
@@ -747,6 +748,7 @@ def _sibling_query(
     conn: sqlite3.Connection,
     parent_key: str,
     current_sort_key: str,
+    current_name: str,
     current_kind_flag: int,
     direction: str,
     sort: SortOrder,
@@ -770,7 +772,7 @@ def _sibling_query(
     return _sibling_query_date(
         conn,
         parent_key,
-        current_sort_key,
+        current_name,
         is_next,
         sort == SortOrder.DATE_ASC,
         _set_kinds,
@@ -838,7 +840,7 @@ def _sibling_query_name(
 def _sibling_query_date(
     conn: sqlite3.Connection,
     parent_key: str,
-    current_sort_key: str,
+    current_name: str,
     is_next: bool,
     is_asc: bool,
     set_kinds: str,
@@ -847,16 +849,18 @@ def _sibling_query_date(
 
     Windows Explorer 準拠の正準順序: (mtime_ns, sort_key ASC)
     同一 mtime_ns のエントリ間もタイブレーカーで正しくジャンプする。
+    name で逆引き (UNIQUE(parent_path, name) が保証、sort_key は大文字小文字衝突あり)。
     """
-    # 現在エントリの mtime_ns を取得
+    # 現在エントリの mtime_ns + sort_key を取得 (name で逆引き)
     cur_row = conn.execute(
-        "SELECT mtime_ns FROM dir_entries"
-        " WHERE parent_path = ? AND sort_key = ? LIMIT 1",
-        (parent_key, current_sort_key),
+        "SELECT mtime_ns, sort_key FROM dir_entries"
+        " WHERE parent_path = ? AND name = ? LIMIT 1",
+        (parent_key, current_name),
     ).fetchone()
     if cur_row is None:
         return None
     current_mtime = cur_row[0] or 0
+    current_sort_key = cur_row[1] or ""
 
     # 正準順序: (mtime_ns ASC/DESC, sort_key ASC)
     # next = 正準順序で「次の行」、prev = 正準順序で「前の行」
