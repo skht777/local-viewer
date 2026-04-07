@@ -211,7 +211,7 @@ fn enqueue(pending: &std::sync::Mutex<HashMap<String, String>>, path: &Path, act
         return;
     }
 
-    let key = path.to_string_lossy().to_string();
+    let key = path.to_string_lossy().into_owned();
     let mut guard = pending
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
@@ -297,7 +297,7 @@ fn process_event(
     let Some(file_name) = path.file_name() else {
         return;
     };
-    let name = file_name.to_string_lossy().to_string();
+    let name = file_name.to_string_lossy().into_owned();
     let is_dir = meta.is_dir();
 
     // インデックス対象の種別を判定

@@ -164,7 +164,7 @@ impl NodeRegistry {
         let resolved = std::fs::canonicalize(path).map_err(|_| {
             AppError::path_security(format!("パスの解決に失敗: {}", path.display()))
         })?;
-        let key = resolved.to_string_lossy().to_string();
+        let key = resolved.to_string_lossy().into_owned();
         if let Some(id) = self.path_to_id.get(&key) {
             return Ok(id.clone());
         }
@@ -180,7 +180,7 @@ impl NodeRegistry {
     /// `validate` / `validate_child` 済みのパスのみ渡すこと。
     /// `resolve()` と `relative_to()` をスキップして高速化。
     pub(crate) fn register_resolved(&mut self, resolved: &Path) -> String {
-        let key = resolved.to_string_lossy().to_string();
+        let key = resolved.to_string_lossy().into_owned();
         if let Some(id) = self.path_to_id.get(&key) {
             return id.clone();
         }
@@ -254,8 +254,8 @@ impl NodeRegistry {
             }
             let node_id = self.register_resolved(cur);
             let name = cur.file_name().map_or_else(
-                || cur.to_string_lossy().to_string(),
-                |n| n.to_string_lossy().to_string(),
+                || cur.to_string_lossy().into_owned(),
+                |n| n.to_string_lossy().into_owned(),
             );
             ancestors.push((node_id, name));
             current = cur.parent().map(Path::to_path_buf);
@@ -265,8 +265,8 @@ impl NodeRegistry {
         let root_node_id = self.register_resolved(&root);
         let root_name = self.mount_names.get(&root).cloned().unwrap_or_else(|| {
             root.file_name().map_or_else(
-                || root.to_string_lossy().to_string(),
-                |n| n.to_string_lossy().to_string(),
+                || root.to_string_lossy().into_owned(),
+                |n| n.to_string_lossy().into_owned(),
             )
         });
         ancestors.push((root_node_id, root_name));
@@ -461,8 +461,8 @@ impl NodeRegistry {
                 let node_id = self.register_resolved(&root);
                 let name = self.mount_names.get(&root).cloned().unwrap_or_else(|| {
                     root.file_name().map_or_else(
-                        || root.to_string_lossy().to_string(),
-                        |n| n.to_string_lossy().to_string(),
+                        || root.to_string_lossy().into_owned(),
+                        |n| n.to_string_lossy().into_owned(),
                     )
                 });
                 let (child_count, preview_node_ids) = self.scan_child_meta(&root, 3);
@@ -588,7 +588,7 @@ impl NodeRegistry {
             let node_id = self.register_resolved(&resolved);
             let name = path
                 .file_name()
-                .map_or_else(String::new, |n| n.to_string_lossy().to_string());
+                .map_or_else(String::new, |n| n.to_string_lossy().into_owned());
 
             let (size_bytes, modified_at) = meta.as_ref().map_or((None, None), |m| {
                 let size = if kind == EntryKind::Directory {

@@ -465,7 +465,7 @@ mod tests {
 
         let settings = Settings::from_map(&HashMap::from([(
             "MOUNT_BASE_DIR".to_string(),
-            root.to_string_lossy().to_string(),
+            root.to_string_lossy().into_owned(),
         )]))
         .unwrap();
 

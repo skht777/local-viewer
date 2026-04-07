@@ -86,7 +86,7 @@ mod tests {
     ) -> Arc<AppState> {
         let settings = Settings::from_map(&HashMap::from([(
             "MOUNT_BASE_DIR".to_string(),
-            root.to_string_lossy().to_string(),
+            root.to_string_lossy().into_owned(),
         )]))
         .unwrap();
         let ps = Arc::new(PathSecurity::new(vec![root.to_path_buf()], false).unwrap());

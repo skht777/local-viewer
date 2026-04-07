@@ -546,7 +546,7 @@ fn build_parent_path(args: &WalkCallbackArgs) -> String {
 
     let rel = walk_path
         .strip_prefix(root_path)
-        .map(|p| p.to_string_lossy().to_string())
+        .map(|p| p.to_string_lossy().into_owned())
         .unwrap_or_default();
 
     if rel.is_empty() || rel == "." {

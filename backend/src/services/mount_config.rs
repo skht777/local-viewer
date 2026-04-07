@@ -145,7 +145,7 @@ fn derive_slug_from_path(path_str: &str, base_dir: &Path) -> String {
     let Ok(resolved) = std::fs::canonicalize(path_str) else {
         return Path::new(path_str)
             .file_name()
-            .map_or_else(String::new, |n| n.to_string_lossy().to_string());
+            .map_or_else(String::new, |n| n.to_string_lossy().into_owned());
     };
 
     if resolved == base_dir {
@@ -156,9 +156,9 @@ fn derive_slug_from_path(path_str: &str, base_dir: &Path) -> String {
         || {
             resolved
                 .file_name()
-                .map_or_else(String::new, |n| n.to_string_lossy().to_string())
+                .map_or_else(String::new, |n| n.to_string_lossy().into_owned())
         },
-        |rel| rel.to_string_lossy().to_string(),
+        |rel| rel.to_string_lossy().into_owned(),
     )
 }
 

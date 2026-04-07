@@ -45,7 +45,7 @@ impl PathSecurity {
         let root_entries = roots
             .iter()
             .map(|r| {
-                let s = r.to_string_lossy().to_string();
+                let s = r.to_string_lossy().into_owned();
                 let prefix = format!("{s}{}", std::path::MAIN_SEPARATOR);
                 (s, prefix, r.clone())
             })
@@ -111,7 +111,7 @@ impl PathSecurity {
         let resolved = self.validate(path)?;
         if !resolved.exists() {
             return Err(AppError::FileNotFound {
-                path: resolved.to_string_lossy().to_string(),
+                path: resolved.to_string_lossy().into_owned(),
             });
         }
         Ok(resolved)

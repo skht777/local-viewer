@@ -34,7 +34,7 @@ fn scan_one(dir_path: &Path, skip_hidden: bool, path_validator: PathValidator<'_
 
     if let Ok(entries) = std::fs::read_dir(dir_path) {
         for entry in entries.flatten() {
-            let name = entry.file_name().to_string_lossy().to_string();
+            let name = entry.file_name().to_string_lossy().into_owned();
             if skip_hidden && name.starts_with('.') {
                 continue;
             }

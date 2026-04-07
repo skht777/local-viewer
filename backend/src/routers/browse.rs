@@ -339,7 +339,7 @@ fn browse_directory_blocking(
         current_node_id: Some(node_id.to_string()),
         current_name: path
             .file_name()
-            .map_or_else(String::new, |n| n.to_string_lossy().to_string()),
+            .map_or_else(String::new, |n| n.to_string_lossy().into_owned()),
         parent_node_id,
         ancestors,
         entries: page_entries,
@@ -409,7 +409,7 @@ fn try_dir_index_browse(
     let dir_index_cursor = cursor.and_then(|c| {
         let decoded = browse_cursor::decode_cursor(c, sort).ok()?;
         let entry_path = reg.resolve(&decoded.node_id).ok()?.to_path_buf();
-        let name = entry_path.file_name()?.to_string_lossy().to_string();
+        let name = entry_path.file_name()?.to_string_lossy().into_owned();
 
         if matches!(sort, SortOrder::NameAsc | SortOrder::NameDesc) {
             // name 系ソート: カーソルの node_id から sort_key を構築
@@ -515,7 +515,7 @@ fn try_dir_index_browse(
         current_node_id: Some(node_id.to_string()),
         current_name: path
             .file_name()
-            .map_or_else(String::new, |n| n.to_string_lossy().to_string()),
+            .map_or_else(String::new, |n| n.to_string_lossy().into_owned()),
         parent_node_id,
         ancestors,
         entries: entry_metas,
@@ -633,7 +633,7 @@ async fn browse_archive(
 
     let archive_name = archive_path
         .file_name()
-        .map_or_else(String::new, |n| n.to_string_lossy().to_string());
+        .map_or_else(String::new, |n| n.to_string_lossy().into_owned());
 
     let response = BrowseResponse {
         current_node_id: Some(a_nid.clone()),
@@ -1015,7 +1015,7 @@ mod tests {
     ) -> Arc<AppState> {
         let settings = Settings::from_map(&HashMap::from([(
             "MOUNT_BASE_DIR".to_string(),
-            root.to_string_lossy().to_string(),
+            root.to_string_lossy().into_owned(),
         )]))
         .unwrap();
         let ps = Arc::new(PathSecurity::new(vec![root.to_path_buf()], false).unwrap());

@@ -93,7 +93,7 @@ impl VideoConverter {
         }
 
         let ffmpeg = ffmpeg.clone();
-        let source_str = source.to_string_lossy().to_string();
+        let source_str = source.to_string_lossy().into_owned();
 
         // put_with_writer で一時ファイルに書き込み → キャッシュ登録
         self.cache

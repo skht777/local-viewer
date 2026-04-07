@@ -135,7 +135,7 @@ async fn serve_regular_file(
     })?;
     let file_name = file_path
         .file_name()
-        .map(|n| n.to_string_lossy().to_string())
+        .map(|n| n.to_string_lossy().into_owned())
         .unwrap_or_default();
     let etag = compute_file_etag(&metadata, &file_name);
     let etag_quoted = format!("\"{etag}\"");
@@ -246,7 +246,7 @@ mod tests {
 
         let settings = Settings::from_map(&HashMap::from([(
             "MOUNT_BASE_DIR".to_string(),
-            root.to_string_lossy().to_string(),
+            root.to_string_lossy().into_owned(),
         )]))
         .unwrap();
 

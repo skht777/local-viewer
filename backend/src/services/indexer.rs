@@ -413,7 +413,7 @@ impl Indexer {
                 let dir_relative = entry
                     .path
                     .strip_prefix(root_dir)
-                    .map(|p| p.to_string_lossy().to_string())
+                    .map(|p| p.to_string_lossy().into_owned())
                     .unwrap_or_default();
 
                 let prefix = make_relative_prefix(mount_id, &dir_relative);
@@ -421,8 +421,8 @@ impl Indexer {
                 // コールバック通知 (DirIndex 連携用)
                 if let Some(ref mut cb) = on_walk_entry {
                     cb(WalkCallbackArgs {
-                        walk_entry_path: entry.path.to_string_lossy().to_string(),
-                        root_dir: root_dir.to_string_lossy().to_string(),
+                        walk_entry_path: entry.path.to_string_lossy().into_owned(),
+                        root_dir: root_dir.to_string_lossy().into_owned(),
                         mount_id: mount_id.to_string(),
                         dir_mtime_ns: entry.mtime_ns,
                         subdirs: entry.subdirs.clone(),
@@ -590,7 +590,7 @@ fn prune_unchanged_dir(
 ) -> bool {
     let dir_relative = path
         .strip_prefix(root_dir)
-        .map(|p| p.to_string_lossy().to_string())
+        .map(|p| p.to_string_lossy().into_owned())
         .unwrap_or_default();
     let relative_path = make_relative_prefix(mount_id, &dir_relative);
     let dir_key = relative_path.strip_suffix('/').unwrap_or(&relative_path);
@@ -633,15 +633,15 @@ fn process_walk_entry_incremental(
     let dir_relative = entry
         .path
         .strip_prefix(root_dir)
-        .map(|p| p.to_string_lossy().to_string())
+        .map(|p| p.to_string_lossy().into_owned())
         .unwrap_or_default();
     let prefix = make_relative_prefix(mount_id, &dir_relative);
 
     // コールバック通知
     if let Some(cb) = on_walk_entry {
         cb(WalkCallbackArgs {
-            walk_entry_path: entry.path.to_string_lossy().to_string(),
-            root_dir: root_dir.to_string_lossy().to_string(),
+            walk_entry_path: entry.path.to_string_lossy().into_owned(),
+            root_dir: root_dir.to_string_lossy().into_owned(),
             mount_id: mount_id.to_string(),
             dir_mtime_ns: entry.mtime_ns,
             subdirs: entry.subdirs.clone(),
