@@ -184,13 +184,14 @@ impl NodeRegistry {
     ///
     /// `validate` / `validate_child` 済みのパスのみ渡すこと。
     /// `resolve()` と `relative_to()` をスキップして高速化。
-    pub(crate) fn register_resolved(&mut self, resolved: &Path) -> String {
+    /// `find_root_for()` でルート外パスを拒否する (TOCTOU 対策)。
+    pub(crate) fn register_resolved(&mut self, resolved: &Path) -> Result<String, AppError> {
         let key = resolved.to_string_lossy().into_owned();
         if let Some(id) = self.path_to_id.get(&key) {
-            return id.clone();
+            return Ok(id.clone());
         }
 
-        // 文字列スライスで相対パス取得 (root 配下が保証済み)
+        // root ガード: ルート外パスを拒否
         let mut root_str = "";
         let mut rel = "";
         for (rs, rp, _) in &self.root_entries {
@@ -205,13 +206,19 @@ impl NodeRegistry {
                 break;
             }
         }
+        if root_str.is_empty() {
+            return Err(AppError::path_security(format!(
+                "パスがどのルートにも属しません: {}",
+                resolved.display()
+            )));
+        }
 
         let hmac_input = format!("{root_str}::{rel}");
         let node_id = self.hmac_hex(&hmac_input);
         self.id_to_path
             .insert(node_id.clone(), resolved.to_path_buf());
         self.path_to_id.insert(key, node_id.clone());
-        node_id
+        Ok(node_id)
     }
 
     /// `node_id` から実パスを返す
@@ -256,7 +263,9 @@ impl NodeRegistry {
             if ancestor == root {
                 break;
             }
-            let node_id = self.register_resolved(ancestor);
+            let Ok(node_id) = self.register_resolved(ancestor) else {
+                continue;
+            };
             let name = ancestor.file_name().map_or_else(
                 || ancestor.to_string_lossy().into_owned(),
                 |n| n.to_string_lossy().into_owned(),
@@ -265,7 +274,9 @@ impl NodeRegistry {
         }
 
         // マウントルート自体を追加
-        let root_node_id = self.register_resolved(&root);
+        let Ok(root_node_id) = self.register_resolved(&root) else {
+            return vec![];
+        };
         let root_name = self.mount_names.get(&root).cloned().unwrap_or_else(|| {
             root.file_name().map_or_else(
                 || root.to_string_lossy().into_owned(),
@@ -462,8 +473,8 @@ impl NodeRegistry {
         let roots: Vec<PathBuf> = self.path_security.root_dirs().to_vec();
         roots
             .into_iter()
-            .map(|root| {
-                let node_id = self.register_resolved(&root);
+            .filter_map(|root| {
+                let node_id = self.register_resolved(&root).ok()?;
                 let name = self.mount_names.get(&root).cloned().unwrap_or_else(|| {
                     root.file_name().map_or_else(
                         || root.to_string_lossy().into_owned(),
@@ -471,7 +482,7 @@ impl NodeRegistry {
                     )
                 });
                 let (child_count, preview_node_ids) = self.scan_child_meta(&root, 3);
-                EntryMeta {
+                Some(EntryMeta {
                     node_id,
                     name,
                     kind: EntryKind::Directory,
@@ -480,7 +491,7 @@ impl NodeRegistry {
                     child_count: Some(child_count),
                     modified_at: None,
                     preview_node_ids,
-                }
+                })
             })
             .collect()
     }
@@ -561,8 +572,9 @@ impl NodeRegistry {
                         .is_ok()
                     {
                         let resolved = std::fs::canonicalize(&path).unwrap_or(path);
-                        let id = self.register_resolved(&resolved);
-                        previews.push(id);
+                        if let Ok(id) = self.register_resolved(&resolved) {
+                            previews.push(id);
+                        }
                     }
                 }
             }
@@ -590,7 +602,7 @@ impl NodeRegistry {
 
         for (path, kind, meta) in stated {
             let resolved = std::fs::canonicalize(&path).unwrap_or_else(|_| path.clone());
-            let node_id = self.register_resolved(&resolved);
+            let node_id = self.register_resolved(&resolved)?;
             let name = path
                 .file_name()
                 .map_or_else(String::new, |n| n.to_string_lossy().into_owned());
@@ -640,6 +652,85 @@ impl NodeRegistry {
         let _ = parent; // 将来の DirIndex 連携用パラメータ
         Ok(entries)
     }
+
+    // --- Two-Phase Lock Splitting: Phase 2 メソッド ---
+
+    /// Phase 1 で収集した `ScannedEntry` を登録し `EntryMeta` に変換する (短時間ロック内)
+    ///
+    /// filesystem I/O は一切行わない。純粋な `HashMap` 操作のみ。
+    pub(crate) fn register_scanned_entries(
+        &mut self,
+        scanned: Vec<ScannedEntry>,
+    ) -> Result<Vec<EntryMeta>, AppError> {
+        let mut entries = Vec::with_capacity(scanned.len());
+        for se in scanned {
+            let node_id = self.register_resolved(&se.path)?;
+
+            // プレビューパスの登録
+            let preview_node_ids = se.preview_paths.and_then(|paths| {
+                let ids: Vec<String> = paths
+                    .iter()
+                    .filter_map(|p| self.register_resolved(p).ok())
+                    .collect();
+                if ids.is_empty() { None } else { Some(ids) }
+            });
+
+            entries.push(EntryMeta {
+                node_id,
+                name: se.name,
+                kind: se.kind,
+                size_bytes: se.size_bytes,
+                mime_type: se.mime_type,
+                child_count: se.child_count,
+                modified_at: se.modified_at,
+                preview_node_ids,
+            });
+        }
+        Ok(entries)
+    }
+
+    /// canonicalize 済みパスから祖先を取得する (canonicalize をスキップ)
+    ///
+    /// `find_root_for` で root を特定し、`register_resolved` で登録。
+    pub(crate) fn get_ancestors_from_resolved(&mut self, resolved: &Path) -> Vec<(String, String)> {
+        let Some(root) = self.path_security.find_root_for(resolved) else {
+            return vec![];
+        };
+        let root = root.to_path_buf();
+        if *resolved == root {
+            return vec![];
+        }
+
+        let mut ancestors: Vec<(String, String)> = Vec::new();
+        for ancestor in resolved.ancestors().skip(1) {
+            if ancestor == root {
+                break;
+            }
+            let Ok(node_id) = self.register_resolved(ancestor) else {
+                continue;
+            };
+            let name = ancestor.file_name().map_or_else(
+                || ancestor.to_string_lossy().into_owned(),
+                |n| n.to_string_lossy().into_owned(),
+            );
+            ancestors.push((node_id, name));
+        }
+
+        // マウントルート自体を追加
+        let Ok(root_node_id) = self.register_resolved(&root) else {
+            return vec![];
+        };
+        let root_name = self.mount_names.get(&root).cloned().unwrap_or_else(|| {
+            root.file_name().map_or_else(
+                || root.to_string_lossy().into_owned(),
+                |n| n.to_string_lossy().into_owned(),
+            )
+        });
+        ancestors.push((root_node_id, root_name));
+
+        ancestors.reverse();
+        ancestors
+    }
 }
 
 /// ページングオプション
@@ -647,6 +738,169 @@ pub(crate) struct PageOptions<'a> {
     pub limit: usize,
     pub cursor_node_id: Option<&'a str>,
     pub reverse: bool,
+}
+
+// --- Two-Phase Lock Splitting 用データ構造と free functions ---
+
+/// Phase 1（ロック外）で収集したスキャン結果
+pub(crate) struct ScannedEntry {
+    pub path: PathBuf,
+    pub kind: EntryKind,
+    pub name: String,
+    pub size_bytes: Option<u64>,
+    pub modified_at: Option<f64>,
+    pub mime_type: Option<String>,
+    pub child_count: Option<usize>,
+    /// ディレクトリのプレビュー画像パス (canonicalize 済み)
+    pub preview_paths: Option<Vec<PathBuf>>,
+}
+
+/// ディレクトリ子要素のスキャン結果 (ロック外)
+pub(crate) struct ScannedChildMeta {
+    pub count: usize,
+    pub preview_paths: Vec<PathBuf>,
+}
+
+/// ディレクトリ内エントリ一覧を取得する (ロック不要)
+///
+/// `read_dir` + `validate_child` + classify。stat は行わない。
+pub(crate) fn scan_entries(
+    path_security: &PathSecurity,
+    directory: &Path,
+) -> Result<Vec<(PathBuf, EntryKind, bool)>, AppError> {
+    let entries = std::fs::read_dir(directory).map_err(|e| AppError::FileNotFound {
+        path: format!("{}: {e}", directory.display()),
+    })?;
+
+    let mut result = Vec::new();
+    for entry in entries {
+        let Ok(entry) = entry else { continue };
+        let path = entry.path();
+        let Ok(file_type) = entry.file_type() else {
+            continue;
+        };
+        let is_symlink = file_type.is_symlink();
+
+        if path_security.validate_child(&path, is_symlink).is_err() {
+            continue;
+        }
+
+        let kind = if file_type.is_dir() || (is_symlink && path.is_dir()) {
+            EntryKind::Directory
+        } else {
+            let name = entry.file_name().to_string_lossy().to_lowercase();
+            let ext = extract_extension(&name);
+            EntryKind::from_extension(ext)
+        };
+
+        result.push((path, kind, is_symlink));
+    }
+    Ok(result)
+}
+
+/// ディレクトリの子エントリ数 + プレビュー画像パスを取得する (ロック不要)
+///
+/// `register` は行わず、canonicalize 済みパスのみ返す。
+pub(crate) fn scan_child_meta(
+    path_security: &PathSecurity,
+    directory: &Path,
+    preview_limit: usize,
+) -> ScannedChildMeta {
+    let Ok(entries) = std::fs::read_dir(directory) else {
+        return ScannedChildMeta {
+            count: 0,
+            preview_paths: vec![],
+        };
+    };
+
+    let mut count = 0usize;
+    let mut preview_paths = Vec::new();
+
+    for entry in entries {
+        let Ok(entry) = entry else { continue };
+        let Ok(ft) = entry.file_type() else { continue };
+        if ft.is_dir() {
+            count += 1;
+            continue;
+        }
+        count += 1;
+
+        if preview_paths.len() < preview_limit {
+            let name = entry.file_name().to_string_lossy().to_lowercase();
+            let ext = extract_extension(&name);
+            if is_thumbnail_extension(ext) {
+                let path = entry.path();
+                if path_security.validate_child(&path, ft.is_symlink()).is_ok() {
+                    let resolved = std::fs::canonicalize(&path).unwrap_or(path);
+                    preview_paths.push(resolved);
+                }
+            }
+        }
+    }
+
+    ScannedChildMeta {
+        count,
+        preview_paths,
+    }
+}
+
+/// stat 済みエントリから `ScannedEntry` を構築する (ロック不要)
+///
+/// canonicalize + child scan を実行。`register` は行わない。
+pub(crate) fn scan_entry_metas(
+    path_security: &PathSecurity,
+    stated: Vec<(PathBuf, EntryKind, Option<Metadata>)>,
+    preview_limit: usize,
+) -> Vec<ScannedEntry> {
+    stated
+        .into_iter()
+        .map(|(path, kind, meta)| {
+            let resolved = std::fs::canonicalize(&path).unwrap_or_else(|_| path.clone());
+            let name = path
+                .file_name()
+                .map_or_else(String::new, |n| n.to_string_lossy().into_owned());
+
+            let (size_bytes, modified_at) = meta.as_ref().map_or((None, None), |m| {
+                let size = if kind == EntryKind::Directory {
+                    None
+                } else {
+                    Some(m.len())
+                };
+                let mtime = m
+                    .modified()
+                    .ok()
+                    .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                    .map(|d| d.as_secs_f64());
+                (size, mtime)
+            });
+
+            let mime_type = if kind == EntryKind::Directory {
+                None
+            } else {
+                let lower = name.to_lowercase();
+                let ext = extract_extension(&lower);
+                mime_for_extension(ext).map(String::from)
+            };
+
+            let (child_count, preview_paths) = if kind == EntryKind::Directory {
+                let cm = scan_child_meta(path_security, &path, preview_limit);
+                (Some(cm.count), Some(cm.preview_paths))
+            } else {
+                (None, None)
+            };
+
+            ScannedEntry {
+                path: resolved,
+                kind,
+                name,
+                size_bytes,
+                mime_type,
+                child_count,
+                modified_at,
+                preview_paths,
+            }
+        })
+        .collect()
 }
 
 /// 200 件超で rayon 並列 stat
@@ -751,7 +1005,7 @@ mod tests {
         let mut reg = env.registry();
         let resolved = fs::canonicalize(env.root.join("file.txt")).unwrap();
         let id1 = reg.register(&env.root.join("file.txt")).unwrap();
-        let id2 = reg.register_resolved(&resolved);
+        let id2 = reg.register_resolved(&resolved).unwrap();
         assert_eq!(id1, id2);
     }
 
@@ -1118,5 +1372,92 @@ mod tests {
             compute_hmac("arc::/mnt/data::test.zip::日本語/画像.jpg"),
             "27a6131445f16976"
         );
+    }
+
+    // --- register_resolved root ガード ---
+
+    #[test]
+    fn register_resolvedがルート外パスでエラーを返す() {
+        let env = TestEnv::new();
+        let mut reg = env.registry();
+        let err = reg.register_resolved(Path::new("/nonexistent/path"));
+        assert!(err.is_err());
+    }
+
+    // --- Two-Phase free functions ---
+
+    #[test]
+    fn scan_entriesがディレクトリ内エントリを返す() {
+        let env = ListTestEnv::new();
+        let ps = Arc::new(PathSecurity::new(vec![env.root.clone()], false).unwrap());
+        let entries = scan_entries(&ps, &env.root).unwrap();
+        assert_eq!(entries.len(), 7);
+    }
+
+    #[test]
+    fn scan_child_metaが子エントリ数とプレビューパスを返す() {
+        let env = ListTestEnv::new();
+        let ps = Arc::new(PathSecurity::new(vec![env.root.clone()], false).unwrap());
+        let cm = scan_child_meta(&ps, &env.root.join("subdir"), 3);
+        assert_eq!(cm.count, 2); // inner.jpg, inner2.png
+        assert!(!cm.preview_paths.is_empty());
+        assert!(cm.preview_paths.len() <= 3);
+    }
+
+    #[test]
+    fn scan_entry_metasがcanonicalize済みパスを持つ() {
+        let env = ListTestEnv::new();
+        let ps = Arc::new(PathSecurity::new(vec![env.root.clone()], false).unwrap());
+        let raw = scan_entries(&ps, &env.root).unwrap();
+        let stated = stat_entries(&raw);
+        let scanned = scan_entry_metas(&ps, stated, 3);
+        assert_eq!(scanned.len(), 7);
+        // 全パスが絶対パス
+        assert!(scanned.iter().all(|s| s.path.is_absolute()));
+    }
+
+    #[test]
+    fn register_scanned_entriesがlist_directoryと同じ結果を返す() {
+        let env = ListTestEnv::new();
+        let ps = Arc::new(PathSecurity::new(vec![env.root.clone()], false).unwrap());
+
+        // Two-Phase パス
+        let raw = scan_entries(&ps, &env.root).unwrap();
+        let stated = stat_entries(&raw);
+        let scanned = scan_entry_metas(&ps, stated, 3);
+        let mut reg1 = env.registry();
+        let two_phase = reg1.register_scanned_entries(scanned).unwrap();
+
+        // 既存パス
+        let mut reg2 = env.registry();
+        let legacy = reg2.list_directory(&env.root).unwrap();
+
+        // エントリ数が一致
+        assert_eq!(two_phase.len(), legacy.len());
+        // 全 node_id が一致 (順序はファイルシステム依存なので名前でソート)
+        let mut tp_ids: Vec<_> = two_phase
+            .iter()
+            .map(|e| (e.name.as_str(), e.node_id.as_str()))
+            .collect();
+        let mut lg_ids: Vec<_> = legacy
+            .iter()
+            .map(|e| (e.name.as_str(), e.node_id.as_str()))
+            .collect();
+        tp_ids.sort_by_key(|(n, _)| *n);
+        lg_ids.sort_by_key(|(n, _)| *n);
+        assert_eq!(tp_ids, lg_ids);
+    }
+
+    // --- get_ancestors_from_resolved ---
+
+    #[test]
+    fn get_ancestors_from_resolvedがget_ancestorsと同じ結果を返す() {
+        let env = TestEnv::new();
+        let mut reg1 = env.registry();
+        let mut reg2 = env.registry();
+        let subdir = fs::canonicalize(env.root.join("subdir/nested.txt")).unwrap();
+        let anc1 = reg1.get_ancestors(&subdir);
+        let anc2 = reg2.get_ancestors_from_resolved(&subdir);
+        assert_eq!(anc1, anc2);
     }
 }

@@ -312,7 +312,9 @@ fn resolve_search_results(
                 continue;
             }
 
-            let node_id = reg.register_resolved(&abs_path);
+            let Ok(node_id) = reg.register_resolved(&abs_path) else {
+                continue;
+            };
             let parent_node_id = reg.get_parent_node_id(&abs_path);
 
             // クライアント向け `relative_path` (`mount_id` プレフィックスを除去)

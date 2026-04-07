@@ -133,7 +133,7 @@ fn dir_entry_to_entry_meta(
         return None;
     }
     let abs_resolved = std::fs::canonicalize(&abs_path).ok()?;
-    let entry_node_id = reg.register_resolved(&abs_resolved);
+    let entry_node_id = reg.register_resolved(&abs_resolved).ok()?;
 
     let kind = if de.kind == "directory" {
         EntryKind::Directory
@@ -483,7 +483,7 @@ fn try_dir_index_browse(
                             let pv_rel = parent_key_relative(&child_key);
                             let pv_abs = root.join(pv_rel).join(&pv.name);
                             let pv_resolved = std::fs::canonicalize(&pv_abs).ok()?;
-                            Some(reg.register_resolved(&pv_resolved))
+                            reg.register_resolved(&pv_resolved).ok()
                         })
                         .collect::<Vec<_>>()
                 })
