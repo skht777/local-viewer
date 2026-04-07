@@ -63,6 +63,11 @@ impl PathSecurity {
         &self.roots
     }
 
+    /// 文字列比較用キャッシュ (`root_str`, `root_prefix`, root) を返す
+    pub(crate) fn root_entries(&self) -> &[(String, String, PathBuf)] {
+        &self.root_entries
+    }
+
     /// パスが属するルートディレクトリを返す
     ///
     /// どのルートにも属さなければ `None`。

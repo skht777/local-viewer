@@ -56,15 +56,7 @@ impl NodeRegistry {
         archive_registry_max_entries: usize,
         mount_names: HashMap<PathBuf, String>,
     ) -> Self {
-        let root_entries = path_security
-            .root_dirs()
-            .iter()
-            .map(|r| {
-                let s = r.to_string_lossy().to_string();
-                let prefix = format!("{s}{}", std::path::MAIN_SEPARATOR);
-                (s, prefix, r.clone())
-            })
-            .collect();
+        let root_entries = path_security.root_entries().to_vec();
 
         let secret = std::env::var("NODE_SECRET")
             .unwrap_or_else(|_| "local-viewer-default-secret".to_string())
@@ -120,15 +112,7 @@ impl NodeRegistry {
         secret: &[u8],
         mount_names: HashMap<PathBuf, String>,
     ) -> Self {
-        let root_entries = path_security
-            .root_dirs()
-            .iter()
-            .map(|r| {
-                let s = r.to_string_lossy().to_string();
-                let prefix = format!("{s}{}", std::path::MAIN_SEPARATOR);
-                (s, prefix, r.clone())
-            })
-            .collect();
+        let root_entries = path_security.root_entries().to_vec();
 
         Self {
             path_security,
