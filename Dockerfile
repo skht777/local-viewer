@@ -10,8 +10,12 @@ RUN npm run build
 FROM rust:1-bookworm AS builder
 WORKDIR /app
 
+# mold リンカーで高速リンク
+RUN apt-get update && apt-get install -y --no-install-recommends mold && rm -rf /var/lib/apt/lists/*
+
 # 依存クレートのキャッシュ (ソース変更時に再コンパイルを最小化)
 COPY backend/Cargo.toml backend/Cargo.lock ./backend/
+COPY backend/.cargo ./backend/.cargo
 RUN mkdir -p backend/src && \
     echo 'fn main() { println!("stub"); }' > backend/src/main.rs && \
     cd backend && cargo build --release && \
