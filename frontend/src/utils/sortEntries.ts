@@ -17,7 +17,13 @@ function compareByName(a: BrowseEntry, b: BrowseEntry): number {
 export function sortEntries(entries: BrowseEntry[], sort: SortOrder): BrowseEntry[] {
   return [...entries].sort((a, b) => {
     if (sort === "name-asc") return compareByName(a, b);
-    if (sort === "name-desc") return -compareByName(a, b);
+    if (sort === "name-desc") {
+      // ディレクトリ優先を維持しつつ名前のみ降順 (バックエンドと一致)
+      const aIsDir = a.kind === "directory" ? 0 : 1;
+      const bIsDir = b.kind === "directory" ? 0 : 1;
+      if (aIsDir !== bIsDir) return aIsDir - bIsDir;
+      return b.name.localeCompare(a.name, undefined, { numeric: true, sensitivity: "base" });
+    }
 
     // date ソート: null は末尾、同一日時は名前昇順タイブレーカー (Windows Explorer 準拠)
     if (a.modified_at == null && b.modified_at == null) return 0;
