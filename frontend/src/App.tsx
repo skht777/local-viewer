@@ -10,9 +10,10 @@ import BrowsePage from "./pages/BrowsePage";
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      staleTime: 30 * 1000,
-      gcTime: 10 * 60 * 1000, // キャッシュ保持を10分に延長
+      staleTime: 5 * 60 * 1000, // ローカルファイルは頻繁に変わらない
+      gcTime: 10 * 60 * 1000,
       retry: 1,
+      refetchOnWindowFocus: false, // タブ切替での不要な再フェッチを防止
     },
   },
 });
