@@ -139,6 +139,74 @@ async def test_存在しないparent_node_idで404を返す(client: AsyncClient)
     assert resp.status_code == 404
 
 
+@pytest.fixture
+def mixed_sibling_root(test_root: Path) -> Path:
+    """ディレクトリとアーカイブが混在する sibling テスト用構造.
+
+    test_root/mixed_parent/
+    ├── dir_z/          ← ディレクトリ (名前がアーカイブより後)
+    ├── apple.zip       ← アーカイブ (名前がディレクトリより前)
+    └── skip.jpg        ← 非候補 (image)
+    """
+    import io
+    import zipfile as zf
+
+    from PIL import Image
+
+    parent = test_root / "mixed_parent"
+    parent.mkdir(exist_ok=True)
+    (parent / "dir_z").mkdir(exist_ok=True)
+
+    _img = Image.new("RGB", (1, 1), color="red")
+    _buf = io.BytesIO()
+    _img.save(_buf, format="JPEG")
+    jpeg = _buf.getvalue()
+
+    # skip.jpg
+    (parent / "skip.jpg").write_bytes(jpeg)
+
+    # apple.zip (画像入り)
+    zip_path = parent / "apple.zip"
+    with zf.ZipFile(zip_path, "w") as z:
+        z.writestr("page01.jpg", jpeg)
+
+    return parent
+
+
+async def test_ディレクトリの次にアーカイブがある場合にnextを返す(
+    client: AsyncClient, test_node_registry: NodeRegistry, mixed_sibling_root: Path
+) -> None:
+    """name-asc: dir_z (最後のディレクトリ) → next は apple.zip (最初のアーカイブ)."""
+    parent_id = test_node_registry.register(mixed_sibling_root)
+    current_id = test_node_registry.register(mixed_sibling_root / "dir_z")
+    resp = await client.get(
+        f"/api/browse/{parent_id}/sibling",
+        params={"current": current_id, "direction": "next"},
+    )
+    assert resp.status_code == 200
+    entry = resp.json()["entry"]
+    assert entry is not None
+    assert entry["name"] == "apple.zip"
+    assert entry["kind"] == "archive"
+
+
+async def test_アーカイブの前にディレクトリがある場合にprevを返す(
+    client: AsyncClient, test_node_registry: NodeRegistry, mixed_sibling_root: Path
+) -> None:
+    """name-asc: apple.zip → prev は dir_z."""
+    parent_id = test_node_registry.register(mixed_sibling_root)
+    current_id = test_node_registry.register(mixed_sibling_root / "apple.zip")
+    resp = await client.get(
+        f"/api/browse/{parent_id}/sibling",
+        params={"current": current_id, "direction": "prev"},
+    )
+    assert resp.status_code == 200
+    entry = resp.json()["entry"]
+    assert entry is not None
+    assert entry["name"] == "dir_z"
+    assert entry["kind"] == "directory"
+
+
 async def test_sortパラメータが反映される(
     client: AsyncClient, test_node_registry: NodeRegistry, sibling_root: Path
 ) -> None:
