@@ -12,7 +12,16 @@ path = "src/main.rs"
 [dependencies]
 # Web フレームワーク
 axum = { version = "0.8", features = ["macros"] }
-tokio = { version = "1", features = ["full"] }
+tokio = { version = "1", features = [
+    "net",
+    "rt-multi-thread",
+    "sync",
+    "time",
+    "macros",
+    "io-util",
+    "signal",
+    "fs",
+] }
 tower = "0.5"
 tower-http = { version = "0.6", features = [
     "cors",
@@ -27,8 +36,8 @@ hyper = "1"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 
-# SQLite — bundled-full: FTS5 trigram トークナイザに必要 (bundled では FTS5 が無効)
-rusqlite = { version = "0.39", features = ["bundled-full"] }
+# SQLite — bundled: FTS5 trigram トークナイザを含む (libsqlite3-sys が無条件で有効化)
+rusqlite = { version = "0.39", features = ["bundled"] }
 
 # 暗号 (HMAC-SHA256, MD5 ETag)
 hmac = "0.12"
@@ -38,10 +47,10 @@ hex = "0.4"
 base64 = "0.22"
 
 # アーカイブ
-zip = "8"
+zip = { version = "8", default-features = false, features = ["deflate"] }
 
 # 画像処理 (サムネイル)
-# image: JPEG/PNG/GIF/WebP/BMP/AVIF デコード
+# image: JPEG/PNG/GIF/WebP/BMP デコード (AVIF デコードは avif-native feature で別途対応可)
 # fast_image_resize: AVX2 SIMD 高速リサイズ (libvips より 35% 速い)
 image = { version = "0.25", default-features = false, features = [
     "jpeg",
@@ -49,7 +58,6 @@ image = { version = "0.25", default-features = false, features = [
     "gif",
     "webp",
     "bmp",
-    "avif",
 ] }
 fast_image_resize = "5"
 
@@ -70,8 +78,8 @@ tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 thiserror = "2"
 anyhow = "1"
 
-# キャッシュ (W-TinyLFU、バイトベース制限、非同期対応)
-moka = { version = "0.12", features = ["future", "sync"] }
+# キャッシュ (W-TinyLFU、バイトベース制限、sync のみ使用)
+moka = { version = "0.12", features = ["sync"] }
 
 # ユーティリティ
 regex = "1"
@@ -123,6 +131,7 @@ rest_pat_in_fully_bound_structs = "warn"
 lto = "thin"
 strip = true
 codegen-units = 1
+split-debuginfo = "unpacked"
 
 [profile.dev]
 # 開発中は依存クレートを最適化 (ビルド速度と実行速度のバランス)
