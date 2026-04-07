@@ -125,8 +125,16 @@ jobs:
 
       - run: docker build -t local-viewer:ci .
 
-      # スモークテスト: E2E フィクスチャを DATA_DIR に使用
-      - run: mkdir -p e2e/fixtures/test-data/empty
-      - run: DATA_DIR=./e2e/fixtures/test-data docker compose up -d
-      - run: curl -f --retry 10 --retry-delay 2 --retry-connrefused http://localhost:8000/api/health
+      # スモークテスト: E2E フィクスチャをコンテナにマウントして起動
+      - name: Prepare smoke test
+        run: |
+          mkdir -p e2e/fixtures/test-data/empty
+          echo '{"version":2,"mounts":[{"mount_id":"ci-smoke","name":"test","slug":".","host_path":"/mnt-host"}]}' > config/mounts.json
+          printf 'services:\n  viewer:\n    volumes:\n      - ./e2e/fixtures/test-data:/mnt-host\n' > docker-compose.ci.yml
+      - run: docker compose -f docker-compose.yml -f docker-compose.ci.yml up -d
+      - name: Health check
+        run: curl -f --retry 15 --retry-delay 3 --retry-all-errors http://localhost:8000/api/health
+      - name: Show container logs on failure
+        if: failure()
+        run: docker compose -f docker-compose.yml -f docker-compose.ci.yml logs --tail=50
       - run: docker compose down
