@@ -343,7 +343,13 @@ fn spawn_background_tasks(bg: BackgroundContext) {
             let result = tokio::task::spawn_blocking(move || {
                 if is_warm_start {
                     // 差分スキャン + DirIndex コールバック
-                    let mut bulk = dir_index.begin_bulk().ok();
+                    let mut bulk = match dir_index.begin_bulk() {
+                        Ok(b) => Some(b),
+                        Err(e) => {
+                            tracing::warn!("DirIndex begin_bulk 失敗 ({mount_id}): {e}");
+                            None
+                        }
+                    };
                     let result = indexer.incremental_scan(
                         &root,
                         &path_security,
@@ -356,14 +362,22 @@ fn spawn_background_tasks(bg: BackgroundContext) {
                         }),
                     );
                     if let Some(mut bulk) = bulk {
-                        let _ = bulk.flush();
+                        if let Err(e) = bulk.flush() {
+                            tracing::warn!("DirIndex flush 失敗 ({mount_id}): {e}");
+                        }
                     }
                     if let Err(e) = &result {
                         tracing::error!("Incremental scan 失敗 ({mount_id}): {e}");
                     }
                 } else {
                     // フルスキャン + DirIndex コールバック
-                    let mut bulk = dir_index.begin_bulk().ok();
+                    let mut bulk = match dir_index.begin_bulk() {
+                        Ok(b) => Some(b),
+                        Err(e) => {
+                            tracing::warn!("DirIndex begin_bulk 失敗 ({mount_id}): {e}");
+                            None
+                        }
+                    };
                     let result = indexer.scan_directory(
                         &root,
                         &path_security,
@@ -376,7 +390,9 @@ fn spawn_background_tasks(bg: BackgroundContext) {
                         }),
                     );
                     if let Some(mut bulk) = bulk {
-                        let _ = bulk.flush();
+                        if let Err(e) = bulk.flush() {
+                            tracing::warn!("DirIndex flush 失敗 ({mount_id}): {e}");
+                        }
                     }
                     if let Err(e) = &result {
                         tracing::error!("Full scan 失敗 ({mount_id}): {e}");
