@@ -60,7 +60,7 @@ pub(crate) fn natural_sort_key(name: &str) -> Vec<NaturalSortPart> {
     for m in SPLIT_RE.find_iter(&lower) {
         // マッチ前のテキスト部分
         let text = &lower[last_end..m.start()];
-        parts.push(NaturalSortPart::Text(text.to_string()));
+        parts.push(NaturalSortPart::Text(text.to_owned()));
 
         // 数値部分
         let num: u64 = m.as_str().parse().unwrap_or(u64::MAX);
@@ -70,7 +70,7 @@ pub(crate) fn natural_sort_key(name: &str) -> Vec<NaturalSortPart> {
     }
 
     // 末尾のテキスト部分
-    parts.push(NaturalSortPart::Text(lower[last_end..].to_string()));
+    parts.push(NaturalSortPart::Text(lower[last_end..].to_owned()));
     parts
 }
 
@@ -110,7 +110,7 @@ mod tests {
 
     // natural_sort_key を使ってソートするヘルパー
     fn sort(names: &[&str]) -> Vec<String> {
-        let mut v: Vec<String> = names.iter().map(|s| (*s).to_string()).collect();
+        let mut v: Vec<String> = names.iter().map(|s| (*s).to_owned()).collect();
         v.sort_by_key(|a| natural_sort_key(a));
         v
     }

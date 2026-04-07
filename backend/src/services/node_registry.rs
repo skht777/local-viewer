@@ -348,7 +348,7 @@ impl NodeRegistry {
         if let Some(pos) = self.archive_order.iter().position(|x| x == node_id) {
             self.archive_order.remove(pos);
         }
-        self.archive_order.push_back(node_id.to_string());
+        self.archive_order.push_back(node_id.to_owned());
         Some(result)
     }
 

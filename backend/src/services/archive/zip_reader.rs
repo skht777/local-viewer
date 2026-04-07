@@ -313,7 +313,7 @@ mod tests {
         let reader = ZipArchiveReader::new(test_validator());
         let result = reader.list_entries(tmp.path());
         assert!(result.is_err());
-        let err = format!("{}", result.unwrap_err());
+        let err = result.unwrap_err().to_string();
         assert!(err.contains("ZIP を読み取れません"));
     }
 
@@ -336,7 +336,7 @@ mod tests {
 
         let result = reader.extract_entry(zip.path(), "nonexistent.jpg");
         assert!(result.is_err());
-        let err = format!("{}", result.unwrap_err());
+        let err = result.unwrap_err().to_string();
         assert!(err.contains("エントリが見つかりません"));
     }
 
@@ -352,7 +352,7 @@ mod tests {
         let zip = create_test_zip(&[("big.jpg", &[0u8; 100])]);
         let result = reader.extract_entry(zip.path(), "big.jpg");
         assert!(result.is_err());
-        let err = format!("{}", result.unwrap_err());
+        let err = result.unwrap_err().to_string();
         assert!(err.contains("サイズ上限を超えました"));
     }
 
@@ -420,7 +420,7 @@ mod tests {
         let dest = tempfile::NamedTempFile::new().unwrap();
         let result = reader.extract_entry_to_file(zip.path(), "big.mp4", dest.path());
         assert!(result.is_err());
-        let err = format!("{}", result.unwrap_err());
+        let err = result.unwrap_err().to_string();
         assert!(err.contains("サイズ上限を超えました"));
     }
 }

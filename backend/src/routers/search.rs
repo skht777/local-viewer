@@ -94,7 +94,7 @@ pub(crate) async fn search(
     Query(query): Query<SearchQuery>,
 ) -> Result<Json<SearchResponse>, AppError> {
     // クエリ文字数バリデーション (2-200 文字)
-    let q = query.q.trim().to_string();
+    let q = query.q.trim().to_owned();
     let char_count = q.chars().count();
     if !(MIN_QUERY_LENGTH..=MAX_QUERY_LENGTH).contains(&char_count) {
         return Err(AppError::InvalidQuery(format!(
