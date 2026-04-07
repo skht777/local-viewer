@@ -131,6 +131,7 @@ fn build_app(settings: Settings) -> anyhow::Result<(Router, BackgroundContext)> 
         settings.archive_registry_max_entries,
         mount_names,
     );
+    // mount_id_map は BackgroundContext へ move するため先に clone を渡す
     registry.set_mount_id_map(mount_id_map.clone());
 
     // アーカイブサービス構築 + diagnostics ログ
@@ -177,7 +178,7 @@ fn build_app(settings: Settings) -> anyhow::Result<(Router, BackgroundContext)> 
         indexer: Arc::clone(&indexer),
         dir_index: Arc::clone(&dir_index),
         path_security: Arc::clone(&path_security),
-        mount_id_map: mount_id_map.clone(),
+        mount_id_map,
         scan_workers: settings.scan_workers,
     };
 

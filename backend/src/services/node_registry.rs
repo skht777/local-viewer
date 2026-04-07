@@ -369,7 +369,9 @@ impl NodeRegistry {
             HmacSha256::new_from_slice(&self.secret).expect("HMAC は任意長の鍵を受け付ける");
         mac.update(input.as_bytes());
         let result = mac.finalize().into_bytes();
-        hex::encode(result)[..16].to_string()
+        let mut h = hex::encode(result);
+        h.truncate(16);
+        h
     }
 
     // --- ディレクトリリスティング ---
@@ -1068,7 +1070,9 @@ mod tests {
             HmacSha256::new_from_slice(TEST_SECRET).expect("HMAC は任意長の鍵を受け付ける");
         mac.update(input.as_bytes());
         let result = mac.finalize().into_bytes();
-        hex::encode(result)[..16].to_string()
+        let mut h = hex::encode(result);
+        h.truncate(16);
+        h
     }
 
     #[test]
