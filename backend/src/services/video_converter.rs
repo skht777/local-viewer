@@ -53,7 +53,7 @@ impl VideoConverter {
     pub(crate) fn extract_frame(&self, source: &Path) -> Option<Vec<u8>> {
         let ffmpeg = self.ffmpeg_path.as_ref()?;
 
-        let output = std::process::Command::new(ffmpeg)
+        let mut child = std::process::Command::new(ffmpeg)
             .args([
                 "-ss",
                 &self.thumb_seek_seconds.to_string(),
@@ -69,11 +69,16 @@ impl VideoConverter {
             ])
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::null())
-            .output();
+            .spawn()
+            .ok()?;
 
-        match output {
-            Ok(out) if out.status.success() && !out.stdout.is_empty() => Some(out.stdout),
-            _ => None,
+        let timeout = std::time::Duration::from_secs(self.thumb_timeout);
+        let output = wait_with_timeout_and_stdout(&mut child, timeout).ok()?;
+
+        if output.status.success() && !output.stdout.is_empty() {
+            Some(output.stdout)
+        } else {
+            None
         }
     }
 
@@ -96,11 +101,12 @@ impl VideoConverter {
         let source_str = source.to_string_lossy().into_owned();
 
         // put_with_writer で一時ファイルに書き込み → キャッシュ登録
+        let remux_timeout = self.remux_timeout;
         self.cache
             .put_with_writer(
                 &cache_key,
                 |dest_path| {
-                    let output = std::process::Command::new(&ffmpeg)
+                    let mut child = std::process::Command::new(&ffmpeg)
                         .args([
                             "-y",
                             "-i",
@@ -113,23 +119,57 @@ impl VideoConverter {
                         ])
                         .stdout(std::process::Stdio::null())
                         .stderr(std::process::Stdio::null())
-                        .output()
+                        .spawn()
                         .map_err(|e| {
                             std::io::Error::other(format!("ffmpeg remux 実行失敗: {e}"))
                         })?;
+
+                    let timeout = std::time::Duration::from_secs(remux_timeout);
+                    let output = wait_with_timeout_and_stdout(&mut child, timeout)?;
 
                     if !output.status.success() {
                         return Err(std::io::Error::other("ffmpeg remux 失敗"));
                     }
 
-                    // ffmpeg は dest_path に直接書き込むため、
-                    // put_with_writer のパスに既にデータがある
-                    // ただし put_with_writer は persist を呼ぶので問題ない
                     Ok(())
                 },
                 ".mp4",
             )
             .ok()
+    }
+}
+
+/// 子プロセスをタイムアウト付きで待機する
+///
+/// stdout を先に読み取り、別スレッドで `wait` + タイムアウト判定。
+/// タイムアウト時は子プロセスを kill する。
+fn wait_with_timeout_and_stdout(
+    child: &mut std::process::Child,
+    timeout: std::time::Duration,
+) -> std::io::Result<std::process::Output> {
+    // stdout を先に読む (パイプバッファ溢れによるデッドロック防止)
+    let stdout = child.stdout.take().map_or_else(Vec::new, |mut s| {
+        let mut buf = Vec::new();
+        std::io::Read::read_to_end(&mut s, &mut buf).unwrap_or_default();
+        buf
+    });
+
+    // タイムアウト付きポーリング (短間隔)
+    let start = std::time::Instant::now();
+    loop {
+        if let Some(status) = child.try_wait()? {
+            return Ok(std::process::Output {
+                status,
+                stdout,
+                stderr: Vec::new(),
+            });
+        }
+        if start.elapsed() >= timeout {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err(std::io::Error::other("ffmpeg タイムアウト"));
+        }
+        std::thread::sleep(std::time::Duration::from_millis(10));
     }
 }
 

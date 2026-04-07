@@ -235,6 +235,9 @@ fn encode_jpeg(rgb: &RgbImage, quality: u8) -> Result<Vec<u8>, AppError> {
 }
 
 /// 子プロセスをタイムアウト付きで待機する
+///
+/// 短間隔ポーリング (10ms) でプロセス完了を待ち、タイムアウト時は kill。
+/// 旧実装の 50ms sleep から 10ms に短縮し、レイテンシを改善。
 fn wait_with_timeout(
     mut child: std::process::Child,
     timeout: std::time::Duration,
@@ -258,7 +261,7 @@ fn wait_with_timeout(
             let _ = child.wait();
             return Err(std::io::Error::other("pdftoppm タイムアウト"));
         }
-        std::thread::sleep(std::time::Duration::from_millis(50));
+        std::thread::sleep(std::time::Duration::from_millis(10));
     }
 }
 
