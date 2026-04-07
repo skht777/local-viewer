@@ -172,25 +172,33 @@ pub(crate) fn sort_entries(mut entries: Vec<EntryMeta>, sort: SortOrder) -> Vec<
             });
         }
         SortOrder::DateDesc => {
+            // 同一日時は名前昇順タイブレーカー (Windows Explorer 準拠)
             entries.sort_by(|a, b| {
                 let a_none = u8::from(a.modified_at.is_none());
                 let b_none = u8::from(b.modified_at.is_none());
-                a_none.cmp(&b_none).then_with(|| {
-                    let a_val = a.modified_at.unwrap_or(0.0);
-                    let b_val = b.modified_at.unwrap_or(0.0);
-                    b_val.total_cmp(&a_val)
-                })
+                a_none
+                    .cmp(&b_none)
+                    .then_with(|| {
+                        let a_val = a.modified_at.unwrap_or(0.0);
+                        let b_val = b.modified_at.unwrap_or(0.0);
+                        b_val.total_cmp(&a_val)
+                    })
+                    .then_with(|| natural_sort_key(&a.name).cmp(&natural_sort_key(&b.name)))
             });
         }
         SortOrder::DateAsc => {
+            // 同一日時は名前昇順タイブレーカー (Windows Explorer 準拠)
             entries.sort_by(|a, b| {
                 let a_none = u8::from(a.modified_at.is_none());
                 let b_none = u8::from(b.modified_at.is_none());
-                a_none.cmp(&b_none).then_with(|| {
-                    let a_val = a.modified_at.unwrap_or(0.0);
-                    let b_val = b.modified_at.unwrap_or(0.0);
-                    a_val.total_cmp(&b_val)
-                })
+                a_none
+                    .cmp(&b_none)
+                    .then_with(|| {
+                        let a_val = a.modified_at.unwrap_or(0.0);
+                        let b_val = b.modified_at.unwrap_or(0.0);
+                        a_val.total_cmp(&b_val)
+                    })
+                    .then_with(|| natural_sort_key(&a.name).cmp(&natural_sort_key(&b.name)))
             });
         }
     }
@@ -457,6 +465,28 @@ mod tests {
     #[test]
     fn 空リストで空リストを返す() {
         assert!(sort_entries(vec![], SortOrder::NameAsc).is_empty());
+    }
+
+    #[test]
+    fn date_descで同一日時は名前昇順のタイブレーカー() {
+        let entries = vec![
+            entry_with("beta.jpg", EntryKind::Image, Some(100.0), None),
+            entry_with("alpha.jpg", EntryKind::Image, Some(100.0), None),
+        ];
+        let result = sort_entries(entries, SortOrder::DateDesc);
+        assert_eq!(result[0].name, "alpha.jpg");
+        assert_eq!(result[1].name, "beta.jpg");
+    }
+
+    #[test]
+    fn date_ascで同一日時は名前昇順のタイブレーカー() {
+        let entries = vec![
+            entry_with("beta.jpg", EntryKind::Image, Some(100.0), None),
+            entry_with("alpha.jpg", EntryKind::Image, Some(100.0), None),
+        ];
+        let result = sort_entries(entries, SortOrder::DateAsc);
+        assert_eq!(result[0].name, "alpha.jpg");
+        assert_eq!(result[1].name, "beta.jpg");
     }
 
     // --- apply_cursor ---

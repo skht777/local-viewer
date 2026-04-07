@@ -593,6 +593,27 @@ fn parse_name_cursor(cursor: &str) -> (i64, &str) {
     }
 }
 
+/// date カーソルから `(mtime_ns, sort_key)` を分離する
+///
+/// 新形式: `"{mtime_ns}\x00{sort_key}"` — タイブレーカー付き
+/// 旧形式: `"{mtime_ns}"` — 後方互換 (`sort_key` なし)
+fn parse_date_cursor(cursor: &str) -> Result<(i64, Option<&str>), DirIndexError> {
+    if let Some(pos) = cursor.find('\x00') {
+        let mtime_str = &cursor[..pos];
+        let sort_key = &cursor[pos + 1..];
+        let mtime: i64 = mtime_str
+            .parse()
+            .map_err(|e| DirIndexError::Other(format!("無効な date カーソル: {e}")))?;
+        Ok((mtime, Some(sort_key)))
+    } else {
+        // 旧形式: mtime_ns のみ
+        let mtime: i64 = cursor
+            .parse()
+            .map_err(|e| DirIndexError::Other(format!("無効な date カーソル: {e}")))?;
+        Ok((mtime, None))
+    }
+}
+
 // ---------------------------------------------------------------
 // ソートクエリ実装
 // ---------------------------------------------------------------
@@ -680,24 +701,37 @@ fn query_date_desc(
     cursor: Option<&str>,
 ) -> Result<Vec<DirEntry>, DirIndexError> {
     let rows = if let Some(c) = cursor {
-        let mtime: i64 = c
-            .parse()
-            .map_err(|e| DirIndexError::Other(format!("無効な date カーソル: {e}")))?;
-        let mut stmt = conn.prepare(
-            "SELECT parent_path, name, kind, sort_key, size_bytes, mtime_ns \
-             FROM dir_entries \
-             WHERE parent_path = ?1 AND mtime_ns < ?2 \
-             ORDER BY mtime_ns DESC \
-             LIMIT ?3",
-        )?;
-        stmt.query_map(params![parent_path, mtime, limit as i64], map_dir_entry)?
-            .collect::<Result<Vec<_>, _>>()?
+        let (mtime, sort_key) = parse_date_cursor(c)?;
+        if let Some(sk) = sort_key {
+            // タイブレーカー付きタプル比較: (mtime_ns DESC, sort_key ASC)
+            let mut stmt = conn.prepare(
+                "SELECT parent_path, name, kind, sort_key, size_bytes, mtime_ns \
+                 FROM dir_entries \
+                 WHERE parent_path = ?1 \
+                   AND (mtime_ns < ?2 OR (mtime_ns = ?2 AND sort_key > ?3)) \
+                 ORDER BY mtime_ns DESC, sort_key ASC \
+                 LIMIT ?4",
+            )?;
+            stmt.query_map(params![parent_path, mtime, sk, limit as i64], map_dir_entry)?
+                .collect::<Result<Vec<_>, _>>()?
+        } else {
+            // 旧形式: mtime_ns のみ比較 (後方互換)
+            let mut stmt = conn.prepare(
+                "SELECT parent_path, name, kind, sort_key, size_bytes, mtime_ns \
+                 FROM dir_entries \
+                 WHERE parent_path = ?1 AND mtime_ns < ?2 \
+                 ORDER BY mtime_ns DESC, sort_key ASC \
+                 LIMIT ?3",
+            )?;
+            stmt.query_map(params![parent_path, mtime, limit as i64], map_dir_entry)?
+                .collect::<Result<Vec<_>, _>>()?
+        }
     } else {
         let mut stmt = conn.prepare(
             "SELECT parent_path, name, kind, sort_key, size_bytes, mtime_ns \
              FROM dir_entries \
              WHERE parent_path = ?1 \
-             ORDER BY mtime_ns DESC \
+             ORDER BY mtime_ns DESC, sort_key ASC \
              LIMIT ?2",
         )?;
         stmt.query_map(params![parent_path, limit as i64], map_dir_entry)?
@@ -715,24 +749,37 @@ fn query_date_asc(
     cursor: Option<&str>,
 ) -> Result<Vec<DirEntry>, DirIndexError> {
     let rows = if let Some(c) = cursor {
-        let mtime: i64 = c
-            .parse()
-            .map_err(|e| DirIndexError::Other(format!("無効な date カーソル: {e}")))?;
-        let mut stmt = conn.prepare(
-            "SELECT parent_path, name, kind, sort_key, size_bytes, mtime_ns \
-             FROM dir_entries \
-             WHERE parent_path = ?1 AND mtime_ns > ?2 \
-             ORDER BY mtime_ns ASC \
-             LIMIT ?3",
-        )?;
-        stmt.query_map(params![parent_path, mtime, limit as i64], map_dir_entry)?
-            .collect::<Result<Vec<_>, _>>()?
+        let (mtime, sort_key) = parse_date_cursor(c)?;
+        if let Some(sk) = sort_key {
+            // タイブレーカー付きタプル比較: (mtime_ns ASC, sort_key ASC)
+            let mut stmt = conn.prepare(
+                "SELECT parent_path, name, kind, sort_key, size_bytes, mtime_ns \
+                 FROM dir_entries \
+                 WHERE parent_path = ?1 \
+                   AND (mtime_ns > ?2 OR (mtime_ns = ?2 AND sort_key > ?3)) \
+                 ORDER BY mtime_ns ASC, sort_key ASC \
+                 LIMIT ?4",
+            )?;
+            stmt.query_map(params![parent_path, mtime, sk, limit as i64], map_dir_entry)?
+                .collect::<Result<Vec<_>, _>>()?
+        } else {
+            // 旧形式: mtime_ns のみ比較 (後方互換)
+            let mut stmt = conn.prepare(
+                "SELECT parent_path, name, kind, sort_key, size_bytes, mtime_ns \
+                 FROM dir_entries \
+                 WHERE parent_path = ?1 AND mtime_ns > ?2 \
+                 ORDER BY mtime_ns ASC, sort_key ASC \
+                 LIMIT ?3",
+            )?;
+            stmt.query_map(params![parent_path, mtime, limit as i64], map_dir_entry)?
+                .collect::<Result<Vec<_>, _>>()?
+        }
     } else {
         let mut stmt = conn.prepare(
             "SELECT parent_path, name, kind, sort_key, size_bytes, mtime_ns \
              FROM dir_entries \
              WHERE parent_path = ?1 \
-             ORDER BY mtime_ns ASC \
+             ORDER BY mtime_ns ASC, sort_key ASC \
              LIMIT ?2",
         )?;
         stmt.query_map(params![parent_path, limit as i64], map_dir_entry)?
@@ -1148,6 +1195,56 @@ mod tests {
         let page2 = idx.query_page("m", "date-desc", 2, Some(&cursor)).unwrap();
         assert_eq!(page2.len(), 1);
         assert_eq!(page2[0].name, "old.jpg");
+    }
+
+    #[test]
+    fn query_pageのdate_descで同一mtimeはsort_key昇順() {
+        let (idx, _tmp) = setup();
+
+        let args = make_args(
+            "/data",
+            "/data",
+            "m",
+            vec![],
+            vec![
+                ("beta.jpg", 100, 1_000_000),
+                ("alpha.jpg", 200, 1_000_000), // 同じ mtime_ns
+            ],
+        );
+        idx.ingest_walk_entry(&args).unwrap();
+
+        let page = idx.query_page("m", "date-desc", 10, None).unwrap();
+        assert_eq!(page[0].name, "alpha.jpg"); // sort_key 昇順: alpha < beta
+        assert_eq!(page[1].name, "beta.jpg");
+    }
+
+    #[test]
+    fn query_pageのdate_descカーソルで同一mtimeのタプル比較() {
+        let (idx, _tmp) = setup();
+
+        let args = make_args(
+            "/data",
+            "/data",
+            "m",
+            vec![],
+            vec![
+                ("a.jpg", 100, 2_000_000), // 新しい
+                ("c.jpg", 100, 1_000_000), // 古い (同一 mtime)
+                ("b.jpg", 100, 1_000_000), // 古い (同一 mtime)
+            ],
+        );
+        idx.ingest_walk_entry(&args).unwrap();
+
+        // 1ページ目: a.jpg + b.jpg (sort_key 昇順タイブレーカー)
+        let page1 = idx.query_page("m", "date-desc", 2, None).unwrap();
+        assert_eq!(page1[0].name, "a.jpg");
+        assert_eq!(page1[1].name, "b.jpg");
+
+        // カーソルで次ページ: c.jpg が残る
+        let cursor = format!("{}\x00{}", page1[1].mtime_ns, page1[1].sort_key);
+        let page2 = idx.query_page("m", "date-desc", 2, Some(&cursor)).unwrap();
+        assert_eq!(page2.len(), 1);
+        assert_eq!(page2[0].name, "c.jpg");
     }
 
     #[test]

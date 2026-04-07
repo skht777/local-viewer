@@ -418,7 +418,7 @@ fn try_dir_index_browse(
             let kind_flag = if is_dir { "0" } else { "1" };
             Some(format!("{kind_flag}\x00{entry_sort_key}"))
         } else {
-            // date 系ソート: ファイルの mtime をナノ秒文字列で返す
+            // date 系ソート: mtime + sort_key のタプルカーソル
             let mtime_ns = std::fs::metadata(&entry_path)
                 .ok()?
                 .modified()
@@ -430,7 +430,8 @@ fn try_dir_index_browse(
                 reason = "UNIX タイムスタンプは i64 範囲内"
             )]
             let ns = mtime_ns.as_nanos() as i64;
-            Some(ns.to_string())
+            let entry_sort_key = encode_sort_key(&name);
+            Some(format!("{ns}\x00{entry_sort_key}"))
         }
     });
 
