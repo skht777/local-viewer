@@ -794,37 +794,57 @@ fn query_date_asc(
 
 /// name 系ソートでの sibling クエリ
 ///
-/// 初期実装: `sort_key` のみで比較 (振る舞い維持)
+/// browse クエリと同じ複合ソート `(kind != 'directory', sort_key)` で比較する。
+/// 混合方向のため、明示的 OR 条件でタプル比較を表現。
 #[allow(clippy::too_many_arguments, reason = "sort 分岐に必要なパラメータ群")]
 fn query_sibling_name(
     conn: &Connection,
     parent_path: &str,
     current_sort_key: &str,
-    _current_is_dir: bool,
+    current_is_dir: bool,
     direction: &str,
-    _sort: &str,
+    sort: &str,
     kinds: &[&str],
 ) -> Result<Option<DirEntry>, DirIndexError> {
-    let placeholders: Vec<String> = (0..kinds.len()).map(|i| format!("?{}", i + 3)).collect();
+    let placeholders: Vec<String> = (0..kinds.len()).map(|i| format!("?{}", i + 4)).collect();
     let in_clause = placeholders.join(", ");
 
-    let (op, order) = if direction == "next" {
-        (">", "ASC")
-    } else {
-        ("<", "DESC")
+    let current_kind_flag: i64 = i64::from(!current_is_dir);
+    let is_asc = sort == "name-asc";
+    let is_next = direction == "next";
+
+    // browse クエリの複合ソート: (kind != 'directory') ASC, sort_key ASC/DESC
+    let (cmp, order) = match (is_asc, is_next) {
+        (true, true) => (
+            "((kind != 'directory') > ?2 OR ((kind != 'directory') = ?2 AND sort_key > ?3))",
+            "(kind != 'directory') ASC, sort_key ASC",
+        ),
+        (true, false) => (
+            "((kind != 'directory') < ?2 OR ((kind != 'directory') = ?2 AND sort_key < ?3))",
+            "(kind != 'directory') DESC, sort_key DESC",
+        ),
+        (false, true) => (
+            "((kind != 'directory') > ?2 OR ((kind != 'directory') = ?2 AND sort_key < ?3))",
+            "(kind != 'directory') ASC, sort_key DESC",
+        ),
+        (false, false) => (
+            "((kind != 'directory') < ?2 OR ((kind != 'directory') = ?2 AND sort_key > ?3))",
+            "(kind != 'directory') DESC, sort_key ASC",
+        ),
     };
 
     let sql = format!(
         "SELECT parent_path, name, kind, sort_key, size_bytes, mtime_ns \
          FROM dir_entries \
-         WHERE parent_path = ?1 AND kind IN ({in_clause}) AND sort_key {op} ?2 \
-         ORDER BY sort_key {order} \
+         WHERE parent_path = ?1 AND kind IN ({in_clause}) AND {cmp} \
+         ORDER BY {order} \
          LIMIT 1"
     );
 
     let mut stmt = conn.prepare(&sql)?;
     let mut params_vec: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
     params_vec.push(Box::new(parent_path.to_string()));
+    params_vec.push(Box::new(current_kind_flag));
     params_vec.push(Box::new(current_sort_key.to_string()));
     for kind in kinds {
         params_vec.push(Box::new(kind.to_string()));
@@ -842,7 +862,8 @@ fn query_sibling_name(
 
 /// date 系ソートでの sibling クエリ
 ///
-/// 初期実装: `mtime_ns` のみで比較 (振る舞い維持)
+/// `name` カラムで逆引き (`UNIQUE(parent_path, name)` が保証)。
+/// Windows Explorer 準拠の正準順序: `(mtime_ns, sort_key ASC)`
 fn query_sibling_date(
     conn: &Connection,
     parent_path: &str,
@@ -851,33 +872,44 @@ fn query_sibling_date(
     sort: &str,
     kinds: &[&str],
 ) -> Result<Option<DirEntry>, DirIndexError> {
-    // current_name から mtime_ns を逆引き (sort_key は大文字小文字衝突のため name で検索)
-    let cur_row: Option<i64> = conn
+    // name で逆引き (sort_key は大文字小文字衝突のため使わない)
+    let cur_row: Option<(i64, String)> = conn
         .query_row(
-            "SELECT mtime_ns FROM dir_entries WHERE parent_path = ?1 AND name = ?2 LIMIT 1",
+            "SELECT mtime_ns, sort_key FROM dir_entries \
+             WHERE parent_path = ?1 AND name = ?2 LIMIT 1",
             params![parent_path, current_name],
-            |row| row.get(0),
+            |row| Ok((row.get(0)?, row.get(1)?)),
         )
         .ok();
 
-    let Some(current_mtime) = cur_row else {
+    let Some((current_mtime, current_sort_key)) = cur_row else {
         return Ok(None);
     };
 
-    let placeholders: Vec<String> = (0..kinds.len()).map(|i| format!("?{}", i + 3)).collect();
+    let placeholders: Vec<String> = (0..kinds.len()).map(|i| format!("?{}", i + 4)).collect();
     let in_clause = placeholders.join(", ");
 
     let is_asc = sort == "date-asc";
-    let (cmp, order) = if is_asc {
-        if direction == "next" {
-            ("mtime_ns > ?2", "mtime_ns ASC")
-        } else {
-            ("mtime_ns < ?2", "mtime_ns DESC")
-        }
-    } else if direction == "next" {
-        ("mtime_ns < ?2", "mtime_ns DESC")
-    } else {
-        ("mtime_ns > ?2", "mtime_ns ASC")
+    let is_next = direction == "next";
+
+    // (mtime_ns, sort_key ASC) タプル比較
+    let (cmp, order) = match (is_asc, is_next) {
+        (true, true) => (
+            "(mtime_ns > ?2 OR (mtime_ns = ?2 AND sort_key > ?3))",
+            "mtime_ns ASC, sort_key ASC",
+        ),
+        (true, false) => (
+            "(mtime_ns < ?2 OR (mtime_ns = ?2 AND sort_key < ?3))",
+            "mtime_ns DESC, sort_key DESC",
+        ),
+        (false, true) => (
+            "(mtime_ns < ?2 OR (mtime_ns = ?2 AND sort_key > ?3))",
+            "mtime_ns DESC, sort_key ASC",
+        ),
+        (false, false) => (
+            "(mtime_ns > ?2 OR (mtime_ns = ?2 AND sort_key < ?3))",
+            "mtime_ns ASC, sort_key DESC",
+        ),
     };
 
     let sql = format!(
@@ -892,6 +924,7 @@ fn query_sibling_date(
     let mut params_vec: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
     params_vec.push(Box::new(parent_path.to_string()));
     params_vec.push(Box::new(current_mtime));
+    params_vec.push(Box::new(current_sort_key));
     for kind in kinds {
         params_vec.push(Box::new(kind.to_string()));
     }
@@ -1368,5 +1401,103 @@ mod tests {
             .query_sibling("m1", "only_dir", true, "next", "name-asc", &["directory"])
             .unwrap();
         assert!(next.is_none());
+    }
+
+    #[test]
+    fn query_siblingのname_ascでディレクトリからファイルへ次を取得() {
+        let (idx, _tmp) = setup();
+
+        // ディレクトリ (z_dir) + アーカイブ (a_archive.zip)
+        // browse 順: z_dir (dir優先), a_archive.zip
+        // sort_key のみの比較だと a < z なので z_dir → 次なし になるバグ
+        let args = make_args(
+            "/data",
+            "/data",
+            "m1",
+            vec![("z_dir", 1_000_000)],
+            vec![("a_archive.zip", 200, 2_000_000_000)],
+        );
+        idx.ingest_walk_entry(&args).unwrap();
+
+        let kinds = &["directory", "archive", "pdf"];
+        let next = idx
+            .query_sibling("m1", "z_dir", true, "next", "name-asc", kinds)
+            .unwrap();
+        assert!(next.is_some(), "ディレクトリの次にアーカイブが来るはず");
+        assert_eq!(next.unwrap().name, "a_archive.zip");
+    }
+
+    #[test]
+    fn query_siblingのname_descでsort_key降順の次を取得() {
+        let (idx, _tmp) = setup();
+
+        // name-desc 順: dir (dir優先), c_archive.zip, a_archive.zip
+        let args = make_args(
+            "/data",
+            "/data",
+            "m1",
+            vec![("dir", 1_000_000)],
+            vec![
+                ("a_archive.zip", 100, 1_000_000_000),
+                ("c_archive.zip", 100, 2_000_000_000),
+            ],
+        );
+        idx.ingest_walk_entry(&args).unwrap();
+
+        let kinds = &["directory", "archive", "pdf"];
+        // dir の次は c_archive.zip (name-desc: ファイルは名前降順)
+        let next = idx
+            .query_sibling("m1", "dir", true, "next", "name-desc", kinds)
+            .unwrap();
+        assert!(next.is_some());
+        assert_eq!(next.unwrap().name, "c_archive.zip");
+    }
+
+    #[test]
+    fn query_siblingのdate_descで同一mtimeのタイブレーカーが動作する() {
+        let (idx, _tmp) = setup();
+
+        let args = make_args(
+            "/data",
+            "/data",
+            "m1",
+            vec![
+                ("a_dir", 1_000_000),
+                ("b_dir", 1_000_000), // 同一 mtime
+            ],
+            vec![],
+        );
+        idx.ingest_walk_entry(&args).unwrap();
+
+        let kinds = &["directory", "archive", "pdf"];
+        let next = idx
+            .query_sibling("m1", "a_dir", true, "next", "date-desc", kinds)
+            .unwrap();
+        assert!(next.is_some());
+        assert_eq!(next.unwrap().name, "b_dir");
+    }
+
+    #[test]
+    fn query_siblingでname逆引きにより大文字小文字衝突を回避() {
+        let (idx, _tmp) = setup();
+
+        // FILE2 と file2 は encode_sort_key で同じ sort_key になる
+        // name 逆引きなら区別可能
+        let args = make_args(
+            "/data",
+            "/data",
+            "m1",
+            vec![("FILE2", 2_000_000), ("file2", 1_000_000)],
+            vec![],
+        );
+        idx.ingest_walk_entry(&args).unwrap();
+
+        let kinds = &["directory", "archive", "pdf"];
+        // date-desc 順: FILE2 (mtime 2M), file2 (mtime 1M)
+        let next = idx
+            .query_sibling("m1", "FILE2", true, "next", "date-desc", kinds)
+            .unwrap();
+        assert!(next.is_some());
+        assert_eq!(next.unwrap().name, "file2");
     }
 }
