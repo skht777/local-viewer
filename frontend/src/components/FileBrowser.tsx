@@ -9,6 +9,7 @@ import type { KeyboardEvent } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useBatchThumbnails } from "../hooks/api/thumbnailQueries";
 import { useBrowseKeyboard } from "../hooks/useBrowseKeyboard";
+import { useVirtualGrid } from "../hooks/useVirtualGrid";
 import type { SortOrder, ViewerTab } from "../hooks/useViewerParams";
 import type { BrowseEntry } from "../types/api";
 import { FileCard } from "./FileCard";
@@ -121,9 +122,15 @@ export function FileBrowser({
     return () => observer.disconnect();
   }, [hasMore, isLoadingMore, onLoadMore]);
 
+  // 仮想グリッド
+  const { scrollRef, virtualizer, columns, getRowItems, scrollToItem, getColumnCount } =
+    useVirtualGrid({
+      itemCount: filtered.length,
+      enabled: !isLoading && filtered.length > 0,
+    });
+
   // エントリ変更時（ナビゲーション・タブ切替）に先頭カードへ focus
   const firstCardRef = useRef<HTMLDivElement>(null);
-  const gridRef = useRef<HTMLDivElement>(null);
   const firstEntryId = filtered[0]?.node_id ?? null;
 
   // ローカル選択状態（クリック選択が優先、なければ URL ?select= or 先頭カード）
@@ -190,14 +197,7 @@ export function FileBrowser({
     [onNavigate],
   );
 
-  // グリッドの実際の列数をオンデマンド取得
-  const getColumnCount = useCallback(() => {
-    if (!gridRef.current) return 1;
-    const cols = getComputedStyle(gridRef.current).gridTemplateColumns;
-    return cols.split(" ").length;
-  }, []);
-
-  // キーボード移動: delta 分だけ選択を移動し、対応カードに focus
+  // キーボード移動: delta 分だけ選択を移動し、仮想スクロールで可視化
   const handleMove = useCallback(
     (delta: number) => {
       const currentIndex = filtered.findIndex((e) => e.node_id === effectiveSelectedId);
@@ -205,12 +205,17 @@ export function FileBrowser({
       if (newIndex < 0 || newIndex >= filtered.length) return;
       const target = filtered[newIndex];
       setLocalSelectedId(target.node_id);
-      // 選択カードを可視領域の先頭にスクロールし、フォーカスを移動
-      const el = document.querySelector<HTMLElement>(`[data-testid="file-card-${target.node_id}"]`);
-      el?.scrollIntoView({ block: "start", behavior: "smooth" });
-      el?.focus({ preventScroll: true });
+      // 仮想スクロールで対象行を可視領域に移動
+      scrollToItem(newIndex);
+      // DOM 更新後にフォーカスを移動
+      requestAnimationFrame(() => {
+        const el = document.querySelector<HTMLElement>(
+          `[data-testid="file-card-${target.node_id}"]`,
+        );
+        el?.focus({ preventScroll: true });
+      });
     },
-    [filtered, effectiveSelectedId],
+    [filtered, effectiveSelectedId, scrollToItem],
   );
 
   useBrowseKeyboard(
@@ -271,6 +276,7 @@ export function FileBrowser({
 
   return (
     <main
+      ref={scrollRef}
       className="flex-1 overflow-y-auto p-4"
       onClick={handleMainClick}
       onKeyDown={handleKeyDown}
@@ -283,27 +289,75 @@ export function FileBrowser({
         </div>
       )}
 
-      {!isLoading && filtered.length > 0 && (
-        <div
-          ref={gridRef}
-          className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5"
-        >
-          {filtered.map((entry, index) => (
-            <FileCard
-              key={entry.node_id}
-              ref={index === 0 ? firstCardRef : undefined}
-              entry={entry}
-              onSelect={handleSelect}
-              onDoubleClick={handleAction}
-              onOpen={getOpenHandler(entry)}
-              onEnter={getEnterHandler(entry)}
-              isSelected={entry.node_id === effectiveSelectedId}
-              batchThumbnailUrl={batchThumbnails.get(entry.node_id)}
-              batchThumbnails={batchThumbnails}
-            />
-          ))}
-        </div>
-      )}
+      {!isLoading &&
+        filtered.length > 0 &&
+        (() => {
+          const virtualItems = virtualizer.getVirtualItems();
+          // 仮想化が有効（スクロールコンテナにサイズがある場合）
+          if (virtualItems.length > 0) {
+            return (
+              /* 仮想スクロールの動的値は Tailwind で表現不可のためインラインスタイル使用 */
+              <div style={{ height: virtualizer.getTotalSize() }} className="relative">
+                {virtualItems.map((virtualRow) => {
+                  const { start, end } = getRowItems(virtualRow.index);
+                  return (
+                    <div
+                      key={virtualRow.key}
+                      style={{
+                        position: "absolute",
+                        top: 0,
+                        transform: `translateY(${virtualRow.start}px)`,
+                        width: "100%",
+                      }}
+                    >
+                      <div
+                        className="grid gap-4"
+                        style={{ gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))` }}
+                      >
+                        {filtered.slice(start, end).map((entry, i) => {
+                          const itemIndex = start + i;
+                          return (
+                            <FileCard
+                              key={entry.node_id}
+                              ref={itemIndex === 0 ? firstCardRef : undefined}
+                              entry={entry}
+                              onSelect={handleSelect}
+                              onDoubleClick={handleAction}
+                              onOpen={getOpenHandler(entry)}
+                              onEnter={getEnterHandler(entry)}
+                              isSelected={entry.node_id === effectiveSelectedId}
+                              batchThumbnailUrl={batchThumbnails.get(entry.node_id)}
+                              batchThumbnails={batchThumbnails}
+                            />
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            );
+          }
+          // フォールバック: 仮想化が無効 (テスト環境等スクロールコンテナのサイズが不明)
+          return (
+            <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+              {filtered.map((entry, index) => (
+                <FileCard
+                  key={entry.node_id}
+                  ref={index === 0 ? firstCardRef : undefined}
+                  entry={entry}
+                  onSelect={handleSelect}
+                  onDoubleClick={handleAction}
+                  onOpen={getOpenHandler(entry)}
+                  onEnter={getEnterHandler(entry)}
+                  isSelected={entry.node_id === effectiveSelectedId}
+                  batchThumbnailUrl={batchThumbnails.get(entry.node_id)}
+                  batchThumbnails={batchThumbnails}
+                />
+              ))}
+            </div>
+          );
+        })()}
 
       {/* 無限スクロール: センチネル + ローディング表示 */}
       {hasMore && (
