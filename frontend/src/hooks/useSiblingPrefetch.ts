@@ -9,12 +9,14 @@ import { useQueryClient } from "@tanstack/react-query";
 import { apiFetch } from "./api/apiClient";
 import { browseNodeOptions } from "./api/browseQueries";
 import { findNextSet, findPrevSet } from "./useSetNavigation";
+import type { SortOrder } from "./useViewerParams";
 import type { AncestorEntry, BrowseResponse, SiblingResponse } from "../types/api";
 
 interface UseSiblingPrefetchProps {
   currentNodeId: string | null;
   parentNodeId: string | null;
   ancestors?: AncestorEntry[];
+  sort?: SortOrder;
 }
 
 const MAX_DEPTH = 10;
@@ -24,6 +26,7 @@ export function useSiblingPrefetch({
   currentNodeId,
   parentNodeId,
   ancestors = [],
+  sort = "name-asc",
 }: UseSiblingPrefetchProps): void {
   const queryClient = useQueryClient();
 
@@ -57,7 +60,7 @@ export function useSiblingPrefetch({
         if (currentChildId) {
           try {
             const resp = await apiFetch<SiblingResponse>(
-              `/api/browse/${currentParentId}/sibling?current=${currentChildId}&direction=${direction}&sort=name-asc`,
+              `/api/browse/${currentParentId}/sibling?current=${currentChildId}&direction=${direction}&sort=${sort}`,
             );
             sibling = resp.entry;
           } catch {
@@ -67,7 +70,7 @@ export function useSiblingPrefetch({
 
         let parentData: BrowseResponse;
         try {
-          parentData = await queryClient.fetchQuery(browseNodeOptions(currentParentId));
+          parentData = await queryClient.fetchQuery(browseNodeOptions(currentParentId, sort));
         } catch {
           return;
         }
@@ -117,5 +120,5 @@ export function useSiblingPrefetch({
     return () => {
       cancelled = true;
     };
-  }, [currentNodeId, parentNodeId, ancestors, queryClient]);
+  }, [currentNodeId, parentNodeId, ancestors, sort, queryClient]);
 }

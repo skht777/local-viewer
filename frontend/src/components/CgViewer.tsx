@@ -103,7 +103,7 @@ export function CgViewer({
 
   // セット間ジャンプ + バックグラウンドプリフェッチ
   const setJump = useSetJump({ currentNodeId, parentNodeId, ancestors, mode, sort });
-  useSiblingPrefetch({ currentNodeId, parentNodeId, ancestors });
+  useSiblingPrefetch({ currentNodeId, parentNodeId, ancestors, sort });
 
   // Escape 優先順位: (1) ヘルプ閉じ → (2) プロンプト閉じ → (3) フルスクリーン解除 → (4) ビューワー閉じ
   const handleEscape = useCallback(() => {
