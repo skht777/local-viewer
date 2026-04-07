@@ -19,11 +19,14 @@ export function sortEntries(entries: BrowseEntry[], sort: SortOrder): BrowseEntr
     if (sort === "name-asc") return compareByName(a, b);
     if (sort === "name-desc") return -compareByName(a, b);
 
-    // date ソート: null は末尾
+    // date ソート: null は末尾、同一日時は名前昇順タイブレーカー (Windows Explorer 準拠)
     if (a.modified_at == null && b.modified_at == null) return 0;
     if (a.modified_at == null) return 1;
     if (b.modified_at == null) return -1;
 
-    return sort === "date-desc" ? b.modified_at - a.modified_at : a.modified_at - b.modified_at;
+    const dateCmp =
+      sort === "date-desc" ? b.modified_at - a.modified_at : a.modified_at - b.modified_at;
+    if (dateCmp !== 0) return dateCmp;
+    return a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: "base" });
   });
 }

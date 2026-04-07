@@ -136,14 +136,23 @@ def sort_entries(entries: list[EntryMeta], sort: SortOrder) -> list[EntryMeta]:
             ),
         )
     if sort == SortOrder.DATE_DESC:
+        # Windows Explorer 準拠: 同一日時は名前昇順タイブレーカー
         return sorted(
             entries,
-            key=lambda e: (e.modified_at is None, -(e.modified_at or 0)),
+            key=lambda e: (
+                e.modified_at is None,
+                -(e.modified_at or 0),
+                natural_sort_key(e.name),
+            ),
         )
-    # DATE_ASC
+    # DATE_ASC — 同一日時は名前昇順タイブレーカー
     return sorted(
         entries,
-        key=lambda e: (e.modified_at is None, e.modified_at or 0),
+        key=lambda e: (
+            e.modified_at is None,
+            e.modified_at or 0,
+            natural_sort_key(e.name),
+        ),
     )
 
 

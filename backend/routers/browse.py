@@ -397,8 +397,9 @@ async def _try_dir_index_query(
     if cached_mtime is None or cached_mtime != dir_stat.st_mtime_ns:
         return None
 
-    # カーソルから sort_key を取得
+    # カーソルから sort_key (+ date ソート時は mtime) を取得
     cursor_sort_key = None
+    cursor_mtime: int | None = None
     if cursor:
         try:
             from backend.services.browse_cursor import decode_cursor
@@ -410,6 +411,11 @@ async def _try_dir_index_query(
             from backend.services.dir_index import encode_sort_key
 
             cursor_sort_key = encode_sort_key(cursor_name)
+            # date ソート: modified_at からタイブレーカー用 mtime_ns を取得
+            if sort in (SortOrder.DATE_ASC, SortOrder.DATE_DESC):
+                mod_at = cursor_data.get("m")
+                if mod_at is not None:
+                    cursor_mtime = int(float(str(mod_at)) * 1e9)
         except ValueError:
             return None  # カーソル不正 → フォールバック
 
@@ -420,6 +426,7 @@ async def _try_dir_index_query(
         sort.value,
         limit + 1,
         cursor_sort_key,
+        cursor_mtime,
     )
 
     # EntryMeta に変換 (path_security 検証付き、ディレクトリは preview_node_ids 付き)
@@ -838,8 +845,8 @@ def _sibling_query_date(
 ) -> sqlite3.Row | None:
     """date ソートでの sibling クエリ.
 
-    mtime_ns で比較。現在エントリの mtime_ns を sort_key から逆引きできないため、
-    名前で検索して mtime_ns を取得する。
+    Windows Explorer 準拠の正準順序: (mtime_ns, sort_key ASC)
+    同一 mtime_ns のエントリ間もタイブレーカーで正しくジャンプする。
     """
     # 現在エントリの mtime_ns を取得
     cur_row = conn.execute(
@@ -851,12 +858,22 @@ def _sibling_query_date(
         return None
     current_mtime = cur_row[0] or 0
 
+    # 正準順序: (mtime_ns ASC/DESC, sort_key ASC)
+    # next = 正準順序で「次の行」、prev = 正準順序で「前の行」
     if is_asc:
-        cmp = "mtime_ns > ?" if is_next else "mtime_ns < ?"
-        order = "mtime_ns ASC" if is_next else "mtime_ns DESC"
+        if is_next:
+            cmp = "(mtime_ns > ? OR (mtime_ns = ? AND sort_key > ?))"
+            order = "mtime_ns ASC, sort_key ASC"
+        else:
+            cmp = "(mtime_ns < ? OR (mtime_ns = ? AND sort_key < ?))"
+            order = "mtime_ns DESC, sort_key DESC"
     else:
-        cmp = "mtime_ns < ?" if is_next else "mtime_ns > ?"
-        order = "mtime_ns DESC" if is_next else "mtime_ns ASC"
+        if is_next:
+            cmp = "(mtime_ns < ? OR (mtime_ns = ? AND sort_key > ?))"
+            order = "mtime_ns DESC, sort_key ASC"
+        else:
+            cmp = "(mtime_ns > ? OR (mtime_ns = ? AND sort_key < ?))"
+            order = "mtime_ns ASC, sort_key DESC"
 
     sql = f"""
         SELECT * FROM dir_entries
@@ -867,6 +884,6 @@ def _sibling_query_date(
         LIMIT 1
     """  # noqa: S608
     result: sqlite3.Row | None = conn.execute(
-        sql, (parent_key, current_mtime)
+        sql, (parent_key, current_mtime, current_mtime, current_sort_key)
     ).fetchone()
     return result

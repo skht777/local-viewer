@@ -214,11 +214,13 @@ class DirIndex:
         sort: str = "name-asc",
         limit: int = 100,
         cursor_sort_key: str | None = None,
+        cursor_mtime: int | None = None,
     ) -> list[dict[str, object]]:
         """ソート + ページネーション付きでエントリを返す.
 
         sort: name-asc, name-desc, date-asc, date-desc
         cursor_sort_key: 前ページ末尾のソートキー (seek cursor)
+        cursor_mtime: date ソート時の前ページ末尾の mtime_ns (タイブレーカー用)
         """
         conn = self._connect()
         try:
@@ -227,9 +229,13 @@ class DirIndex:
             if sort == "name-desc":
                 return self._query_name_desc(conn, parent_path, limit, cursor_sort_key)
             if sort == "date-desc":
-                return self._query_date_desc(conn, parent_path, limit, cursor_sort_key)
+                return self._query_date_desc(
+                    conn, parent_path, limit, cursor_sort_key, cursor_mtime
+                )
             # date-asc
-            return self._query_date_asc(conn, parent_path, limit, cursor_sort_key)
+            return self._query_date_asc(
+                conn, parent_path, limit, cursor_sort_key, cursor_mtime
+            )
         finally:
             conn.close()
 
@@ -308,26 +314,39 @@ class DirIndex:
         conn: sqlite3.Connection,
         parent_path: str,
         limit: int,
-        cursor: str | None,
+        cursor_sort_key: str | None,
+        cursor_mtime: int | None = None,
     ) -> list[dict[str, object]]:
-        """日付降順 (新しい順)."""
-        if cursor:
-            # cursor は mtime_ns の文字列表現
+        """日付降順 (新しい順). Windows Explorer 準拠: 同一日時は名前昇順."""
+        if cursor_sort_key and cursor_mtime is not None:
+            # タイブレーカー付きカーソル: (mtime_ns DESC, sort_key ASC)
+            rows = conn.execute(
+                """
+                SELECT * FROM dir_entries
+                WHERE parent_path = ?
+                  AND (mtime_ns < ? OR (mtime_ns = ? AND sort_key > ?))
+                ORDER BY mtime_ns DESC, sort_key ASC
+                LIMIT ?
+                """,
+                (parent_path, cursor_mtime, cursor_mtime, cursor_sort_key, limit),
+            ).fetchall()
+        elif cursor_sort_key:
+            # 後方互換: mtime_ns のみのカーソル
             rows = conn.execute(
                 """
                 SELECT * FROM dir_entries
                 WHERE parent_path = ? AND mtime_ns < ?
-                ORDER BY mtime_ns DESC
+                ORDER BY mtime_ns DESC, sort_key ASC
                 LIMIT ?
                 """,
-                (parent_path, int(cursor), limit),
+                (parent_path, int(cursor_sort_key), limit),
             ).fetchall()
         else:
             rows = conn.execute(
                 """
                 SELECT * FROM dir_entries
                 WHERE parent_path = ?
-                ORDER BY mtime_ns DESC
+                ORDER BY mtime_ns DESC, sort_key ASC
                 LIMIT ?
                 """,
                 (parent_path, limit),
@@ -339,25 +358,37 @@ class DirIndex:
         conn: sqlite3.Connection,
         parent_path: str,
         limit: int,
-        cursor: str | None,
+        cursor_sort_key: str | None,
+        cursor_mtime: int | None = None,
     ) -> list[dict[str, object]]:
-        """日付昇順 (古い順)."""
-        if cursor:
+        """日付昇順 (古い順). Windows Explorer 準拠: 同一日時は名前昇順."""
+        if cursor_sort_key and cursor_mtime is not None:
+            rows = conn.execute(
+                """
+                SELECT * FROM dir_entries
+                WHERE parent_path = ?
+                  AND (mtime_ns > ? OR (mtime_ns = ? AND sort_key > ?))
+                ORDER BY mtime_ns ASC, sort_key ASC
+                LIMIT ?
+                """,
+                (parent_path, cursor_mtime, cursor_mtime, cursor_sort_key, limit),
+            ).fetchall()
+        elif cursor_sort_key:
             rows = conn.execute(
                 """
                 SELECT * FROM dir_entries
                 WHERE parent_path = ? AND mtime_ns > ?
-                ORDER BY mtime_ns ASC
+                ORDER BY mtime_ns ASC, sort_key ASC
                 LIMIT ?
                 """,
-                (parent_path, int(cursor), limit),
+                (parent_path, int(cursor_sort_key), limit),
             ).fetchall()
         else:
             rows = conn.execute(
                 """
                 SELECT * FROM dir_entries
                 WHERE parent_path = ?
-                ORDER BY mtime_ns ASC
+                ORDER BY mtime_ns ASC, sort_key ASC
                 LIMIT ?
                 """,
                 (parent_path, limit),
