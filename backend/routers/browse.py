@@ -488,12 +488,14 @@ class FirstViewableResponse(BaseModel):
 async def first_viewable(
     node_id: str,
     registry: NodeRegistry = Depends(get_node_registry),
+    archive_service: ArchiveService = Depends(get_archive_service),
     dir_index: DirIndex | None = Depends(get_dir_index),
     sort: SortOrder = Query(SortOrder.NAME_ASC),
 ) -> FirstViewableResponse:
-    """ディレクトリ内の最初の閲覧対象を再帰的に探索する.
+    """ディレクトリまたはアーカイブ内の最初の閲覧対象を再帰的に探索する.
 
     優先順位: archive > pdf > image > directory (再帰降下)
+    アーカイブの node_id が渡された場合は中身を探索。
     DirIndex ready 時は SQL クエリ、未 ready 時は scandir。
     最大 10 レベルまで再帰。
     """
@@ -502,6 +504,27 @@ async def first_viewable(
 
     for _ in range(max_depth):
         current_path = registry.resolve(current_id)
+
+        # アーカイブファイルの場合: 中身から最初の閲覧対象を探す
+        if current_path.is_file() and archive_service.is_supported(current_path):
+            try:
+                archive_entries = await run_in_threadpool(
+                    archive_service.list_entries, current_path
+                )
+            except zipfile.BadZipFile, OSError:
+                return FirstViewableResponse()
+            entries = registry.list_archive_entries(current_path, archive_entries)
+            from backend.services.browse_cursor import sort_entries
+
+            sorted_entries = sort_entries(entries, sort)
+            entry_meta = _select_first_viewable(sorted_entries)
+            if entry_meta is None:
+                return FirstViewableResponse()
+            return FirstViewableResponse(
+                entry=entry_meta,
+                parent_node_id=current_id,
+            )
+
         if not current_path.is_dir():
             break
 
@@ -556,27 +579,17 @@ async def _find_first_viewable_from_index(
     rel = str(directory.relative_to(root))
     parent_key = f"{mount_id}/{rel}" if rel != "." else mount_id
 
-    # archive > pdf > image の優先順位で SQL クエリ
-    for kind in ("archive", "pdf", "image"):
-        rows = await run_in_threadpool(dir_index.query_page, parent_key, sort.value, 1)
-        # kind フィルタ付きクエリ (DirIndex に追加予定。暫定: 全件取得後フィルタ)
-        filtered = [r for r in rows if r["kind"] == kind]
-        if filtered:
+    # archive > pdf > image > directory の優先順位で kind 別クエリ
+    for kind in ("archive", "pdf", "image", "directory"):
+        row = await run_in_threadpool(
+            dir_index.query_first_by_kind, parent_key, kind, sort.value
+        )
+        if row is not None:
             entries = await run_in_threadpool(
-                _dir_index_to_entries, filtered[:1], directory, registry
+                _dir_index_to_entries, [row], directory, registry
             )
             if entries:
                 return entries[0]
-
-    # 閲覧対象なし → directory を探す (再帰降下用)
-    rows = await run_in_threadpool(dir_index.query_page, parent_key, sort.value, 1)
-    dir_rows = [r for r in rows if r["kind"] == "directory"]
-    if dir_rows:
-        entries = await run_in_threadpool(
-            _dir_index_to_entries, dir_rows[:1], directory, registry
-        )
-        if entries:
-            return entries[0]
 
     return None
 

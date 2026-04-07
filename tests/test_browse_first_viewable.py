@@ -120,6 +120,19 @@ async def test_存在しないnode_idで404を返す(client: AsyncClient) -> Non
     assert resp.status_code == 404
 
 
+async def test_アーカイブのnode_idで中身の最初の画像エントリを返す(
+    client: AsyncClient, test_node_registry: "NodeRegistry", first_viewable_root: Path
+) -> None:
+    """アーカイブ (ZIP) の node_id → 中身の画像を返す (進入ではなく開く)."""
+    node_id = test_node_registry.register(first_viewable_root / "dir_a" / "archive.zip")
+    resp = await client.get(f"/api/browse/{node_id}/first-viewable")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["entry"] is not None
+    assert data["entry"]["kind"] == "image"
+    assert data["parent_node_id"] == node_id
+
+
 async def test_sortパラメータが反映される(
     client: AsyncClient, test_node_registry: "NodeRegistry", first_viewable_root: Path
 ) -> None:

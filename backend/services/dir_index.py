@@ -364,6 +364,32 @@ class DirIndex:
             ).fetchall()
         return [dict(r) for r in rows]
 
+    def query_first_by_kind(
+        self, parent_path: str, kind: str, sort: str = "name-asc"
+    ) -> dict[str, object] | None:
+        """指定 kind の最初のエントリを返す (first-viewable 用).
+
+        sort に応じたソート順で最初の1件を返す。
+        見つからなければ None。
+        """
+        conn = self._connect()
+        try:
+            if sort in ("name-asc", "name-desc"):
+                order = "sort_key ASC" if sort == "name-asc" else "sort_key DESC"
+            elif sort == "date-desc":
+                order = "mtime_ns DESC"
+            else:
+                order = "mtime_ns ASC"
+            sql = f"""
+                SELECT * FROM dir_entries
+                WHERE parent_path = ? AND kind = ?
+                ORDER BY {order} LIMIT 1
+            """  # noqa: S608
+            row = conn.execute(sql, (parent_path, kind)).fetchone()
+            return dict(row) if row else None
+        finally:
+            conn.close()
+
     def child_count(self, parent_path: str) -> int:
         """ディレクトリの子エントリ数を返す."""
         conn = self._connect()
