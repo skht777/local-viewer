@@ -62,7 +62,8 @@ afterEach(() => {
 describe("useBatchThumbnails", () => {
   test("空の node_ids で空マップを返す", () => {
     const { result } = renderHook(() => useBatchThumbnails([]), { wrapper });
-    expect(result.current.size).toBe(0);
+    expect(result.current.thumbnails.size).toBe(0);
+    expect(result.current.isLoading).toBe(false);
   });
 
   test("node_ids に対して Blob URL マップが返る", async () => {
@@ -77,11 +78,11 @@ describe("useBatchThumbnails", () => {
     const { result } = renderHook(() => useBatchThumbnails(["node-1", "node-2"]), { wrapper });
 
     await waitFor(() => {
-      expect(result.current.size).toBe(2);
+      expect(result.current.thumbnails.size).toBe(2);
     });
 
-    expect(result.current.get("node-1")).toMatch(/^blob:/);
-    expect(result.current.get("node-2")).toMatch(/^blob:/);
+    expect(result.current.thumbnails.get("node-1")).toMatch(/^blob:/);
+    expect(result.current.thumbnails.get("node-2")).toMatch(/^blob:/);
   });
 
   test("エラーレスポンスのエントリは Blob URL に含まれない", async () => {
@@ -96,11 +97,11 @@ describe("useBatchThumbnails", () => {
     const { result } = renderHook(() => useBatchThumbnails(["node-ok", "node-err"]), { wrapper });
 
     await waitFor(() => {
-      expect(result.current.size).toBe(1);
+      expect(result.current.thumbnails.size).toBe(1);
     });
 
-    expect(result.current.has("node-ok")).toBe(true);
-    expect(result.current.has("node-err")).toBe(false);
+    expect(result.current.thumbnails.has("node-ok")).toBe(true);
+    expect(result.current.thumbnails.has("node-err")).toBe(false);
   });
 
   test("node_ids 変更時に前回の Blob URL が revoke される", async () => {
@@ -117,10 +118,10 @@ describe("useBatchThumbnails", () => {
     );
 
     await waitFor(() => {
-      expect(result.current.size).toBe(1);
+      expect(result.current.thumbnails.size).toBe(1);
     });
 
-    const firstUrl = result.current.get("node-1")!;
+    const firstUrl = result.current.thumbnails.get("node-1")!;
 
     // 新しい node_ids でリレンダー
     vi.mocked(apiPost).mockResolvedValue({
@@ -132,7 +133,7 @@ describe("useBatchThumbnails", () => {
     rerender({ ids: ["node-2"] });
 
     await waitFor(() => {
-      expect(result.current.has("node-2")).toBe(true);
+      expect(result.current.thumbnails.has("node-2")).toBe(true);
     });
 
     // 前回の URL が revoke されている
@@ -154,11 +155,11 @@ describe("useBatchThumbnails", () => {
     );
 
     await waitFor(() => {
-      expect(result.current.size).toBe(2);
+      expect(result.current.thumbnails.size).toBe(2);
     });
 
-    const url1Before = result.current.get("node-1")!;
-    const url2Before = result.current.get("node-2")!;
+    const url1Before = result.current.thumbnails.get("node-1")!;
+    const url2Before = result.current.thumbnails.get("node-2")!;
 
     // node-2 を残し node-3 を追加
     vi.mocked(apiPost).mockResolvedValue({
@@ -171,11 +172,11 @@ describe("useBatchThumbnails", () => {
     rerender({ ids: ["node-2", "node-3"] });
 
     await waitFor(() => {
-      expect(result.current.has("node-3")).toBe(true);
+      expect(result.current.thumbnails.has("node-3")).toBe(true);
     });
 
     // node-2 の URL は再利用されている（同じ参照）
-    expect(result.current.get("node-2")).toBe(url2Before);
+    expect(result.current.thumbnails.get("node-2")).toBe(url2Before);
     // node-1 の URL は revoke されている
     expect(revokedUrls).toContain(url1Before);
     // node-2 の URL は revoke されていない
@@ -193,16 +194,44 @@ describe("useBatchThumbnails", () => {
       await new Promise((r) => setTimeout(r, 50));
     });
 
-    expect(result.current.size).toBe(0);
+    expect(result.current.thumbnails.size).toBe(0);
+  });
+
+  test("バッチ取得中は isLoading が true になる", async () => {
+    const { apiPost } = await import("../../src/hooks/api/apiClient");
+
+    let resolveApi!: (value: unknown) => void;
+    vi.mocked(apiPost).mockImplementation(
+      () => new Promise((resolve) => { resolveApi = resolve; }),
+    );
+
+    const { result } = renderHook(() => useBatchThumbnails(["node-1"]), { wrapper });
+
+    // デバウンス待ち
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 60));
+    });
+
+    // バッチリクエスト中は isLoading = true
+    expect(result.current.isLoading).toBe(true);
+    expect(result.current.thumbnails.size).toBe(0);
+
+    // レスポンスを返す
+    await act(async () => {
+      resolveApi({ thumbnails: { "node-1": { data: btoa("data") } } });
+    });
+
+    await waitFor(() => {
+      expect(result.current.isLoading).toBe(false);
+      expect(result.current.thumbnails.size).toBe(1);
+    });
   });
 
   test("50 件超の node_ids が複数バッチリクエストに分割される", async () => {
     const { apiPost } = await import("../../src/hooks/api/apiClient");
 
-    // 60 件の node_ids を用意
     const ids = Array.from({ length: 60 }, (_, i) => `node-${i}`);
 
-    // apiPost が呼ばれるたびに、渡された node_ids に対応するレスポンスを返す
     vi.mocked(apiPost).mockImplementation(async (_url, body) => {
       const reqIds = (body as { node_ids: string[] }).node_ids;
       const thumbnails: Record<string, { data: string }> = {};
@@ -215,17 +244,14 @@ describe("useBatchThumbnails", () => {
     const { result } = renderHook(() => useBatchThumbnails(ids), { wrapper });
 
     await waitFor(() => {
-      expect(result.current.size).toBe(60);
+      expect(result.current.thumbnails.size).toBe(60);
     });
 
-    // apiPost が 2 回呼ばれている（50 + 10 のチャンク）
     expect(vi.mocked(apiPost)).toHaveBeenCalledTimes(2);
 
-    // 1回目: 50 件
     const firstCallBody = vi.mocked(apiPost).mock.calls[0][1] as { node_ids: string[] };
     expect(firstCallBody.node_ids).toHaveLength(50);
 
-    // 2回目: 10 件
     const secondCallBody = vi.mocked(apiPost).mock.calls[1][1] as { node_ids: string[] };
     expect(secondCallBody.node_ids).toHaveLength(10);
   });
@@ -233,9 +259,8 @@ describe("useBatchThumbnails", () => {
   test("priorityIds 指定時にビューポート内 ID が先頭チャンクに含まれる", async () => {
     const { apiPost } = await import("../../src/hooks/api/apiClient");
 
-    // 60 件: node-0〜node-59、ビューポートは node-50〜node-59
     const ids = Array.from({ length: 60 }, (_, i) => `node-${i}`);
-    const priorityIds = new Set(ids.slice(50)); // node-50〜node-59
+    const priorityIds = new Set(ids.slice(50));
 
     vi.mocked(apiPost).mockImplementation(async (_url, body) => {
       const reqIds = (body as { node_ids: string[] }).node_ids;
@@ -249,10 +274,9 @@ describe("useBatchThumbnails", () => {
     const { result } = renderHook(() => useBatchThumbnails(ids, priorityIds), { wrapper });
 
     await waitFor(() => {
-      expect(result.current.size).toBe(60);
+      expect(result.current.thumbnails.size).toBe(60);
     });
 
-    // 1回目のバッチリクエストにビューポート内 ID (node-50〜59) が含まれる
     const firstCallBody = vi.mocked(apiPost).mock.calls[0][1] as { node_ids: string[] };
     for (const pid of priorityIds) {
       expect(firstCallBody.node_ids).toContain(pid);
@@ -276,10 +300,9 @@ describe("useBatchThumbnails", () => {
     const { result } = renderHook(() => useBatchThumbnails(ids), { wrapper });
 
     await waitFor(() => {
-      expect(result.current.size).toBe(30);
+      expect(result.current.thumbnails.size).toBe(30);
     });
 
-    // apiPost は 1 回のみ
     expect(vi.mocked(apiPost)).toHaveBeenCalledTimes(1);
     const callBody = vi.mocked(apiPost).mock.calls[0][1] as { node_ids: string[] };
     expect(callBody.node_ids).toHaveLength(30);

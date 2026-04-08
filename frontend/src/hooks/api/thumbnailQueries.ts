@@ -66,7 +66,7 @@ function prioritize(ids: string[], priorityIds?: Set<string>): string[] {
 export function useBatchThumbnails(
   nodeIds: string[],
   priorityIds?: Set<string>,
-): Map<string, string> {
+): { thumbnails: Map<string, string>; isLoading: boolean } {
   // デバウンス: 短時間の連続変更をまとめる (タブ切替・フィルタ変更対応)
   const [debouncedIds, setDebouncedIds] = useState(nodeIds);
   const key = useMemo(() => nodeIds.join(","), [nodeIds]);
@@ -148,5 +148,8 @@ export function useBatchThumbnails(
     };
   }, []);
 
-  return urlMap;
+  // 全チャンクのローディング状態
+  const isLoading = debouncedIds.length > 0 && chunkResults.some((r) => r.isLoading);
+
+  return { thumbnails: urlMap, isLoading };
 }

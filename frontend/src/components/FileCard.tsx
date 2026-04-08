@@ -26,6 +26,7 @@ interface FileCardProps {
   ref?: Ref<HTMLDivElement>;
   batchThumbnailUrl?: string;
   batchThumbnails?: Map<string, string>;
+  isBatchLoading?: boolean;
 }
 
 // kind に応じたアイコン
@@ -56,12 +57,15 @@ export const FileCard = memo(function FileCard({
   ref,
   batchThumbnailUrl,
   batchThumbnails,
+  isBatchLoading,
 }: FileCardProps) {
   const [hasImageError, setHasImageError] = useState(false);
   const [hasPreviewError, setHasPreviewError] = useState(false);
 
-  // バッチ Blob URL があれば優先、なければ個別 URL にフォールバック
-  const thumbSrc = batchThumbnailUrl ?? thumbnailUrl(entry.node_id, entry.modified_at);
+  // バッチ Blob URL があれば使用、ローディング中はスケルトン、完了後は個別 URL フォールバック
+  const thumbSrc =
+    batchThumbnailUrl ??
+    (isBatchLoading ? undefined : thumbnailUrl(entry.node_id, entry.modified_at));
   const isImagePreview = entry.kind === "image" && !hasImageError;
 
   // ディレクトリ: preview_node_ids があればサムネイルグリッド表示
@@ -107,39 +111,52 @@ export const FileCard = memo(function FileCard({
     >
       <div className="relative flex aspect-square items-center justify-center bg-surface-raised text-4xl">
         {isImagePreview ? (
-          <img
-            src={thumbSrc}
-            alt={entry.name}
-            className="h-full w-full object-cover"
-            loading="lazy"
-            decoding="async"
-            onError={() => setHasImageError(true)}
-          />
+          thumbSrc ? (
+            <img
+              src={thumbSrc}
+              alt={entry.name}
+              className="h-full w-full object-cover"
+              loading="lazy"
+              decoding="async"
+              onError={() => setHasImageError(true)}
+            />
+          ) : (
+            <div className="h-full w-full animate-pulse bg-surface-raised" />
+          )
         ) : hasDirectoryPreview ? (
           <PreviewGrid
             previewNodeIds={entry.preview_node_ids!}
             modifiedAt={entry.modified_at}
             onAllError={() => setHasPreviewError(true)}
             batchThumbnails={batchThumbnails}
+            isBatchLoading={isBatchLoading}
           />
         ) : hasArchivePreview ? (
-          <img
-            src={thumbSrc}
-            alt={entry.name}
-            className="h-full w-full object-cover"
-            loading="lazy"
-            decoding="async"
-            onError={() => setHasPreviewError(true)}
-          />
+          thumbSrc ? (
+            <img
+              src={thumbSrc}
+              alt={entry.name}
+              className="h-full w-full object-cover"
+              loading="lazy"
+              decoding="async"
+              onError={() => setHasPreviewError(true)}
+            />
+          ) : (
+            <div className="h-full w-full animate-pulse bg-surface-raised" />
+          )
         ) : hasVideoPreview ? (
-          <img
-            src={thumbSrc}
-            alt={entry.name}
-            className="h-full w-full object-cover"
-            loading="lazy"
-            decoding="async"
-            onError={() => setHasPreviewError(true)}
-          />
+          thumbSrc ? (
+            <img
+              src={thumbSrc}
+              alt={entry.name}
+              className="h-full w-full object-cover"
+              loading="lazy"
+              decoding="async"
+              onError={() => setHasPreviewError(true)}
+            />
+          ) : (
+            <div className="h-full w-full animate-pulse bg-surface-raised" />
+          )
         ) : hasPdfPreview ? (
           <img
             src={pdfThumbnail.url!}

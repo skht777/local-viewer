@@ -12,6 +12,7 @@ interface PreviewGridProps {
   modifiedAt?: number | null;
   onAllError?: () => void;
   batchThumbnails?: Map<string, string>;
+  isBatchLoading?: boolean;
 }
 
 export function PreviewGrid({
@@ -19,6 +20,7 @@ export function PreviewGrid({
   modifiedAt,
   onAllError,
   batchThumbnails,
+  isBatchLoading,
 }: PreviewGridProps) {
   const [errorSet, setErrorSet] = useState<Set<string>>(new Set());
 
@@ -34,8 +36,9 @@ export function PreviewGrid({
     });
   };
 
-  // バッチ URL 優先、なければ個別 URL にフォールバック
-  const thumbSrc = (id: string) => batchThumbnails?.get(id) ?? thumbnailUrl(id, modifiedAt);
+  // バッチ URL 優先、ローディング中は undefined（スケルトン）、完了後は個別 URL フォールバック
+  const thumbSrc = (id: string) =>
+    batchThumbnails?.get(id) ?? (isBatchLoading ? undefined : thumbnailUrl(id, modifiedAt));
 
   // エラーでない画像のみ表示
   const validIds = previewNodeIds.filter((id) => !errorSet.has(id));
@@ -44,32 +47,33 @@ export function PreviewGrid({
     return null;
   }
 
-  if (validIds.length === 1) {
+  // src が未定義（バッチロード中）ならスケルトン、それ以外は img を表示
+  const renderThumb = (id: string, extraClass?: string) => {
+    const src = thumbSrc(id);
+    if (!src) {
+      return <div className={`animate-pulse bg-surface-raised ${extraClass ?? "h-full w-full"}`} />;
+    }
     return (
       <img
-        src={thumbSrc(validIds[0])}
+        src={src}
         alt=""
-        className="h-full w-full object-cover"
+        className={`object-cover ${extraClass ?? "h-full w-full"}`}
         loading="lazy"
         decoding="async"
-        onError={() => handleError(validIds[0])}
+        onError={() => handleError(id)}
       />
     );
+  };
+
+  if (validIds.length === 1) {
+    return renderThumb(validIds[0], "h-full w-full");
   }
 
   if (validIds.length === 2) {
     return (
       <div className="grid h-full w-full grid-cols-2 gap-0.5">
         {validIds.map((id) => (
-          <img
-            key={id}
-            src={thumbSrc(id)}
-            alt=""
-            className="h-full w-full object-cover"
-            loading="lazy"
-            decoding="async"
-            onError={() => handleError(id)}
-          />
+          <div key={id}>{renderThumb(id, "h-full w-full")}</div>
         ))}
       </div>
     );
@@ -78,30 +82,9 @@ export function PreviewGrid({
   // 3枚: 左1枚大 (row-span-2) + 右2枚小
   return (
     <div className="grid h-full w-full grid-cols-2 grid-rows-2 gap-0.5">
-      <img
-        src={thumbSrc(validIds[0])}
-        alt=""
-        className="row-span-2 h-full w-full object-cover"
-        loading="lazy"
-        decoding="async"
-        onError={() => handleError(validIds[0])}
-      />
-      <img
-        src={thumbSrc(validIds[1])}
-        alt=""
-        className="h-full w-full object-cover"
-        loading="lazy"
-        decoding="async"
-        onError={() => handleError(validIds[1])}
-      />
-      <img
-        src={thumbSrc(validIds[2])}
-        alt=""
-        className="h-full w-full object-cover"
-        loading="lazy"
-        decoding="async"
-        onError={() => handleError(validIds[2])}
-      />
+      <div className="row-span-2">{renderThumb(validIds[0], "h-full w-full")}</div>
+      {renderThumb(validIds[1], "h-full w-full")}
+      {renderThumb(validIds[2], "h-full w-full")}
     </div>
   );
 }

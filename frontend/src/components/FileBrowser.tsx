@@ -129,6 +129,7 @@ export function FileBrowser({
     scrollToItem,
     getColumnCount,
     visibleItemRange,
+    measureElement,
   } = useVirtualGrid({
     itemCount: filtered.length,
     enabled: !isLoading && filtered.length > 0,
@@ -153,7 +154,10 @@ export function FileBrowser({
     return set.size > 0 ? set : undefined;
   }, [filtered, visibleItemRange]);
 
-  const batchThumbnails = useBatchThumbnails(thumbnailNodeIds, priorityIds);
+  const { thumbnails: batchThumbnails, isLoading: isBatchLoading } = useBatchThumbnails(
+    thumbnailNodeIds,
+    priorityIds,
+  );
 
   // エントリ変更時（ナビゲーション・タブ切替）に先頭カードへ focus
   const firstCardRef = useRef<HTMLDivElement>(null);
@@ -329,6 +333,8 @@ export function FileBrowser({
                   return (
                     <div
                       key={virtualRow.key}
+                      data-index={virtualRow.index}
+                      ref={measureElement}
                       style={{
                         position: "absolute",
                         top: 0,
@@ -354,6 +360,7 @@ export function FileBrowser({
                               isSelected={entry.node_id === effectiveSelectedId}
                               batchThumbnailUrl={batchThumbnails.get(entry.node_id)}
                               batchThumbnails={batchThumbnails}
+                              isBatchLoading={isBatchLoading}
                             />
                           );
                         })}
