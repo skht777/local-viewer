@@ -68,6 +68,11 @@ impl PathSecurity {
         &self.root_entries
     }
 
+    /// symlink 追跡が許可されているかを返す
+    pub(crate) fn is_allow_symlinks(&self) -> bool {
+        self.is_allow_symlinks
+    }
+
     /// パスが属するルートディレクトリを返す
     ///
     /// どのルートにも属さなければ `None`。

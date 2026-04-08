@@ -400,20 +400,19 @@ fn try_dir_index_browse_split(
         clippy::expect_used,
         reason = "Mutex poison は致命的エラー、パニックが適切"
     )]
-    let (parent_key, root, cursor_entry_path) = {
+    let (parent_key, root, cursor_entry_path, allow_symlinks) = {
         let reg = registry.lock().expect("NodeRegistry Mutex poisoned");
+        let ps = reg.path_security();
         let parent_key = reg.compute_parent_path_key(path)?;
-        let root = reg
-            .path_security()
-            .find_root_for(path)
-            .map(std::path::Path::to_path_buf)?;
+        let root = ps.find_root_for(path).map(std::path::Path::to_path_buf)?;
+        let allow_symlinks = ps.is_allow_symlinks();
         let cursor_path = cursor.and_then(|c| {
             let decoded = browse_cursor::decode_cursor(c, sort).ok()?;
             reg.resolve(&decoded.node_id)
                 .ok()
                 .map(std::path::Path::to_path_buf)
         });
-        (parent_key, root, cursor_path)
+        (parent_key, root, cursor_path, allow_symlinks)
     }; // ロック解放
 
     // カーソル変換失敗時はフォールバック
@@ -503,7 +502,8 @@ fn try_dir_index_browse_split(
     let dir_info = reader.batch_dir_info(&dir_child_key_refs, 3).ok()?;
 
     // DirEntry → ScannedEntry 変換 (ロック不要)
-    let scanned = build_scanned_from_dir_index(&page_entries, &root, &parent_key, &dir_info);
+    let scanned =
+        build_scanned_from_dir_index(&page_entries, &root, &parent_key, &dir_info, allow_symlinks);
 
     // --- Phase 2 (短ロック): node_id 登録 + パンくず ---
     #[allow(
@@ -548,18 +548,31 @@ fn try_dir_index_browse_split(
 }
 
 /// `DirIndex` の `DirEntry` + バッチ情報から `ScannedEntry` を構築する (ロック不要)
+///
+/// `allow_symlinks` が false の場合、DirIndex エントリは indexer が `validate_child()` で
+/// 検証済みのため `canonicalize()` をスキップし、`root.join(rel).join(name)` をそのまま使用する。
 fn build_scanned_from_dir_index(
     entries: &[crate::services::dir_index::DirEntry],
     root: &std::path::Path,
     parent_key: &str,
     dir_info: &std::collections::HashMap<String, DirChildInfo>,
+    allow_symlinks: bool,
 ) -> Vec<ScannedEntry> {
     entries
         .iter()
         .filter_map(|de| {
             let rel = parent_key_relative(parent_key);
             let abs_path = root.join(rel).join(&de.name);
-            let resolved = std::fs::canonicalize(&abs_path).ok()?;
+            // symlink 無効時はパスが正規化済み (indexer が validate_child 検証済み) のため
+            // canonicalize をスキップして syscall を回避
+            let resolved = if allow_symlinks {
+                std::fs::canonicalize(&abs_path).ok()?
+            } else {
+                if !abs_path.exists() {
+                    return None;
+                }
+                abs_path.clone()
+            };
 
             let kind = if de.kind == "directory" {
                 EntryKind::Directory
@@ -593,7 +606,13 @@ fn build_scanned_from_dir_index(
                         .filter_map(|pv| {
                             let pv_rel = parent_key_relative(&child_key);
                             let pv_abs = root.join(pv_rel).join(&pv.name);
-                            std::fs::canonicalize(&pv_abs).ok()
+                            if allow_symlinks {
+                                std::fs::canonicalize(&pv_abs).ok()
+                            } else if pv_abs.exists() {
+                                Some(pv_abs)
+                            } else {
+                                None
+                            }
                         })
                         .collect();
                     if paths.is_empty() { None } else { Some(paths) }
