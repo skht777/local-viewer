@@ -148,8 +148,10 @@ export function useBatchThumbnails(
     };
   }, []);
 
-  // 全チャンクのローディング状態
-  const isLoading = debouncedIds.length > 0 && chunkResults.some((r) => r.isLoading);
+  // ローディング状態: デバウンス待ちまたはチャンク取得中
+  const debouncedKey = useMemo(() => debouncedIds.join(","), [debouncedIds]);
+  const isDebouncing = key !== debouncedKey;
+  const isLoading = nodeIds.length > 0 && (isDebouncing || chunkResults.some((r) => r.isLoading));
 
   return { thumbnails: urlMap, isLoading };
 }
