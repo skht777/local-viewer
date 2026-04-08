@@ -53,6 +53,14 @@ beforeEach(() => {
       revokedUrls.push(url);
     }),
   });
+
+  // base64ToBlobUrl 内の fetch(data:...) をモック (jsdom は data URL fetch 未対応)
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async () => ({
+      blob: async () => new Blob(["mock"], { type: "image/jpeg" }),
+    })),
+  );
 });
 
 afterEach(() => {
