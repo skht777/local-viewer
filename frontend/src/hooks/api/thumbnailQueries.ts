@@ -1,9 +1,9 @@
 // バッチサムネイル API フック
-// - node_ids を収集して POST /api/thumbnails/batch に投げる
-// - TanStack Query でキャッシュ・リトライ・dedup を活用
-// - Query キャッシュには raw base64 data のみ、Blob URL はローカルで管理
+// - node_ids を 50 件チャンクに分割して POST /api/thumbnails/batch を並列リクエスト
+// - TanStack Query の useQueries でチャンク別キャッシュ・リトライ・dedup を活用
+// - Query キャッシュには raw base64 data のみ、Blob URL はローカルで差分管理
 
-import { useQuery } from "@tanstack/react-query";
+import { useQueries } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { apiPost } from "./apiClient";
 
@@ -18,6 +18,8 @@ interface BatchResponse {
   thumbnails: Record<string, ThumbnailResult>;
 }
 
+const BATCH_SIZE = 50;
+
 // base64 → Blob URL 変換
 function base64ToBlobUrl(base64: string): string {
   const binary = atob(base64);
@@ -29,12 +31,21 @@ function base64ToBlobUrl(base64: string): string {
   return URL.createObjectURL(blob);
 }
 
+// 配列を指定サイズのチャンクに分割
+function splitIntoChunks<T>(arr: T[], size: number): T[][] {
+  const chunks: T[][] = [];
+  for (let i = 0; i < arr.length; i += size) {
+    chunks.push(arr.slice(i, i + size));
+  }
+  return chunks;
+}
+
 /**
  * バッチサムネイル取得フック
  *
- * node_ids が変わったらバッチリクエストを発行し、
+ * node_ids を 50 件チャンクに分割して並列バッチリクエストを発行し、
  * node_id → Blob URL のマップを返す。
- * Blob URL は node_ids 変更時に自動 revoke される。
+ * Blob URL は差分管理: 共通 ID は再利用、不要分のみ revoke。
  */
 export function useBatchThumbnails(nodeIds: string[]): Map<string, string> {
   // デバウンス: 短時間の連続変更をまとめる (タブ切替・フィルタ変更対応)
@@ -45,32 +56,46 @@ export function useBatchThumbnails(nodeIds: string[]): Map<string, string> {
     return () => clearTimeout(timer);
   }, [key]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const debouncedKey = useMemo(() => debouncedIds.join(","), [debouncedIds]);
+  // 50 件チャンクに分割
+  const chunks = useMemo(() => splitIntoChunks(debouncedIds, BATCH_SIZE), [debouncedIds]);
 
-  // TanStack Query: raw base64 data のみキャッシュ
-  const { data: rawData } = useQuery({
-    queryKey: ["thumbnails", "batch", debouncedKey],
-    queryFn: async () => {
-      const resp = await apiPost<BatchResponse>("/api/thumbnails/batch", {
-        node_ids: debouncedIds,
-      });
-      // raw base64 data のみ抽出 (Blob URL はローカルで管理)
-      const result = new Map<string, string>();
-      for (const [id, thumb] of Object.entries(resp.thumbnails)) {
-        if (thumb.data) {
-          result.set(id, thumb.data);
+  // useQueries: チャンク別に並列バッチリクエスト
+  // queryKey にはソート済み ID を使用 → タブ切替でチャンク境界が変わってもキャッシュヒット
+  const chunkResults = useQueries({
+    queries: chunks.map((chunk) => ({
+      queryKey: ["thumbnails", "batch", [...chunk].sort().join(",")],
+      queryFn: async () => {
+        const resp = await apiPost<BatchResponse>("/api/thumbnails/batch", {
+          node_ids: chunk,
+        });
+        return resp;
+      },
+      enabled: chunk.length > 0,
+      staleTime: 10 * 60 * 1000,
+    })),
+  });
+
+  // 全チャンク結果をマージ
+  const chunkDataList = chunkResults.map((r) => r.data);
+  const rawData = useMemo(() => {
+    const merged = new Map<string, string>();
+    for (const data of chunkDataList) {
+      if (data) {
+        for (const [id, thumb] of Object.entries(data.thumbnails)) {
+          if (thumb.data) {
+            merged.set(id, thumb.data);
+          }
         }
       }
-      return result;
-    },
-    enabled: debouncedIds.length > 0,
-    staleTime: 10 * 60 * 1000, // サムネイルは長時間キャッシュ可
-  });
+    }
+    return merged;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chunkDataList.map((d) => d).join(",")]);
 
   // Blob URL の差分管理 (共通 ID は再利用、不要分のみ revoke)
   const prevUrlsRef = useRef(new Map<string, string>());
   const urlMap = useMemo(() => {
-    if (!rawData) return new Map<string, string>();
+    if (rawData.size === 0) return new Map<string, string>();
 
     const newMap = new Map<string, string>();
     // rawData にある ID: 既存 URL 再利用 or 新規作成

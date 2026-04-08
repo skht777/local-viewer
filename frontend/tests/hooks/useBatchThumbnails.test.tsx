@@ -36,6 +36,7 @@ const revokedUrls: string[] = [];
 let urlCounter = 0;
 
 beforeEach(() => {
+  vi.clearAllMocks();
   queryClient.clear();
   createdUrls.length = 0;
   revokedUrls.length = 0;
@@ -193,5 +194,65 @@ describe("useBatchThumbnails", () => {
     });
 
     expect(result.current.size).toBe(0);
+  });
+
+  test("50 件超の node_ids が複数バッチリクエストに分割される", async () => {
+    const { apiPost } = await import("../../src/hooks/api/apiClient");
+
+    // 60 件の node_ids を用意
+    const ids = Array.from({ length: 60 }, (_, i) => `node-${i}`);
+
+    // apiPost が呼ばれるたびに、渡された node_ids に対応するレスポンスを返す
+    vi.mocked(apiPost).mockImplementation(async (_url, body) => {
+      const reqIds = (body as { node_ids: string[] }).node_ids;
+      const thumbnails: Record<string, { data: string }> = {};
+      for (const id of reqIds) {
+        thumbnails[id] = { data: btoa(`data-${id}`) };
+      }
+      return { thumbnails };
+    });
+
+    const { result } = renderHook(() => useBatchThumbnails(ids), { wrapper });
+
+    await waitFor(() => {
+      expect(result.current.size).toBe(60);
+    });
+
+    // apiPost が 2 回呼ばれている（50 + 10 のチャンク）
+    expect(vi.mocked(apiPost)).toHaveBeenCalledTimes(2);
+
+    // 1回目: 50 件
+    const firstCallBody = vi.mocked(apiPost).mock.calls[0][1] as { node_ids: string[] };
+    expect(firstCallBody.node_ids).toHaveLength(50);
+
+    // 2回目: 10 件
+    const secondCallBody = vi.mocked(apiPost).mock.calls[1][1] as { node_ids: string[] };
+    expect(secondCallBody.node_ids).toHaveLength(10);
+  });
+
+  test("50 件以下は 1 回のバッチリクエストで完結する", async () => {
+    const { apiPost } = await import("../../src/hooks/api/apiClient");
+
+    const ids = Array.from({ length: 30 }, (_, i) => `node-${i}`);
+
+    vi.mocked(apiPost).mockImplementation(async (_url, body) => {
+      const reqIds = (body as { node_ids: string[] }).node_ids;
+      const thumbnails: Record<string, { data: string }> = {};
+      for (const id of reqIds) {
+        thumbnails[id] = { data: btoa(`data-${id}`) };
+      }
+      return { thumbnails };
+    });
+
+    const { result } = renderHook(() => useBatchThumbnails(ids), { wrapper });
+
+    await waitFor(() => {
+      expect(result.current.size).toBe(30);
+    });
+
+    // apiPost は 1 回のみ
+    expect(vi.mocked(apiPost)).toHaveBeenCalledTimes(1);
+    const callBody = vi.mocked(apiPost).mock.calls[0][1] as { node_ids: string[] };
+    expect(callBody.node_ids).toHaveLength(30);
   });
 });
