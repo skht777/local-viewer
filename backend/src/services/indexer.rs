@@ -9,7 +9,7 @@
 //! - 状態フラグ: `AtomicBool` でロックフリーの状態チェック
 
 use std::cell::RefCell;
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -592,7 +592,7 @@ fn prune_unchanged_dir(
     root_dir: &Path,
     mount_id: &str,
     dir_mtimes: &HashMap<String, i64>,
-    existing: &HashMap<String, i64>,
+    existing: &BTreeMap<String, i64>,
     seen: &RefCell<HashSet<String>>,
     has_subdirs: &HashSet<String>,
 ) -> bool {
@@ -611,18 +611,28 @@ fn prune_unchanged_dir(
                 return true;
             }
             // リーフディレクトリ: mtime 未変更 → 配下の既存エントリを全て seen に追加して枝刈り
-            let prefix_with_slash = if dir_key.is_empty() {
-                String::new()
-            } else {
-                format!("{dir_key}/")
-            };
+            // BTreeMap::range で O(log n + k) のプレフィックスマッチ (k = マッチ数)
             let mut seen_mut = seen.borrow_mut();
-            for key in existing.keys() {
-                if key.starts_with(&prefix_with_slash) || key == dir_key {
+            if dir_key.is_empty() {
+                // ルートディレクトリ: 全エントリが対象
+                for key in existing.keys() {
+                    seen_mut.insert(key.clone());
+                }
+            } else {
+                // dir_key 自体を seen に追加
+                seen_mut.insert(dir_key.to_string());
+                // "dir_key/" で始まるエントリを range で取得
+                let prefix = format!("{dir_key}/");
+                // prefix の次の境界値を計算 (最後のバイトをインクリメント)
+                let mut end = prefix.clone().into_bytes();
+                if let Some(last) = end.last_mut() {
+                    *last += 1;
+                }
+                let end_str = String::from_utf8(end).unwrap_or_default();
+                for (key, _) in existing.range(prefix..end_str) {
                     seen_mut.insert(key.clone());
                 }
             }
-            seen_mut.insert(dir_key.to_string());
             return false;
         }
     }
@@ -639,7 +649,7 @@ fn process_walk_entry_incremental(
     root_dir: &Path,
     mount_id: &str,
     conn: &Connection,
-    existing: &HashMap<String, i64>,
+    existing: &BTreeMap<String, i64>,
     seen: &RefCell<HashSet<String>>,
     on_walk_entry: &mut Option<&mut dyn FnMut(WalkCallbackArgs)>,
 ) -> (usize, usize) {
@@ -754,7 +764,7 @@ enum UpsertResult {
 fn upsert_entry(
     conn: &Connection,
     entry: &IndexEntry,
-    existing: &HashMap<String, i64>,
+    existing: &BTreeMap<String, i64>,
 ) -> Result<UpsertResult, IndexerError> {
     if let Some(&stored_mtime) = existing.get(&entry.relative_path) {
         if stored_mtime == entry.mtime_ns {
@@ -790,13 +800,16 @@ fn upsert_entry(
     }
 }
 
-/// 既存エントリの (`relative_path`, `mtime_ns`) を `HashMap` に読み込む
-fn load_existing_entries(conn: &Connection) -> Result<HashMap<String, i64>, IndexerError> {
+/// 既存エントリの (`relative_path`, `mtime_ns`) を `BTreeMap` に読み込む
+///
+/// `BTreeMap` を使用することで `prune_unchanged_dir` でのプレフィックスマッチを
+/// `range()` で O(log n + k) に最適化できる（`HashMap` での O(n) 全走査を回避）。
+fn load_existing_entries(conn: &Connection) -> Result<BTreeMap<String, i64>, IndexerError> {
     let mut stmt = conn.prepare("SELECT relative_path, mtime_ns FROM entries")?;
     let rows = stmt.query_map([], |row| {
         Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
     })?;
-    let mut map = HashMap::new();
+    let mut map = BTreeMap::new();
     for row in rows {
         let (path, mtime) = row?;
         map.insert(path, mtime);
@@ -820,24 +833,37 @@ fn load_dir_mtimes(conn: &Connection) -> Result<HashMap<String, i64>, IndexerErr
 }
 
 /// `seen` に含まれないエントリを削除し、削除件数を返す
+///
+/// 一時テーブルに seen パスをバッチ INSERT し、NOT IN で一括 DELETE することで
+/// 個別 DELETE の N 回の SQL 実行を 1 回に削減する。
 #[allow(clippy::cast_sign_loss, reason = "削除件数は非負")]
 fn delete_unseen(conn: &Connection, seen: &HashSet<String>) -> Result<usize, IndexerError> {
-    // 全エントリの relative_path を取得して seen にないものを削除
-    let mut stmt = conn.prepare("SELECT relative_path FROM entries")?;
-    let all_paths: Vec<String> = stmt
-        .query_map([], |row| row.get::<_, String>(0))?
-        .collect::<Result<Vec<_>, _>>()?;
+    const BATCH_SIZE: usize = 1000;
 
-    let mut deleted: usize = 0;
-    for path in &all_paths {
-        if !seen.contains(path) {
-            conn.execute(
-                "DELETE FROM entries WHERE relative_path = ?1",
-                params![path],
-            )?;
-            deleted += 1;
+    // 一時テーブルを作成し、seen パスをバッチ INSERT
+    conn.execute_batch(
+        "CREATE TEMP TABLE IF NOT EXISTS seen_paths(path TEXT PRIMARY KEY);
+         DELETE FROM seen_paths;",
+    )?;
+
+    let mut insert_stmt = conn.prepare("INSERT OR IGNORE INTO seen_paths(path) VALUES (?1)")?;
+    let paths: Vec<&String> = seen.iter().collect();
+    for chunk in paths.chunks(BATCH_SIZE) {
+        let tx = conn.unchecked_transaction()?;
+        for path in chunk {
+            insert_stmt.execute(params![path])?;
         }
+        tx.commit()?;
     }
+
+    // seen に含まれないエントリを一括削除
+    let deleted = conn.execute(
+        "DELETE FROM entries WHERE relative_path NOT IN (SELECT path FROM seen_paths)",
+        [],
+    )?;
+
+    conn.execute("DROP TABLE IF EXISTS seen_paths", [])?;
+
     Ok(deleted)
 }
 
