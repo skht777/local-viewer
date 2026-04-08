@@ -838,23 +838,21 @@ fn load_dir_mtimes(conn: &Connection) -> Result<HashMap<String, i64>, IndexerErr
 /// 個別 DELETE の N 回の SQL 実行を 1 回に削減する。
 #[allow(clippy::cast_sign_loss, reason = "削除件数は非負")]
 fn delete_unseen(conn: &Connection, seen: &HashSet<String>) -> Result<usize, IndexerError> {
-    const BATCH_SIZE: usize = 1000;
-
-    // 一時テーブルを作成し、seen パスをバッチ INSERT
+    // 一時テーブルを作成し、seen パスを INSERT
     conn.execute_batch(
         "CREATE TEMP TABLE IF NOT EXISTS seen_paths(path TEXT PRIMARY KEY);
          DELETE FROM seen_paths;",
     )?;
 
-    let mut insert_stmt = conn.prepare("INSERT OR IGNORE INTO seen_paths(path) VALUES (?1)")?;
-    let paths: Vec<&String> = seen.iter().collect();
-    for chunk in paths.chunks(BATCH_SIZE) {
-        let tx = conn.unchecked_transaction()?;
-        for path in chunk {
+    // 一時テーブルは永続化不要のため、単一トランザクションで全パスを INSERT
+    let tx = conn.unchecked_transaction()?;
+    {
+        let mut insert_stmt = conn.prepare("INSERT OR IGNORE INTO seen_paths(path) VALUES (?1)")?;
+        for path in seen {
             insert_stmt.execute(params![path])?;
         }
-        tx.commit()?;
     }
+    tx.commit()?;
 
     // seen に含まれないエントリを一括削除
     let deleted = conn.execute(

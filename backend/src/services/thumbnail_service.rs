@@ -242,13 +242,10 @@ fn encode_jpeg(rgb: &RgbImage, quality: u8) -> Result<Vec<u8>, AppError> {
     Ok(buf.into_inner())
 }
 
-/// 子プロセスをタイムアウト付きで待機する
-///
-/// 短間隔ポーリング (10ms) でプロセス完了を待ち、タイムアウト時は kill。
-/// 旧実装の 50ms sleep から 10ms に短縮し、レイテンシを改善。
 /// 子プロセスをタイムアウト付きで待機する（チャネルベース）
 ///
-/// ポーリングではなく OS ネイティブの wait を使用し、スレッドプール効率を改善する。
+/// 別スレッドで OS ネイティブの `wait` を実行し、`recv_timeout` でタイムアウト判定。
+/// 超過時は `Child::kill()` で安全に終了する。
 fn wait_with_timeout(
     mut child: std::process::Child,
     timeout: std::time::Duration,

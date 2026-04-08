@@ -551,6 +551,22 @@ fn try_dir_index_browse_split(
 ///
 /// `allow_symlinks` が false の場合、DirIndex エントリは indexer が `validate_child()` で
 /// 検証済みのため `canonicalize()` をスキップし、`root.join(rel).join(name)` をそのまま使用する。
+/// `DirIndex` パスの存在確認付きパス解決
+///
+/// symlink 有効時は `canonicalize` で正規化、無効時は `exists()` で存在確認のみ。
+fn resolve_dir_index_path(
+    abs_path: &std::path::Path,
+    allow_symlinks: bool,
+) -> Option<std::path::PathBuf> {
+    if allow_symlinks {
+        std::fs::canonicalize(abs_path).ok()
+    } else if abs_path.exists() {
+        Some(abs_path.to_path_buf())
+    } else {
+        None
+    }
+}
+
 fn build_scanned_from_dir_index(
     entries: &[crate::services::dir_index::DirEntry],
     root: &std::path::Path,
@@ -563,16 +579,7 @@ fn build_scanned_from_dir_index(
         .filter_map(|de| {
             let rel = parent_key_relative(parent_key);
             let abs_path = root.join(rel).join(&de.name);
-            // symlink 無効時はパスが正規化済み (indexer が validate_child 検証済み) のため
-            // canonicalize をスキップして syscall を回避
-            let resolved = if allow_symlinks {
-                std::fs::canonicalize(&abs_path).ok()?
-            } else {
-                if !abs_path.exists() {
-                    return None;
-                }
-                abs_path.clone()
-            };
+            let resolved = resolve_dir_index_path(&abs_path, allow_symlinks)?;
 
             let kind = if de.kind == "directory" {
                 EntryKind::Directory
@@ -606,13 +613,7 @@ fn build_scanned_from_dir_index(
                         .filter_map(|pv| {
                             let pv_rel = parent_key_relative(&child_key);
                             let pv_abs = root.join(pv_rel).join(&pv.name);
-                            if allow_symlinks {
-                                std::fs::canonicalize(&pv_abs).ok()
-                            } else if pv_abs.exists() {
-                                Some(pv_abs)
-                            } else {
-                                None
-                            }
+                            resolve_dir_index_path(&pv_abs, allow_symlinks)
                         })
                         .collect();
                     if paths.is_empty() { None } else { Some(paths) }

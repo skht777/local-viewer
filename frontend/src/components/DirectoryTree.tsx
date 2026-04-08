@@ -74,6 +74,12 @@ function TreeNode({ entry, depth, activeNodeId, ancestorNodeIds, onNavigate }: T
       hoverTimerRef.current = null;
     }
   };
+  // アンマウント時にタイマーをクリア (pointerLeave 未発火のまま消える場合のリーク防止)
+  useEffect(() => {
+    return () => {
+      if (hoverTimerRef.current) clearTimeout(hoverTimerRef.current);
+    };
+  }, []);
 
   // ディレクトリ/アーカイブ/PDFのみ子ノードを表示
   const childDirs =

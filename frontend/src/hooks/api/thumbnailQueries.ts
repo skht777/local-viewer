@@ -20,10 +20,11 @@ interface BatchResponse {
 
 const BATCH_SIZE = 50;
 
-// base64 → Blob URL 変換 (ブラウザネイティブデコードを活用)
-async function base64ToBlobUrl(base64: string): Promise<string> {
-  const resp = await fetch(`data:image/jpeg;base64,${base64}`);
-  const blob = await resp.blob();
+// base64 → Blob URL 変換
+function base64ToBlobUrl(base64: string): string {
+  const binary = atob(base64);
+  const bytes = Uint8Array.from(binary, (c) => c.charCodeAt(0));
+  const blob = new Blob([bytes], { type: "image/jpeg" });
   return URL.createObjectURL(blob);
 }
 
@@ -93,50 +94,27 @@ export function useBatchThumbnails(nodeIds: string[]): {
 
   // Blob URL の差分管理 (共通 ID は再利用、不要分のみ revoke)
   const prevUrlsRef = useRef(new Map<string, string>());
-  const [urlMap, setUrlMap] = useState(new Map<string, string>());
+  const urlMap = useMemo(() => {
+    if (rawData.size === 0) return new Map<string, string>();
 
-  useEffect(() => {
-    if (rawData.size === 0) {
-      // rawData が空の場合: urlMap をクリアするが、Blob URL は保持
-      // (デバウンス中の一時的な空状態で revoke すると再利用できなくなる)
-      setUrlMap(new Map());
-      return;
+    const newMap = new Map<string, string>();
+    // rawData にある ID: 既存 URL 再利用 or 新規作成
+    for (const [id, base64] of rawData) {
+      const existing = prevUrlsRef.current.get(id);
+      if (existing) {
+        newMap.set(id, existing);
+      } else {
+        newMap.set(id, base64ToBlobUrl(base64));
+      }
     }
-
-    let cancelled = false;
-
-    (async () => {
-      const newMap = new Map<string, string>();
-      // rawData にある ID: 既存 URL 再利用 or 新規作成 (ネイティブ decode)
-      const pending: Promise<void>[] = [];
-      for (const [id, base64] of rawData) {
-        const existing = prevUrlsRef.current.get(id);
-        if (existing) {
-          newMap.set(id, existing);
-        } else {
-          pending.push(
-            base64ToBlobUrl(base64).then((url) => {
-              if (!cancelled) newMap.set(id, url);
-            }),
-          );
-        }
+    // 不要な URL のみ revoke
+    for (const [id, url] of prevUrlsRef.current) {
+      if (!newMap.has(id)) {
+        URL.revokeObjectURL(url);
       }
-      await Promise.all(pending);
-      if (cancelled) return;
-
-      // 不要な URL のみ revoke
-      for (const [id, url] of prevUrlsRef.current) {
-        if (!newMap.has(id)) {
-          URL.revokeObjectURL(url);
-        }
-      }
-      prevUrlsRef.current = newMap;
-      setUrlMap(newMap);
-    })();
-
-    return () => {
-      cancelled = true;
-    };
+    }
+    prevUrlsRef.current = newMap;
+    return newMap;
   }, [rawData]);
 
   // アンマウント時に全 Blob URL を解放
