@@ -25,7 +25,7 @@ interface UseVirtualGridOptions {
 
 export function useVirtualGrid({
   itemCount,
-  estimateRowHeight = 220,
+  estimateRowHeight = 300,
   overscan = 3,
   enabled = true,
 }: UseVirtualGridOptions) {
@@ -55,6 +55,7 @@ export function useVirtualGrid({
     estimateSize: () => estimateRowHeight,
     overscan,
     enabled,
+    gap: 16, // Tailwind gap-4 相当（行間スペース）
   });
 
   // アイテムインデックスから行・列を計算
@@ -77,16 +78,16 @@ export function useVirtualGrid({
   );
 
   // 可視領域のアイテムインデックス範囲 (サムネイルのビューポート優先に使用)
+  const virtualItems = virtualizer.getVirtualItems();
   const visibleItemRange = useMemo(() => {
-    const items = virtualizer.getVirtualItems();
-    if (items.length === 0) return null;
-    const firstRow = items[0].index;
-    const lastRow = items[items.length - 1].index;
+    if (virtualItems.length === 0) return null;
+    const firstRow = virtualItems[0].index;
+    const lastRow = virtualItems[virtualItems.length - 1].index;
     return {
       start: firstRow * columns,
       end: Math.min((lastRow + 1) * columns, itemCount),
     };
-  }, [virtualizer.getVirtualItems(), columns, itemCount]);
+  }, [virtualItems, columns, itemCount]);
 
   return {
     scrollRef,
@@ -97,5 +98,6 @@ export function useVirtualGrid({
     scrollToItem,
     getColumnCount: useCallback(() => columns, [columns]),
     visibleItemRange,
+    measureElement: virtualizer.measureElement,
   };
 }
