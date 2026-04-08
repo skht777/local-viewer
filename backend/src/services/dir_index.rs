@@ -49,6 +49,15 @@ pub(crate) struct DirIndex {
     is_stale: AtomicBool,
 }
 
+/// 読み取りセッション (1リクエスト内で Connection を再利用)
+///
+/// `DirIndex::reader()` で取得し、複数クエリを同一接続で実行する。
+/// browse API のホットパスで `Connection::open` + PRAGMA の繰り返しを回避する。
+pub(crate) struct DirIndexReader<'a> {
+    _index: &'a DirIndex,
+    conn: Connection,
+}
+
 impl DirIndex {
     /// 新しい `DirIndex` を生成する (DB 未初期化状態)
     pub(crate) fn new(db_path: &str) -> Self {
@@ -139,8 +148,16 @@ impl DirIndex {
         self.is_stale.store(true, Ordering::Relaxed);
     }
 
+    /// 読み取りセッションを開く (1リクエスト内で Connection を再利用)
+    pub(crate) fn reader(&self) -> Result<DirIndexReader<'_>, DirIndexError> {
+        Ok(DirIndexReader {
+            _index: self,
+            conn: self.connect()?,
+        })
+    }
+
     // ---------------------------------------------------------------
-    // クエリ
+    // クエリ (各メソッドは DirIndexReader に委譲)
     // ---------------------------------------------------------------
 
     /// ソート + カーソルベースページネーション付きでエントリを返す
@@ -155,46 +172,22 @@ impl DirIndex {
         limit: usize,
         cursor_sort_key: Option<&str>,
     ) -> Result<Vec<DirEntry>, DirIndexError> {
-        let conn = self.connect()?;
-        match sort {
-            "name-desc" => query_name_desc(&conn, parent_path, limit, cursor_sort_key),
-            "date-desc" => query_date_desc(&conn, parent_path, limit, cursor_sort_key),
-            "date-asc" => query_date_asc(&conn, parent_path, limit, cursor_sort_key),
-            // "name-asc" およびその他のソート指定
-            _ => query_name_asc(&conn, parent_path, limit, cursor_sort_key),
-        }
+        self.reader()?
+            .query_page(parent_path, sort, limit, cursor_sort_key)
     }
 
     /// 指定ディレクトリの子エントリ数を返す
-    #[allow(clippy::cast_sign_loss, reason = "COUNT(*) は非負")]
     pub(crate) fn child_count(&self, parent_path: &str) -> Result<usize, DirIndexError> {
-        let conn = self.connect()?;
-        let count: i64 = conn.query_row(
-            "SELECT COUNT(*) FROM dir_entries WHERE parent_path = ?1",
-            params![parent_path],
-            |row| row.get(0),
-        )?;
-        Ok(count as usize)
+        self.reader()?.child_count(parent_path)
     }
 
     /// サムネイル対象エントリを返す (画像/動画/PDF/アーカイブ)
-    #[allow(clippy::cast_possible_wrap, reason = "limit は i64 範囲内")]
     pub(crate) fn preview_entries(
         &self,
         parent_path: &str,
         limit: usize,
     ) -> Result<Vec<DirEntry>, DirIndexError> {
-        let conn = self.connect()?;
-        let mut stmt = conn.prepare(
-            "SELECT parent_path, name, kind, sort_key, size_bytes, mtime_ns \
-             FROM dir_entries \
-             WHERE parent_path = ?1 AND kind IN ('image', 'archive', 'pdf', 'video') \
-             ORDER BY sort_key ASC \
-             LIMIT ?2",
-        )?;
-        let rows = stmt.query_map(params![parent_path, limit as i64], map_dir_entry)?;
-        rows.collect::<Result<Vec<_>, _>>()
-            .map_err(DirIndexError::from)
+        self.reader()?.preview_entries(parent_path, limit)
     }
 
     /// 指定 kind の最初のエントリを返す (`first-viewable` 高速パス用)
@@ -203,20 +196,7 @@ impl DirIndex {
         parent_path: &str,
         kind: &str,
     ) -> Result<Option<DirEntry>, DirIndexError> {
-        let conn = self.connect()?;
-        let mut stmt = conn.prepare(
-            "SELECT parent_path, name, kind, sort_key, size_bytes, mtime_ns \
-             FROM dir_entries \
-             WHERE parent_path = ?1 AND kind = ?2 \
-             ORDER BY sort_key ASC \
-             LIMIT 1",
-        )?;
-        let mut rows = stmt.query_map(params![parent_path, kind], map_dir_entry)?;
-        match rows.next() {
-            Some(Ok(entry)) => Ok(Some(entry)),
-            Some(Err(e)) => Err(DirIndexError::from(e)),
-            None => Ok(None),
-        }
+        self.reader()?.first_entry_by_kind(parent_path, kind)
     }
 
     /// 次/前の兄弟エントリを返す (`sibling` 高速パス用)
@@ -234,42 +214,19 @@ impl DirIndex {
         sort: &str,
         kinds: &[&str],
     ) -> Result<Option<DirEntry>, DirIndexError> {
-        let conn = self.connect()?;
-        let current_sort_key = encode_sort_key(current_name);
-
-        match sort {
-            "name-asc" | "name-desc" => query_sibling_name(
-                &conn,
-                parent_path,
-                &current_sort_key,
-                current_is_dir,
-                direction,
-                sort,
-                kinds,
-            ),
-            "date-asc" | "date-desc" => {
-                query_sibling_date(&conn, parent_path, current_name, direction, sort, kinds)
-            }
-            // 未知のソートは name-asc にフォールバック
-            _ => query_sibling_name(
-                &conn,
-                parent_path,
-                &current_sort_key,
-                current_is_dir,
-                direction,
-                "name-asc",
-                kinds,
-            ),
-        }
+        self.reader()?.query_sibling(
+            parent_path,
+            current_name,
+            current_is_dir,
+            direction,
+            sort,
+            kinds,
+        )
     }
 
     /// DB 内の全エントリ数を返す
-    #[allow(clippy::cast_sign_loss, reason = "COUNT(*) は非負")]
     pub(crate) fn entry_count(&self) -> Result<usize, DirIndexError> {
-        let conn = self.connect()?;
-        let count: i64 =
-            conn.query_row("SELECT COUNT(*) FROM dir_entries", [], |row| row.get(0))?;
-        Ok(count as usize)
+        self.reader()?.entry_count()
     }
 
     // ---------------------------------------------------------------
@@ -288,15 +245,7 @@ impl DirIndex {
 
     /// ディレクトリの記録済み mtime を返す
     pub(crate) fn get_dir_mtime(&self, path: &str) -> Result<Option<i64>, DirIndexError> {
-        let conn = self.connect()?;
-        let result = conn
-            .query_row(
-                "SELECT mtime_ns FROM dir_meta WHERE path = ?1",
-                params![path],
-                |row| row.get(0),
-            )
-            .ok();
-        Ok(result)
+        self.reader()?.get_dir_mtime(path)
     }
 
     // ---------------------------------------------------------------
@@ -525,6 +474,148 @@ impl Drop for BulkInserter {
                 tracing::error!("BulkInserter drop 時のフラッシュ失敗: {e}");
             }
         }
+    }
+}
+
+// ===================================================================
+// DirIndexReader
+// ===================================================================
+
+impl DirIndexReader<'_> {
+    /// ソート + カーソルベースページネーション付きでエントリを返す
+    pub(crate) fn query_page(
+        &self,
+        parent_path: &str,
+        sort: &str,
+        limit: usize,
+        cursor_sort_key: Option<&str>,
+    ) -> Result<Vec<DirEntry>, DirIndexError> {
+        match sort {
+            "name-desc" => query_name_desc(&self.conn, parent_path, limit, cursor_sort_key),
+            "date-desc" => query_date_desc(&self.conn, parent_path, limit, cursor_sort_key),
+            "date-asc" => query_date_asc(&self.conn, parent_path, limit, cursor_sort_key),
+            _ => query_name_asc(&self.conn, parent_path, limit, cursor_sort_key),
+        }
+    }
+
+    /// 指定ディレクトリの子エントリ数を返す
+    #[allow(clippy::cast_sign_loss, reason = "COUNT(*) は非負")]
+    pub(crate) fn child_count(&self, parent_path: &str) -> Result<usize, DirIndexError> {
+        let count: i64 = self.conn.query_row(
+            "SELECT COUNT(*) FROM dir_entries WHERE parent_path = ?1",
+            params![parent_path],
+            |row| row.get(0),
+        )?;
+        Ok(count as usize)
+    }
+
+    /// サムネイル対象エントリを返す (画像/動画/PDF/アーカイブ)
+    #[allow(clippy::cast_possible_wrap, reason = "limit は i64 範囲内")]
+    pub(crate) fn preview_entries(
+        &self,
+        parent_path: &str,
+        limit: usize,
+    ) -> Result<Vec<DirEntry>, DirIndexError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT parent_path, name, kind, sort_key, size_bytes, mtime_ns \
+             FROM dir_entries \
+             WHERE parent_path = ?1 AND kind IN ('image', 'archive', 'pdf', 'video') \
+             ORDER BY sort_key ASC \
+             LIMIT ?2",
+        )?;
+        let rows = stmt.query_map(params![parent_path, limit as i64], map_dir_entry)?;
+        rows.collect::<Result<Vec<_>, _>>()
+            .map_err(DirIndexError::from)
+    }
+
+    /// 指定 kind の最初のエントリを返す (`first-viewable` 高速パス用)
+    pub(crate) fn first_entry_by_kind(
+        &self,
+        parent_path: &str,
+        kind: &str,
+    ) -> Result<Option<DirEntry>, DirIndexError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT parent_path, name, kind, sort_key, size_bytes, mtime_ns \
+             FROM dir_entries \
+             WHERE parent_path = ?1 AND kind = ?2 \
+             ORDER BY sort_key ASC \
+             LIMIT 1",
+        )?;
+        let mut rows = stmt.query_map(params![parent_path, kind], map_dir_entry)?;
+        match rows.next() {
+            Some(Ok(entry)) => Ok(Some(entry)),
+            Some(Err(e)) => Err(DirIndexError::from(e)),
+            None => Ok(None),
+        }
+    }
+
+    /// 次/前の兄弟エントリを返す (`sibling` 高速パス用)
+    #[allow(clippy::too_many_arguments, reason = "sort 分岐に必要なパラメータ群")]
+    pub(crate) fn query_sibling(
+        &self,
+        parent_path: &str,
+        current_name: &str,
+        current_is_dir: bool,
+        direction: &str,
+        sort: &str,
+        kinds: &[&str],
+    ) -> Result<Option<DirEntry>, DirIndexError> {
+        let current_sort_key = encode_sort_key(current_name);
+
+        match sort {
+            "name-asc" | "name-desc" => query_sibling_name(
+                &self.conn,
+                parent_path,
+                &current_sort_key,
+                current_is_dir,
+                direction,
+                sort,
+                kinds,
+            ),
+            "date-asc" | "date-desc" => query_sibling_date(
+                &self.conn,
+                parent_path,
+                current_name,
+                direction,
+                sort,
+                kinds,
+            ),
+            _ => query_sibling_name(
+                &self.conn,
+                parent_path,
+                &current_sort_key,
+                current_is_dir,
+                direction,
+                "name-asc",
+                kinds,
+            ),
+        }
+    }
+
+    /// DB 内の全エントリ数を返す
+    #[allow(clippy::cast_sign_loss, reason = "COUNT(*) は非負")]
+    pub(crate) fn entry_count(&self) -> Result<usize, DirIndexError> {
+        let count: i64 = self
+            .conn
+            .query_row("SELECT COUNT(*) FROM dir_entries", [], |row| row.get(0))?;
+        Ok(count as usize)
+    }
+
+    /// ディレクトリの記録済み mtime を返す
+    #[allow(
+        clippy::unnecessary_wraps,
+        reason = "DirIndex::get_dir_mtime と同じシグネチャを維持"
+    )]
+    pub(crate) fn get_dir_mtime(&self, path: &str) -> Result<Option<i64>, DirIndexError> {
+        let result = self
+            .conn
+            .query_row(
+                "SELECT mtime_ns FROM dir_meta WHERE path = ?1",
+                params![path],
+                |row| row.get(0),
+            )
+            .ok();
+        Ok(result)
     }
 }
 
@@ -1499,5 +1590,59 @@ mod tests {
             .unwrap();
         assert!(next.is_some());
         assert_eq!(next.unwrap().name, "file2");
+    }
+
+    #[test]
+    fn readerで取得したセッションが既存メソッドと同じ結果を返す() {
+        let (idx, _tmp) = setup();
+
+        let args = make_args(
+            "/data/photos",
+            "/data",
+            "mount1",
+            vec![("subdir", 2_000_000_000)],
+            vec![
+                ("image1.jpg", 1024, 3_000_000_000),
+                ("archive.zip", 2048, 4_000_000_000),
+            ],
+        );
+        idx.ingest_walk_entry(&args).unwrap();
+
+        let parent = "mount1/photos";
+
+        // reader セッションで全クエリを同一接続で実行
+        let reader = idx.reader().unwrap();
+
+        // query_page
+        let reader_page = reader.query_page(parent, "name-asc", 100, None).unwrap();
+        let direct_page = idx.query_page(parent, "name-asc", 100, None).unwrap();
+        assert_eq!(reader_page.len(), direct_page.len());
+        for (r, d) in reader_page.iter().zip(direct_page.iter()) {
+            assert_eq!(r.name, d.name);
+            assert_eq!(r.kind, d.kind);
+        }
+
+        // child_count
+        assert_eq!(
+            reader.child_count(parent).unwrap(),
+            idx.child_count(parent).unwrap(),
+        );
+
+        // preview_entries
+        let reader_previews = reader.preview_entries(parent, 3).unwrap();
+        let direct_previews = idx.preview_entries(parent, 3).unwrap();
+        assert_eq!(reader_previews.len(), direct_previews.len());
+        for (r, d) in reader_previews.iter().zip(direct_previews.iter()) {
+            assert_eq!(r.name, d.name);
+        }
+
+        // get_dir_mtime
+        assert_eq!(
+            reader.get_dir_mtime(parent).unwrap(),
+            idx.get_dir_mtime(parent).unwrap(),
+        );
+
+        // entry_count
+        assert_eq!(reader.entry_count().unwrap(), idx.entry_count().unwrap(),);
     }
 }
