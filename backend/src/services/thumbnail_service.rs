@@ -246,30 +246,47 @@ fn encode_jpeg(rgb: &RgbImage, quality: u8) -> Result<Vec<u8>, AppError> {
 ///
 /// 短間隔ポーリング (10ms) でプロセス完了を待ち、タイムアウト時は kill。
 /// 旧実装の 50ms sleep から 10ms に短縮し、レイテンシを改善。
+/// 子プロセスをタイムアウト付きで待機する（チャネルベース）
+///
+/// ポーリングではなく OS ネイティブの wait を使用し、スレッドプール効率を改善する。
 fn wait_with_timeout(
     mut child: std::process::Child,
     timeout: std::time::Duration,
 ) -> std::io::Result<std::process::Output> {
-    let start = std::time::Instant::now();
-    loop {
-        if let Some(status) = child.try_wait()? {
-            let stderr = child.stderr.map_or_else(Vec::new, |mut s| {
-                let mut buf = Vec::new();
-                std::io::Read::read_to_end(&mut s, &mut buf).unwrap_or_default();
-                buf
-            });
-            return Ok(std::process::Output {
-                status,
-                stdout: Vec::new(),
-                stderr,
-            });
-        }
-        if start.elapsed() >= timeout {
-            let _ = child.kill();
-            let _ = child.wait();
-            return Err(std::io::Error::other("pdftoppm タイムアウト"));
-        }
-        std::thread::sleep(std::time::Duration::from_millis(10));
+    // stderr を先に取り出す（wait 後は take できない）
+    let stderr_pipe = child.stderr.take();
+
+    let child = std::sync::Arc::new(std::sync::Mutex::new(child));
+    let child_clone = std::sync::Arc::clone(&child);
+    let (tx, rx) = std::sync::mpsc::channel();
+
+    std::thread::spawn(move || {
+        let result = child_clone
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .wait();
+        let _ = tx.send(result);
+    });
+
+    if let Ok(result) = rx.recv_timeout(timeout) {
+        let status = result?;
+        let stderr = stderr_pipe.map_or_else(Vec::new, |mut s| {
+            let mut buf = Vec::new();
+            std::io::Read::read_to_end(&mut s, &mut buf).unwrap_or_default();
+            buf
+        });
+        Ok(std::process::Output {
+            status,
+            stdout: Vec::new(),
+            stderr,
+        })
+    } else {
+        let mut c = child
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let _ = c.kill();
+        let _ = c.wait();
+        Err(std::io::Error::other("pdftoppm タイムアウト"))
     }
 }
 

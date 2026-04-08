@@ -53,7 +53,7 @@ impl VideoConverter {
     pub(crate) fn extract_frame(&self, source: &Path) -> Option<Vec<u8>> {
         let ffmpeg = self.ffmpeg_path.as_ref()?;
 
-        let mut child = std::process::Command::new(ffmpeg)
+        let child = std::process::Command::new(ffmpeg)
             .args([
                 "-ss",
                 &self.thumb_seek_seconds.to_string(),
@@ -73,7 +73,7 @@ impl VideoConverter {
             .ok()?;
 
         let timeout = std::time::Duration::from_secs(self.thumb_timeout);
-        let output = wait_with_timeout_and_stdout(&mut child, timeout).ok()?;
+        let output = wait_with_timeout_and_stdout(child, timeout).ok()?;
 
         if output.status.success() && !output.stdout.is_empty() {
             Some(output.stdout)
@@ -106,7 +106,7 @@ impl VideoConverter {
             .put_with_writer(
                 &cache_key,
                 |dest_path| {
-                    let mut child = std::process::Command::new(&ffmpeg)
+                    let child = std::process::Command::new(&ffmpeg)
                         .args([
                             "-y",
                             "-i",
@@ -125,7 +125,7 @@ impl VideoConverter {
                         })?;
 
                     let timeout = std::time::Duration::from_secs(remux_timeout);
-                    let output = wait_with_timeout_and_stdout(&mut child, timeout)?;
+                    let output = wait_with_timeout_and_stdout(child, timeout)?;
 
                     if !output.status.success() {
                         return Err(std::io::Error::other("ffmpeg remux 失敗"));
@@ -141,10 +141,11 @@ impl VideoConverter {
 
 /// 子プロセスをタイムアウト付きで待機する
 ///
-/// stdout を先に読み取り、別スレッドで `wait` + タイムアウト判定。
-/// タイムアウト時は子プロセスを kill する。
+/// stdout を先に読み取り、別スレッドで `wait` を実行。
+/// チャネルでタイムアウト判定し、超過時は kill する。
+/// ポーリングではなく OS ネイティブの wait を使用し、スレッドプール効率を改善する。
 fn wait_with_timeout_and_stdout(
-    child: &mut std::process::Child,
+    mut child: std::process::Child,
     timeout: std::time::Duration,
 ) -> std::io::Result<std::process::Output> {
     // stdout を先に読む (パイプバッファ溢れによるデッドロック防止)
@@ -154,22 +155,32 @@ fn wait_with_timeout_and_stdout(
         buf
     });
 
-    // タイムアウト付きポーリング (短間隔)
-    let start = std::time::Instant::now();
-    loop {
-        if let Some(status) = child.try_wait()? {
-            return Ok(std::process::Output {
-                status,
-                stdout,
-                stderr: Vec::new(),
-            });
-        }
-        if start.elapsed() >= timeout {
-            let _ = child.kill();
-            let _ = child.wait();
-            return Err(std::io::Error::other("ffmpeg タイムアウト"));
-        }
-        std::thread::sleep(std::time::Duration::from_millis(10));
+    // チャネルベースのタイムアウト待機
+    let child = std::sync::Arc::new(std::sync::Mutex::new(child));
+    let child_clone = std::sync::Arc::clone(&child);
+    let (tx, rx) = std::sync::mpsc::channel();
+
+    std::thread::spawn(move || {
+        let result = child_clone
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .wait();
+        let _ = tx.send(result);
+    });
+
+    if let Ok(result) = rx.recv_timeout(timeout) {
+        Ok(std::process::Output {
+            status: result?,
+            stdout,
+            stderr: Vec::new(),
+        })
+    } else {
+        let mut c = child
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let _ = c.kill();
+        let _ = c.wait();
+        Err(std::io::Error::other("ffmpeg タイムアウト"))
     }
 }
 
