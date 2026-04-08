@@ -295,33 +295,6 @@ describe("useBatchThumbnails", () => {
     expect(secondCallBody.node_ids).toHaveLength(10);
   });
 
-  test("priorityIds 指定時にビューポート内 ID が先頭チャンクに含まれる", async () => {
-    const { apiPost } = await import("../../src/hooks/api/apiClient");
-
-    const ids = Array.from({ length: 60 }, (_, i) => `node-${i}`);
-    const priorityIds = new Set(ids.slice(50));
-
-    vi.mocked(apiPost).mockImplementation(async (_url, body) => {
-      const reqIds = (body as { node_ids: string[] }).node_ids;
-      const thumbnails: Record<string, { data: string }> = {};
-      for (const id of reqIds) {
-        thumbnails[id] = { data: btoa(`data-${id}`) };
-      }
-      return { thumbnails };
-    });
-
-    const { result } = renderHook(() => useBatchThumbnails(ids, priorityIds), { wrapper });
-
-    await waitFor(() => {
-      expect(result.current.thumbnails.size).toBe(60);
-    });
-
-    const firstCallBody = vi.mocked(apiPost).mock.calls[0][1] as { node_ids: string[] };
-    for (const pid of priorityIds) {
-      expect(firstCallBody.node_ids).toContain(pid);
-    }
-  });
-
   test("50 件以下は 1 回のバッチリクエストで完結する", async () => {
     const { apiPost } = await import("../../src/hooks/api/apiClient");
 

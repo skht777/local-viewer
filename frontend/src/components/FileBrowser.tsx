@@ -128,36 +128,14 @@ export function FileBrowser({
     getRowItems,
     scrollToItem,
     getColumnCount,
-    visibleItemRange,
     measureElement,
   } = useVirtualGrid({
     itemCount: filtered.length,
     enabled: !isLoading && filtered.length > 0,
   });
 
-  // ビューポート内のサムネイル node_ids を優先取得用 Set として構築
-  const priorityIds = useMemo(() => {
-    if (!visibleItemRange) return undefined;
-    const set = new Set<string>();
-    for (let i = visibleItemRange.start; i < visibleItemRange.end; i++) {
-      const e = filtered[i];
-      if (!e) continue;
-      if (e.kind === "image" || e.kind === "archive" || e.kind === "video") {
-        set.add(e.node_id);
-      }
-      if (e.kind === "directory" && e.preview_node_ids) {
-        for (const pid of e.preview_node_ids) {
-          set.add(pid);
-        }
-      }
-    }
-    return set.size > 0 ? set : undefined;
-  }, [filtered, visibleItemRange]);
-
-  const { thumbnails: batchThumbnails, isLoading: isBatchLoading } = useBatchThumbnails(
-    thumbnailNodeIds,
-    priorityIds,
-  );
+  const { thumbnails: batchThumbnails, isLoading: isBatchLoading } =
+    useBatchThumbnails(thumbnailNodeIds);
 
   // エントリ変更時（ナビゲーション・タブ切替）に先頭カードへ focus
   const firstCardRef = useRef<HTMLDivElement>(null);

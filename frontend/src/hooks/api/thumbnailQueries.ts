@@ -40,33 +40,17 @@ function splitIntoChunks<T>(arr: T[], size: number): T[][] {
   return chunks;
 }
 
-// 優先 ID を先頭に並べ替え (元配列の相対順序は保持)
-function prioritize(ids: string[], priorityIds?: Set<string>): string[] {
-  if (!priorityIds || priorityIds.size === 0) return ids;
-  const priority: string[] = [];
-  const rest: string[] = [];
-  for (const id of ids) {
-    if (priorityIds.has(id)) {
-      priority.push(id);
-    } else {
-      rest.push(id);
-    }
-  }
-  return [...priority, ...rest];
-}
-
 /**
  * バッチサムネイル取得フック
  *
  * node_ids を 50 件チャンクに分割して並列バッチリクエストを発行し、
  * node_id → Blob URL のマップを返す。
- * priorityIds を渡すとビューポート内 ID が先頭チャンクに配置される。
  * Blob URL は差分管理: 共通 ID は再利用、不要分のみ revoke。
  */
-export function useBatchThumbnails(
-  nodeIds: string[],
-  priorityIds?: Set<string>,
-): { thumbnails: Map<string, string>; isLoading: boolean } {
+export function useBatchThumbnails(nodeIds: string[]): {
+  thumbnails: Map<string, string>;
+  isLoading: boolean;
+} {
   // デバウンス: 短時間の連続変更をまとめる (タブ切替・フィルタ変更対応)
   const [debouncedIds, setDebouncedIds] = useState(nodeIds);
   const key = useMemo(() => nodeIds.join(","), [nodeIds]);
@@ -75,11 +59,8 @@ export function useBatchThumbnails(
     return () => clearTimeout(timer);
   }, [key]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // 優先 ID を先頭に並べ替え、50 件チャンクに分割
-  const chunks = useMemo(
-    () => splitIntoChunks(prioritize(debouncedIds, priorityIds), BATCH_SIZE),
-    [debouncedIds, priorityIds],
-  );
+  // 50 件チャンクに分割 (チャンク境界を安定化し queryKey キャッシュを維持)
+  const chunks = useMemo(() => splitIntoChunks(debouncedIds, BATCH_SIZE), [debouncedIds]);
 
   // useQueries: チャンク別に並列バッチリクエスト
   // queryKey にはソート済み ID を使用 → タブ切替でチャンク境界が変わってもキャッシュヒット

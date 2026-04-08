@@ -3,7 +3,7 @@
 // - @tanstack/react-virtual の useVirtualizer で行ベースの仮想化を実行
 // - FileBrowser のグリッドレイアウトを仮想スクロール化するために使用
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 
 // Tailwind breakpoints: md=768, lg=1024, xl=1280
@@ -77,18 +77,6 @@ export function useVirtualGrid({
     [columns, virtualizer],
   );
 
-  // 可視領域のアイテムインデックス範囲 (サムネイルのビューポート優先に使用)
-  const virtualItems = virtualizer.getVirtualItems();
-  const visibleItemRange = useMemo(() => {
-    if (virtualItems.length === 0) return null;
-    const firstRow = virtualItems[0].index;
-    const lastRow = virtualItems[virtualItems.length - 1].index;
-    return {
-      start: firstRow * columns,
-      end: Math.min((lastRow + 1) * columns, itemCount),
-    };
-  }, [virtualItems, columns, itemCount]);
-
   return {
     scrollRef,
     virtualizer,
@@ -97,7 +85,6 @@ export function useVirtualGrid({
     getRowItems,
     scrollToItem,
     getColumnCount: useCallback(() => columns, [columns]),
-    visibleItemRange,
     measureElement: virtualizer.measureElement,
   };
 }
