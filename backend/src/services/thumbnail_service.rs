@@ -148,6 +148,14 @@ impl ThumbnailService {
     pub(crate) fn is_cached(&self, cache_key: &str) -> bool {
         self.cache.get(cache_key).is_some()
     }
+
+    /// キャッシュからサムネイルバイト列を読み込む (ヒット時のみ)
+    ///
+    /// アーカイブサムネイル等で重い外部プロセスを呼ぶ前の早期リターンに使用。
+    pub(crate) fn try_read_cached(&self, cache_key: &str) -> Option<Vec<u8>> {
+        let cached_path = self.cache.get(cache_key)?;
+        std::fs::read(&cached_path).ok()
+    }
 }
 
 /// 画像バイト列をデコード → リサイズ → JPEG エンコードする

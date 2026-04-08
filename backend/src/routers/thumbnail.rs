@@ -137,11 +137,15 @@ fn generate_thumbnail_bytes(state: &AppState, node_id: &str) -> Result<Thumbnail
     if let Some((archive_path, entry_name)) = entry {
         let mtime_ns = get_mtime_ns(&archive_path)?;
         let cache_key = thumb_svc.make_cache_key(node_id, mtime_ns);
+        let etag = compute_thumb_etag(mtime_ns, node_id);
+        // キャッシュヒット時は外部プロセスをスキップ
+        if let Some(cached) = thumb_svc.try_read_cached(&cache_key) {
+            return Ok(ThumbnailResult { data: cached, etag });
+        }
         let data = state
             .archive_service
             .extract_entry(&archive_path, &entry_name)?;
         let thumb = thumb_svc.generate_from_bytes(&data, &cache_key)?;
-        let etag = compute_thumb_etag(mtime_ns, node_id);
         return Ok(ThumbnailResult { data: thumb, etag });
     }
 
@@ -169,6 +173,10 @@ fn generate_thumbnail_bytes(state: &AppState, node_id: &str) -> Result<Thumbnail
 
     // アーカイブファイル自体 → 先頭画像エントリのサムネイル
     if state.archive_service.is_supported(&resolved) {
+        // キャッシュヒット時は list_entries + extract_entry をスキップ
+        if let Some(cached) = thumb_svc.try_read_cached(&cache_key) {
+            return Ok(ThumbnailResult { data: cached, etag });
+        }
         let entry = state
             .archive_service
             .first_image_entry(&resolved)?
@@ -192,6 +200,10 @@ fn generate_thumbnail_bytes(state: &AppState, node_id: &str) -> Result<Thumbnail
 
     // 動画
     if VIDEO_EXTENSIONS.contains(&ext.as_str()) {
+        // キャッシュヒット時は ffmpeg をスキップ
+        if let Some(cached) = thumb_svc.try_read_cached(&cache_key) {
+            return Ok(ThumbnailResult { data: cached, etag });
+        }
         let frame = video_conv.extract_frame(&resolved).ok_or_else(|| {
             AppError::FrameExtractFailed("動画のフレーム抽出に失敗しました".to_string())
         })?;
