@@ -499,6 +499,12 @@ impl Indexer {
         let existing = load_existing_entries(&conn)?;
         let dir_mtimes = load_dir_mtimes(&conn)?;
 
+        // 子ディレクトリを持つディレクトリを事前計算 (リーフのみ枝刈りするため)
+        let has_subdirs: HashSet<String> = dir_mtimes
+            .keys()
+            .filter_map(|k| k.rfind('/').map(|i| k[..i].to_string()))
+            .collect();
+
         // dir_filter と entry_callback の両方から借用するため RefCell
         let seen = RefCell::new(HashSet::new());
         let mut added: usize = 0;
@@ -507,7 +513,7 @@ impl Indexer {
         let validator = |path: &Path| -> bool { path_security.validate(path).is_ok() };
         let mut on_walk_entry = on_walk_entry;
 
-        // dir_filter: mtime 未変更のディレクトリを枝刈り
+        // dir_filter: mtime 未変更のリーフディレクトリのみ枝刈り
         let mut dir_filter = |path: &Path, mtime_ns: i64| -> bool {
             prune_unchanged_dir(
                 path,
@@ -517,6 +523,7 @@ impl Indexer {
                 &dir_mtimes,
                 &existing,
                 &seen,
+                &has_subdirs,
             )
         };
 
@@ -587,6 +594,7 @@ fn prune_unchanged_dir(
     dir_mtimes: &HashMap<String, i64>,
     existing: &HashMap<String, i64>,
     seen: &RefCell<HashSet<String>>,
+    has_subdirs: &HashSet<String>,
 ) -> bool {
     let dir_relative = path
         .strip_prefix(root_dir)
@@ -597,7 +605,12 @@ fn prune_unchanged_dir(
 
     if let Some(&stored_mtime) = dir_mtimes.get(dir_key) {
         if stored_mtime == mtime_ns {
-            // mtime 未変更 → 配下の既存エントリを全て seen に追加して枝刈り
+            // 子ディレクトリを持つ場合は枝刈りしない
+            // (Unix mtime は直接の子のみ反映し、子孫の変更を検出するには再帰走査が必要)
+            if has_subdirs.contains(dir_key) {
+                return true;
+            }
+            // リーフディレクトリ: mtime 未変更 → 配下の既存エントリを全て seen に追加して枝刈り
             let prefix_with_slash = if dir_key.is_empty() {
                 String::new()
             } else {
@@ -1138,6 +1151,50 @@ mod tests {
 
         // updated は sub1 の mtime 変更で 0 以上 (ディレクトリ mtime が更新されていれば updated)
         let _ = updated; // コンパイラ警告抑制
+    }
+
+    #[test]
+    fn incremental_scanでネストされたディレクトリ内の新規ファイルを検出する() {
+        // root/dir1/dir2/movie.mp4 を作成
+        let dir = TempDir::new().unwrap();
+        let root = fs::canonicalize(dir.path()).unwrap();
+        fs::create_dir_all(root.join("dir1/dir2")).unwrap();
+        fs::write(root.join("dir1/dir2/movie.mp4"), b"video").unwrap();
+
+        let db_file = tempfile::NamedTempFile::new().unwrap();
+        let indexer = Indexer::new(db_file.path().to_str().unwrap());
+        indexer.init_db().unwrap();
+        let ps = PathSecurity::new(vec![root.clone()], false).unwrap();
+
+        // 初回フルスキャン: dir1 + dir2 + movie.mp4 = 3
+        indexer.scan_directory(&root, &ps, "m", 2, None).unwrap();
+        assert_eq!(indexer.entry_count().unwrap(), 3);
+
+        // dir1 の mtime を記録
+        let dir1_mtime = fs::metadata(root.join("dir1")).unwrap().modified().unwrap();
+
+        // dir2 にファイル追加 (dir2 の mtime は変わるが dir1 の mtime は変わらない)
+        fs::write(root.join("dir1/dir2/new.mp4"), b"new video").unwrap();
+
+        // dir1 の mtime を元に戻す (テスト環境の安全策)
+        let times = std::fs::FileTimes::new().set_modified(dir1_mtime);
+        std::fs::File::open(root.join("dir1"))
+            .unwrap()
+            .set_times(times)
+            .unwrap();
+
+        // dir1 の mtime が変わっていないことを確認
+        let dir1_mtime_after = fs::metadata(root.join("dir1")).unwrap().modified().unwrap();
+        assert_eq!(dir1_mtime, dir1_mtime_after);
+
+        // incremental_scan で new.mp4 が検出されるべき
+        let (added, _updated, deleted) =
+            indexer.incremental_scan(&root, &ps, "m", 2, None).unwrap();
+
+        assert!(added >= 1, "new.mp4 が追加されるべき (added={added})");
+        assert_eq!(deleted, 0, "削除はないはず");
+        // dir1 + dir2 + movie.mp4 + new.mp4 = 4
+        assert_eq!(indexer.entry_count().unwrap(), 4);
     }
 
     #[test]
