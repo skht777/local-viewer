@@ -138,6 +138,49 @@ describe("useBatchThumbnails", () => {
     expect(revokedUrls).toContain(firstUrl);
   });
 
+  test("一部 ID 変更時に共通 ID の Blob URL が再利用される", async () => {
+    const { apiPost } = await import("../../src/hooks/api/apiClient");
+    vi.mocked(apiPost).mockResolvedValue({
+      thumbnails: {
+        "node-1": { data: btoa("data1") },
+        "node-2": { data: btoa("data2") },
+      },
+    });
+
+    const { result, rerender } = renderHook(
+      ({ ids }: { ids: string[] }) => useBatchThumbnails(ids),
+      { initialProps: { ids: ["node-1", "node-2"] }, wrapper },
+    );
+
+    await waitFor(() => {
+      expect(result.current.size).toBe(2);
+    });
+
+    const url1Before = result.current.get("node-1")!;
+    const url2Before = result.current.get("node-2")!;
+
+    // node-2 を残し node-3 を追加
+    vi.mocked(apiPost).mockResolvedValue({
+      thumbnails: {
+        "node-2": { data: btoa("data2") },
+        "node-3": { data: btoa("data3") },
+      },
+    });
+
+    rerender({ ids: ["node-2", "node-3"] });
+
+    await waitFor(() => {
+      expect(result.current.has("node-3")).toBe(true);
+    });
+
+    // node-2 の URL は再利用されている（同じ参照）
+    expect(result.current.get("node-2")).toBe(url2Before);
+    // node-1 の URL は revoke されている
+    expect(revokedUrls).toContain(url1Before);
+    // node-2 の URL は revoke されていない
+    expect(revokedUrls).not.toContain(url2Before);
+  });
+
   test("API エラー時は空マップのまま (フォールバック)", async () => {
     const { apiPost } = await import("../../src/hooks/api/apiClient");
     vi.mocked(apiPost).mockRejectedValue(new Error("network error"));

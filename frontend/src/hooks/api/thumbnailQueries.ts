@@ -67,31 +67,35 @@ export function useBatchThumbnails(nodeIds: string[]): Map<string, string> {
     staleTime: 10 * 60 * 1000, // サムネイルは長時間キャッシュ可
   });
 
-  // Blob URL のローカル管理 (Query キャッシュに載せない)
-  const prevUrlsRef = useRef<string[]>([]);
+  // Blob URL の差分管理 (共通 ID は再利用、不要分のみ revoke)
+  const prevUrlsRef = useRef(new Map<string, string>());
   const urlMap = useMemo(() => {
     if (!rawData) return new Map<string, string>();
 
-    // 前回の Blob URL を解放
-    for (const url of prevUrlsRef.current) {
-      URL.revokeObjectURL(url);
-    }
-
     const newMap = new Map<string, string>();
-    const newUrls: string[] = [];
+    // rawData にある ID: 既存 URL 再利用 or 新規作成
     for (const [id, base64] of rawData) {
-      const blobUrl = base64ToBlobUrl(base64);
-      newMap.set(id, blobUrl);
-      newUrls.push(blobUrl);
+      const existing = prevUrlsRef.current.get(id);
+      if (existing) {
+        newMap.set(id, existing);
+      } else {
+        newMap.set(id, base64ToBlobUrl(base64));
+      }
     }
-    prevUrlsRef.current = newUrls;
+    // 不要な URL のみ revoke
+    for (const [id, url] of prevUrlsRef.current) {
+      if (!newMap.has(id)) {
+        URL.revokeObjectURL(url);
+      }
+    }
+    prevUrlsRef.current = newMap;
     return newMap;
   }, [rawData]);
 
   // アンマウント時に全 Blob URL を解放
   useEffect(() => {
     return () => {
-      for (const url of prevUrlsRef.current) {
+      for (const url of prevUrlsRef.current.values()) {
         URL.revokeObjectURL(url);
       }
     };
