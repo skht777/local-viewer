@@ -83,6 +83,13 @@ export function FileBrowser({
   // サーバーサイドソート済みのため sortEntries はスキップ
   const filtered = useMemo(() => filterByTab(entries, tab, sort), [entries, tab, sort]);
 
+  // node_id → index の O(1) ルックアップマップ (findIndex O(n) を回避)
+  const indexMap = useMemo(() => {
+    const map = new Map<string, number>();
+    filtered.forEach((e, idx) => map.set(e.node_id, idx));
+    return map;
+  }, [filtered]);
+
   // バッチサムネイル: カードサムネイル + ディレクトリプレビューの node_ids を収集
   // 本体カードを先にし、バッチ API の件数上限でも優先的に取得されるようにする
   const thumbnailNodeIds = useMemo(() => {
@@ -171,11 +178,11 @@ export function FileBrowser({
       } else if (entry.kind === "pdf") {
         onPdfClick?.(entry.node_id);
       } else if (entry.kind === "image" && onImageClick) {
-        const imageIndex = filtered.findIndex((e) => e.node_id === entry.node_id);
+        const imageIndex = indexMap.get(entry.node_id) ?? -1;
         if (imageIndex >= 0) onImageClick(imageIndex);
       }
     },
-    [filtered, onNavigate, onPdfClick, onImageClick],
+    [indexMap, onNavigate, onPdfClick, onImageClick],
   );
 
   // オーバーレイ「▶ 開く」/ Space: kind に応じて適切なアクションを呼び分け
@@ -184,13 +191,13 @@ export function FileBrowser({
       if (entry.kind === "directory" || entry.kind === "archive") {
         onOpenViewer?.(entry.node_id);
       } else if (entry.kind === "image" && onImageClick) {
-        const imageIndex = filtered.findIndex((e) => e.node_id === entry.node_id);
+        const imageIndex = indexMap.get(entry.node_id) ?? -1;
         if (imageIndex >= 0) onImageClick(imageIndex);
       } else if (entry.kind === "pdf") {
         onPdfClick?.(entry.node_id);
       }
     },
-    [filtered, onOpenViewer, onImageClick, onPdfClick],
+    [indexMap, onOpenViewer, onImageClick, onPdfClick],
   );
 
   // オーバーレイ「→ 進入」: directory/archive のナビゲーション
@@ -208,7 +215,7 @@ export function FileBrowser({
   // キーボード移動: delta 分だけ選択を移動し、仮想スクロールで可視化
   const handleMove = useCallback(
     (delta: number) => {
-      const currentIndex = filtered.findIndex((e) => e.node_id === effectiveSelectedId);
+      const currentIndex = indexMap.get(effectiveSelectedId ?? "") ?? -1;
       const newIndex = currentIndex + delta;
       if (newIndex < 0 || newIndex >= filtered.length) return;
       const target = filtered[newIndex];
@@ -223,7 +230,7 @@ export function FileBrowser({
         el?.focus({ preventScroll: true });
       });
     },
-    [filtered, effectiveSelectedId, scrollToItem],
+    [filtered, indexMap, effectiveSelectedId, scrollToItem],
   );
 
   useBrowseKeyboard(

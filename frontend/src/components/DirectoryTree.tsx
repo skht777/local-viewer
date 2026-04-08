@@ -45,7 +45,7 @@ function TreeNode({ entry, depth, activeNodeId, ancestorNodeIds, onNavigate }: T
   // アクティブノードを表示範囲にスクロール
   useEffect(() => {
     if (isActive && buttonRef.current) {
-      buttonRef.current.scrollIntoView({ block: "nearest", behavior: "smooth" });
+      buttonRef.current.scrollIntoView({ block: "nearest", behavior: "auto" });
     }
   }, [isActive]);
 
