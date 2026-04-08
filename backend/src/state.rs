@@ -25,6 +25,8 @@ use crate::services::video_converter::VideoConverter;
 /// - `thumbnail_service`: 画像リサイズ + PDF サムネイル
 /// - `video_converter`: `FFmpeg` subprocess
 /// - `thumbnail_warmer`: バックグラウンドプリウォーム
+/// - `thumb_semaphore`: バッチサムネイル生成の並行度制限 (非アーカイブ)
+/// - `archive_thumb_semaphore`: アーカイブグループのサムネイル生成並行度制限
 /// - `indexer`: FTS5 trigram 検索インデクサー
 /// - `dir_index`: ディレクトリリスティングインデックス (browse 高速化)
 /// - `last_rebuild`: 最後のインデックスリビルド時刻 (レート制限用)
@@ -40,6 +42,8 @@ pub(crate) struct AppState {
     pub thumbnail_service: Arc<ThumbnailService>,
     pub video_converter: Arc<VideoConverter>,
     pub thumbnail_warmer: Arc<ThumbnailWarmer>,
+    pub thumb_semaphore: Arc<tokio::sync::Semaphore>,
+    pub archive_thumb_semaphore: Arc<tokio::sync::Semaphore>,
     pub indexer: Arc<Indexer>,
     pub dir_index: Arc<DirIndex>,
     pub last_rebuild: tokio::sync::Mutex<Option<Instant>>,

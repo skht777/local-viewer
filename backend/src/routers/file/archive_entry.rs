@@ -325,6 +325,8 @@ mod tests {
             thumbnail_service,
             video_converter,
             thumbnail_warmer,
+            thumb_semaphore: Arc::new(tokio::sync::Semaphore::new(8)),
+            archive_thumb_semaphore: Arc::new(tokio::sync::Semaphore::new(4)),
             indexer,
             dir_index,
             last_rebuild: tokio::sync::Mutex::new(None),

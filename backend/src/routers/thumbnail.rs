@@ -393,23 +393,30 @@ pub(crate) async fn serve_thumbnails_batch(
     // アーカイブエントリをグループ化 (registry ロックは 1 回のみ)
     let (archive_groups, regular_ids) = classify_node_ids(&state, &unique_ids);
 
-    // アーカイブグループの一括処理タスク (1 タスク/アーカイブ)
+    // アーカイブグループの一括処理タスク (AppState セマフォで並行度制限)
     let mut archive_handles = Vec::new();
     for (arc_path, entries) in archive_groups {
         let state = Arc::clone(&state);
-        archive_handles.push(tokio::task::spawn_blocking(move || {
-            generate_archive_group_thumbnails(&state, &arc_path, &entries)
+        let sem = Arc::clone(&state.archive_thumb_semaphore);
+        archive_handles.push(tokio::spawn(async move {
+            let Ok(_permit) = sem.acquire().await else {
+                return HashMap::new();
+            };
+            tokio::task::spawn_blocking(move || {
+                generate_archive_group_thumbnails(&state, &arc_path, &entries)
+            })
+            .await
+            .unwrap_or_default()
         }));
     }
 
-    // 非アーカイブエントリの個別処理タスク (Semaphore(8) で並行度制限)
-    let semaphore = Arc::new(tokio::sync::Semaphore::new(8));
+    // 非アーカイブエントリの個別処理タスク (AppState セマフォで並行度制限)
     let mut regular_handles = Vec::with_capacity(regular_ids.len());
 
     for nid in &regular_ids {
         let state = Arc::clone(&state);
         let nid = nid.clone();
-        let sem = Arc::clone(&semaphore);
+        let sem = Arc::clone(&state.thumb_semaphore);
 
         regular_handles.push(tokio::spawn(async move {
             let _permit = sem.acquire().await;
