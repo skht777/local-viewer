@@ -97,13 +97,13 @@ export function useBatchThumbnails(
     })),
   });
 
-  // 全チャンク結果をマージ
-  const chunkDataList = chunkResults.map((r) => r.data);
+  // 全チャンク結果をマージ (dataUpdatedAt で実際のデータ変更を追跡)
+  const dataKey = chunkResults.map((r) => r.dataUpdatedAt).join(",");
   const rawData = useMemo(() => {
     const merged = new Map<string, string>();
-    for (const data of chunkDataList) {
-      if (data) {
-        for (const [id, thumb] of Object.entries(data.thumbnails)) {
+    for (const result of chunkResults) {
+      if (result.data) {
+        for (const [id, thumb] of Object.entries(result.data.thumbnails)) {
           if (thumb.data) {
             merged.set(id, thumb.data);
           }
@@ -112,7 +112,7 @@ export function useBatchThumbnails(
     }
     return merged;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [chunkDataList.map((d) => d).join(",")]);
+  }, [dataKey]);
 
   // Blob URL の差分管理 (共通 ID は再利用、不要分のみ revoke)
   const prevUrlsRef = useRef(new Map<string, string>());

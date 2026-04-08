@@ -183,6 +183,45 @@ describe("useBatchThumbnails", () => {
     expect(revokedUrls).not.toContain(url2Before);
   });
 
+  test("チャンクデータ更新時に rawData が再マージされる", async () => {
+    const { apiPost } = await import("../../src/hooks/api/apiClient");
+
+    // 1回目: node-1 のみ返す
+    vi.mocked(apiPost).mockResolvedValue({
+      thumbnails: {
+        "node-1": { data: btoa("data1") },
+      },
+    });
+
+    const { result, rerender } = renderHook(
+      ({ ids }: { ids: string[] }) => useBatchThumbnails(ids),
+      { initialProps: { ids: ["node-1"] }, wrapper },
+    );
+
+    await waitFor(() => {
+      expect(result.current.thumbnails.size).toBe(1);
+    });
+    expect(result.current.thumbnails.has("node-1")).toBe(true);
+
+    // 2回目: node-1 を残して node-2 を追加 → 両方返す
+    vi.mocked(apiPost).mockResolvedValue({
+      thumbnails: {
+        "node-1": { data: btoa("data1") },
+        "node-2": { data: btoa("data2") },
+      },
+    });
+
+    rerender({ ids: ["node-1", "node-2"] });
+
+    await waitFor(() => {
+      expect(result.current.thumbnails.size).toBe(2);
+    });
+
+    // 両方の Blob URL が存在する
+    expect(result.current.thumbnails.has("node-1")).toBe(true);
+    expect(result.current.thumbnails.has("node-2")).toBe(true);
+  });
+
   test("API エラー時は空マップのまま (フォールバック)", async () => {
     const { apiPost } = await import("../../src/hooks/api/apiClient");
     vi.mocked(apiPost).mockRejectedValue(new Error("network error"));
