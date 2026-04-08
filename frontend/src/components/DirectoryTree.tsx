@@ -10,7 +10,7 @@
 
 import type { Ref } from "react";
 import { useCallback, useEffect, useRef } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { browseNodeOptions } from "../hooks/api/browseQueries";
 import { useTreeKeyboard } from "../hooks/useTreeKeyboard";
 import { useViewerStore } from "../stores/viewerStore";
@@ -37,6 +37,8 @@ interface TreeNodeProps {
 function TreeNode({ entry, depth, activeNodeId, ancestorNodeIds, onNavigate }: TreeNodeProps) {
   const { expandedNodeIds, toggleExpanded } = useViewerStore();
   const buttonRef = useRef<HTMLButtonElement>(null);
+  const queryClient = useQueryClient();
+  const hoverTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // 手動展開 ∪ 祖先自動展開
   const isExpanded = expandedNodeIds.has(entry.node_id) || ancestorNodeIds.includes(entry.node_id);
@@ -60,6 +62,19 @@ function TreeNode({ entry, depth, activeNodeId, ancestorNodeIds, onNavigate }: T
     onNavigate(entry.node_id);
   };
 
+  // 200ms デバウンス付き hover プリフェッチ (マウスカーソル通過で無駄リクエストを抑制)
+  const handlePointerEnter = () => {
+    hoverTimerRef.current = setTimeout(() => {
+      queryClient.prefetchQuery(browseNodeOptions(entry.node_id));
+    }, 200);
+  };
+  const handlePointerLeave = () => {
+    if (hoverTimerRef.current) {
+      clearTimeout(hoverTimerRef.current);
+      hoverTimerRef.current = null;
+    }
+  };
+
   // ディレクトリ/アーカイブ/PDFのみ子ノードを表示
   const childDirs =
     childData?.entries.filter(
@@ -74,6 +89,8 @@ function TreeNode({ entry, depth, activeNodeId, ancestorNodeIds, onNavigate }: T
         data-testid={`tree-node-${entry.node_id}`}
         data-node-id={entry.node_id}
         onClick={handleClick}
+        onPointerEnter={handlePointerEnter}
+        onPointerLeave={handlePointerLeave}
         className={`flex w-full items-center gap-1 px-2 py-1 text-left text-sm transition-colors hover:bg-surface-raised ${
           isActive ? "bg-surface-raised text-white" : "text-gray-300"
         }`}
