@@ -15,11 +15,13 @@ use serde::{Deserialize, Serialize};
 
 use crate::errors::AppError;
 use crate::services::browse_cursor::{self, MAX_LIMIT, SortOrder};
-use crate::services::dir_index::DirIndex;
+use crate::services::dir_index::{DirChildInfo, DirIndex};
 use crate::services::extensions::{self, EntryKind};
 use crate::services::models::{AncestorEntry, BrowseResponse, EntryMeta};
 use crate::services::natural_sort::encode_sort_key;
-use crate::services::node_registry::{NodeRegistry, scan_entries, scan_entry_metas, stat_entries};
+use crate::services::node_registry::{
+    NodeRegistry, ScannedEntry, scan_entries, scan_entry_metas, stat_entries,
+};
 use crate::state::AppState;
 
 // --- クエリパラメータ ---
@@ -248,15 +250,11 @@ pub(crate) async fn browse_directory(
                 (path, ps)
             };
 
-            // DirIndex 高速パス: ready かつ limit 指定時に試行 (既存ロックパターン維持)
+            // DirIndex 高速パス: ready かつ limit 指定時に試行
+            // Phase 0 (短ロック) → Phase 1 (ロックなし) → Phase 2 (短ロック)
             if is_dir_index_ready && has_limit && path.is_dir() {
-                #[allow(
-                    clippy::expect_used,
-                    reason = "Mutex poison は致命的エラー、パニックが適切"
-                )]
-                let mut reg = registry.lock().expect("NodeRegistry Mutex poisoned");
-                if let Some(result) = try_dir_index_browse(
-                    &mut reg,
+                if let Some(result) = try_dir_index_browse_split(
+                    &registry,
                     &dir_index,
                     &path,
                     &nid,
@@ -376,19 +374,20 @@ fn browse_directory_blocking(
     Ok((response, etag))
 }
 
-/// `DirIndex` 高速パスでディレクトリ一覧を取得する
+/// `DirIndex` 高速パス (Three-Phase Lock Splitting)
 ///
 /// `DirIndex` が ready かつ mtime が一致する場合のみ `Some` を返す。
-/// - `DirEntry` → `EntryMeta` への変換 (`node_id` 登録含む)
-/// - ディレクトリエントリの `child_count` / `preview_node_ids` を `DirIndex` から取得
-/// - カーソルは `DirIndex` 固有形式 (`sort_key` ベース)
+///
+/// - Phase 0 (短ロック) — `parent_key`, `root`, カーソル用パスを取得
+/// - Phase 1 (ロックなし) — `DirIndex` クエリ + canonicalize + `ScannedEntry` 構築
+/// - Phase 2 (短ロック) — `node_id` 登録 + パンくず
 #[allow(
     clippy::too_many_lines,
     clippy::too_many_arguments,
-    reason = "DirIndex → EntryMeta 変換ロジック、引数は browse パラメータの透過渡し"
+    reason = "Phase 0/1/2 の分割で行数が増加、引数は browse パラメータの透過渡し"
 )]
-fn try_dir_index_browse(
-    reg: &mut NodeRegistry,
+fn try_dir_index_browse_split(
+    registry: &Arc<std::sync::Mutex<NodeRegistry>>,
     dir_index: &DirIndex,
     path: &std::path::Path,
     node_id: &str,
@@ -396,10 +395,35 @@ fn try_dir_index_browse(
     limit: usize,
     cursor: Option<&str>,
 ) -> Option<(BrowseResponse, String)> {
-    // parent_path_key を計算 (mount_id/relative 形式)
-    let parent_key = reg.compute_parent_path_key(path)?;
+    // --- Phase 0 (短ロック): NodeRegistry から必要なキーを取得 ---
+    #[allow(
+        clippy::expect_used,
+        reason = "Mutex poison は致命的エラー、パニックが適切"
+    )]
+    let (parent_key, root, cursor_entry_path) = {
+        let reg = registry.lock().expect("NodeRegistry Mutex poisoned");
+        let parent_key = reg.compute_parent_path_key(path)?;
+        let root = reg
+            .path_security()
+            .find_root_for(path)
+            .map(std::path::Path::to_path_buf)?;
+        let cursor_path = cursor.and_then(|c| {
+            let decoded = browse_cursor::decode_cursor(c, sort).ok()?;
+            reg.resolve(&decoded.node_id)
+                .ok()
+                .map(std::path::Path::to_path_buf)
+        });
+        (parent_key, root, cursor_path)
+    }; // ロック解放
 
-    // mtime ガード: ファイルシステムの mtime と DirIndex の mtime を比較
+    // カーソル変換失敗時はフォールバック
+    if cursor.is_some() && cursor_entry_path.is_none() {
+        return None;
+    }
+
+    // --- Phase 1 (ロックなし): DirIndex クエリ + I/O ---
+
+    // mtime ガード
     let fs_mtime_ns = std::fs::metadata(path)
         .ok()
         .and_then(|m| m.modified().ok())
@@ -413,12 +437,12 @@ fn try_dir_index_browse(
             ns
         })?;
 
-    let stored_mtime = dir_index.get_dir_mtime(&parent_key).ok().flatten()?;
+    let reader = dir_index.reader().ok()?;
+    let stored_mtime = reader.get_dir_mtime(&parent_key).ok().flatten()?;
     if fs_mtime_ns != stored_mtime {
-        return None; // mtime 不一致 → DirIndex が古い
+        return None;
     }
 
-    // ソート指定文字列
     let sort_str = match sort {
         SortOrder::NameAsc => "name-asc",
         SortOrder::NameDesc => "name-desc",
@@ -426,21 +450,15 @@ fn try_dir_index_browse(
         SortOrder::DateDesc => "date-desc",
     };
 
-    // DirIndex カーソルデコード:
-    // browse_cursor 形式のカーソルから DirIndex 用の sort_key カーソルを抽出する
-    let dir_index_cursor = cursor.and_then(|c| {
-        let decoded = browse_cursor::decode_cursor(c, sort).ok()?;
-        let entry_path = reg.resolve(&decoded.node_id).ok()?.to_path_buf();
+    // DirIndex カーソルデコード
+    let dir_index_cursor = cursor_entry_path.and_then(|entry_path| {
         let name = entry_path.file_name()?.to_string_lossy().into_owned();
-
         if matches!(sort, SortOrder::NameAsc | SortOrder::NameDesc) {
-            // name 系ソート: カーソルの node_id から sort_key を構築
             let entry_sort_key = encode_sort_key(&name);
             let is_dir = entry_path.is_dir();
             let kind_flag = if is_dir { "0" } else { "1" };
             Some(format!("{kind_flag}\x00{entry_sort_key}"))
         } else {
-            // date 系ソート: mtime + sort_key のタプルカーソル
             let mtime_ns = std::fs::metadata(&entry_path)
                 .ok()?
                 .modified()
@@ -457,15 +475,12 @@ fn try_dir_index_browse(
         }
     });
 
-    // カーソルが指定されたが DirIndex 用カーソルに変換できない場合は
-    // scandir パスにフォールバックする (黙殺してページ先頭から返すのを防止)
     if cursor.is_some() && dir_index_cursor.is_none() {
         return None;
     }
 
-    // +1 で次ページ有無を判定
     let query_limit = limit + 1;
-    let entries = dir_index
+    let entries = reader
         .query_page(
             &parent_key,
             sort_str,
@@ -476,48 +491,31 @@ fn try_dir_index_browse(
 
     let has_next = entries.len() > limit;
     let page_entries: Vec<_> = entries.into_iter().take(limit).collect();
+    let total_count = reader.child_count(&parent_key).ok()?;
 
-    // total_count は DirIndex の child_count で取得
-    let total_count = dir_index.child_count(&parent_key).ok()?;
+    // ディレクトリの child_key を収集してバッチ取得
+    let dir_child_keys: Vec<String> = page_entries
+        .iter()
+        .filter(|de| de.kind == "directory")
+        .map(|de| format!("{parent_key}/{}", de.name))
+        .collect();
+    let dir_child_key_refs: Vec<&str> = dir_child_keys.iter().map(String::as_str).collect();
+    let dir_info = reader.batch_dir_info(&dir_child_key_refs, 3).ok()?;
 
-    // DirEntry → EntryMeta 変換 (共通関数 + ディレクトリ固有の child_count/preview 補完)
-    let root = reg
-        .path_security()
-        .find_root_for(path)
-        .map(std::path::Path::to_path_buf)?;
-    let mut entry_metas = Vec::with_capacity(page_entries.len());
+    // DirEntry → ScannedEntry 変換 (ロック不要)
+    let scanned = build_scanned_from_dir_index(&page_entries, &root, &parent_key, &dir_info);
 
-    for de in &page_entries {
-        let Some(mut meta) = dir_entry_to_entry_meta(de, &root, &parent_key, reg) else {
-            continue;
-        };
+    // --- Phase 2 (短ロック): node_id 登録 + パンくず ---
+    #[allow(
+        clippy::expect_used,
+        reason = "Mutex poison は致命的エラー、パニックが適切"
+    )]
+    let mut reg = registry.lock().expect("NodeRegistry Mutex poisoned");
 
-        // ディレクトリの child_count と preview_node_ids を DirIndex から補完
-        if meta.kind == EntryKind::Directory {
-            let child_key = format!("{parent_key}/{}", de.name);
-            meta.child_count = dir_index.child_count(&child_key).ok();
-            meta.preview_node_ids = dir_index
-                .preview_entries(&child_key, 3)
-                .ok()
-                .map(|pvs| {
-                    pvs.iter()
-                        .filter_map(|pv| {
-                            let pv_rel = parent_key_relative(&child_key);
-                            let pv_abs = root.join(pv_rel).join(&pv.name);
-                            let pv_resolved = std::fs::canonicalize(&pv_abs).ok()?;
-                            reg.register_resolved(&pv_resolved).ok()
-                        })
-                        .collect::<Vec<_>>()
-                })
-                .filter(|v| !v.is_empty());
-        }
-
-        entry_metas.push(meta);
-    }
+    let entry_metas = reg.register_scanned_entries(scanned).ok()?;
 
     let etag = compute_etag(&entry_metas);
 
-    // 次ページカーソル生成
     let next_cursor = if has_next {
         entry_metas
             .last()
@@ -526,10 +524,10 @@ fn try_dir_index_browse(
         None
     };
 
-    // パンくずリスト
     let parent_node_id = reg.get_parent_node_id(path);
+    // path は resolve() 由来で canonicalize 済み
     let ancestors = reg
-        .get_ancestors(path)
+        .get_ancestors_from_resolved(path)
         .into_iter()
         .map(|(nid, name)| AncestorEntry { node_id: nid, name })
         .collect();
@@ -547,6 +545,76 @@ fn try_dir_index_browse(
     };
 
     Some((response, etag))
+}
+
+/// `DirIndex` の `DirEntry` + バッチ情報から `ScannedEntry` を構築する (ロック不要)
+fn build_scanned_from_dir_index(
+    entries: &[crate::services::dir_index::DirEntry],
+    root: &std::path::Path,
+    parent_key: &str,
+    dir_info: &std::collections::HashMap<String, DirChildInfo>,
+) -> Vec<ScannedEntry> {
+    entries
+        .iter()
+        .filter_map(|de| {
+            let rel = parent_key_relative(parent_key);
+            let abs_path = root.join(rel).join(&de.name);
+            let resolved = std::fs::canonicalize(&abs_path).ok()?;
+
+            let kind = if de.kind == "directory" {
+                EntryKind::Directory
+            } else {
+                EntryKind::from_extension(
+                    &extensions::extract_extension(&de.name).to_ascii_lowercase(),
+                )
+            };
+
+            let mime_type = if kind == EntryKind::Directory {
+                None
+            } else {
+                let ext = extensions::extract_extension(&de.name).to_ascii_lowercase();
+                extensions::mime_for_extension(&ext).map(String::from)
+            };
+
+            #[allow(clippy::cast_precision_loss, reason = "mtime_ns → f64 秒は十分な精度")]
+            let modified_at = Some(de.mtime_ns as f64 / 1_000_000_000.0);
+
+            #[allow(clippy::cast_sign_loss, reason = "size_bytes は非負")]
+            let size_bytes = de.size_bytes.map(|v| v as u64);
+
+            let (child_count, preview_paths) = if kind == EntryKind::Directory {
+                let child_key = format!("{parent_key}/{}", de.name);
+                let info = dir_info.get(&child_key);
+                let count = info.map_or(0, |i| i.count);
+                let previews = info.and_then(|i| {
+                    let paths: Vec<std::path::PathBuf> = i
+                        .previews
+                        .iter()
+                        .filter_map(|pv| {
+                            let pv_rel = parent_key_relative(&child_key);
+                            let pv_abs = root.join(pv_rel).join(&pv.name);
+                            std::fs::canonicalize(&pv_abs).ok()
+                        })
+                        .collect();
+                    if paths.is_empty() { None } else { Some(paths) }
+                });
+                (Some(count), previews)
+            } else {
+                (None, None)
+            };
+
+            Some(ScannedEntry {
+                path: resolved,
+                kind,
+                name: de.name.clone(),
+                size_bytes,
+                modified_at,
+                mime_type,
+                child_count,
+                preview_paths,
+            })
+        })
+        .collect()
 }
 
 /// アーカイブファイルをディレクトリとして閲覧する
