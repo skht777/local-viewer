@@ -38,6 +38,13 @@ pub(crate) struct DirEntry {
     pub mtime_ns: i64,
 }
 
+/// ディレクトリの `child_count` + プレビューエントリ (`batch_dir_info` の戻り値)
+#[derive(Debug)]
+pub(crate) struct DirChildInfo {
+    pub count: usize,
+    pub previews: Vec<DirEntry>,
+}
+
 /// ディレクトリリスティング専用 `SQLite` インデックス
 ///
 /// - `parent_path` ベースで全エントリ (画像含む) を格納
@@ -615,6 +622,93 @@ impl DirIndexReader<'_> {
                 |row| row.get(0),
             )
             .ok();
+        Ok(result)
+    }
+
+    /// 複数ディレクトリの `child_count` + `preview_entries` を一括取得する
+    ///
+    /// `parent_keys` の各ディレクトリについて `DirChildInfo` を返す。
+    /// 存在しないキーは結果に含まれない。
+    #[allow(clippy::cast_sign_loss, reason = "COUNT(*) は非負")]
+    pub(crate) fn batch_dir_info(
+        &self,
+        parent_keys: &[&str],
+        preview_limit: usize,
+    ) -> Result<std::collections::HashMap<String, DirChildInfo>, DirIndexError> {
+        use std::collections::HashMap;
+
+        if parent_keys.is_empty() {
+            return Ok(HashMap::new());
+        }
+
+        // 動的 IN 句のプレースホルダ構築
+        let placeholders: Vec<String> = (1..=parent_keys.len()).map(|i| format!("?{i}")).collect();
+        let in_clause = placeholders.join(", ");
+
+        // child_count をバッチ取得
+        let count_sql = format!(
+            "SELECT parent_path, COUNT(*) FROM dir_entries \
+             WHERE parent_path IN ({in_clause}) GROUP BY parent_path"
+        );
+        let mut count_stmt = self.conn.prepare(&count_sql)?;
+        let params_vec: Vec<&dyn rusqlite::types::ToSql> = parent_keys
+            .iter()
+            .map(|k| k as &dyn rusqlite::types::ToSql)
+            .collect();
+        let count_rows = count_stmt.query_map(params_vec.as_slice(), |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
+        })?;
+
+        let mut result: HashMap<String, DirChildInfo> = HashMap::new();
+        for row in count_rows {
+            let (path, count) = row?;
+            result.insert(
+                path,
+                DirChildInfo {
+                    count: count as usize,
+                    previews: Vec::new(),
+                },
+            );
+        }
+
+        // preview_entries をウィンドウ関数でバッチ取得
+        #[allow(
+            clippy::cast_possible_wrap,
+            reason = "preview_limit は小さい値 (通常3)"
+        )]
+        let limit_i64 = preview_limit as i64;
+        let preview_sql = format!(
+            "SELECT parent_path, name, kind, sort_key, size_bytes, mtime_ns FROM (\
+                 SELECT *, ROW_NUMBER() OVER (\
+                     PARTITION BY parent_path ORDER BY sort_key ASC\
+                 ) AS rn \
+                 FROM dir_entries \
+                 WHERE parent_path IN ({in_clause}) \
+                   AND kind IN ('image', 'archive', 'pdf', 'video')\
+             ) WHERE rn <= ?{}",
+            parent_keys.len() + 1
+        );
+        let mut preview_stmt = self.conn.prepare(&preview_sql)?;
+        let mut preview_params: Vec<&dyn rusqlite::types::ToSql> = parent_keys
+            .iter()
+            .map(|k| k as &dyn rusqlite::types::ToSql)
+            .collect();
+        preview_params.push(&limit_i64);
+        let preview_rows = preview_stmt.query_map(preview_params.as_slice(), map_dir_entry)?;
+
+        for row in preview_rows {
+            let entry = row?;
+            let key = entry.parent_path.clone();
+            result
+                .entry(key)
+                .or_insert_with(|| DirChildInfo {
+                    count: 0,
+                    previews: Vec::new(),
+                })
+                .previews
+                .push(entry);
+        }
+
         Ok(result)
     }
 }
@@ -1644,5 +1738,110 @@ mod tests {
 
         // entry_count
         assert_eq!(reader.entry_count().unwrap(), idx.entry_count().unwrap(),);
+    }
+
+    /// `batch_dir_info` テスト用のデータをセットアップする
+    fn setup_batch_data(idx: &DirIndex) {
+        // mount1/photos に 2 サブディレクトリ + 1 画像
+        idx.ingest_walk_entry(&make_args(
+            "/data/photos",
+            "/data",
+            "m",
+            vec![("cats", 1_000_000), ("dogs", 2_000_000)],
+            vec![("top.jpg", 100, 3_000_000)],
+        ))
+        .unwrap();
+        // mount1/photos/cats に画像3枚
+        idx.ingest_walk_entry(&make_args(
+            "/data/photos/cats",
+            "/data",
+            "m",
+            vec![],
+            vec![
+                ("a.jpg", 100, 1_000_000),
+                ("b.png", 200, 2_000_000),
+                ("c.gif", 300, 3_000_000),
+            ],
+        ))
+        .unwrap();
+        // mount1/photos/dogs に画像1枚 + テキスト1枚
+        idx.ingest_walk_entry(&make_args(
+            "/data/photos/dogs",
+            "/data",
+            "m",
+            vec![],
+            vec![("d.jpg", 400, 4_000_000), ("readme.txt", 50, 5_000_000)],
+        ))
+        .unwrap();
+    }
+
+    #[test]
+    fn batch_dir_infoが複数ディレクトリのchild_countを一括取得する() {
+        let (idx, _tmp) = setup();
+        setup_batch_data(&idx);
+
+        let reader = idx.reader().unwrap();
+        let keys = &["m/photos/cats", "m/photos/dogs"];
+        let info = reader.batch_dir_info(keys, 3).unwrap();
+
+        assert_eq!(info.len(), 2);
+        assert_eq!(info["m/photos/cats"].count, 3); // a.jpg, b.png, c.gif
+        assert_eq!(info["m/photos/dogs"].count, 2); // d.jpg, readme.txt
+
+        // 個別クエリと一致することを検証
+        assert_eq!(
+            info["m/photos/cats"].count,
+            reader.child_count("m/photos/cats").unwrap(),
+        );
+        assert_eq!(
+            info["m/photos/dogs"].count,
+            reader.child_count("m/photos/dogs").unwrap(),
+        );
+    }
+
+    #[test]
+    fn batch_dir_infoが存在しないparent_keyを含む場合空エントリを返す() {
+        let (idx, _tmp) = setup();
+        setup_batch_data(&idx);
+
+        let reader = idx.reader().unwrap();
+        let keys = &["m/photos/cats", "m/nonexistent"];
+        let info = reader.batch_dir_info(keys, 3).unwrap();
+
+        // cats は存在、nonexistent は結果に含まれない
+        assert!(info.contains_key("m/photos/cats"));
+        assert!(!info.contains_key("m/nonexistent"));
+    }
+
+    #[test]
+    fn batch_dir_infoがpreview_limitに従いプレビューを制限する() {
+        let (idx, _tmp) = setup();
+        setup_batch_data(&idx);
+
+        let reader = idx.reader().unwrap();
+        let keys = &["m/photos/cats"];
+
+        // limit=2: cats には画像3枚あるが2枚まで
+        let info = reader.batch_dir_info(keys, 2).unwrap();
+        assert_eq!(info["m/photos/cats"].previews.len(), 2);
+
+        // limit=10: 全3枚返る
+        let info_all = reader.batch_dir_info(keys, 10).unwrap();
+        assert_eq!(info_all["m/photos/cats"].previews.len(), 3);
+
+        // 個別クエリと一致
+        let direct = reader.preview_entries("m/photos/cats", 2).unwrap();
+        assert_eq!(info["m/photos/cats"].previews.len(), direct.len());
+        for (batch, single) in info["m/photos/cats"].previews.iter().zip(direct.iter()) {
+            assert_eq!(batch.name, single.name);
+        }
+    }
+
+    #[test]
+    fn batch_dir_infoが空スライスで空hash_mapを返す() {
+        let (idx, _tmp) = setup();
+        let reader = idx.reader().unwrap();
+        let info = reader.batch_dir_info(&[], 3).unwrap();
+        assert!(info.is_empty());
     }
 }
