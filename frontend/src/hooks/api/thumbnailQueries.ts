@@ -7,6 +7,32 @@ import { useQueries } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { apiPost } from "./apiClient";
 
+// 安定チャンク分割の状態
+export interface ChunkState {
+  chunks: string[][];
+  idSet: Set<string>;
+}
+
+// 安定チャンク分割: 追加のみなら既存チャンクを維持し、新規 ID だけ新チャンクに
+// タブ切替等で ID が削除された場合は全チャンク再構成する
+export function computeStableChunks(ids: string[], size: number, prev: ChunkState): ChunkState {
+  const currentSet = new Set(ids);
+
+  // ID が削除された（タブ切替等）or 初回 → 全チャンク再構成
+  const hasRemoved = prev.chunks.length > 0 && [...prev.idSet].some((id) => !currentSet.has(id));
+  if (hasRemoved || prev.chunks.length === 0) {
+    return { chunks: splitIntoChunks(ids, size), idSet: currentSet };
+  }
+
+  // 無限スクロール (追加のみ) → 既存チャンク維持 + 新規チャンク追加
+  const newIds = ids.filter((id) => !prev.idSet.has(id));
+  if (newIds.length === 0) return prev;
+  return {
+    chunks: [...prev.chunks, ...splitIntoChunks(newIds, size)],
+    idSet: currentSet,
+  };
+}
+
 interface ThumbnailResult {
   data?: string;
   etag?: string;
@@ -56,8 +82,13 @@ export function useBatchThumbnails(nodeIds: string[]): {
     return () => clearTimeout(timer);
   }, [key]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // 50 件チャンクに分割 (チャンク境界を安定化し queryKey キャッシュを維持)
-  const chunks = useMemo(() => splitIntoChunks(debouncedIds, BATCH_SIZE), [debouncedIds]);
+  // 安定チャンク分割: 追加のみなら既存チャンクを維持し、新規 ID だけ新チャンクに
+  const chunksRef = useRef<ChunkState>({ chunks: [], idSet: new Set() });
+  const chunks = useMemo(() => {
+    const result = computeStableChunks(debouncedIds, BATCH_SIZE, chunksRef.current);
+    chunksRef.current = result;
+    return result.chunks;
+  }, [debouncedIds]);
 
   // useQueries: チャンク別に並列バッチリクエスト
   // queryKey にはソート済み ID を使用 → タブ切替でチャンク境界が変わってもキャッシュヒット
