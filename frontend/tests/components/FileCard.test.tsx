@@ -34,10 +34,17 @@ const dirEntry: BrowseEntry = {
 const noop = () => {};
 
 describe("FileCard", () => {
-  test("画像エントリでサムネイルURLのimgタグが表示される", () => {
-    render(<FileCard entry={imageEntry} onSelect={noop} onDoubleClick={noop} />);
+  test("画像エントリでバッチサムネイルのimgタグが表示される", () => {
+    render(
+      <FileCard
+        entry={imageEntry}
+        onSelect={noop}
+        onDoubleClick={noop}
+        batchThumbnailUrl="blob:mock-thumb"
+      />,
+    );
     const img = screen.getByRole("img");
-    expect(img).toHaveAttribute("src", "/api/thumbnail/img001");
+    expect(img).toHaveAttribute("src", "blob:mock-thumb");
   });
 
   test("ディレクトリエントリでアイコンが表示される", () => {
@@ -248,22 +255,36 @@ const dirWithPreview: BrowseEntry = {
 
 describe("FileCard プレビュー表示", () => {
   test("ディレクトリでpreview_node_idsがある場合プレビューが表示される", () => {
+    const thumbs = new Map([
+      ["prev1", "blob:prev1"],
+      ["prev2", "blob:prev2"],
+    ]);
     const { container } = render(
-      <FileCard entry={dirWithPreview} onSelect={noop} onDoubleClick={noop} />,
+      <FileCard
+        entry={dirWithPreview}
+        onSelect={noop}
+        onDoubleClick={noop}
+        batchThumbnails={thumbs}
+      />,
     );
-    // PreviewGrid が表示され、サムネイル画像が存在する
+    // PreviewGrid が表示され、バッチサムネイル画像が存在する
     const imgs = container.querySelectorAll("img");
     expect(imgs.length).toBeGreaterThanOrEqual(1);
-    expect(imgs[0]).toHaveAttribute("src", "/api/thumbnail/prev1");
+    expect(imgs[0]).toHaveAttribute("src", "blob:prev1");
   });
 
   test("アーカイブでサムネイルプレビューが表示される", () => {
     const { container } = render(
-      <FileCard entry={archiveEntry} onSelect={noop} onDoubleClick={noop} />,
+      <FileCard
+        entry={archiveEntry}
+        onSelect={noop}
+        onDoubleClick={noop}
+        batchThumbnailUrl="blob:arc-thumb"
+      />,
     );
     const imgs = container.querySelectorAll("img");
     expect(imgs).toHaveLength(1);
-    expect(imgs[0]).toHaveAttribute("src", "/api/thumbnail/arc001");
+    expect(imgs[0]).toHaveAttribute("src", "blob:arc-thumb");
   });
 
   test("preview_node_idsがnullの場合絵文字が表示される", () => {
@@ -273,9 +294,16 @@ describe("FileCard プレビュー表示", () => {
     expect(screen.getByText("folder")).toBeInTheDocument();
   });
 
-  test("画像エントリはサムネイルプレビューが表示される", () => {
-    render(<FileCard entry={imageEntry} onSelect={noop} onDoubleClick={noop} />);
+  test("画像エントリはバッチサムネイルで表示される", () => {
+    render(
+      <FileCard
+        entry={imageEntry}
+        onSelect={noop}
+        onDoubleClick={noop}
+        batchThumbnailUrl="blob:img-thumb"
+      />,
+    );
     const img = screen.getByRole("img");
-    expect(img).toHaveAttribute("src", "/api/thumbnail/img001");
+    expect(img).toHaveAttribute("src", "blob:img-thumb");
   });
 });

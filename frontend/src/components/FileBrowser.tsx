@@ -141,8 +141,7 @@ export function FileBrowser({
     enabled: !isLoading && filtered.length > 0,
   });
 
-  const { thumbnails: batchThumbnails, isLoading: isBatchLoading } =
-    useBatchThumbnails(thumbnailNodeIds);
+  const { thumbnails: batchThumbnails } = useBatchThumbnails(thumbnailNodeIds);
 
   // エントリ変更時（ナビゲーション・タブ切替）に先頭カードへ focus
   const firstCardRef = useRef<HTMLDivElement>(null);
@@ -345,7 +344,6 @@ export function FileBrowser({
                               isSelected={entry.node_id === effectiveSelectedId}
                               batchThumbnailUrl={batchThumbnails.get(entry.node_id)}
                               batchThumbnails={batchThumbnails}
-                              isBatchLoading={isBatchLoading}
                             />
                           );
                         })}

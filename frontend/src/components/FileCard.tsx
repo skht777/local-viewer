@@ -13,7 +13,6 @@ import { memo, useState } from "react";
 import { usePdfThumbnail } from "../hooks/usePdfThumbnail";
 import type { BrowseEntry } from "../types/api";
 import { formatFileSize } from "../utils/format";
-import { thumbnailUrl } from "../utils/thumbnailUrl";
 import { PreviewGrid } from "./PreviewGrid";
 
 interface FileCardProps {
@@ -26,7 +25,6 @@ interface FileCardProps {
   ref?: Ref<HTMLDivElement>;
   batchThumbnailUrl?: string;
   batchThumbnails?: Map<string, string>;
-  isBatchLoading?: boolean;
 }
 
 // kind に応じたアイコン
@@ -57,15 +55,12 @@ export const FileCard = memo(function FileCard({
   ref,
   batchThumbnailUrl,
   batchThumbnails,
-  isBatchLoading,
 }: FileCardProps) {
   const [hasImageError, setHasImageError] = useState(false);
   const [hasPreviewError, setHasPreviewError] = useState(false);
 
-  // バッチ Blob URL があれば使用、ローディング中はスケルトン、完了後は個別 URL フォールバック
-  const thumbSrc =
-    batchThumbnailUrl ??
-    (isBatchLoading ? undefined : thumbnailUrl(entry.node_id, entry.modified_at));
+  // バッチ Blob URL があれば使用、なければスケルトン表示（個別 API フォールバックなし）
+  const thumbSrc = batchThumbnailUrl;
   const isImagePreview = entry.kind === "image" && !hasImageError;
 
   // ディレクトリ: preview_node_ids があればサムネイルグリッド表示
@@ -126,10 +121,8 @@ export const FileCard = memo(function FileCard({
         ) : hasDirectoryPreview ? (
           <PreviewGrid
             previewNodeIds={entry.preview_node_ids!}
-            modifiedAt={entry.modified_at}
             onAllError={() => setHasPreviewError(true)}
             batchThumbnails={batchThumbnails}
-            isBatchLoading={isBatchLoading}
           />
         ) : hasArchivePreview ? (
           thumbSrc ? (

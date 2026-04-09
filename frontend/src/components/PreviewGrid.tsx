@@ -5,23 +5,14 @@
 // - 全画像エラー時に onAllError コールバックで通知
 
 import { useState } from "react";
-import { thumbnailUrl } from "../utils/thumbnailUrl";
 
 interface PreviewGridProps {
   previewNodeIds: string[];
-  modifiedAt?: number | null;
   onAllError?: () => void;
   batchThumbnails?: Map<string, string>;
-  isBatchLoading?: boolean;
 }
 
-export function PreviewGrid({
-  previewNodeIds,
-  modifiedAt,
-  onAllError,
-  batchThumbnails,
-  isBatchLoading,
-}: PreviewGridProps) {
+export function PreviewGrid({ previewNodeIds, onAllError, batchThumbnails }: PreviewGridProps) {
   const [errorSet, setErrorSet] = useState<Set<string>>(new Set());
 
   const handleError = (nodeId: string) => {
@@ -36,9 +27,8 @@ export function PreviewGrid({
     });
   };
 
-  // バッチ URL 優先、ローディング中は undefined（スケルトン）、完了後は個別 URL フォールバック
-  const thumbSrc = (id: string) =>
-    batchThumbnails?.get(id) ?? (isBatchLoading ? undefined : thumbnailUrl(id, modifiedAt));
+  // バッチ Blob URL があれば使用、なければスケルトン表示（個別 API フォールバックなし）
+  const thumbSrc = (id: string) => batchThumbnails?.get(id);
 
   // エラーでない画像のみ表示
   const validIds = previewNodeIds.filter((id) => !errorSet.has(id));
