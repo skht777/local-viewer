@@ -39,6 +39,26 @@ fn get_mtime_ns(path: &std::path::Path) -> Result<u128, AppError> {
         .map_or(0, |d| d.as_nanos()))
 }
 
+/// ファイルの `mtime_ns` を取得する（ディレクトリは拒否、metadata 1 回のみ）
+///
+/// `is_dir()` + `get_mtime_ns()` の 2 回 stat を統合。
+/// 類似: `thumbnail_warmer.rs` の `mtime_ns_of`（`std::io::Error` 版、ディレクトリ判定なし）
+fn file_mtime_ns(path: &std::path::Path, node_id: &str) -> Result<u128, AppError> {
+    let meta = std::fs::metadata(path).map_err(|_| AppError::NodeNotFound {
+        node_id: node_id.to_string(),
+    })?;
+    if meta.is_dir() {
+        return Err(AppError::NotSupported(
+            "ディレクトリのサムネイルは非対応です".to_string(),
+        ));
+    }
+    Ok(meta
+        .modified()
+        .ok()
+        .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
+        .map_or(0, |d| d.as_nanos()))
+}
+
 /// 拡張子を小文字で取得する
 fn ext_lower(name: &str) -> String {
     std::path::Path::new(name)
@@ -158,14 +178,8 @@ fn generate_thumbnail_bytes(state: &AppState, node_id: &str) -> Result<Thumbnail
         registry.resolve(node_id)?.to_path_buf()
     };
 
-    // ディレクトリ
-    if resolved.is_dir() {
-        return Err(AppError::NotSupported(
-            "ディレクトリのサムネイルは非対応です".to_string(),
-        ));
-    }
-
-    let mtime_ns = get_mtime_ns(&resolved)?;
+    // ディレクトリチェック + mtime 取得 (metadata 1 回)
+    let mtime_ns = file_mtime_ns(&resolved, node_id)?;
     let cache_key = thumb_svc.make_cache_key(node_id, mtime_ns);
     let etag = compute_thumb_etag(mtime_ns, node_id);
 
@@ -232,13 +246,8 @@ fn generate_thumbnail_from_resolved(
     let thumb_svc = &state.thumbnail_service;
     let video_conv = &state.video_converter;
 
-    if resolved.is_dir() {
-        return Err(AppError::NotSupported(
-            "ディレクトリのサムネイルは非対応です".to_string(),
-        ));
-    }
-
-    let mtime_ns = get_mtime_ns(resolved)?;
+    // ディレクトリチェック + mtime 取得 (metadata 1 回)
+    let mtime_ns = file_mtime_ns(resolved, node_id)?;
     let cache_key = thumb_svc.make_cache_key(node_id, mtime_ns);
     let etag = compute_thumb_etag(mtime_ns, node_id);
     let ext = ext_lower(&resolved.to_string_lossy());
