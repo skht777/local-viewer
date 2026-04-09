@@ -82,6 +82,7 @@ pub(crate) fn scan_child_meta(
     path_security: &PathSecurity,
     directory: &Path,
     preview_limit: usize,
+    allow_symlinks: bool,
 ) -> ScannedChildMeta {
     let Ok(entries) = std::fs::read_dir(directory) else {
         return ScannedChildMeta {
@@ -108,7 +109,12 @@ pub(crate) fn scan_child_meta(
             if is_thumbnail_extension(ext) {
                 let path = entry.path();
                 if path_security.validate_child(&path, ft.is_symlink()).is_ok() {
-                    let resolved = std::fs::canonicalize(&path).unwrap_or(path);
+                    // symlink 無効時は canonicalize 不要
+                    let resolved = if allow_symlinks {
+                        std::fs::canonicalize(&path).unwrap_or(path)
+                    } else {
+                        path
+                    };
                     preview_paths.push(resolved);
                 }
             }
@@ -129,10 +135,17 @@ pub(crate) fn scan_entry_metas(
     stated: Vec<(PathBuf, EntryKind, Option<Metadata>)>,
     preview_limit: usize,
 ) -> Vec<ScannedEntry> {
+    let allow_symlinks = path_security.is_allow_symlinks();
     stated
-        .into_iter()
+        .into_par_iter()
         .map(|(path, kind, meta)| {
-            let resolved = std::fs::canonicalize(&path).unwrap_or_else(|_| path.clone());
+            // symlink 無効時は canonicalize 不要 (validate_child で拒否済み、
+            // read_dir の子は canonical 親 + エントリ名なので canonical)
+            let resolved = if allow_symlinks {
+                std::fs::canonicalize(&path).unwrap_or_else(|_| path.clone())
+            } else {
+                path.clone()
+            };
             let name = path
                 .file_name()
                 .map_or_else(String::new, |n| n.to_string_lossy().into_owned());
@@ -160,7 +173,7 @@ pub(crate) fn scan_entry_metas(
             };
 
             let (child_count, preview_paths) = if kind == EntryKind::Directory {
-                let cm = scan_child_meta(path_security, &path, preview_limit);
+                let cm = scan_child_meta(path_security, &path, preview_limit, allow_symlinks);
                 (Some(cm.count), Some(cm.preview_paths))
             } else {
                 (None, None)

@@ -476,7 +476,7 @@ fn scan_entriesがディレクトリ内エントリを返す() {
 fn scan_child_metaが子エントリ数とプレビューパスを返す() {
     let env = ListTestEnv::new();
     let ps = Arc::new(PathSecurity::new(vec![env.root.clone()], false).unwrap());
-    let cm = scan_child_meta(&ps, &env.root.join("subdir"), 3);
+    let cm = scan_child_meta(&ps, &env.root.join("subdir"), 3, false);
     assert_eq!(cm.count, 2); // inner.jpg, inner2.png
     assert!(!cm.preview_paths.is_empty());
     assert!(cm.preview_paths.len() <= 3);
