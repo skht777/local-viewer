@@ -44,7 +44,8 @@ interface BatchResponse {
   thumbnails: Record<string, ThumbnailResult>;
 }
 
-const BATCH_SIZE = 50;
+// browse API の page size (100) と揃える
+const BATCH_SIZE = 100;
 
 // base64 → Blob URL 変換
 function base64ToBlobUrl(base64: string): string {

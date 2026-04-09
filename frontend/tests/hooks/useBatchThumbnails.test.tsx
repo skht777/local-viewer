@@ -267,10 +267,10 @@ describe("useBatchThumbnails", () => {
     });
   });
 
-  test("50 件超の node_ids が複数バッチリクエストに分割される", async () => {
+  test("100 件超の node_ids が複数バッチリクエストに分割される", async () => {
     const { apiPost } = await import("../../src/hooks/api/apiClient");
 
-    const ids = Array.from({ length: 60 }, (_, i) => `node-${i}`);
+    const ids = Array.from({ length: 110 }, (_, i) => `node-${i}`);
 
     vi.mocked(apiPost).mockImplementation(async (_url, body) => {
       const reqIds = (body as { node_ids: string[] }).node_ids;
@@ -284,22 +284,22 @@ describe("useBatchThumbnails", () => {
     const { result } = renderHook(() => useBatchThumbnails(ids), { wrapper });
 
     await waitFor(() => {
-      expect(result.current.thumbnails.size).toBe(60);
+      expect(result.current.thumbnails.size).toBe(110);
     });
 
     expect(vi.mocked(apiPost)).toHaveBeenCalledTimes(2);
 
     const firstCallBody = vi.mocked(apiPost).mock.calls[0][1] as { node_ids: string[] };
-    expect(firstCallBody.node_ids).toHaveLength(50);
+    expect(firstCallBody.node_ids).toHaveLength(100);
 
     const secondCallBody = vi.mocked(apiPost).mock.calls[1][1] as { node_ids: string[] };
     expect(secondCallBody.node_ids).toHaveLength(10);
   });
 
-  test("50 件以下は 1 回のバッチリクエストで完結する", async () => {
+  test("100 件以下は 1 回のバッチリクエストで完結する", async () => {
     const { apiPost } = await import("../../src/hooks/api/apiClient");
 
-    const ids = Array.from({ length: 30 }, (_, i) => `node-${i}`);
+    const ids = Array.from({ length: 72 }, (_, i) => `node-${i}`);
 
     vi.mocked(apiPost).mockImplementation(async (_url, body) => {
       const reqIds = (body as { node_ids: string[] }).node_ids;
@@ -313,11 +313,11 @@ describe("useBatchThumbnails", () => {
     const { result } = renderHook(() => useBatchThumbnails(ids), { wrapper });
 
     await waitFor(() => {
-      expect(result.current.thumbnails.size).toBe(30);
+      expect(result.current.thumbnails.size).toBe(72);
     });
 
     expect(vi.mocked(apiPost)).toHaveBeenCalledTimes(1);
     const callBody = vi.mocked(apiPost).mock.calls[0][1] as { node_ids: string[] };
-    expect(callBody.node_ids).toHaveLength(30);
+    expect(callBody.node_ids).toHaveLength(72);
   });
 });

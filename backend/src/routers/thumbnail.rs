@@ -512,7 +512,7 @@ fn generate_archive_group_thumbnails(
 
 /// `POST /api/thumbnails/batch` — バッチサムネイルを返す
 ///
-/// - 最大 50 件、重複排除
+/// - 最大 100 件、重複排除
 /// - 同一アーカイブのエントリをグループ化して一括処理
 /// - 全体ステータスは常に 200
 #[allow(
@@ -525,13 +525,14 @@ pub(crate) async fn serve_thumbnails_batch(
 ) -> Response {
     use base64::Engine;
 
-    // 50 件上限 + 重複排除 (順序保持)
+    // 100 件上限 + 重複排除 (順序保持)
+    // browse API の page size (100) と揃える。セマフォで並行度制限するため過負荷リスクなし
     let mut seen = std::collections::HashSet::new();
     let unique_ids: Vec<String> = body
         .node_ids
         .into_iter()
         .filter(|id| seen.insert(id.clone()))
-        .take(50)
+        .take(100)
         .collect();
 
     // アーカイブエントリをグループ化 + 通常ファイルのパス解決 (registry lock 1 回のみ)
