@@ -558,24 +558,9 @@ fn try_dir_index_browse_split(
 
 /// `DirIndex` の `DirEntry` + バッチ情報から `ScannedEntry` を構築する (ロック不要)
 ///
-/// `allow_symlinks` が false の場合、DirIndex エントリは indexer が `validate_child()` で
-/// 検証済みのため `canonicalize()` をスキップし、`root.join(rel).join(name)` をそのまま使用する。
-/// `DirIndex` パスの存在確認付きパス解決
-///
-/// symlink 有効時は `canonicalize` で正規化、無効時は `exists()` で存在確認のみ。
-fn resolve_dir_index_path(
-    abs_path: &std::path::Path,
-    allow_symlinks: bool,
-) -> Option<std::path::PathBuf> {
-    if allow_symlinks {
-        std::fs::canonicalize(abs_path).ok()
-    } else if abs_path.exists() {
-        Some(abs_path.to_path_buf())
-    } else {
-        None
-    }
-}
-
+/// mtime ガード通過済みのため、DirIndex のエントリはファイルシステムと一致している。
+/// `exists()` / `canonicalize()` をスキップしてパスをそのまま使用する。
+/// symlink 有効時のみ `canonicalize` で正規化する。
 fn build_scanned_from_dir_index(
     entries: &[crate::services::dir_index::DirEntry],
     root: &std::path::Path,
@@ -588,7 +573,13 @@ fn build_scanned_from_dir_index(
         .filter_map(|de| {
             let rel = parent_key_relative(parent_key);
             let abs_path = root.join(rel).join(&de.name);
-            let resolved = resolve_dir_index_path(&abs_path, allow_symlinks)?;
+            // mtime ガード通過済み: エントリ構成はスキャン時点から不変
+            // symlink 有効時のみ canonicalize で正規化
+            let resolved = if allow_symlinks {
+                std::fs::canonicalize(&abs_path).ok()?
+            } else {
+                abs_path
+            };
 
             let kind = if de.kind == "directory" {
                 EntryKind::Directory
@@ -622,7 +613,11 @@ fn build_scanned_from_dir_index(
                         .filter_map(|pv| {
                             let pv_rel = parent_key_relative(&child_key);
                             let pv_abs = root.join(pv_rel).join(&pv.name);
-                            resolve_dir_index_path(&pv_abs, allow_symlinks)
+                            if allow_symlinks {
+                                std::fs::canonicalize(&pv_abs).ok()
+                            } else {
+                                Some(pv_abs)
+                            }
                         })
                         .collect();
                     if paths.is_empty() { None } else { Some(paths) }
