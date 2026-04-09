@@ -382,20 +382,32 @@ fn classify_node_ids(state: &AppState, node_ids: &[String]) -> ClassifiedNodes {
 enum PreCheckResult {
     /// キャッシュヒット — セマフォ不要で即座に返却可能
     Cached { data: Vec<u8>, etag: String },
-    /// キャッシュミス — セマフォ取得後に生成が必要
-    NeedsGeneration {
+    /// キャッシュミス (画像/アーカイブ) — ソースバイト列を drvfs から逐次読み込み済み
+    /// 生成タスクは drvfs に触れず CPU 処理 (デコード+リサイズ) のみ行う
+    NeedsResize {
+        source_bytes: Vec<u8>,
+        cache_key: String,
+        etag: String,
+    },
+    /// キャッシュミス (PDF/動画) — サブプロセスが必要なためパスを保持
+    NeedsSubprocess {
         resolved: std::path::PathBuf,
         mtime_ns: u128,
         file_size: u64,
     },
-    /// ディレクトリ / stat 失敗 — エラーエントリとして即座に返却
+    /// ディレクトリ / stat 失敗 / 大規模アーカイブ — エラーエントリとして即座に返却
     Skipped(BatchThumbnailEntry),
 }
 
-/// 通常エントリのキャッシュプレチェック (`spawn_blocking` 内で実行)
+/// 通常エントリのキャッシュプレチェック + ソース読み込み (`spawn_blocking` 内で実行)
 ///
-/// 各エントリに対して `metadata()` 1 回でディレクトリ判定 + mtime 取得 → キャッシュ確認。
-/// キャッシュ済みエントリはセマフォを経由せず即座に返却できる。
+/// 逐次処理で drvfs の並列 I/O 劣化を回避する:
+/// 1. `metadata()` 1 回でディレクトリ判定 + mtime + サイズ取得
+/// 2. キャッシュ確認 → ヒット時は即座に返却
+/// 3. キャッシュミス時はソースバイト列を drvfs から読み込み
+///    (画像: ファイル全体、アーカイブ: 先頭画像エントリ展開)
+///
+/// 生成タスクは drvfs に触れず、メモリ上のデコード+リサイズのみ行う。
 fn pre_check_regular_entries(
     state: &AppState,
     entries: &[(String, std::path::PathBuf)],
@@ -409,13 +421,40 @@ fn pre_check_regular_entries(
                 Ok((mtime_ns, file_size)) => {
                     let cache_key = thumb_svc.make_cache_key(nid, mtime_ns);
                     let etag = compute_thumb_etag(mtime_ns, nid);
+
+                    // キャッシュヒット → drvfs 読み込み不要
                     if let Some(data) = thumb_svc.try_read_cached(&cache_key) {
-                        PreCheckResult::Cached { data, etag }
-                    } else {
-                        PreCheckResult::NeedsGeneration {
+                        return (nid.clone(), PreCheckResult::Cached { data, etag });
+                    }
+
+                    let ext = ext_lower(&resolved.to_string_lossy());
+
+                    // PDF/動画はサブプロセス (pdftoppm/ffmpeg) が必要 → パス保持
+                    if PDF_EXTENSIONS.contains(&ext.as_str())
+                        || VIDEO_EXTENSIONS.contains(&ext.as_str())
+                    {
+                        PreCheckResult::NeedsSubprocess {
                             resolved: resolved.clone(),
                             mtime_ns,
                             file_size,
+                        }
+                    } else {
+                        // 画像/アーカイブ → ソースバイト列を drvfs から逐次読み込み
+                        match read_source_bytes(state, resolved, file_size) {
+                            Ok(source_bytes) => PreCheckResult::NeedsResize {
+                                source_bytes,
+                                cache_key,
+                                etag,
+                            },
+                            Err(app_err) => {
+                                let (code, msg) = error_to_code_message(&app_err);
+                                PreCheckResult::Skipped(BatchThumbnailEntry {
+                                    data: None,
+                                    etag: None,
+                                    error: Some(msg),
+                                    code: Some(code),
+                                })
+                            }
                         }
                     }
                 }
@@ -432,6 +471,44 @@ fn pre_check_regular_entries(
             (nid.clone(), result)
         })
         .collect()
+}
+
+/// ソースバイト列を drvfs から読み込む (画像 / アーカイブ / PDF / 動画)
+///
+/// アーカイブ: 先頭画像エントリを展開して返す (サイズ閾値超過はスキップ)
+/// 画像: ファイル全体を読み込む
+/// PDF / 動画: サムネイル生成にはサブプロセスが必要なのでパスのみ保持 → 空バイトで返す
+fn read_source_bytes(
+    state: &AppState,
+    resolved: &std::path::Path,
+    file_size: u64,
+) -> Result<Vec<u8>, AppError> {
+    let ext = ext_lower(&resolved.to_string_lossy());
+
+    // アーカイブ → 先頭画像エントリを展開
+    if state.archive_service.is_supported(resolved) {
+        if file_size > ARCHIVE_THUMB_MAX_BYTES {
+            return Err(AppError::NotSupported(
+                "アーカイブが大きすぎるためサムネイル生成をスキップします".to_string(),
+            ));
+        }
+        let entry = state
+            .archive_service
+            .first_image_entry(resolved)?
+            .ok_or_else(|| AppError::NoImage("アーカイブ内に画像が見つかりません".to_string()))?;
+        let data = state.archive_service.extract_entry(resolved, &entry.name)?;
+        return Ok(data.to_vec());
+    }
+
+    // 画像ファイル全体を読み込み
+    if IMAGE_EXTENSIONS.contains(&ext.as_str()) {
+        return std::fs::read(resolved)
+            .map_err(|e| AppError::InvalidImage(format!("ファイル読み込み失敗: {e}")));
+    }
+
+    Err(AppError::NotSupported(
+        "サムネイル非対応のファイル形式です".to_string(),
+    ))
 }
 
 /// 同一アーカイブの複数エントリを一括展開してサムネイル生成する
@@ -606,24 +683,41 @@ pub(crate) async fn serve_thumbnails_batch(
             PreCheckResult::Skipped(entry) => {
                 thumbnails.insert(nid, entry);
             }
-            PreCheckResult::NeedsGeneration {
+            PreCheckResult::NeedsResize {
+                source_bytes,
+                cache_key,
+                etag,
+            } => {
+                let state = Arc::clone(&state);
+                let sem = Arc::clone(&state.thumb_semaphore);
+
+                let handle = tokio::spawn(async move {
+                    let _permit = sem.acquire().await;
+                    // ソースバイト列はメモリ上 → CPU 処理のみ (drvfs I/O なし)
+                    let result = tokio::task::spawn_blocking(move || {
+                        state
+                            .thumbnail_service
+                            .generate_from_bytes(&source_bytes, &cache_key)
+                    })
+                    .await;
+                    thumb_result_to_entry(result, etag)
+                });
+                regular_handles.push((nid, handle));
+            }
+            PreCheckResult::NeedsSubprocess {
                 resolved,
                 mtime_ns,
                 file_size,
             } => {
                 let state = Arc::clone(&state);
-                let nid_clone = nid.clone();
                 let sem = Arc::clone(&state.thumb_semaphore);
 
                 let handle = tokio::spawn(async move {
                     let _permit = sem.acquire().await;
                     let result = tokio::task::spawn_blocking(move || {
-                        generate_thumbnail_with_mtime(
-                            &state, &nid_clone, &resolved, mtime_ns, file_size,
-                        )
+                        generate_thumbnail_with_mtime(&state, "", &resolved, mtime_ns, file_size)
                     })
                     .await;
-
                     match result {
                         Ok(Ok(thumb)) => {
                             let b64 = base64::engine::general_purpose::STANDARD.encode(&thumb.data);
@@ -688,6 +782,40 @@ pub(crate) async fn serve_thumbnails_batch(
     }
 
     Json(BatchResponse { thumbnails }).into_response()
+}
+
+/// `spawn_blocking` の結果を `BatchThumbnailEntry` に変換する (画像バイト列用)
+fn thumb_result_to_entry(
+    result: Result<Result<Vec<u8>, AppError>, tokio::task::JoinError>,
+    etag: String,
+) -> BatchThumbnailEntry {
+    use base64::Engine;
+    match result {
+        Ok(Ok(thumb)) => {
+            let b64 = base64::engine::general_purpose::STANDARD.encode(&thumb);
+            BatchThumbnailEntry {
+                data: Some(b64),
+                etag: Some(etag),
+                error: None,
+                code: None,
+            }
+        }
+        Ok(Err(app_err)) => {
+            let (code, msg) = error_to_code_message(&app_err);
+            BatchThumbnailEntry {
+                data: None,
+                etag: None,
+                error: Some(msg),
+                code: Some(code),
+            }
+        }
+        Err(_join_err) => BatchThumbnailEntry {
+            data: None,
+            etag: None,
+            error: Some("タスク実行エラー".to_string()),
+            code: Some("INTERNAL_ERROR".to_string()),
+        },
+    }
 }
 
 /// `AppError` からエラーコードとメッセージを抽出する
