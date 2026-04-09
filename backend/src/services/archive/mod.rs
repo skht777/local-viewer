@@ -181,15 +181,20 @@ impl ArchiveService {
     ///
     /// アーカイブファイル自体のサムネイル生成用。
     /// 画像拡張子を持つ最初のエントリを返す (ディレクトリは除外)。
+    ///
+    /// `list_entries` (全エントリ走査 + 合計サイズ検証) を経由せず、
+    /// 最初の画像が見つかった時点で即座に返す軽量パス。
     pub(crate) fn first_image_entry(
         &self,
         archive_path: &Path,
     ) -> Result<Option<ArchiveEntry>, AppError> {
-        let entries = self.list_entries(archive_path)?;
-        Ok(entries
-            .iter()
-            .find(|e| !e.is_dir && is_image_entry(&e.name))
-            .cloned())
+        let reader = self.get_reader(archive_path).ok_or_else(|| {
+            AppError::InvalidArchive(format!(
+                "サポートされていないアーカイブ形式です: {}",
+                archive_path.display()
+            ))
+        })?;
+        reader.find_first_image(archive_path)
     }
 
     /// 複数エントリを一括抽出する (バッチサムネイル用)
@@ -257,14 +262,6 @@ impl ArchiveService {
         diag.entry("7z".to_string()).or_insert(false);
         diag
     }
-}
-
-/// エントリ名が画像拡張子を持つかチェックする
-fn is_image_entry(name: &str) -> bool {
-    let lower = name.to_lowercase();
-    crate::services::extensions::IMAGE_EXTENSIONS
-        .iter()
-        .any(|ext| lower.ends_with(ext))
 }
 
 /// アーカイブファイルの mtime (ナノ秒) を取得する

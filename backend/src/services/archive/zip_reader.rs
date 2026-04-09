@@ -210,6 +210,48 @@ impl ArchiveReader for ZipArchiveReader {
         let ext_lower = format!(".{}", ext.to_string_lossy().to_lowercase());
         ZIP_EXTENSIONS.contains(&ext_lower.as_str())
     }
+
+    /// サムネイル用: 最初の画像エントリで即座に返す (全エントリ走査・合計サイズ検証なし)
+    fn find_first_image(&self, archive_path: &Path) -> Result<Option<ArchiveEntry>, AppError> {
+        let file = std::fs::File::open(archive_path)
+            .map_err(|e| AppError::InvalidArchive(format!("ファイルを開けません: {e}")))?;
+        let mut archive = zip::ZipArchive::new(file)
+            .map_err(|e| AppError::InvalidArchive(format!("ZIP を読み取れません: {e}")))?;
+
+        for i in 0..archive.len() {
+            let info = archive.by_index_raw(i).map_err(|e| {
+                AppError::InvalidArchive(format!("ZIP エントリ読み取りエラー: {e}"))
+            })?;
+
+            if info.encrypted() {
+                return Err(AppError::ArchivePassword(
+                    "パスワード付きアーカイブは未対応です".to_string(),
+                ));
+            }
+
+            if info.is_dir() {
+                continue;
+            }
+
+            let name = info.name().replace('\\', "/");
+
+            if ArchiveEntryValidator::validate_entry_name(&name).is_err() {
+                continue;
+            }
+
+            // 画像エントリが見つかったら即座に返す (合計サイズ検証スキップ)
+            if super::reader::is_image_name(&name) {
+                return Ok(Some(ArchiveEntry {
+                    name,
+                    size_compressed: info.compressed_size(),
+                    size_uncompressed: info.size(),
+                    is_dir: false,
+                }));
+            }
+        }
+
+        Ok(None)
+    }
 }
 
 #[cfg(test)]

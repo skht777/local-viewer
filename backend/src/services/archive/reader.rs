@@ -9,6 +9,13 @@ use std::path::Path;
 use bytes::Bytes;
 
 use crate::errors::AppError;
+use crate::services::extensions::IMAGE_EXTENSIONS;
+
+/// エントリ名が画像拡張子を持つかチェックする
+pub(crate) fn is_image_name(name: &str) -> bool {
+    let lower = name.to_lowercase();
+    IMAGE_EXTENSIONS.iter().any(|ext| lower.ends_with(ext))
+}
 
 /// アーカイブ内のエントリ情報
 #[derive(Debug, Clone)]
@@ -73,4 +80,16 @@ pub(crate) trait ArchiveReader: Send + Sync {
 
     /// 指定パスのアーカイブ形式をサポートするか
     fn supports(&self, path: &Path) -> bool;
+
+    /// サムネイル用: 最初の画像エントリを高速に探す
+    ///
+    /// `list_entries` と異なり全エントリ走査・合計サイズ検証を行わず、
+    /// 最初の画像エントリが見つかった時点で即座に返す。
+    /// デフォルト実装は `list_entries` にフォールバックする。
+    fn find_first_image(&self, archive_path: &Path) -> Result<Option<ArchiveEntry>, AppError> {
+        let entries = self.list_entries(archive_path)?;
+        Ok(entries
+            .into_iter()
+            .find(|e| !e.is_dir && is_image_name(&e.name)))
+    }
 }
