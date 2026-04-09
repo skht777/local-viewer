@@ -39,11 +39,17 @@ fn get_mtime_ns(path: &std::path::Path) -> Result<u128, AppError> {
         .map_or(0, |d| d.as_nanos()))
 }
 
-/// ファイルの `mtime_ns` を取得する（ディレクトリは拒否、metadata 1 回のみ）
+/// アーカイブサムネイル生成をスキップするファイルサイズ上限 (1.5 GB)
+///
+/// WSL2 drvfs 上の大規模アーカイブはエントリ列挙だけで数秒かかるため、
+/// サムネイル生成を諦めて応答速度を優先する。
+const ARCHIVE_THUMB_MAX_BYTES: u64 = 1_500_000_000;
+
+/// ファイルの `mtime_ns` + サイズを取得する（ディレクトリは拒否、metadata 1 回のみ）
 ///
 /// `is_dir()` + `get_mtime_ns()` の 2 回 stat を統合。
 /// 類似: `thumbnail_warmer.rs` の `mtime_ns_of`（`std::io::Error` 版、ディレクトリ判定なし）
-fn file_mtime_ns(path: &std::path::Path, node_id: &str) -> Result<u128, AppError> {
+fn file_meta(path: &std::path::Path, node_id: &str) -> Result<(u128, u64), AppError> {
     let meta = std::fs::metadata(path).map_err(|_| AppError::NodeNotFound {
         node_id: node_id.to_string(),
     })?;
@@ -52,11 +58,12 @@ fn file_mtime_ns(path: &std::path::Path, node_id: &str) -> Result<u128, AppError
             "ディレクトリのサムネイルは非対応です".to_string(),
         ));
     }
-    Ok(meta
+    let mtime_ns = meta
         .modified()
         .ok()
         .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
-        .map_or(0, |d| d.as_nanos()))
+        .map_or(0, |d| d.as_nanos());
+    Ok((mtime_ns, meta.len()))
 }
 
 /// 拡張子を小文字で取得する
@@ -178,8 +185,8 @@ fn generate_thumbnail_bytes(state: &AppState, node_id: &str) -> Result<Thumbnail
         registry.resolve(node_id)?.to_path_buf()
     };
 
-    // ディレクトリチェック + mtime 取得 (metadata 1 回)
-    let mtime_ns = file_mtime_ns(&resolved, node_id)?;
+    // ディレクトリチェック + mtime + サイズ取得 (metadata 1 回)
+    let (mtime_ns, file_size) = file_meta(&resolved, node_id)?;
     let cache_key = thumb_svc.make_cache_key(node_id, mtime_ns);
     let etag = compute_thumb_etag(mtime_ns, node_id);
 
@@ -187,6 +194,11 @@ fn generate_thumbnail_bytes(state: &AppState, node_id: &str) -> Result<Thumbnail
 
     // アーカイブファイル自体 → 先頭画像エントリのサムネイル
     if state.archive_service.is_supported(&resolved) {
+        if file_size > ARCHIVE_THUMB_MAX_BYTES {
+            return Err(AppError::NotSupported(
+                "アーカイブが大きすぎるためサムネイル生成をスキップします".to_string(),
+            ));
+        }
         // キャッシュヒット時は list_entries + extract_entry をスキップ
         if let Some(cached) = thumb_svc.try_read_cached(&cache_key) {
             return Ok(ThumbnailResult { data: cached, etag });
@@ -245,6 +257,7 @@ fn generate_thumbnail_with_mtime(
     node_id: &str,
     resolved: &std::path::Path,
     mtime_ns: u128,
+    file_size: u64,
 ) -> Result<ThumbnailResult, AppError> {
     let thumb_svc = &state.thumbnail_service;
     let video_conv = &state.video_converter;
@@ -255,6 +268,11 @@ fn generate_thumbnail_with_mtime(
 
     // アーカイブファイル自体 → 先頭画像エントリのサムネイル
     if state.archive_service.is_supported(resolved) {
+        if file_size > ARCHIVE_THUMB_MAX_BYTES {
+            return Err(AppError::NotSupported(
+                "アーカイブが大きすぎるためサムネイル生成をスキップします".to_string(),
+            ));
+        }
         if let Some(cached) = thumb_svc.try_read_cached(&cache_key) {
             return Ok(ThumbnailResult { data: cached, etag });
         }
@@ -368,6 +386,7 @@ enum PreCheckResult {
     NeedsGeneration {
         resolved: std::path::PathBuf,
         mtime_ns: u128,
+        file_size: u64,
     },
     /// ディレクトリ / stat 失敗 — エラーエントリとして即座に返却
     Skipped(BatchThumbnailEntry),
@@ -386,8 +405,8 @@ fn pre_check_regular_entries(
     entries
         .iter()
         .map(|(nid, resolved)| {
-            let result = match file_mtime_ns(resolved, nid) {
-                Ok(mtime_ns) => {
+            let result = match file_meta(resolved, nid) {
+                Ok((mtime_ns, file_size)) => {
                     let cache_key = thumb_svc.make_cache_key(nid, mtime_ns);
                     let etag = compute_thumb_etag(mtime_ns, nid);
                     if let Some(data) = thumb_svc.try_read_cached(&cache_key) {
@@ -396,6 +415,7 @@ fn pre_check_regular_entries(
                         PreCheckResult::NeedsGeneration {
                             resolved: resolved.clone(),
                             mtime_ns,
+                            file_size,
                         }
                     }
                 }
@@ -586,7 +606,11 @@ pub(crate) async fn serve_thumbnails_batch(
             PreCheckResult::Skipped(entry) => {
                 thumbnails.insert(nid, entry);
             }
-            PreCheckResult::NeedsGeneration { resolved, mtime_ns } => {
+            PreCheckResult::NeedsGeneration {
+                resolved,
+                mtime_ns,
+                file_size,
+            } => {
                 let state = Arc::clone(&state);
                 let nid_clone = nid.clone();
                 let sem = Arc::clone(&state.thumb_semaphore);
@@ -594,7 +618,9 @@ pub(crate) async fn serve_thumbnails_batch(
                 let handle = tokio::spawn(async move {
                     let _permit = sem.acquire().await;
                     let result = tokio::task::spawn_blocking(move || {
-                        generate_thumbnail_with_mtime(&state, &nid_clone, &resolved, mtime_ns)
+                        generate_thumbnail_with_mtime(
+                            &state, &nid_clone, &resolved, mtime_ns, file_size,
+                        )
                     })
                     .await;
 
