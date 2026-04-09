@@ -237,17 +237,18 @@ fn generate_thumbnail_bytes(state: &AppState, node_id: &str) -> Result<Thumbnail
     ))
 }
 
-/// 事前解決済みパスからサムネイルを生成する (batch API 専用、registry lock 不要)
-fn generate_thumbnail_from_resolved(
+/// `mtime_ns` 事前取得済みパスからサムネイルを生成する (batch API プレチェック連携用)
+///
+/// `pre_check_regular_entries` で stat 済みの `mtime_ns` を受け取り、再 stat を回避する。
+fn generate_thumbnail_with_mtime(
     state: &AppState,
     node_id: &str,
     resolved: &std::path::Path,
+    mtime_ns: u128,
 ) -> Result<ThumbnailResult, AppError> {
     let thumb_svc = &state.thumbnail_service;
     let video_conv = &state.video_converter;
 
-    // ディレクトリチェック + mtime 取得 (metadata 1 回)
-    let mtime_ns = file_mtime_ns(resolved, node_id)?;
     let cache_key = thumb_svc.make_cache_key(node_id, mtime_ns);
     let etag = compute_thumb_etag(mtime_ns, node_id);
     let ext = ext_lower(&resolved.to_string_lossy());
@@ -357,6 +358,60 @@ fn classify_node_ids(state: &AppState, node_ids: &[String]) -> ClassifiedNodes {
     }
 
     (archive_groups, regular_entries, unresolved_ids)
+}
+
+/// プレチェック結果: キャッシュ済み / 生成必要 / スキップ（エラー）
+enum PreCheckResult {
+    /// キャッシュヒット — セマフォ不要で即座に返却可能
+    Cached { data: Vec<u8>, etag: String },
+    /// キャッシュミス — セマフォ取得後に生成が必要
+    NeedsGeneration {
+        resolved: std::path::PathBuf,
+        mtime_ns: u128,
+    },
+    /// ディレクトリ / stat 失敗 — エラーエントリとして即座に返却
+    Skipped(BatchThumbnailEntry),
+}
+
+/// 通常エントリのキャッシュプレチェック (`spawn_blocking` 内で実行)
+///
+/// 各エントリに対して `metadata()` 1 回でディレクトリ判定 + mtime 取得 → キャッシュ確認。
+/// キャッシュ済みエントリはセマフォを経由せず即座に返却できる。
+fn pre_check_regular_entries(
+    state: &AppState,
+    entries: &[(String, std::path::PathBuf)],
+) -> Vec<(String, PreCheckResult)> {
+    let thumb_svc = &state.thumbnail_service;
+
+    entries
+        .iter()
+        .map(|(nid, resolved)| {
+            let result = match file_mtime_ns(resolved, nid) {
+                Ok(mtime_ns) => {
+                    let cache_key = thumb_svc.make_cache_key(nid, mtime_ns);
+                    let etag = compute_thumb_etag(mtime_ns, nid);
+                    if let Some(data) = thumb_svc.try_read_cached(&cache_key) {
+                        PreCheckResult::Cached { data, etag }
+                    } else {
+                        PreCheckResult::NeedsGeneration {
+                            resolved: resolved.clone(),
+                            mtime_ns,
+                        }
+                    }
+                }
+                Err(app_err) => {
+                    let (code, msg) = error_to_code_message(&app_err);
+                    PreCheckResult::Skipped(BatchThumbnailEntry {
+                        data: None,
+                        etag: None,
+                        error: Some(msg),
+                        code: Some(code),
+                    })
+                }
+            };
+            (nid.clone(), result)
+        })
+        .collect()
 }
 
 /// 同一アーカイブの複数エントリを一括展開してサムネイル生成する
@@ -499,53 +554,80 @@ pub(crate) async fn serve_thumbnails_batch(
         }));
     }
 
-    // 非アーカイブエントリの個別処理タスク (事前解決済みパスを使用、registry lock 不要)
-    let mut regular_handles = Vec::with_capacity(regular_entries.len());
+    // --- Phase 1: キャッシュプレチェック (spawn_blocking、セマフォ不要) ---
+    // 各エントリに metadata() 1 回 → キャッシュ確認し、Cached / NeedsGeneration / Skipped に分類
+    let pre_check_state = Arc::clone(&state);
+    let pre_checked = tokio::task::spawn_blocking(move || {
+        pre_check_regular_entries(&pre_check_state, &regular_entries)
+    })
+    .await
+    .unwrap_or_default();
 
-    for (nid, resolved) in &regular_entries {
-        let state = Arc::clone(&state);
-        let nid = nid.clone();
-        let resolved = resolved.clone();
-        let sem = Arc::clone(&state.thumb_semaphore);
+    // --- Phase 2: キャッシュミスのみセマフォ + 生成タスクを起動 ---
+    let mut regular_handles: Vec<(String, tokio::task::JoinHandle<BatchThumbnailEntry>)> =
+        Vec::new();
+    let mut thumbnails = HashMap::with_capacity(unique_ids.len());
 
-        regular_handles.push(tokio::spawn(async move {
-            let _permit = sem.acquire().await;
-            let result = tokio::task::spawn_blocking(move || {
-                generate_thumbnail_from_resolved(&state, &nid, &resolved)
-            })
-            .await;
-
-            match result {
-                Ok(Ok(thumb)) => {
-                    let b64 = base64::engine::general_purpose::STANDARD.encode(&thumb.data);
+    for (nid, result) in pre_checked {
+        match result {
+            PreCheckResult::Cached { data, etag } => {
+                let b64 = base64::engine::general_purpose::STANDARD.encode(&data);
+                thumbnails.insert(
+                    nid,
                     BatchThumbnailEntry {
                         data: Some(b64),
-                        etag: Some(thumb.etag),
+                        etag: Some(etag),
                         error: None,
                         code: None,
-                    }
-                }
-                Ok(Err(app_err)) => {
-                    let (code, msg) = error_to_code_message(&app_err);
-                    BatchThumbnailEntry {
-                        data: None,
-                        etag: None,
-                        error: Some(msg),
-                        code: Some(code),
-                    }
-                }
-                Err(_join_err) => BatchThumbnailEntry {
-                    data: None,
-                    etag: None,
-                    error: Some("タスク実行エラー".to_string()),
-                    code: Some("INTERNAL_ERROR".to_string()),
-                },
+                    },
+                );
             }
-        }));
-    }
+            PreCheckResult::Skipped(entry) => {
+                thumbnails.insert(nid, entry);
+            }
+            PreCheckResult::NeedsGeneration { resolved, mtime_ns } => {
+                let state = Arc::clone(&state);
+                let nid_clone = nid.clone();
+                let sem = Arc::clone(&state.thumb_semaphore);
 
-    // 結果を統合
-    let mut thumbnails = HashMap::with_capacity(unique_ids.len());
+                let handle = tokio::spawn(async move {
+                    let _permit = sem.acquire().await;
+                    let result = tokio::task::spawn_blocking(move || {
+                        generate_thumbnail_with_mtime(&state, &nid_clone, &resolved, mtime_ns)
+                    })
+                    .await;
+
+                    match result {
+                        Ok(Ok(thumb)) => {
+                            let b64 = base64::engine::general_purpose::STANDARD.encode(&thumb.data);
+                            BatchThumbnailEntry {
+                                data: Some(b64),
+                                etag: Some(thumb.etag),
+                                error: None,
+                                code: None,
+                            }
+                        }
+                        Ok(Err(app_err)) => {
+                            let (code, msg) = error_to_code_message(&app_err);
+                            BatchThumbnailEntry {
+                                data: None,
+                                etag: None,
+                                error: Some(msg),
+                                code: Some(code),
+                            }
+                        }
+                        Err(_join_err) => BatchThumbnailEntry {
+                            data: None,
+                            etag: None,
+                            error: Some("タスク実行エラー".to_string()),
+                            code: Some("INTERNAL_ERROR".to_string()),
+                        },
+                    }
+                });
+                regular_handles.push((nid, handle));
+            }
+        }
+    }
 
     // アーカイブグループ結果
     for handle in archive_handles {
@@ -554,8 +636,8 @@ pub(crate) async fn serve_thumbnails_batch(
         }
     }
 
-    // 非アーカイブ結果
-    for ((nid, _), handle) in regular_entries.into_iter().zip(regular_handles) {
+    // キャッシュミス生成結果
+    for (nid, handle) in regular_handles {
         let entry = handle.await.unwrap_or(BatchThumbnailEntry {
             data: None,
             etag: None,
