@@ -545,6 +545,9 @@ pub(crate) async fn serve_thumbnails_batch(
 ) -> Response {
     use base64::Engine;
 
+    // 計測: 全体経過時間
+    let started = std::time::Instant::now();
+
     // 100 件上限 + 重複排除 (順序保持)
     // browse API の page size (100) と揃える。セマフォで並行度制限するため過負荷リスクなし
     let mut seen = std::collections::HashSet::new();
@@ -554,9 +557,11 @@ pub(crate) async fn serve_thumbnails_batch(
         .filter(|id| seen.insert(id.clone()))
         .take(100)
         .collect();
+    let request_count = unique_ids.len();
 
     // アーカイブエントリをグループ化 + 通常ファイルのパス解決 (registry lock 1 回のみ)
     let (archive_groups, regular_entries, unresolved_ids) = classify_node_ids(&state, &unique_ids);
+    let archive_group_count = archive_groups.len();
 
     // アーカイブグループの一括処理タスク (AppState セマフォで並行度制限)
     let mut archive_handles = Vec::new();
@@ -583,6 +588,18 @@ pub(crate) async fn serve_thumbnails_batch(
     })
     .await
     .unwrap_or_default();
+
+    // 計測: cache_state 集計 (regular エントリのみ。アーカイブグループは別フェーズ)
+    let mut hit = 0_usize;
+    let mut miss = 0_usize;
+    let mut skipped = 0_usize;
+    for (_, result) in &pre_checked {
+        match result {
+            PreCheckResult::Cached { .. } => hit += 1,
+            PreCheckResult::NeedsGeneration { .. } => miss += 1,
+            PreCheckResult::Skipped(_) => skipped += 1,
+        }
+    }
 
     // --- Phase 2: キャッシュミスのみセマフォ + 生成タスクを起動 ---
     let mut regular_handles: Vec<(String, tokio::task::JoinHandle<BatchThumbnailEntry>)> =
@@ -686,6 +703,33 @@ pub(crate) async fn serve_thumbnails_batch(
             },
         );
     }
+
+    // 計測ログ: cache_state は regular エントリの hit/miss/skipped 比率から判定
+    // - empty: regular 0 件 (アーカイブのみ or 空リクエスト)
+    // - all_hit: 全件キャッシュヒット
+    // - all_miss: 全件キャッシュミス
+    // - partial_hit: 一部ヒット
+    let regular_total = hit + miss + skipped;
+    let cache_state = if regular_total == 0 {
+        "empty"
+    } else if hit == regular_total {
+        "all_hit"
+    } else if miss == regular_total {
+        "all_miss"
+    } else {
+        "partial_hit"
+    };
+    tracing::info!(
+        target: "thumbnail.batch",
+        request_count,
+        archive_groups = archive_group_count,
+        cache_state,
+        hit,
+        miss,
+        skipped,
+        elapsed_us = u64::try_from(started.elapsed().as_micros()).unwrap_or(u64::MAX),
+        "thumbnail.batch completed"
+    );
 
     Json(BatchResponse { thumbnails }).into_response()
 }
