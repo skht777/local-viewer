@@ -657,13 +657,17 @@ fn build_scanned_from_dir_index(
                 (None, None)
             };
 
+            // DirEntry.mtime_ns は i64。負値（UNIX_EPOCH 前）は 0 扱い。
+            // try_from で clippy::cast_sign_loss を回避する。
+            let mtime_ns = Some(u128::try_from(de.mtime_ns).unwrap_or(0));
+
             Some(ScannedEntry {
                 path: resolved,
                 kind,
                 name: de.name.clone(),
                 size_bytes,
                 modified_at,
-                mtime_ns: None,
+                mtime_ns,
                 mime_type,
                 child_count,
                 preview_paths,
