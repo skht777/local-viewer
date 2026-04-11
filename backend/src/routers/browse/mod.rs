@@ -662,6 +662,7 @@ fn build_scanned_from_dir_index(
                 name: de.name.clone(),
                 size_bytes,
                 modified_at,
+                mtime_ns: None,
                 mime_type,
                 child_count,
                 preview_paths,

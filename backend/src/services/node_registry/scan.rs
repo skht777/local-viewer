@@ -26,6 +26,10 @@ pub(crate) struct ScannedEntry {
     pub name: String,
     pub size_bytes: Option<u64>,
     pub modified_at: Option<f64>,
+    /// 真値の mtime (ns 精度)。warmer / thumbnail cache key 用。
+    /// `modified_at: f64` はサブミリ秒以下の精度が欠落するため、
+    /// cache key 生成には必ずこちらを使う。
+    pub mtime_ns: Option<u128>,
     pub mime_type: Option<String>,
     pub child_count: Option<usize>,
     /// ディレクトリのプレビュー画像パス (canonicalize 済み)
@@ -198,6 +202,7 @@ pub(crate) fn scan_entry_metas(
                 mime_type,
                 child_count,
                 modified_at,
+                mtime_ns: None,
                 preview_paths,
             }
         })
