@@ -1,0 +1,6 @@
+${EVIL}/path	compose 変数展開
+#comment/path	YAML コメント開始
+-malicious	YAML 特殊先頭文字
+:leading-colon	YAML 特殊先頭文字
+C:\foo bar	空白文字は拒否
+/path/with:extra:colon	余分なコロン

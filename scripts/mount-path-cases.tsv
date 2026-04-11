@@ -1,0 +1,11 @@
+C:\Users\foo	C:/Users/foo	/mnt/c/Users/foo
+C:/Users/foo	C:/Users/foo	/mnt/c/Users/foo
+c:\Users\foo	C:/Users/foo	/mnt/c/Users/foo
+D:\data\pics	D:/data/pics	/mnt/d/data/pics
+/mnt/d/AI	D:/AI	/mnt/d/AI
+/mnt/c/Users/foo/Pictures	C:/Users/foo/Pictures	/mnt/c/Users/foo/Pictures
+\\nas\share\pics	\\nas\share\pics	\\nas\share\pics
+/home/user/pics	/home/user/pics	/home/user/pics
+/opt/data	/opt/data	/opt/data
+/var/lib/xxx	/var/lib/xxx	/var/lib/xxx
+/a/foo	/a/foo	/a/foo
