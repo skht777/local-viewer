@@ -4,6 +4,7 @@ c:\Users\foo	C:/Users/foo	/mnt/c/Users/foo
 D:\data\pics	D:/data/pics	/mnt/d/data/pics
 /mnt/d/AI	D:/AI	/mnt/d/AI
 /mnt/c/Users/foo/Pictures	C:/Users/foo/Pictures	/mnt/c/Users/foo/Pictures
+/mnt/c	C:/	/mnt/c
 \\nas\share\pics	\\nas\share\pics	\\nas\share\pics
 /home/user/pics	/home/user/pics	/home/user/pics
 /opt/data	/opt/data	/opt/data

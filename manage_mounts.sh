@@ -115,8 +115,10 @@ show_mounts() {
     done
 }
 
-# ホストパスの存在を確認する
-validate_host_path() {
+# TUI 入力時にホストパスの存在を確認する。
+# convert-mount-path.sh の validate_host_path (YAML インジェクション検証) とは
+# 別物で、こちらはディレクトリの -d チェックのみ行う。
+check_host_path_exists() {
     local path="$1"
     if [[ ! -d "$path" ]]; then
         echo "エラー: ディレクトリが存在しません: $path"
@@ -154,7 +156,7 @@ add_mount() {
         return
     fi
 
-    if ! validate_host_path "$host_path"; then
+    if ! check_host_path_exists "$host_path"; then
         return
     fi
 

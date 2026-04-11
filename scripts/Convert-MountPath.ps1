@@ -29,9 +29,10 @@ function Convert-HostPathToDockerFormat {
     }
 
     # WSL2 /mnt/<drive>/... → <DRIVE>:/...
+    # /mnt/c 単体のようにルート直下のみの場合は "C:/" に正規化する
     if ($Path -match '^/mnt/([a-zA-Z])(/.*)?$') {
         $drive = $Matches[1].ToUpper()
-        $rest = if ($Matches[2]) { $Matches[2] } else { '' }
+        $rest = if ($Matches[2]) { $Matches[2] } else { '/' }
         return "${drive}:${rest}"
     }
 
@@ -49,14 +50,19 @@ function Convert-HostPathToDockerFormat {
 # host_path の安全性を検証する (YAML インジェクション対策)。
 # 許可文字のみで構成されていれば $true、それ以外は $false を返す。
 #
+# この関数は Convert-HostPathToDockerFormat による変換**後**のパスを検証する。
+# 変換後の形式は <DRIVE>:/... / /home/... / \\server\share のいずれか。
+#
 # 拒否条件:
 #   - 空文字列
 #   - 改行 / タブ / NUL / 制御文字
 #   - 空白
-#   - compose 変数展開 (${...})
+#   - compose 変数展開 ($VAR / ${VAR})
 #   - YAML コメント開始 (#)
+#   - チルダ展開 (~)
 #   - YAML 特殊な先頭文字 (- ? : ! & * | > % @ `)
 #   - ドライブ区切り以外の余分なコロン
+#   - 相対パス (絶対パス / UNC 以外)
 function Test-HostPath {
     param([Parameter(Mandatory)][AllowEmptyString()][string]$Path)
 
@@ -68,20 +74,27 @@ function Test-HostPath {
     # 空白文字
     if ($Path.Contains(' ')) { return $false }
 
-    # compose 変数展開
-    if ($Path.Contains('${')) { return $false }
+    # compose 変数展開 ($VAR / ${VAR} の両方を拒否)
+    if ($Path.Contains('$')) { return $false }
 
     # YAML コメント開始
     if ($Path.Contains('#')) { return $false }
+
+    # チルダ展開
+    if ($Path.StartsWith('~')) { return $false }
 
     # YAML 特殊な先頭文字
     $specialLeading = @('-', '?', ':', '!', '&', '*', '|', '>', '%', '@', '`')
     if ($specialLeading -contains $Path[0].ToString()) { return $false }
 
-    # 余分なコロン
+    # 絶対パスホワイトリスト: UNC (\\) / Windows 正規形 (<DRIVE>:/) / Unix (/)
+    if ($Path -notmatch '^(\\\\|[A-Za-z]:/|/)') { return $false }
+
+    # ドライブ区切り以外の余分なコロン
+    # 許容: "<DRIVE>:/..." のようにドライブ直後の 1 つだけ
     $colonCount = ([regex]::Matches($Path, ':')).Count
     if ($colonCount -gt 1) { return $false }
-    if ($colonCount -eq 1 -and $Path -notmatch '^[A-Za-z]:[\\/]') { return $false }
+    if ($colonCount -eq 1 -and $Path -notmatch '^[A-Za-z]:/') { return $false }
 
     return $true
 }

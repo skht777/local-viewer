@@ -55,12 +55,18 @@ convert_host_path_to_wsl_format() {
 # host_path の安全性を検証する (YAML インジェクション対策)。
 # 許可文字のみで構成されていれば 0、それ以外は 1 を返す。
 #
+# この関数は convert_host_path_to_wsl_format による変換**後**のパスを検証する。
+# 変換後の形式は /mnt/<drive>/... / /home/... / \\server\share のいずれか。
+#
 # 拒否条件:
+#   - 空文字列
 #   - 改行 / タブ / NUL / 制御文字
-#   - YAML 特殊な先頭文字 (- ? : ! & * | > % @ ` #)
-#   - compose 変数展開 (${...})
+#   - 空白
+#   - compose 変数展開 ($VAR / ${VAR})
+#   - YAML コメント開始 (#)
+#   - YAML 特殊な先頭文字 (- ? : ! & * | > % @ `)
 #   - ドライブ区切り以外の余分なコロン
-#   - 空白 / 空文字列
+#   - 相対パス (絶対パス / UNC 以外)
 validate_host_path() {
     local path="$1"
 
@@ -83,14 +89,18 @@ validate_host_path() {
         return 1
     fi
 
-    # compose 変数展開 ${...}
-    # shellcheck disable=SC2016
-    if [[ "$path" == *'${'* ]]; then
+    # compose 変数展開 ($VAR / ${VAR} の両方を拒否)
+    if [[ "$path" == *'$'* ]]; then
         return 1
     fi
 
     # YAML コメント開始
     if [[ "$path" == *'#'* ]]; then
+        return 1
+    fi
+
+    # チルダ展開 (~ はシェル/compose で展開されうる)
+    if [[ "$path" == '~'* ]]; then
         return 1
     fi
 
@@ -101,18 +111,17 @@ validate_host_path() {
             ;;
     esac
 
-    # ドライブ区切り以外の余分なコロン
-    # 許容: "C:\..." "C:/..." のようにドライブ直後のみ
-    local colon_count="${path//[^:]/}"
-    colon_count="${#colon_count}"
-    if (( colon_count > 1 )); then
+    # 絶対パスホワイトリスト: UNC (\\) or Unix 絶対パス (/)
+    # (Windows ドライブ形式は変換済みで /mnt/<drive>/... になっているはず)
+    if ! [[ "$path" =~ ^(\\\\|/) ]]; then
         return 1
     fi
-    if (( colon_count == 1 )); then
-        # 1 つ含まれる場合は [A-Za-z]:[\\/] パターンであること
-        if ! [[ "$path" =~ ^[A-Za-z]:[\\/] ]]; then
-            return 1
-        fi
+
+    # ドライブ区切り以外の余分なコロン
+    local colon_count="${path//[^:]/}"
+    colon_count="${#colon_count}"
+    if (( colon_count > 0 )); then
+        return 1
     fi
 
     return 0
@@ -170,7 +179,14 @@ sync_compose() {
 
     if [[ ! -f "$mounts_json" ]]; then
         rm -f "$override_file"
-        return
+        return 0
+    fi
+
+    # PowerShell 版 (ConvertFrom-Json) と挙動を揃えるため、JSON パース失敗は
+    # エラーで中断する (警告を出して空の override にしない)
+    if ! jq empty "$mounts_json" >/dev/null 2>&1; then
+        printf 'error: mounts.json のパースに失敗しました: %s\n' "$mounts_json" >&2
+        return 1
     fi
 
     local mount_lines=""

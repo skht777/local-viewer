@@ -1,6 +1,14 @@
-${EVIL}/path	compose 変数展開
+${EVIL}/path	compose ブレース付き変数展開
+$HOME/data	compose ブレース無し変数展開
+/tmp/foo$bar	compose ブレース無し変数展開 (中間)
 #comment/path	YAML コメント開始
 -malicious	YAML 特殊先頭文字
 :leading-colon	YAML 特殊先頭文字
+~/.ssh	チルダ展開
 C:\foo bar	空白文字は拒否
 /path/with:extra:colon	余分なコロン
+relative/path	相対パス
+./rel	相対パス (カレント始まり)
+../up	相対パス (親始まり)
+foo	相対パス (ファイル名のみ)
+C:	ドライブのみ (ルート未指定)

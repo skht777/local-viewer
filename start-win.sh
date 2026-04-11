@@ -16,17 +16,15 @@ if [[ ! -f "$START_PS1" ]]; then
     exit 1
 fi
 
-# PowerShell 7+ (pwsh.exe) を優先し、無ければ Windows PowerShell (powershell.exe) にフォールバック
-# ただし start.ps1 は #Requires -Version 7.0 のため、5.1 だと実行時エラーになる。
-if command -v pwsh.exe >/dev/null 2>&1; then
-    PS_EXE="pwsh.exe"
-elif command -v powershell.exe >/dev/null 2>&1; then
-    PS_EXE="powershell.exe"
-else
-    echo "エラー: pwsh.exe または powershell.exe が見つかりません。" >&2
-    echo "WSL2 interop が有効で、Docker Desktop + PowerShell 7+ がインストールされているか確認してください。" >&2
+# start.ps1 は #Requires -Version 7.0 のため PowerShell 7+ (pwsh.exe) のみ受け付ける。
+# Windows PowerShell 5.1 (powershell.exe) へのフォールバックはしない。
+if ! command -v pwsh.exe >/dev/null 2>&1; then
+    echo "エラー: pwsh.exe が見つかりません。" >&2
+    echo "WSL2 interop が有効で、Windows 側に PowerShell 7+ がインストールされているか確認してください。" >&2
+    echo "  インストール: https://learn.microsoft.com/powershell/scripting/install/installing-powershell-on-windows" >&2
     exit 1
 fi
+PS_EXE="pwsh.exe"
 
 WIN_PATH=$(wslpath -w "$START_PS1")
 
