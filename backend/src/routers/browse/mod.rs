@@ -246,6 +246,8 @@ pub(crate) async fn browse_directory(
         let nid = node_id.clone();
         let is_dir_index_ready = state.dir_index.is_ready();
         let has_limit = limit.is_some();
+        // 計測用の DirIndex 状態ラベル (cold/warm_indexing/warm_ready)
+        let state_label = state.dir_index.state_label();
         tokio::task::spawn_blocking(move || {
             // Phase 0: 短時間ロックでパス解決 + PathSecurity 取得
             #[allow(
@@ -270,6 +272,7 @@ pub(crate) async fn browse_directory(
                     sort,
                     limit.unwrap_or(0),
                     cursor.as_deref(),
+                    state_label,
                 ) {
                     return Ok(result);
                 }
@@ -284,6 +287,7 @@ pub(crate) async fn browse_directory(
                 sort,
                 limit,
                 cursor.as_deref(),
+                state_label,
             )
         })
         .await
@@ -336,7 +340,13 @@ fn browse_directory_blocking(
     sort: SortOrder,
     limit: Option<usize>,
     cursor: Option<&str>,
+    state_label: &'static str,
 ) -> Result<(BrowseResponse, String), AppError> {
+    // 計測 span: フォールバック経路 (scan + stat + canonicalize)
+    let span = tracing::info_span!("browse", state = state_label, kind = "fallback");
+    let _enter = span.enter();
+    let started = std::time::Instant::now();
+
     // ディレクトリかチェック
     if !path.is_dir() {
         return Err(AppError::NotADirectory {
@@ -380,6 +390,12 @@ fn browse_directory_blocking(
         },
     };
 
+    tracing::info!(
+        entries = response.entries.len(),
+        elapsed_us = u64::try_from(started.elapsed().as_micros()).unwrap_or(u64::MAX),
+        "browse fallback completed"
+    );
+
     Ok((response, etag))
 }
 
@@ -403,7 +419,13 @@ fn try_dir_index_browse_split(
     sort: SortOrder,
     limit: usize,
     cursor: Option<&str>,
+    state_label: &'static str,
 ) -> Option<(BrowseResponse, String)> {
+    // 計測 span: 高速パス (DirIndex + mtime ガード経路)
+    let span = tracing::info_span!("browse", state = state_label, kind = "dir_index_fast");
+    let _enter = span.enter();
+    let started = std::time::Instant::now();
+
     // --- Phase 0 (短ロック): NodeRegistry から必要なキーを取得 ---
     #[allow(
         clippy::expect_used,
@@ -552,6 +574,13 @@ fn try_dir_index_browse_split(
         next_cursor,
         total_count: Some(total_count),
     };
+
+    tracing::info!(
+        entries = response.entries.len(),
+        has_next,
+        elapsed_us = u64::try_from(started.elapsed().as_micros()).unwrap_or(u64::MAX),
+        "browse dir_index_fast completed"
+    );
 
     Some((response, etag))
 }
