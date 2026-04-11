@@ -32,6 +32,19 @@ impl ThumbnailWarmer {
     /// 依存方向: `ThumbnailWarmer` → `ThumbnailService` / `VideoConverter` / `ArchiveService`
     /// (router 関数は呼ばない)
     pub(crate) fn warm(&self, entries: &[EntryMeta], state: &Arc<AppState>) {
+        let mut scheduled = 0_usize;
+        let mut skipped_cached = 0_usize;
+        let mut skipped_pending = 0_usize;
+        let eligible = entries
+            .iter()
+            .filter(|e| {
+                matches!(
+                    e.kind,
+                    EntryKind::Image | EntryKind::Archive | EntryKind::Pdf | EntryKind::Video
+                )
+            })
+            .count();
+
         for entry in entries {
             // サムネイル対象の種別のみ
             if !matches!(
@@ -48,6 +61,7 @@ impl ThumbnailWarmer {
                     .thumbnail_service
                     .make_cache_key(&entry.node_id, approx_mtime_ns);
                 if state.thumbnail_service.is_cached(&cache_key) {
+                    skipped_cached += 1;
                     continue;
                 }
             }
@@ -59,10 +73,12 @@ impl ThumbnailWarmer {
                     .lock()
                     .unwrap_or_else(std::sync::PoisonError::into_inner);
                 if pending.contains(&entry.node_id) {
+                    skipped_pending += 1;
                     continue;
                 }
                 pending.insert(entry.node_id.clone());
             }
+            scheduled += 1;
 
             let sem = Arc::clone(&self.semaphore);
             let pending = Arc::clone(&self.pending);
@@ -91,6 +107,15 @@ impl ThumbnailWarmer {
                 .await;
             });
         }
+
+        tracing::info!(
+            total = entries.len(),
+            eligible,
+            scheduled,
+            skipped_cached,
+            skipped_pending,
+            "thumbnail.warmer scheduled"
+        );
     }
 }
 
@@ -98,6 +123,22 @@ impl ThumbnailWarmer {
 ///
 /// エラーは無視する (プリウォームのため、失敗してもリクエスト処理に影響しない)
 fn warm_one_thumbnail(state: &AppState, node_id: &str) {
+    let started = std::time::Instant::now();
+    warm_one_thumbnail_inner(state, node_id);
+    tracing::info!(
+        node_id = short_node_id(node_id),
+        source = "warmer",
+        elapsed_us = u64::try_from(started.elapsed().as_micros()).unwrap_or(u64::MAX),
+        "thumbnail.generated"
+    );
+}
+
+/// `node_id` 先頭 8 文字 (PII 配慮 + 相関用)
+fn short_node_id(node_id: &str) -> &str {
+    &node_id[..node_id.len().min(8)]
+}
+
+fn warm_one_thumbnail_inner(state: &AppState, node_id: &str) {
     let thumb_svc = &state.thumbnail_service;
     let video_conv = &state.video_converter;
 
