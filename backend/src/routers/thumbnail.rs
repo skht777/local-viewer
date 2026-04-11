@@ -634,12 +634,21 @@ pub(crate) async fn serve_thumbnails_batch(
 
                 let handle = tokio::spawn(async move {
                     let _permit = sem.acquire().await;
+                    let gen_started = std::time::Instant::now();
+                    let nid_for_log = nid_clone.clone();
                     let result = tokio::task::spawn_blocking(move || {
                         generate_thumbnail_with_mtime(
                             &state, &nid_clone, &resolved, mtime_ns, file_size,
                         )
                     })
                     .await;
+                    tracing::info!(
+                        node_id = &nid_for_log[..nid_for_log.len().min(8)],
+                        source = "batch",
+                        elapsed_us =
+                            u64::try_from(gen_started.elapsed().as_micros()).unwrap_or(u64::MAX),
+                        "thumbnail.generated"
+                    );
 
                     match result {
                         Ok(Ok(thumb)) => {
