@@ -706,12 +706,15 @@ pub(crate) async fn serve_thumbnails_batch(
 
     // 計測ログ: cache_state は regular エントリの hit/miss/skipped 比率から判定
     // - empty: regular 0 件 (アーカイブのみ or 空リクエスト)
+    // - all_skipped: 全件スキップ (ディレクトリ等の非対応エントリ)
     // - all_hit: 全件キャッシュヒット
     // - all_miss: 全件キャッシュミス
-    // - partial_hit: 一部ヒット
+    // - partial_hit: 上記以外 (ヒット・ミス・スキップが混在)
     let regular_total = hit + miss + skipped;
     let cache_state = if regular_total == 0 {
         "empty"
+    } else if skipped == regular_total {
+        "all_skipped"
     } else if hit == regular_total {
         "all_hit"
     } else if miss == regular_total {
