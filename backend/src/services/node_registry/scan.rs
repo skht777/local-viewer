@@ -164,19 +164,24 @@ pub(crate) fn scan_entry_metas(
                 .file_name()
                 .map_or_else(String::new, |n| n.to_string_lossy().into_owned());
 
-            let (size_bytes, modified_at) = meta.as_ref().map_or((None, None), |m| {
-                let size = if kind == EntryKind::Directory {
-                    None
-                } else {
-                    Some(m.len())
-                };
-                let mtime = m
-                    .modified()
-                    .ok()
-                    .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
-                    .map(|d| d.as_secs_f64());
-                (size, mtime)
-            });
+            // modified_at (f64 秒, フロント表示用) と mtime_ns (u128 ns 精度,
+            // サムネイル cache key 用) を同じ Duration から併せて取得する。
+            // f64 はサブミリ秒以下の精度が欠けるため、cache key には必ず ns 値を使う。
+            let (size_bytes, modified_at, mtime_ns) =
+                meta.as_ref().map_or((None, None, None), |m| {
+                    let size = if kind == EntryKind::Directory {
+                        None
+                    } else {
+                        Some(m.len())
+                    };
+                    let duration = m
+                        .modified()
+                        .ok()
+                        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok());
+                    let mtime = duration.map(|d| d.as_secs_f64());
+                    let mtime_ns = duration.map(|d| d.as_nanos());
+                    (size, mtime, mtime_ns)
+                });
 
             let mime_type = if kind == EntryKind::Directory {
                 None
@@ -202,7 +207,7 @@ pub(crate) fn scan_entry_metas(
                 mime_type,
                 child_count,
                 modified_at,
-                mtime_ns: None,
+                mtime_ns,
                 preview_paths,
             }
         })
