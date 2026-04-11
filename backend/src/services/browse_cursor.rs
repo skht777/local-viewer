@@ -305,6 +305,7 @@ mod tests {
             mime_type: None,
             child_count: None,
             modified_at: None,
+            mtime_ns: None,
             preview_node_ids: None,
         }
     }
@@ -323,6 +324,7 @@ mod tests {
             mime_type: None,
             child_count: None,
             modified_at,
+            mtime_ns: None,
             preview_node_ids: None,
         }
     }
@@ -655,6 +657,7 @@ mod tests {
             mime_type: None,
             child_count: None,
             modified_at: Some(100.0),
+            mtime_ns: None,
             preview_node_ids: None,
         };
         let cursor = encode_cursor(SortOrder::NameAsc, &entry, "etag-1");

@@ -500,6 +500,7 @@ impl NodeRegistry {
                     mime_type: None,
                     child_count: Some(child_count),
                     modified_at: None,
+                    mtime_ns: None,
                     preview_node_ids,
                 })
             })
@@ -655,6 +656,7 @@ impl NodeRegistry {
                 mime_type,
                 child_count,
                 modified_at,
+                mtime_ns: None,
                 preview_node_ids,
             });
         }
@@ -693,6 +695,7 @@ impl NodeRegistry {
                 mime_type: se.mime_type,
                 child_count: se.child_count,
                 modified_at: se.modified_at,
+                mtime_ns: None,
                 preview_node_ids,
             });
         }

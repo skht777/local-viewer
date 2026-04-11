@@ -174,6 +174,7 @@ fn dir_entry_to_entry_meta(
         mime_type,
         child_count: None,
         modified_at,
+        mtime_ns: None,
         preview_node_ids: None,
     })
 }

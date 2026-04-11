@@ -23,6 +23,7 @@ pub(crate) struct AncestorEntry {
 /// - `mime_type`: MIME タイプ (ディレクトリは `None`)
 /// - `child_count`: ディレクトリの子エントリ数 (ファイルは `None`)
 /// - `modified_at`: 更新日時 POSIX epoch 秒 (アーカイブエントリ・マウントルートは `None`)
+/// - `mtime_ns`: 更新日時 ns 精度 (サーバ内部専用、JSON には含めない)
 /// - `preview_node_ids`: ディレクトリ内の先頭画像 `node_id` (最大3件)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub(crate) struct EntryMeta {
@@ -33,6 +34,13 @@ pub(crate) struct EntryMeta {
     pub mime_type: Option<String>,
     pub child_count: Option<usize>,
     pub modified_at: Option<f64>,
+    /// サムネイル cache key 生成用の真値 mtime。
+    /// `modified_at: f64` はサブミリ秒以下の精度が欠けるため、
+    /// warmer / batch 両方から同一のキャッシュキーを算出するには u128 ns が必須。
+    /// JS の Number で精度欠損するため `#[serde(skip)]` で外部露出を防ぐ。
+    #[serde(skip)]
+    #[allow(dead_code, reason = "fix(thumbnail) コミットで warmer が読み始める")]
+    pub mtime_ns: Option<u128>,
     pub preview_node_ids: Option<Vec<String>>,
 }
 
@@ -71,6 +79,7 @@ mod tests {
             mime_type: Some("image/jpeg".to_string()),
             child_count: None,
             modified_at: None,
+            mtime_ns: None,
             preview_node_ids: None,
         };
         let json = serde_json::to_string(&entry).unwrap();
@@ -80,6 +89,34 @@ mod tests {
         assert!(json.contains(r#""preview_node_ids":null"#));
         assert!(json.contains("size_bytes"));
         assert!(json.contains("mime_type"));
+    }
+
+    #[test]
+    fn entrymeta_mtime_nsはjsonに出力されない() {
+        // #[serde(skip)] により None / Some(値) どちらでも JSON には
+        // mtime_ns キーが出現しないことを検証する。
+        // 将来 #[serde(skip_serializing_if = "Option::is_none")] に
+        // 誤って書き換えられた場合の回帰検出も兼ねる。
+        let base = EntryMeta {
+            node_id: "abc123".to_string(),
+            name: "test.jpg".to_string(),
+            kind: EntryKind::Image,
+            size_bytes: Some(1024),
+            mime_type: Some("image/jpeg".to_string()),
+            child_count: None,
+            modified_at: None,
+            mtime_ns: None,
+            preview_node_ids: None,
+        };
+        let json_none = serde_json::to_string(&base).unwrap();
+        assert!(!json_none.contains("mtime_ns"));
+
+        let with_mtime = EntryMeta {
+            mtime_ns: Some(1_234_567_890_u128),
+            ..base
+        };
+        let json_some = serde_json::to_string(&with_mtime).unwrap();
+        assert!(!json_some.contains("mtime_ns"));
     }
 
     #[test]

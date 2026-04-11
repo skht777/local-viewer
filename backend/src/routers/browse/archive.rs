@@ -79,6 +79,7 @@ pub(super) async fn browse_archive(
                     mime_type,
                     child_count: None,
                     modified_at: None,
+                    mtime_ns: None,
                     preview_node_ids: None,
                 });
             }

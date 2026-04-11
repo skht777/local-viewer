@@ -94,6 +94,7 @@ pub(crate) async fn first_viewable(
                                     mime_type,
                                     child_count: None,
                                     modified_at: None,
+                                    mtime_ns: None,
                                     preview_node_ids: None,
                                 });
                             }

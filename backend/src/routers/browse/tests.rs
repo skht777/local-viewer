@@ -523,6 +523,7 @@ fn etagが同じエントリで同じ値を返す() {
         mime_type: None,
         child_count: None,
         modified_at: Some(100.0),
+        mtime_ns: None,
         preview_node_ids: None,
     }];
     let etag1 = compute_etag(&entries);
@@ -542,6 +543,7 @@ fn etagが異なるエントリで異なる値を返す() {
         mime_type: None,
         child_count: None,
         modified_at: Some(100.0),
+        mtime_ns: None,
         preview_node_ids: None,
     }];
     let entries_b = vec![EntryMeta {
@@ -552,6 +554,7 @@ fn etagが異なるエントリで異なる値を返す() {
         mime_type: None,
         child_count: None,
         modified_at: Some(100.0),
+        mtime_ns: None,
         preview_node_ids: None,
     }];
     assert_ne!(compute_etag(&entries_a), compute_etag(&entries_b));
