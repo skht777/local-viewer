@@ -204,7 +204,6 @@ pub(crate) fn scan_entry_metas(
         .collect();
 
     tracing::info!(
-        target: "scan",
         input = input_count,
         output = result.len(),
         canonicalize = canonicalize_count.load(Ordering::Relaxed),

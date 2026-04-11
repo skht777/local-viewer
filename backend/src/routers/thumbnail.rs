@@ -720,7 +720,6 @@ pub(crate) async fn serve_thumbnails_batch(
         "partial_hit"
     };
     tracing::info!(
-        target: "thumbnail.batch",
         request_count,
         archive_groups = archive_group_count,
         cache_state,
