@@ -150,6 +150,19 @@ impl DirIndex {
         self.is_stale.load(Ordering::Relaxed)
     }
 
+    /// 計測ログ向けの状態ラベル
+    ///
+    /// - `cold`: 未 ready (初回フルスキャン中)
+    /// - `warm_indexing`: ready かつ stale (差分スキャン中、既存データで応答可能)
+    /// - `warm_ready`: ready かつ stale 解除済み (定常状態)
+    pub(crate) fn state_label(&self) -> &'static str {
+        match (self.is_ready(), self.is_stale()) {
+            (false, _) => "cold",
+            (true, true) => "warm_indexing",
+            (true, false) => "warm_ready",
+        }
+    }
+
     /// インデックスを使用可能にする (`is_ready=true`, `is_stale=false`)
     pub(crate) fn mark_ready(&self) {
         self.is_ready.store(true, Ordering::Relaxed);
