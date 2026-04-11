@@ -57,7 +57,7 @@ fn ingest_walk_entryでエントリが保存される() {
 
     // 3 エントリ (subdir + image1.jpg + archive.zip) が保存される
     let entries = idx
-        .query_page("mount1/photos", "name-asc", 100, None)
+        .query_page("mount1/photos", "name-asc", Some(100), None)
         .unwrap();
     assert_eq!(entries.len(), 3);
 
@@ -71,6 +71,28 @@ fn ingest_walk_entryでエントリが保存される() {
 
     assert_eq!(entries[2].name, "image1.jpg");
     assert_eq!(entries[2].kind, "image");
+}
+
+#[test]
+fn query_pageでlimit_noneは全件取得する() {
+    let (idx, _tmp) = setup();
+
+    // 10 ファイルを投入
+    let files: Vec<(&str, i64, i64)> = (0..10)
+        .map(|i| {
+            // 'static な文字列が必要なので Box::leak で吸収する
+            let name: &'static str = Box::leak(format!("file{i:02}.jpg").into_boxed_str());
+            (name, 100_i64, 1_000_000_i64 + i)
+        })
+        .collect();
+    let args = make_args("/data", "/data", "m", vec![], files);
+    idx.ingest_walk_entry(&args).unwrap();
+
+    // limit = None で全件返る。has_next 判定用の +1 も発生しない。
+    let entries = idx.query_page("m", "name-asc", None, None).unwrap();
+    assert_eq!(entries.len(), 10);
+    assert_eq!(entries[0].name, "file00.jpg");
+    assert_eq!(entries[9].name, "file09.jpg");
 }
 
 #[test]
@@ -90,7 +112,7 @@ fn query_pageでname_ascソートが自然順で返る() {
     );
     idx.ingest_walk_entry(&args).unwrap();
 
-    let entries = idx.query_page("m", "name-asc", 100, None).unwrap();
+    let entries = idx.query_page("m", "name-asc", Some(100), None).unwrap();
     let names: Vec<&str> = entries.iter().map(|e| e.name.as_str()).collect();
     assert_eq!(names, ["file1.jpg", "file2.jpg", "file10.jpg"]);
 }
@@ -113,26 +135,32 @@ fn query_pageでカーソルページネーションが動作する() {
     idx.ingest_walk_entry(&args).unwrap();
 
     // 1 件目を取得
-    let page1 = idx.query_page("m", "name-asc", 1, None).unwrap();
+    let page1 = idx.query_page("m", "name-asc", Some(1), None).unwrap();
     assert_eq!(page1.len(), 1);
     assert_eq!(page1[0].name, "a.jpg");
 
     // カーソルを使って 2 件目を取得
     // kind_flag=1 (non-directory) + sort_key
     let cursor = format!("1\x00{}", page1[0].sort_key);
-    let page2 = idx.query_page("m", "name-asc", 1, Some(&cursor)).unwrap();
+    let page2 = idx
+        .query_page("m", "name-asc", Some(1), Some(&cursor))
+        .unwrap();
     assert_eq!(page2.len(), 1);
     assert_eq!(page2[0].name, "b.jpg");
 
     // 3 件目
     let cursor2 = format!("1\x00{}", page2[0].sort_key);
-    let page3 = idx.query_page("m", "name-asc", 1, Some(&cursor2)).unwrap();
+    let page3 = idx
+        .query_page("m", "name-asc", Some(1), Some(&cursor2))
+        .unwrap();
     assert_eq!(page3.len(), 1);
     assert_eq!(page3[0].name, "c.jpg");
 
     // 4 件目は空
     let cursor3 = format!("1\x00{}", page3[0].sort_key);
-    let page4 = idx.query_page("m", "name-asc", 1, Some(&cursor3)).unwrap();
+    let page4 = idx
+        .query_page("m", "name-asc", Some(1), Some(&cursor3))
+        .unwrap();
     assert!(page4.is_empty());
 }
 
@@ -271,14 +299,16 @@ fn date_descソートとカーソル() {
     idx.ingest_walk_entry(&args).unwrap();
 
     // 新しい順
-    let page1 = idx.query_page("m", "date-desc", 2, None).unwrap();
+    let page1 = idx.query_page("m", "date-desc", Some(2), None).unwrap();
     assert_eq!(page1.len(), 2);
     assert_eq!(page1[0].name, "new.jpg");
     assert_eq!(page1[1].name, "mid.jpg");
 
     // カーソルで次ページ
     let cursor = page1[1].mtime_ns.to_string();
-    let page2 = idx.query_page("m", "date-desc", 2, Some(&cursor)).unwrap();
+    let page2 = idx
+        .query_page("m", "date-desc", Some(2), Some(&cursor))
+        .unwrap();
     assert_eq!(page2.len(), 1);
     assert_eq!(page2[0].name, "old.jpg");
 }
@@ -299,7 +329,7 @@ fn query_pageのdate_descで同一mtimeはsort_key昇順() {
     );
     idx.ingest_walk_entry(&args).unwrap();
 
-    let page = idx.query_page("m", "date-desc", 10, None).unwrap();
+    let page = idx.query_page("m", "date-desc", Some(10), None).unwrap();
     assert_eq!(page[0].name, "alpha.jpg"); // sort_key 昇順: alpha < beta
     assert_eq!(page[1].name, "beta.jpg");
 }
@@ -322,13 +352,15 @@ fn query_pageのdate_descカーソルで同一mtimeのタプル比較() {
     idx.ingest_walk_entry(&args).unwrap();
 
     // 1ページ目: a.jpg + b.jpg (sort_key 昇順タイブレーカー)
-    let page1 = idx.query_page("m", "date-desc", 2, None).unwrap();
+    let page1 = idx.query_page("m", "date-desc", Some(2), None).unwrap();
     assert_eq!(page1[0].name, "a.jpg");
     assert_eq!(page1[1].name, "b.jpg");
 
     // カーソルで次ページ: c.jpg が残る
     let cursor = format!("{}\x00{}", page1[1].mtime_ns, page1[1].sort_key);
-    let page2 = idx.query_page("m", "date-desc", 2, Some(&cursor)).unwrap();
+    let page2 = idx
+        .query_page("m", "date-desc", Some(2), Some(&cursor))
+        .unwrap();
     assert_eq!(page2.len(), 1);
     assert_eq!(page2[0].name, "c.jpg");
 }
@@ -347,7 +379,9 @@ fn ルートディレクトリのparent_pathがmount_idになる() {
     idx.ingest_walk_entry(&args).unwrap();
 
     // ルート直下は mount_id がそのまま parent_path
-    let entries = idx.query_page("myMount", "name-asc", 100, None).unwrap();
+    let entries = idx
+        .query_page("myMount", "name-asc", Some(100), None)
+        .unwrap();
     assert_eq!(entries.len(), 2);
     assert_eq!(entries[0].parent_path, "myMount");
 }
@@ -576,8 +610,10 @@ fn readerで取得したセッションが既存メソッドと同じ結果を�
     let reader = idx.reader().unwrap();
 
     // query_page
-    let reader_page = reader.query_page(parent, "name-asc", 100, None).unwrap();
-    let direct_page = idx.query_page(parent, "name-asc", 100, None).unwrap();
+    let reader_page = reader
+        .query_page(parent, "name-asc", Some(100), None)
+        .unwrap();
+    let direct_page = idx.query_page(parent, "name-asc", Some(100), None).unwrap();
     assert_eq!(reader_page.len(), direct_page.len());
     for (r, d) in reader_page.iter().zip(direct_page.iter()) {
         assert_eq!(r.name, d.name);

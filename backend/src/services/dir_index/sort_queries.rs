@@ -93,13 +93,16 @@ pub(super) fn parse_date_cursor(cursor: &str) -> Result<(i64, Option<&str>), Dir
 // ---------------------------------------------------------------
 
 /// ディレクトリ優先 + 名前昇順
+///
+/// `limit = None` は `SQLite` の `LIMIT -1` (無制限) にマップする。
 #[allow(clippy::cast_possible_wrap, reason = "limit は i64 範囲内")]
 pub(super) fn query_name_asc(
     conn: &Connection,
     parent_path: &str,
-    limit: usize,
+    limit: Option<usize>,
     cursor: Option<&str>,
 ) -> Result<Vec<DirEntry>, DirIndexError> {
+    let sql_limit: i64 = limit.map_or(-1, |n| n as i64);
     let rows = if let Some(c) = cursor {
         let (kind_flag, sort_key) = parse_name_cursor(c);
         let mut stmt = conn.prepare(
@@ -111,7 +114,7 @@ pub(super) fn query_name_asc(
              LIMIT ?4",
         )?;
         stmt.query_map(
-            params![parent_path, kind_flag, sort_key, limit as i64],
+            params![parent_path, kind_flag, sort_key, sql_limit],
             map_dir_entry,
         )?
         .collect::<Result<Vec<_>, _>>()?
@@ -123,20 +126,23 @@ pub(super) fn query_name_asc(
              ORDER BY CASE WHEN kind = 'directory' THEN 0 ELSE 1 END, sort_key ASC \
              LIMIT ?2",
         )?;
-        stmt.query_map(params![parent_path, limit as i64], map_dir_entry)?
+        stmt.query_map(params![parent_path, sql_limit], map_dir_entry)?
             .collect::<Result<Vec<_>, _>>()?
     };
     Ok(rows)
 }
 
 /// ディレクトリ優先 + 名前降順
+///
+/// `limit = None` は `SQLite` の `LIMIT -1` (無制限) にマップする。
 #[allow(clippy::cast_possible_wrap, reason = "limit は i64 範囲内")]
 pub(super) fn query_name_desc(
     conn: &Connection,
     parent_path: &str,
-    limit: usize,
+    limit: Option<usize>,
     cursor: Option<&str>,
 ) -> Result<Vec<DirEntry>, DirIndexError> {
+    let sql_limit: i64 = limit.map_or(-1, |n| n as i64);
     let rows = if let Some(c) = cursor {
         let (kind_flag, sort_key) = parse_name_cursor(c);
         let mut stmt = conn.prepare(
@@ -148,7 +154,7 @@ pub(super) fn query_name_desc(
              LIMIT ?4",
         )?;
         stmt.query_map(
-            params![parent_path, kind_flag, sort_key, limit as i64],
+            params![parent_path, kind_flag, sort_key, sql_limit],
             map_dir_entry,
         )?
         .collect::<Result<Vec<_>, _>>()?
@@ -160,20 +166,23 @@ pub(super) fn query_name_desc(
              ORDER BY CASE WHEN kind = 'directory' THEN 0 ELSE 1 END ASC, sort_key DESC \
              LIMIT ?2",
         )?;
-        stmt.query_map(params![parent_path, limit as i64], map_dir_entry)?
+        stmt.query_map(params![parent_path, sql_limit], map_dir_entry)?
             .collect::<Result<Vec<_>, _>>()?
     };
     Ok(rows)
 }
 
 /// 日付降順 (新しい順)
+///
+/// `limit = None` は `SQLite` の `LIMIT -1` (無制限) にマップする。
 #[allow(clippy::cast_possible_wrap, reason = "limit は i64 範囲内")]
 pub(super) fn query_date_desc(
     conn: &Connection,
     parent_path: &str,
-    limit: usize,
+    limit: Option<usize>,
     cursor: Option<&str>,
 ) -> Result<Vec<DirEntry>, DirIndexError> {
+    let sql_limit: i64 = limit.map_or(-1, |n| n as i64);
     let rows = if let Some(c) = cursor {
         let (mtime, sort_key) = parse_date_cursor(c)?;
         if let Some(sk) = sort_key {
@@ -186,7 +195,7 @@ pub(super) fn query_date_desc(
                  ORDER BY mtime_ns DESC, sort_key ASC \
                  LIMIT ?4",
             )?;
-            stmt.query_map(params![parent_path, mtime, sk, limit as i64], map_dir_entry)?
+            stmt.query_map(params![parent_path, mtime, sk, sql_limit], map_dir_entry)?
                 .collect::<Result<Vec<_>, _>>()?
         } else {
             // 旧形式: mtime_ns のみ比較 (後方互換)
@@ -197,7 +206,7 @@ pub(super) fn query_date_desc(
                  ORDER BY mtime_ns DESC, sort_key ASC \
                  LIMIT ?3",
             )?;
-            stmt.query_map(params![parent_path, mtime, limit as i64], map_dir_entry)?
+            stmt.query_map(params![parent_path, mtime, sql_limit], map_dir_entry)?
                 .collect::<Result<Vec<_>, _>>()?
         }
     } else {
@@ -208,20 +217,23 @@ pub(super) fn query_date_desc(
              ORDER BY mtime_ns DESC, sort_key ASC \
              LIMIT ?2",
         )?;
-        stmt.query_map(params![parent_path, limit as i64], map_dir_entry)?
+        stmt.query_map(params![parent_path, sql_limit], map_dir_entry)?
             .collect::<Result<Vec<_>, _>>()?
     };
     Ok(rows)
 }
 
 /// 日付昇順 (古い順)
+///
+/// `limit = None` は `SQLite` の `LIMIT -1` (無制限) にマップする。
 #[allow(clippy::cast_possible_wrap, reason = "limit は i64 範囲内")]
 pub(super) fn query_date_asc(
     conn: &Connection,
     parent_path: &str,
-    limit: usize,
+    limit: Option<usize>,
     cursor: Option<&str>,
 ) -> Result<Vec<DirEntry>, DirIndexError> {
+    let sql_limit: i64 = limit.map_or(-1, |n| n as i64);
     let rows = if let Some(c) = cursor {
         let (mtime, sort_key) = parse_date_cursor(c)?;
         if let Some(sk) = sort_key {
@@ -234,7 +246,7 @@ pub(super) fn query_date_asc(
                  ORDER BY mtime_ns ASC, sort_key ASC \
                  LIMIT ?4",
             )?;
-            stmt.query_map(params![parent_path, mtime, sk, limit as i64], map_dir_entry)?
+            stmt.query_map(params![parent_path, mtime, sk, sql_limit], map_dir_entry)?
                 .collect::<Result<Vec<_>, _>>()?
         } else {
             // 旧形式: mtime_ns のみ比較 (後方互換)
@@ -245,7 +257,7 @@ pub(super) fn query_date_asc(
                  ORDER BY mtime_ns ASC, sort_key ASC \
                  LIMIT ?3",
             )?;
-            stmt.query_map(params![parent_path, mtime, limit as i64], map_dir_entry)?
+            stmt.query_map(params![parent_path, mtime, sql_limit], map_dir_entry)?
                 .collect::<Result<Vec<_>, _>>()?
         }
     } else {
@@ -256,7 +268,7 @@ pub(super) fn query_date_asc(
              ORDER BY mtime_ns ASC, sort_key ASC \
              LIMIT ?2",
         )?;
-        stmt.query_map(params![parent_path, limit as i64], map_dir_entry)?
+        stmt.query_map(params![parent_path, sql_limit], map_dir_entry)?
             .collect::<Result<Vec<_>, _>>()?
     };
     Ok(rows)

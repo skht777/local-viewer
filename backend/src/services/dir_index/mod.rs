@@ -192,13 +192,14 @@ impl DirIndex {
     /// ソート + カーソルベースページネーション付きでエントリを返す
     ///
     /// - `sort`: `"name-asc"`, `"name-desc"`, `"date-asc"`, `"date-desc"`
+    /// - `limit`: `Some(n)` で n 件、`None` で全件取得 (`SQLite` `LIMIT -1` 相当)
     /// - `cursor_sort_key`: 前ページ末尾のソートキー (name 系) または `mtime_ns` 文字列 (date 系)
     ///   name 系カーソルは `"{kind_flag}\x00{sort_key}"` 形式 (`kind_flag`: "0"=directory, "1"=other)
     pub(crate) fn query_page(
         &self,
         parent_path: &str,
         sort: &str,
-        limit: usize,
+        limit: Option<usize>,
         cursor_sort_key: Option<&str>,
     ) -> Result<Vec<DirEntry>, DirIndexError> {
         self.reader()?
@@ -398,11 +399,13 @@ pub(super) type PendingEntry = (String, String, String, String, Option<i64>, i64
 
 impl DirIndexReader<'_> {
     /// ソート + カーソルベースページネーション付きでエントリを返す
+    ///
+    /// `limit = None` は全件取得 (`SQLite` `LIMIT -1` 相当)
     pub(crate) fn query_page(
         &self,
         parent_path: &str,
         sort: &str,
-        limit: usize,
+        limit: Option<usize>,
         cursor_sort_key: Option<&str>,
     ) -> Result<Vec<DirEntry>, DirIndexError> {
         match sort {
