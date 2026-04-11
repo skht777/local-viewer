@@ -246,7 +246,6 @@ pub(crate) async fn browse_directory(
         let dir_index = Arc::clone(&state.dir_index);
         let nid = node_id.clone();
         let is_dir_index_ready = state.dir_index.is_ready();
-        let has_limit = limit.is_some();
         // 計測用の DirIndex 状態ラベル (cold/warm_indexing/warm_ready)
         let state_label = state.dir_index.state_label();
         tokio::task::spawn_blocking(move || {
@@ -262,16 +261,17 @@ pub(crate) async fn browse_directory(
                 (path, ps)
             };
 
-            // DirIndex 高速パス: ready かつ limit 指定時に試行
+            // DirIndex 高速パス: ready かつディレクトリのとき常に試行
+            // limit = None (全件要求) にも対応 (SQLite `LIMIT -1`)
             // Phase 0 (短ロック) → Phase 1 (ロックなし) → Phase 2 (短ロック)
-            if is_dir_index_ready && has_limit && path.is_dir() {
+            if is_dir_index_ready && path.is_dir() {
                 if let Some(result) = try_dir_index_browse_split(
                     &registry,
                     &dir_index,
                     &path,
                     &nid,
                     sort,
-                    limit.unwrap_or(0),
+                    limit,
                     cursor.as_deref(),
                     state_label,
                 ) {
@@ -418,7 +418,7 @@ fn try_dir_index_browse_split(
     path: &std::path::Path,
     node_id: &str,
     sort: SortOrder,
-    limit: usize,
+    limit: Option<usize>,
     cursor: Option<&str>,
     state_label: &'static str,
 ) -> Option<(BrowseResponse, String)> {
@@ -510,7 +510,9 @@ fn try_dir_index_browse_split(
         return None;
     }
 
-    let query_limit = limit + 1;
+    // limit = Some(n) は `n+1` 件要求して has_next 判定。
+    // limit = None は SQLite LIMIT -1 にマップされ全件返る (has_next は常に false)。
+    let query_limit = limit.map(|n| n.saturating_add(1));
     let entries = reader
         .query_page(
             &parent_key,
@@ -520,8 +522,10 @@ fn try_dir_index_browse_split(
         )
         .ok()?;
 
-    let has_next = entries.len() > limit;
-    let page_entries: Vec<_> = entries.into_iter().take(limit).collect();
+    let (has_next, page_entries): (bool, Vec<_>) = match limit {
+        Some(n) => (entries.len() > n, entries.into_iter().take(n).collect()),
+        None => (false, entries),
+    };
     let total_count = reader.child_count(&parent_key).ok()?;
 
     // ディレクトリの child_key を収集してバッチ取得
