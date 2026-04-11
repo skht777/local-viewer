@@ -21,6 +21,7 @@ services:
       - SEARCH_MAX_RESULTS=${SEARCH_MAX_RESULTS:-200}
       - SEARCH_QUERY_TIMEOUT=${SEARCH_QUERY_TIMEOUT:-5}
       - SCAN_WORKERS=${SCAN_WORKERS:-8}
+      - RUST_LOG
     restart: unless-stopped
     mem_limit: ${MEM_LIMIT:-2g}
     cpus: ${CPUS:-2.0}
