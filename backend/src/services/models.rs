@@ -39,7 +39,6 @@ pub(crate) struct EntryMeta {
     /// warmer / batch 両方から同一のキャッシュキーを算出するには u128 ns が必須。
     /// JS の Number で精度欠損するため `#[serde(skip)]` で外部露出を防ぐ。
     #[serde(skip)]
-    #[allow(dead_code, reason = "fix(thumbnail) コミットで warmer が読み始める")]
     pub mtime_ns: Option<u128>,
     pub preview_node_ids: Option<Vec<String>>,
 }

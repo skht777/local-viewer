@@ -54,12 +54,15 @@ impl ThumbnailWarmer {
                 continue;
             }
 
-            // 近似 mtime_ns でキャッシュ確認
-            if let Some(modified_at) = entry.modified_at {
-                let approx_mtime_ns = (modified_at * 1_000_000_000.0) as u128;
+            // 真値 mtime_ns でキャッシュ確認
+            // 注意: modified_at (f64 秒) 経由の近似値ではサブミリ秒以下の精度が
+            // 欠落し、実生成側 (warm_one_thumbnail_inner) と常に不一致になる。
+            // mtime_ns が None のエントリ (アーカイブ等) は check を飛ばして
+            // pending チェックへ進む。
+            if let Some(mtime_ns) = entry.mtime_ns {
                 let cache_key = state
                     .thumbnail_service
-                    .make_cache_key(&entry.node_id, approx_mtime_ns);
+                    .make_cache_key(&entry.node_id, mtime_ns);
                 if state.thumbnail_service.is_cached(&cache_key) {
                     skipped_cached += 1;
                     continue;
