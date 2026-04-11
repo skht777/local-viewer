@@ -130,18 +130,28 @@ pub(crate) fn scan_child_meta(
 /// stat 済みエントリから `ScannedEntry` を構築する (ロック不要)
 ///
 /// canonicalize + child scan を実行。`register` は行わない。
+/// 完了時に `scan_entry_metas` の経過時間と canonicalize / `scan_child_meta`
+/// 呼び出し回数を info ログとして出力する (Phase 4 計測基盤)。
 pub(crate) fn scan_entry_metas(
     path_security: &PathSecurity,
     stated: Vec<(PathBuf, EntryKind, Option<Metadata>)>,
     preview_limit: usize,
 ) -> Vec<ScannedEntry> {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
     let allow_symlinks = path_security.is_allow_symlinks();
-    stated
+    let scan_started = std::time::Instant::now();
+    let canonicalize_count = AtomicUsize::new(0);
+    let scan_child_count = AtomicUsize::new(0);
+    let input_count = stated.len();
+
+    let result: Vec<ScannedEntry> = stated
         .into_par_iter()
         .map(|(path, kind, meta)| {
             // symlink 無効時は canonicalize 不要 (validate_child で拒否済み、
             // read_dir の子は canonical 親 + エントリ名なので canonical)
             let resolved = if allow_symlinks {
+                canonicalize_count.fetch_add(1, Ordering::Relaxed);
                 std::fs::canonicalize(&path).unwrap_or_else(|_| path.clone())
             } else {
                 path.clone()
@@ -173,6 +183,7 @@ pub(crate) fn scan_entry_metas(
             };
 
             let (child_count, preview_paths) = if kind == EntryKind::Directory {
+                scan_child_count.fetch_add(1, Ordering::Relaxed);
                 let cm = scan_child_meta(path_security, &path, preview_limit, allow_symlinks);
                 (Some(cm.count), Some(cm.preview_paths))
             } else {
@@ -190,7 +201,20 @@ pub(crate) fn scan_entry_metas(
                 preview_paths,
             }
         })
-        .collect()
+        .collect();
+
+    tracing::info!(
+        target: "scan",
+        input = input_count,
+        output = result.len(),
+        canonicalize = canonicalize_count.load(Ordering::Relaxed),
+        scan_child_dirs = scan_child_count.load(Ordering::Relaxed),
+        allow_symlinks,
+        elapsed_us = u64::try_from(scan_started.elapsed().as_micros()).unwrap_or(u64::MAX),
+        "scan_entry_metas completed"
+    );
+
+    result
 }
 
 /// 200 件超で rayon 並列 stat
