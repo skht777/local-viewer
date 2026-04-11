@@ -695,7 +695,7 @@ impl NodeRegistry {
                 mime_type: se.mime_type,
                 child_count: se.child_count,
                 modified_at: se.modified_at,
-                mtime_ns: None,
+                mtime_ns: se.mtime_ns,
                 preview_node_ids,
             });
         }
