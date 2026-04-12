@@ -276,6 +276,111 @@ impl ArchiveReader for SevenZipArchiveReader {
         let ext_lower = format!(".{}", ext.to_string_lossy().to_lowercase());
         SEVENZ_EXTENSIONS.contains(&ext_lower.as_str())
     }
+
+    /// サムネイル用: 最初の画像エントリで即座に返す (パスワード検査・合計サイズ検証・ソートなし)
+    ///
+    /// `check_password()` をスキップする。`7z l` はパスワード有無に関わらずメタデータ取得可能。
+    /// パスワード付きアーカイブでは本メソッドは成功するが、後続の `extract_entry` でエラーになる。
+    /// サムネイル用途では graceful degradation として許容（サムネなし表示）。
+    fn find_first_image(&self, archive_path: &Path) -> Result<Option<ArchiveEntry>, AppError> {
+        if !self.is_available {
+            return Err(AppError::InvalidArchive(
+                "7z がインストールされていません".to_string(),
+            ));
+        }
+
+        let output = Command::new("7z")
+            .arg("l")
+            .arg("-slt")
+            .arg("--")
+            .arg(archive_path)
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .output()
+            .map_err(|e| AppError::InvalidArchive(format!("7z 実行エラー: {e}")))?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(AppError::InvalidArchive(format!(
+                "7z l エラー: {}",
+                stderr.trim()
+            )));
+        }
+
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        Ok(find_first_image_from_slt_output(&stdout))
+    }
+}
+
+/// `7z l -slt` の出力から最初の画像エントリを探す (早期リターン)
+fn find_first_image_from_slt_output(output: &str) -> Option<ArchiveEntry> {
+    let mut current: HashMap<String, String> = HashMap::new();
+
+    for line in output.lines() {
+        let trimmed = line.trim();
+
+        if trimmed.is_empty() {
+            if let Some(entry) = try_build_image_entry(&current) {
+                return Some(entry);
+            }
+            current.clear();
+            continue;
+        }
+
+        if let Some((key, value)) = trimmed.split_once(" = ") {
+            current.insert(key.to_string(), value.to_string());
+        } else if let Some(key) = trimmed.strip_suffix('=') {
+            let key = key.trim_end();
+            current.insert(key.to_string(), String::new());
+        }
+    }
+
+    // 末尾ブロック (最終行が空行でない場合)
+    if !current.is_empty() {
+        if let Some(entry) = try_build_image_entry(&current) {
+            return Some(entry);
+        }
+    }
+
+    None
+}
+
+/// Key=Value ブロックから画像エントリを構築する (画像でなければ None)
+fn try_build_image_entry(block: &HashMap<String, String>) -> Option<ArchiveEntry> {
+    let path = block.get("Path")?;
+    if path.is_empty() {
+        return None;
+    }
+
+    // ディレクトリをスキップ
+    if block.get("Folder").is_some_and(|v| v == "+") {
+        return None;
+    }
+
+    let name = path.replace('\\', "/");
+    if ArchiveEntryValidator::validate_entry_name(&name).is_err() {
+        return None;
+    }
+
+    if !super::reader::is_image_name(&name) {
+        return None;
+    }
+
+    let compressed: u64 = block
+        .get("Packed Size")
+        .and_then(|v| if v.is_empty() { None } else { v.parse().ok() })
+        .unwrap_or(0);
+    let uncompressed: u64 = block
+        .get("Size")
+        .and_then(|v| if v.is_empty() { None } else { v.parse().ok() })
+        .unwrap_or(0);
+
+    Some(ArchiveEntry {
+        name,
+        size_compressed: compressed,
+        size_uncompressed: uncompressed,
+        is_dir: false,
+    })
 }
 
 #[cfg(test)]
@@ -325,5 +430,67 @@ Packed Size =
         assert_eq!(blocks[1].get("Folder").unwrap(), "+");
         // ソリッドアーカイブ: Packed Size が空
         assert_eq!(blocks[2].get("Packed Size").unwrap(), "");
+    }
+
+    #[test]
+    fn find_first_imageが最初の画像エントリを返す() {
+        let output = "\
+Path = readme.txt
+Folder = -
+Size = 100
+Packed Size = 50
+
+Path = subdir
+Folder = +
+Size = 0
+Packed Size = 0
+
+Path = image01.jpg
+Folder = -
+Size = 1234
+Packed Size = 500
+
+Path = image02.png
+Folder = -
+Size = 5678
+Packed Size = 2000
+";
+        let result = find_first_image_from_slt_output(output);
+        let entry = result.expect("画像エントリが見つかるべき");
+        assert_eq!(entry.name, "image01.jpg");
+        assert_eq!(entry.size_compressed, 500);
+        assert_eq!(entry.size_uncompressed, 1234);
+    }
+
+    #[test]
+    fn find_first_imageが画像なしでnoneを返す() {
+        let output = "\
+Path = readme.txt
+Folder = -
+Size = 100
+Packed Size = 50
+
+Path = data.csv
+Folder = -
+Size = 2000
+Packed Size = 1000
+";
+        let result = find_first_image_from_slt_output(output);
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn find_first_imageがソリッドアーカイブの画像を返す() {
+        let output = "\
+Path = image01.webp
+Folder = -
+Size = 3000
+Packed Size =
+";
+        let result = find_first_image_from_slt_output(output);
+        let entry = result.expect("画像エントリが見つかるべき");
+        assert_eq!(entry.name, "image01.webp");
+        assert_eq!(entry.size_compressed, 0);
+        assert_eq!(entry.size_uncompressed, 3000);
     }
 }

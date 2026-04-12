@@ -258,6 +258,100 @@ impl ArchiveReader for RarArchiveReader {
         let ext_lower = format!(".{}", ext.to_string_lossy().to_lowercase());
         RAR_EXTENSIONS.contains(&ext_lower.as_str())
     }
+
+    /// サムネイル用: 最初の画像エントリで即座に返す (合計サイズ検証・ソートなし)
+    fn find_first_image(&self, archive_path: &Path) -> Result<Option<ArchiveEntry>, AppError> {
+        if !self.is_available {
+            return Err(AppError::InvalidArchive(
+                "unrar-free がインストールされていません".to_string(),
+            ));
+        }
+
+        let output = Command::new("unrar-free")
+            .arg("v")
+            .arg("--")
+            .arg(archive_path)
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .output()
+            .map_err(|e| AppError::InvalidArchive(format!("unrar-free 実行エラー: {e}")))?;
+
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        if stderr.contains("password")
+            || stderr.contains("encrypted")
+            || stderr.contains("wrong password")
+        {
+            return Err(AppError::ArchivePassword(
+                "パスワード付きアーカイブは未対応です".to_string(),
+            ));
+        }
+        if !output.status.success() {
+            return Err(AppError::InvalidArchive(format!(
+                "unrar-free エラー (exit {}): {}",
+                output.status,
+                stderr.trim()
+            )));
+        }
+
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        Ok(find_first_image_from_unrar_output(&stdout))
+    }
+}
+
+/// `unrar-free v` の出力から最初の画像エントリを探す (早期リターン)
+fn find_first_image_from_unrar_output(output: &str) -> Option<ArchiveEntry> {
+    let mut in_body = false;
+    let mut separator_count = 0;
+
+    for line in output.lines() {
+        let trimmed = line.trim();
+
+        if trimmed.starts_with("----") {
+            separator_count += 1;
+            if separator_count == 1 {
+                in_body = true;
+            } else {
+                break;
+            }
+            continue;
+        }
+
+        if !in_body || trimmed.is_empty() {
+            continue;
+        }
+
+        let parts: Vec<&str> = trimmed.split_whitespace().collect();
+        if parts.len() < 7 {
+            continue;
+        }
+
+        // ディレクトリはスキップ
+        let is_dir = parts
+            .get(6)
+            .is_some_and(|attr| attr.starts_with('D') || attr.starts_with('d'));
+        if is_dir {
+            continue;
+        }
+
+        let name = parts[0].replace('\\', "/");
+        if ArchiveEntryValidator::validate_entry_name(&name).is_err() {
+            continue;
+        }
+
+        // 画像エントリが見つかったら即座に返す
+        if super::reader::is_image_name(&name) {
+            let size_uncompressed = parts[1].parse::<u64>().unwrap_or(0);
+            let size_compressed = parts[2].parse::<u64>().unwrap_or(0);
+            return Some(ArchiveEntry {
+                name,
+                size_compressed,
+                size_uncompressed,
+                is_dir: false,
+            });
+        }
+    }
+
+    None
 }
 
 #[cfg(test)]
@@ -303,5 +397,43 @@ Archive: test.rar
         assert_eq!(entries[0].2, 1234); // uncompressed
         assert!(!entries[0].3); // not dir
         assert!(entries[1].3); // dir
+    }
+
+    #[test]
+    fn find_first_imageが最初の画像エントリを返す() {
+        let output = "\
+UNRAR-FREE 0.1.2
+
+Archive: test.rar
+
+ Name            Size  Packed  Ratio  Date       Time   Attr  CRC  Meth  Ver
+---------------------------------------------------------------------------
+ subdir/            0      0    0%   2024-01-01 00:00 D.....  000000  m0  2.9
+ readme.txt       100     50   50%   2024-01-01 00:00 .....A  AAAAAA  m3b 2.9
+ image01.jpg     1234    500   41%   2024-01-01 00:00 .....A  ABCDEF  m3b 2.9
+ image02.png     5678   2000   35%   2024-01-01 00:00 .....A  123456  m3b 2.9
+---------------------------------------------------------------------------
+";
+        let entry = find_first_image_from_unrar_output(output).expect("画像エントリが見つかるべき");
+        assert_eq!(entry.name, "image01.jpg");
+        assert_eq!(entry.size_compressed, 500);
+        assert_eq!(entry.size_uncompressed, 1234);
+    }
+
+    #[test]
+    fn find_first_imageが画像なしでnoneを返す() {
+        let output = "\
+UNRAR-FREE 0.1.2
+
+Archive: test.rar
+
+ Name            Size  Packed  Ratio  Date       Time   Attr  CRC  Meth  Ver
+---------------------------------------------------------------------------
+ readme.txt       100     50   50%   2024-01-01 00:00 .....A  AAAAAA  m3b 2.9
+ data.csv        2000   1000   50%   2024-01-01 00:00 .....A  BBBBBB  m3b 2.9
+---------------------------------------------------------------------------
+";
+        let result = find_first_image_from_unrar_output(output);
+        assert!(result.is_none());
     }
 }
