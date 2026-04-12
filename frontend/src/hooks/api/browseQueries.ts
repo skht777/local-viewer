@@ -3,7 +3,7 @@
 import { infiniteQueryOptions, queryOptions } from "@tanstack/react-query";
 import type { SortOrder } from "../../hooks/useViewerParams";
 import type { BrowseResponse, SearchResponse } from "../../types/api";
-import { apiFetch } from "./apiClient";
+import { ApiError, apiFetch } from "./apiClient";
 
 // 特定ディレクトリの中身を取得 (後方互換: ページネーションなし)
 export function browseNodeOptions(nodeId: string | undefined, sort?: SortOrder) {
