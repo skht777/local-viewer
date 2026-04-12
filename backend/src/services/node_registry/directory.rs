@@ -201,7 +201,13 @@ impl NodeRegistry {
                         .validate_child(&path, ft.is_symlink())
                         .is_ok()
                     {
-                        let resolved = std::fs::canonicalize(&path).unwrap_or(path);
+                        // symlink 無効時は canonicalize 不要
+                        // (validate_child 検証済み + register_resolved 内 find_root_for が最終防壁)
+                        let resolved = if self.path_security.is_allow_symlinks() {
+                            std::fs::canonicalize(&path).unwrap_or(path)
+                        } else {
+                            path
+                        };
                         if let Ok(id) = self.register_resolved(&resolved) {
                             previews.push(id);
                         }
@@ -231,7 +237,13 @@ impl NodeRegistry {
         let mut entries = Vec::with_capacity(stated.len());
 
         for (path, kind, meta) in stated {
-            let resolved = std::fs::canonicalize(&path).unwrap_or_else(|_| path.clone());
+            // symlink 無効時は canonicalize 不要
+            // (scan_entries 内 validate_child 検証済み、canonical 親 + エントリ名で安全)
+            let resolved = if self.path_security.is_allow_symlinks() {
+                std::fs::canonicalize(&path).unwrap_or_else(|_| path.clone())
+            } else {
+                path.clone()
+            };
             let node_id = self.register_resolved(&resolved)?;
             let name = path
                 .file_name()
