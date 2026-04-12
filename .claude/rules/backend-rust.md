@@ -86,4 +86,4 @@ routers → services → 外部クレート/std
 - HMAC node_id: `"{root}::{relative}"` フォーマット、SHA256 先頭 16 hex 文字
 - カーソル: compact JSON → base64 URL-safe。`BTreeMap` でキーソート保証
 - 自然順ソート: `[0-9]+` で分割 (Unicode `\d` ではない)、小文字化
-- DirIndex sort_key: 10 桁ゼロ埋め + `\x00` 区切り
+- DirIndex sort_key: 20 桁ゼロ埋め + `\x00` 区切り
