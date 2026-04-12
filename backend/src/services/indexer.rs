@@ -510,22 +510,22 @@ impl Indexer {
         let mut added: usize = 0;
         let mut updated: usize = 0;
 
+        let ctx = IncrementalScanContext {
+            root_dir,
+            mount_id,
+            conn: &conn,
+            existing: &existing,
+            dir_mtimes: &dir_mtimes,
+            seen: &seen,
+            has_subdirs: &has_subdirs,
+        };
+
         let validator = |path: &Path| -> bool { path_security.validate(path).is_ok() };
         let mut on_walk_entry = on_walk_entry;
 
         // dir_filter: mtime 未変更のリーフディレクトリのみ枝刈り
-        let mut dir_filter = |path: &Path, mtime_ns: i64| -> bool {
-            prune_unchanged_dir(
-                path,
-                mtime_ns,
-                root_dir,
-                mount_id,
-                &dir_mtimes,
-                &existing,
-                &seen,
-                &has_subdirs,
-            )
-        };
+        let mut dir_filter =
+            |path: &Path, mtime_ns: i64| -> bool { prune_unchanged_dir(path, mtime_ns, &ctx) };
 
         parallel_walk::parallel_walk(
             root_dir,
@@ -534,15 +534,7 @@ impl Indexer {
             Some(&validator),
             &mut dir_filter,
             &mut |entry: WalkEntry| {
-                let (a, u) = process_walk_entry_incremental(
-                    &entry,
-                    root_dir,
-                    mount_id,
-                    &conn,
-                    &existing,
-                    &seen,
-                    &mut on_walk_entry,
-                );
+                let (a, u) = process_walk_entry_incremental(&entry, &ctx, &mut on_walk_entry);
                 added += a;
                 updated += u;
             },
@@ -579,43 +571,44 @@ impl Indexer {
     }
 }
 
+/// `incremental_scan` の共有コンテキスト
+///
+/// `prune_unchanged_dir` と `process_walk_entry_incremental` が
+/// 必要とするパラメータをまとめる。
+struct IncrementalScanContext<'a> {
+    root_dir: &'a Path,
+    mount_id: &'a str,
+    conn: &'a Connection,
+    existing: &'a BTreeMap<String, i64>,
+    dir_mtimes: &'a HashMap<String, i64>,
+    seen: &'a RefCell<HashSet<String>>,
+    has_subdirs: &'a HashSet<String>,
+}
+
 /// mtime 未変更のディレクトリを枝刈りし、配下エントリを seen に追加する
 ///
 /// `true` を返すと走査続行、`false` を返すと枝刈り。
-#[allow(
-    clippy::too_many_arguments,
-    reason = "incremental_scan のコンテキストを受け取る内部ヘルパー"
-)]
-fn prune_unchanged_dir(
-    path: &Path,
-    mtime_ns: i64,
-    root_dir: &Path,
-    mount_id: &str,
-    dir_mtimes: &HashMap<String, i64>,
-    existing: &BTreeMap<String, i64>,
-    seen: &RefCell<HashSet<String>>,
-    has_subdirs: &HashSet<String>,
-) -> bool {
+fn prune_unchanged_dir(path: &Path, mtime_ns: i64, ctx: &IncrementalScanContext<'_>) -> bool {
     let dir_relative = path
-        .strip_prefix(root_dir)
+        .strip_prefix(ctx.root_dir)
         .map(|p| p.to_string_lossy().into_owned())
         .unwrap_or_default();
-    let relative_path = make_relative_prefix(mount_id, &dir_relative);
+    let relative_path = make_relative_prefix(ctx.mount_id, &dir_relative);
     let dir_key = relative_path.strip_suffix('/').unwrap_or(&relative_path);
 
-    if let Some(&stored_mtime) = dir_mtimes.get(dir_key) {
+    if let Some(&stored_mtime) = ctx.dir_mtimes.get(dir_key) {
         if stored_mtime == mtime_ns {
             // 子ディレクトリを持つ場合は枝刈りしない
             // (Unix mtime は直接の子のみ反映し、子孫の変更を検出するには再帰走査が必要)
-            if has_subdirs.contains(dir_key) {
+            if ctx.has_subdirs.contains(dir_key) {
                 return true;
             }
             // リーフディレクトリ: mtime 未変更 → 配下の既存エントリを全て seen に追加して枝刈り
             // BTreeMap::range で O(log n + k) のプレフィックスマッチ (k = マッチ数)
-            let mut seen_mut = seen.borrow_mut();
+            let mut seen_mut = ctx.seen.borrow_mut();
             if dir_key.is_empty() {
                 // ルートディレクトリ: 全エントリが対象
-                for key in existing.keys() {
+                for key in ctx.existing.keys() {
                     seen_mut.insert(key.clone());
                 }
             } else {
@@ -629,7 +622,7 @@ fn prune_unchanged_dir(
                     *last += 1;
                 }
                 let end_str = String::from_utf8(end).unwrap_or_default();
-                for (key, _) in existing.range(prefix..end_str) {
+                for (key, _) in ctx.existing.range(prefix..end_str) {
                     seen_mut.insert(key.clone());
                 }
             }
@@ -640,32 +633,24 @@ fn prune_unchanged_dir(
 }
 
 /// `incremental_scan` 内の `WalkEntry` を処理し、(added, updated) を返す
-#[allow(
-    clippy::too_many_arguments,
-    reason = "incremental_scan のコンテキストを受け取る内部ヘルパー"
-)]
 fn process_walk_entry_incremental(
     entry: &WalkEntry,
-    root_dir: &Path,
-    mount_id: &str,
-    conn: &Connection,
-    existing: &BTreeMap<String, i64>,
-    seen: &RefCell<HashSet<String>>,
+    ctx: &IncrementalScanContext<'_>,
     on_walk_entry: &mut Option<&mut dyn FnMut(WalkCallbackArgs)>,
 ) -> (usize, usize) {
     let dir_relative = entry
         .path
-        .strip_prefix(root_dir)
+        .strip_prefix(ctx.root_dir)
         .map(|p| p.to_string_lossy().into_owned())
         .unwrap_or_default();
-    let prefix = make_relative_prefix(mount_id, &dir_relative);
+    let prefix = make_relative_prefix(ctx.mount_id, &dir_relative);
 
     // コールバック通知
     if let Some(cb) = on_walk_entry {
         cb(WalkCallbackArgs {
             walk_entry_path: entry.path.to_string_lossy().into_owned(),
-            root_dir: root_dir.to_string_lossy().into_owned(),
-            mount_id: mount_id.to_string(),
+            root_dir: ctx.root_dir.to_string_lossy().into_owned(),
+            mount_id: ctx.mount_id.to_string(),
             dir_mtime_ns: entry.mtime_ns,
             subdirs: entry.subdirs.clone(),
             files: entry.files.clone(),
@@ -686,13 +671,13 @@ fn process_walk_entry_incremental(
                 size_bytes: None,
                 mtime_ns: *mtime_ns,
             };
-            match upsert_entry(conn, &ie, existing) {
+            match upsert_entry(ctx.conn, &ie, ctx.existing) {
                 Ok(UpsertResult::Added) => added += 1,
                 Ok(UpsertResult::Updated) => updated += 1,
                 Ok(UpsertResult::Unchanged) => {}
                 Err(e) => tracing::error!("UPSERT 失敗: {e}"),
             }
-            seen.borrow_mut().insert(relative_path);
+            ctx.seen.borrow_mut().insert(relative_path);
         }
     }
 
@@ -707,13 +692,13 @@ fn process_walk_entry_incremental(
                 size_bytes: Some(*size_bytes),
                 mtime_ns: *mtime_ns,
             };
-            match upsert_entry(conn, &ie, existing) {
+            match upsert_entry(ctx.conn, &ie, ctx.existing) {
                 Ok(UpsertResult::Added) => added += 1,
                 Ok(UpsertResult::Updated) => updated += 1,
                 Ok(UpsertResult::Unchanged) => {}
                 Err(e) => tracing::error!("UPSERT 失敗: {e}"),
             }
-            seen.borrow_mut().insert(relative_path);
+            ctx.seen.borrow_mut().insert(relative_path);
         }
     }
 
