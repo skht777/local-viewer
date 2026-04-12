@@ -21,8 +21,8 @@ use rusqlite::{Connection, params};
 use crate::services::indexer::WalkCallbackArgs;
 use crate::services::natural_sort::encode_sort_key;
 
-/// スキーマバージョン
-const SCHEMA_VERSION: &str = "1";
+/// スキーマバージョン (v2: `sort_key` ゼロ埋め 10桁→20桁)
+const SCHEMA_VERSION: &str = "2";
 
 /// `BulkInserter` のバッチサイズ
 const BATCH_SIZE: usize = 1000;
@@ -131,11 +131,32 @@ impl DirIndex {
              );",
         )?;
 
-        // スキーマバージョンを記録
-        conn.execute(
+        // sort_key 形式変更時のマイグレーション (v1→v2: ゼロ埋め 10桁→20桁)
+        // 旧形式の sort_key が残っていると DirIndex パスと非 DirIndex パスで
+        // ソート順が不一致になるため、dir_entries を全削除して再スキャンを促す
+        let tx = conn.unchecked_transaction()?;
+        let old_version: Option<String> = tx
+            .query_row(
+                "SELECT value FROM schema_meta WHERE key = 'schema_version'",
+                [],
+                |row| row.get(0),
+            )
+            .ok();
+
+        if old_version.as_deref() != Some(SCHEMA_VERSION) {
+            tx.execute("DELETE FROM dir_entries", [])?;
+            tracing::info!(
+                old = old_version.as_deref().unwrap_or("none"),
+                new = SCHEMA_VERSION,
+                "DirIndex スキーマバージョン変更: dir_entries をクリア"
+            );
+        }
+
+        tx.execute(
             "INSERT OR REPLACE INTO schema_meta (key, value) VALUES (?1, ?2)",
             params![&"schema_version", SCHEMA_VERSION],
         )?;
+        tx.commit()?;
 
         Ok(())
     }
