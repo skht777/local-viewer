@@ -195,6 +195,7 @@ pub(crate) async fn browse_directory(
     // limit のバリデーション (1..=500)
     if let Some(limit) = query.limit {
         if limit == 0 || limit > MAX_LIMIT {
+            tracing::warn!(limit, max = MAX_LIMIT, "不正な limit パラメータ");
             return Err(AppError::InvalidCursor(format!(
                 "limit は 1 以上 {MAX_LIMIT} 以下で指定してください"
             )));

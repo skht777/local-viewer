@@ -106,27 +106,48 @@ pub(crate) fn decode_cursor(
     cursor_str: &str,
     expected_sort: SortOrder,
 ) -> Result<CursorData, AppError> {
+    let cursor_head = &cursor_str[..cursor_str.len().min(24)];
     let secret = get_secret();
 
     // base64 デコード
-    let raw = URL_SAFE_NO_PAD
-        .decode(cursor_str)
-        .map_err(|_| cursor_error("不正なカーソルフォーマットです"))?;
-    let json_str =
-        String::from_utf8(raw).map_err(|_| cursor_error("不正なカーソルフォーマットです"))?;
-    let mut data: BTreeMap<String, serde_json::Value> = serde_json::from_str(&json_str)
-        .map_err(|_| cursor_error("不正なカーソルフォーマットです"))?;
+    let raw = URL_SAFE_NO_PAD.decode(cursor_str).map_err(|_| {
+        tracing::warn!(
+            reason = "base64_decode",
+            cursor_head,
+            "カーソルデコード失敗"
+        );
+        cursor_error("不正なカーソルフォーマットです")
+    })?;
+    let json_str = String::from_utf8(raw).map_err(|_| {
+        tracing::warn!(reason = "utf8", cursor_head, "カーソルデコード失敗");
+        cursor_error("不正なカーソルフォーマットです")
+    })?;
+    let mut data: BTreeMap<String, serde_json::Value> =
+        serde_json::from_str(&json_str).map_err(|_| {
+            tracing::warn!(reason = "json_parse", cursor_head, "カーソルデコード失敗");
+            cursor_error("不正なカーソルフォーマットです")
+        })?;
 
     // 署名抽出
     let sig = data
         .remove("sig")
         .and_then(|v| v.as_str().map(String::from))
-        .ok_or_else(|| cursor_error("カーソル署名がありません"))?;
+        .ok_or_else(|| {
+            tracing::warn!(reason = "sig_missing", cursor_head, "カーソルデコード失敗");
+            cursor_error("カーソル署名がありません")
+        })?;
 
     // 署名検証 (sig を除いたペイロードで HMAC)
     let payload_json = serde_json::to_string(&data).unwrap_or_default();
     let expected_sig = hmac_hex_16(&secret, &payload_json);
     if !constant_time_eq(sig.as_bytes(), expected_sig.as_bytes()) {
+        tracing::warn!(
+            reason = "sig_mismatch",
+            cursor_head,
+            sig_in_cursor = %sig,
+            expected_sig = %expected_sig,
+            "カーソルデコード失敗"
+        );
         return Err(cursor_error("カーソル署名が不正です"));
     }
 
@@ -142,6 +163,13 @@ pub(crate) fn decode_cursor(
         SortOrder::DateDesc => "date-desc",
     };
     if sort_val != expected_sort_str {
+        tracing::warn!(
+            reason = "sort_mismatch",
+            cursor_head,
+            cursor_sort = sort_val,
+            expected_sort = expected_sort_str,
+            "カーソルデコード失敗"
+        );
         return Err(cursor_error("カーソルのソート順がリクエストと一致しません"));
     }
 
