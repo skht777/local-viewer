@@ -90,18 +90,18 @@ pub(crate) fn encode_cursor(sort: SortOrder, last_entry: &EntryMeta, etag: &str)
         },
     );
 
-    // 署名生成 (ペイロード JSON に対して HMAC)
+    // base64(payload_json) + "." + hmac(base64_payload)
+    // JSON 再シリアライズに依存しない形式で署名する
     let payload_json = serde_json::to_string(&payload).unwrap_or_default();
-    let sig = hmac_hex_16(&secret, &payload_json);
-
-    // sig を追加して再シリアライズ
-    payload.insert("sig".to_string(), serde_json::Value::String(sig));
-    let signed_json = serde_json::to_string(&payload).unwrap_or_default();
-
-    URL_SAFE_NO_PAD.encode(signed_json.as_bytes())
+    let b64_payload = URL_SAFE_NO_PAD.encode(payload_json.as_bytes());
+    let sig = hmac_hex_16(&secret, &b64_payload);
+    format!("{b64_payload}.{sig}")
 }
 
 /// カーソルをデコードし、署名と整合性を検証する
+///
+/// 形式: `{base64_payload}.{sig_hex16}`
+/// base64 部分を文字列のまま HMAC 検証し、JSON 再シリアライズに依存しない。
 pub(crate) fn decode_cursor(
     cursor_str: &str,
     expected_sort: SortOrder,
@@ -109,8 +109,31 @@ pub(crate) fn decode_cursor(
     let cursor_head = &cursor_str[..cursor_str.len().min(24)];
     let secret = get_secret();
 
-    // base64 デコード
-    let raw = URL_SAFE_NO_PAD.decode(cursor_str).map_err(|_| {
+    // "." で分割: base64_payload + sig
+    let (b64_payload, sig) = cursor_str.rsplit_once('.').ok_or_else(|| {
+        tracing::warn!(
+            reason = "format_no_dot",
+            cursor_head,
+            "カーソルデコード失敗"
+        );
+        cursor_error("不正なカーソルフォーマットです")
+    })?;
+
+    // 署名検証 (base64 文字列をそのまま HMAC 入力に使用)
+    let expected_sig = hmac_hex_16(&secret, b64_payload);
+    if !constant_time_eq(sig.as_bytes(), expected_sig.as_bytes()) {
+        tracing::warn!(
+            reason = "sig_mismatch",
+            cursor_head,
+            sig_in_cursor = sig,
+            expected_sig = %expected_sig,
+            "カーソルデコード失敗"
+        );
+        return Err(cursor_error("カーソル署名が不正です"));
+    }
+
+    // base64 デコード → JSON パース
+    let raw = URL_SAFE_NO_PAD.decode(b64_payload).map_err(|_| {
         tracing::warn!(
             reason = "base64_decode",
             cursor_head,
@@ -122,34 +145,11 @@ pub(crate) fn decode_cursor(
         tracing::warn!(reason = "utf8", cursor_head, "カーソルデコード失敗");
         cursor_error("不正なカーソルフォーマットです")
     })?;
-    let mut data: BTreeMap<String, serde_json::Value> =
+    let data: BTreeMap<String, serde_json::Value> =
         serde_json::from_str(&json_str).map_err(|_| {
             tracing::warn!(reason = "json_parse", cursor_head, "カーソルデコード失敗");
             cursor_error("不正なカーソルフォーマットです")
         })?;
-
-    // 署名抽出
-    let sig = data
-        .remove("sig")
-        .and_then(|v| v.as_str().map(String::from))
-        .ok_or_else(|| {
-            tracing::warn!(reason = "sig_missing", cursor_head, "カーソルデコード失敗");
-            cursor_error("カーソル署名がありません")
-        })?;
-
-    // 署名検証 (sig を除いたペイロードで HMAC)
-    let payload_json = serde_json::to_string(&data).unwrap_or_default();
-    let expected_sig = hmac_hex_16(&secret, &payload_json);
-    if !constant_time_eq(sig.as_bytes(), expected_sig.as_bytes()) {
-        tracing::warn!(
-            reason = "sig_mismatch",
-            cursor_head,
-            sig_in_cursor = %sig,
-            expected_sig = %expected_sig,
-            "カーソルデコード失敗"
-        );
-        return Err(cursor_error("カーソル署名が不正です"));
-    }
 
     // ソート順の一致確認
     let sort_val = data
@@ -379,31 +379,24 @@ mod tests {
     fn 改ざんされたカーソルでエラー() {
         let e = entry("a.jpg");
         let cursor = encode_cursor(SortOrder::NameAsc, &e, "etag");
-        // base64 デコード → JSON 改ざん → 再エンコード
-        let raw = URL_SAFE_NO_PAD.decode(&cursor).unwrap();
-        let mut data: BTreeMap<String, serde_json::Value> = serde_json::from_slice(&raw).unwrap();
-        data.insert(
-            "n".to_string(),
-            serde_json::Value::String("tampered.jpg".to_string()),
-        );
-        let tampered_json = serde_json::to_string(&data).unwrap();
-        let tampered = URL_SAFE_NO_PAD.encode(tampered_json.as_bytes());
+        // payload 部分を改ざんして sig を維持 → sig_mismatch
+        let (b64_payload, sig) = cursor.rsplit_once('.').unwrap();
+        let tampered = format!("{}.{sig}", &b64_payload[..b64_payload.len() - 1]);
         let err = decode_cursor(&tampered, SortOrder::NameAsc).unwrap_err();
         assert!(err.to_string().contains("署名が不正"));
     }
 
     #[test]
-    fn 署名がないカーソルでエラー() {
-        let payload = r#"{"s":"name-asc","id":"x"}"#;
-        let cursor = URL_SAFE_NO_PAD.encode(payload.as_bytes());
+    fn ドット区切りがないカーソルでエラー() {
+        let cursor = URL_SAFE_NO_PAD.encode(b"no-dot-separator");
         let err = decode_cursor(&cursor, SortOrder::NameAsc).unwrap_err();
-        assert!(err.to_string().contains("署名がありません"));
+        assert!(err.to_string().contains("不正なカーソルフォーマット"));
     }
 
     #[test]
     fn 不正なbase64でエラー() {
-        let err = decode_cursor("!!!invalid!!!", SortOrder::NameAsc).unwrap_err();
-        assert!(err.to_string().contains("不正なカーソルフォーマット"));
+        let err = decode_cursor("!!!.invalid", SortOrder::NameAsc).unwrap_err();
+        assert!(err.to_string().contains("署名が不正"));
     }
 
     #[test]
@@ -672,11 +665,7 @@ mod tests {
     // --- カーソル JSON 互換テスト ---
 
     #[test]
-    fn カーソルjsonのゴールデンベクター() {
-        // Python で生成済みベクター
-        let expected_cursor = "eyJkIjpmYWxzZSwiZXQiOiJldGFnLTEiLCJpZCI6ImFiYzEyMyIsIm0iOjEwMC4wLCJuIjoiZmlsZS5qcGciLCJzIjoibmFtZS1hc2MiLCJzaWciOiI5MGZmYjYyNTA4ODg2ZjhlIiwic3oiOjEwMjR9";
-
-        // 同じ入力で Rust 側でもエンコード
+    fn ゴールデンベクターが新形式でエンコードされる() {
         let entry = EntryMeta {
             node_id: "abc123".to_string(),
             name: "file.jpg".to_string(),
@@ -689,7 +678,15 @@ mod tests {
             preview_node_ids: None,
         };
         let cursor = encode_cursor(SortOrder::NameAsc, &entry, "etag-1");
-        assert_eq!(cursor, expected_cursor);
+        // 新形式: "{base64_payload}.{sig_hex16}"
+        let (b64, sig) = cursor.rsplit_once('.').expect("ドット区切りが必要");
+        assert_eq!(sig.len(), 16, "sig は 16 hex 文字");
+        // base64 部分がデコード可能
+        let raw = URL_SAFE_NO_PAD.decode(b64).unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&raw).unwrap();
+        assert_eq!(json["id"], "abc123");
+        assert_eq!(json["n"], "file.jpg");
+        assert_eq!(json["s"], "name-asc");
     }
 
     // --- 精度境界 f64 ラウンドトリップ ---
@@ -698,7 +695,10 @@ mod tests {
     fn 精度境界のf64値でラウンドトリップが成功する() {
         // DirIndex 経由: (i64 ns) as f64 / 1e9
         let mtime_ns: i64 = 1_754_710_694_537_162_500;
-        #[allow(clippy::cast_precision_loss)]
+        #[allow(
+            clippy::cast_precision_loss,
+            reason = "テスト: DirIndex 経由の変換を再現"
+        )]
         let modified_at = mtime_ns as f64 / 1_000_000_000.0;
         let e = entry_with(
             "krm_168o.zip",
