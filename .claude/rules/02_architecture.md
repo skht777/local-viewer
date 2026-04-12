@@ -3,9 +3,13 @@
 ## ディレクトリ構造
 ```
 local-viewer/
-├── init.sh                  # 初回セットアップ
-├── start.sh                 # Docker コンテナ起動
+├── init.sh                  # 初回セットアップ (Linux/macOS)
+├── init.ps1                 # 初回セットアップ (Windows PowerShell)
+├── start.sh                 # Docker コンテナ起動 (Linux/macOS)
+├── start.ps1                # Docker コンテナ起動 (Windows PowerShell)
+├── start-win.sh             # Docker コンテナ起動 (WSL2 経由)
 ├── manage_mounts.sh         # マウントポイント管理 Bash TUI (ホスト側)
+├── scripts/                 # マウントパス変換・テストスクリプト (Windows/WSL)
 ├── config/
 │   └── mounts.json          # マウントポイント定義 (Docker: バインドマウント ./config:/app/config)
 ├── backend/                 # Rust バックエンド
@@ -18,9 +22,19 @@ local-viewer/
 │   │   ├── config.rs        # 環境変数ベースの設定
 │   │   ├── errors.rs        # 共通エラー型 (IntoResponse)
 │   │   ├── state.rs         # AppState (DI コンテナ相当)
-│   │   ├── routers/         # API ルーター (1リソース1ファイル)
-│   │   ├── services/        # ビジネスロジック
-│   │   └── middleware/      # カスタムミドルウェア
+│   │   ├── routers/         # API ルーター (モジュール分割済み)
+│   │   │   ├── browse/      # browse API (fast_path, pagination, sibling, archive, first_viewable)
+│   │   │   ├── file/        # ファイル配信 (archive_entry)
+│   │   │   ├── thumbnail/   # サムネイル (batch)
+│   │   │   ├── search.rs    # 検索
+│   │   │   └── mounts.rs    # マウント一覧
+│   │   ├── services/        # ビジネスロジック (モジュール分割済み)
+│   │   │   ├── archive/     # ZIP/RAR/7z (reader, security)
+│   │   │   ├── node_registry/ # node_id マッピング (directory, scan)
+│   │   │   ├── dir_index/   # ディレクトリインデックス (bulk_insert, sort_queries)
+│   │   │   ├── indexer/     # FTS5 検索インデックス (helpers)
+│   │   │   └── ...          # 他サービス (path_security, thumbnail_*, video_converter 等)
+│   │   └── middleware/      # カスタムミドルウェア (skip_gzip_binary)
 │   └── tests/               # 統合テスト + fixtures
 ├── frontend/
 │   ├── src/

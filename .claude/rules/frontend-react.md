@@ -17,7 +17,8 @@ paths:
 - zustand for UI-only state (viewer mode, zoom level, sidebar open/close)
 - Never duplicate server state in zustand
 - TopPage は `GET /api/mounts` からマウントポイント一覧を取得して表示する
-- バッチサムネイル: `useBatchThumbnails` で Blob URL 管理（自動 revokeObjectURL）
+- バッチサムネイル: `useBatchThumbnails` で Blob URL 管理（BATCH_SIZE=100, 安定チャンク分割, 自動 revokeObjectURL）
+- 仮想グリッド: `useVirtualGrid` で FileBrowser の大量カードを効率レンダリング
 
 ## Hooks
 - Custom hooks prefixed with `use`
@@ -28,3 +29,8 @@ paths:
 - Tailwind CSS v4 utility classes exclusively
 - No inline styles, no CSS modules
 - Dark theme fixed (bg-surface-base, text-white base, @theme tokens)
+
+## PWA
+- vite-plugin-pwa でオフラインキャッシュ
+- サムネイル: CacheFirst (30日)
+- API: NetworkFirst (5分)

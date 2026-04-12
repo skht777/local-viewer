@@ -4,10 +4,11 @@
 Rust バックエンド + React フロントエンド、Docker で配布。
 
 ## 技術スタック
-- バックエンド: axum + tokio (Rust), rusqlite (FTS5), image (サムネイル)
+- バックエンド: axum + tokio (Rust), rusqlite bundled (FTS5), image (サムネイル), moka (キャッシュ)
 - フロントエンド: React + Vite + TypeScript
 - スタイリング: Tailwind CSS v4 (Vite プラグイン、PostCSS 設定なし)
 - 状態管理: TanStack Query (サーバー) + zustand (UI のみ)
+- PWA: vite-plugin-pwa (サムネイル CacheFirst, API NetworkFirst)
 - Lint/Format: clippy + rustfmt (Rust), oxlint + oxfmt (TypeScript)
 - コンテナ: Docker マルチステージビルド
 
@@ -20,10 +21,13 @@ Rust バックエンド + React フロントエンド、Docker で配布。
 
 ```bash
 # 初回セットアップ (.env コピー + マウントポイント設定)
-./init.sh
+./init.sh              # Linux/macOS
+.\init.ps1             # Windows PowerShell
 
 # Docker コンテナ起動 (ビルド + 起動)
-./start.sh
+./start.sh             # Linux/macOS
+.\start.ps1            # Windows PowerShell
+./start-win.sh         # WSL2 経由
 
 # マウントポイント管理（Bash TUI、ホスト側で実行）
 ./manage_mounts.sh
@@ -60,16 +64,18 @@ cd e2e && npx playwright test --ui   # UI モード
 - `backend/Cargo.toml` — 依存クレート定義
 - `backend/src/main.rs` — エントリポイント（AppState 初期化、ルーター登録）
 - `backend/src/config.rs` — 環境変数ベースの設定
-- `backend/src/routers/` — API ルーター（browse, file, mounts, search, thumbnail）
-- `backend/src/services/` — ビジネスロジック（node_registry, path_security, archive, indexer 等）
+- `backend/src/routers/` — API ルーター（browse/, file/, thumbnail/ はサブモジュール分割済み）
+- `backend/src/services/` — ビジネスロジック（node_registry/, archive/, dir_index/, indexer/ はサブモジュール分割済み）
+- `backend/src/middleware/` — カスタムミドルウェア（skip_gzip_binary）
 - `backend/rust-toolchain.toml` — Rust ツールチェーン固定
 - `backend/clippy.toml` — Clippy 設定
 - `backend/rustfmt.toml` — rustfmt 設定
 
 ### 共通
-- `init.sh` — 初回セットアップ（.env コピー + manage_mounts.sh）
-- `start.sh` — Docker コンテナ起動（docker compose up --build）
+- `init.sh` / `init.ps1` — 初回セットアップ（.env コピー + manage_mounts.sh）
+- `start.sh` / `start.ps1` / `start-win.sh` — Docker コンテナ起動（docker compose up --build）
 - `manage_mounts.sh` — マウントポイント管理 Bash TUI（ホスト側で実行、docker-compose.override.yml + mounts.json を更新）
+- `scripts/` — マウントパス変換・テストスクリプト（Windows/WSL2 対応）
 - `docker-compose.override.yml` — manage_mounts.sh が自動生成するマウント定義（gitignored）
 - `config/mounts.json` — マウントポイント定義ファイル（Docker ではバインドマウント ./config:/app/config）
 - `frontend/vite.config.ts` — Vite + Tailwind v4 + /api プロキシ + Vitest
