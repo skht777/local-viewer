@@ -21,13 +21,23 @@ const PAGE_SIZE = 100;
 export function browseInfiniteOptions(nodeId: string | undefined, sort: SortOrder) {
   return infiniteQueryOptions({
     queryKey: ["browse-infinite", nodeId, sort],
-    queryFn: ({ pageParam }) => {
+    queryFn: async ({ pageParam }) => {
       const params = new URLSearchParams({
         limit: String(PAGE_SIZE),
         sort,
       });
       if (pageParam) params.set("cursor", pageParam);
-      return apiFetch<BrowseResponse>(`/api/browse/${nodeId}?${params.toString()}`);
+      try {
+        return await apiFetch<BrowseResponse>(`/api/browse/${nodeId}?${params.toString()}`);
+      } catch (e) {
+        if (e instanceof ApiError && e.status === 400 && pageParam) {
+          // カーソルが不正な場合、先頭から再取得してスクロール停止を回避
+          return apiFetch<BrowseResponse>(
+            `/api/browse/${nodeId}?${new URLSearchParams({ limit: String(PAGE_SIZE), sort }).toString()}`,
+          );
+        }
+        throw e;
+      }
     },
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (lastPage) => lastPage.next_cursor ?? undefined,
