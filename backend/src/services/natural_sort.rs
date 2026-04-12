@@ -52,6 +52,7 @@ impl Ord for NaturalSortPart {
 /// 文字列を「テキスト部分」と「数値部分」に分割し、
 /// 数値部分を u64 に変換してリスト比較することで
 /// file1, file2, file10 の順にソートする。
+#[must_use]
 pub(crate) fn natural_sort_key(name: &str) -> Vec<NaturalSortPart> {
     let lower = name.to_lowercase();
     let mut parts = Vec::new();
@@ -79,6 +80,7 @@ pub(crate) fn natural_sort_key(name: &str) -> Vec<NaturalSortPart> {
 /// 数値部分を 10 桁ゼロ埋め、テキスト部分は小文字化、
 /// 要素間を NUL 文字で区切る。
 /// 例: "file2.jpg" → "file\x000000000002\x00.jpg"
+#[must_use]
 pub(crate) fn encode_sort_key(name: &str) -> String {
     use std::fmt::Write as _;
 
