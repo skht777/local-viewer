@@ -186,6 +186,21 @@ mod tests {
         assert_eq!(encode_sort_key("10files"), "\x000000000010\x00files");
     }
 
+    // --- 順序整合性 ---
+
+    // encode_sort_key を使ってソートするヘルパー
+    fn sort_by_encode(names: &[&str]) -> Vec<String> {
+        let mut v: Vec<String> = names.iter().map(|s| (*s).to_owned()).collect();
+        v.sort_by_key(|a| encode_sort_key(a));
+        v
+    }
+
+    #[test]
+    fn 十桁超数値でnatural_sort_keyとencode_sort_keyの順序が一致する() {
+        let names = &["file9", "file10", "file99999999999", "file100000000000"];
+        assert_eq!(sort(names), sort_by_encode(names));
+    }
+
     // --- エッジケース ---
 
     #[test]
