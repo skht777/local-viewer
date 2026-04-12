@@ -15,11 +15,13 @@ import { useMangaScroll } from "../hooks/useMangaScroll";
 import { useMangaKeyboard } from "../hooks/useMangaKeyboard";
 import { useSetJump } from "../hooks/useSetJump";
 import { useSiblingPrefetch } from "../hooks/useSiblingPrefetch";
+import { useToast } from "../hooks/useToast";
 import { useToolbarAutoHide } from "../hooks/useToolbarAutoHide";
 import type { SortOrder, ViewerMode } from "../hooks/useViewerParams";
 import { KeyboardHelp, MANGA_SHORTCUTS } from "./KeyboardHelp";
 import { MangaToolbar } from "./MangaToolbar";
 import { NavigationPrompt } from "./NavigationPrompt";
+import { Toast } from "./Toast";
 import { VerticalPageSlider } from "./VerticalPageSlider";
 
 interface MangaViewerProps {
@@ -118,8 +120,18 @@ export function MangaViewer({
   // キーボードヘルプ
   const [isHelpOpen, setIsHelpOpen] = useState(false);
 
+  // セット境界トースト
+  const { toastMessage, showToast, dismissToast } = useToast();
+
   // セット間ジャンプ + バックグラウンドプリフェッチ
-  const setJump = useSetJump({ currentNodeId, parentNodeId, ancestors, mode, sort });
+  const setJump = useSetJump({
+    currentNodeId,
+    parentNodeId,
+    ancestors,
+    mode,
+    sort,
+    onBoundary: showToast,
+  });
   useSiblingPrefetch({ currentNodeId, parentNodeId, ancestors, sort });
 
   // Escape 優先順位: (1) ヘルプ閉じ → (2) プロンプト閉じ → (3) フルスクリーン解除 → (4) ビューワー閉じ
@@ -256,6 +268,9 @@ export function MangaViewer({
         )}
 
         {/* セット間ジャンプの確認プロンプト */}
+        {/* セット境界トースト */}
+        {toastMessage && <Toast message={toastMessage} onDismiss={dismissToast} />}
+
         {setJump.prompt && (
           <NavigationPrompt
             message={setJump.prompt.message}

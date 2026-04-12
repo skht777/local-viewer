@@ -13,6 +13,7 @@ import { useMangaScroll } from "../hooks/useMangaScroll";
 import { useMangaKeyboard } from "../hooks/useMangaKeyboard";
 import { useSetJump } from "../hooks/useSetJump";
 import { useSiblingPrefetch } from "../hooks/useSiblingPrefetch";
+import { useToast } from "../hooks/useToast";
 import { useToolbarAutoHide } from "../hooks/useToolbarAutoHide";
 import { usePdfDocument } from "../hooks/usePdfDocument";
 import { usePdfPageSizes } from "../hooks/usePdfPageSizes";
@@ -20,6 +21,7 @@ import { PdfCanvas } from "./PdfCanvas";
 import { KeyboardHelp, MANGA_SHORTCUTS } from "./KeyboardHelp";
 import { MangaToolbar } from "./MangaToolbar";
 import { NavigationPrompt } from "./NavigationPrompt";
+import { Toast } from "./Toast";
 import { VerticalPageSlider } from "./VerticalPageSlider";
 
 interface PdfMangaViewerProps {
@@ -134,6 +136,9 @@ export function PdfMangaViewer({
   // キーボードヘルプ
   const [isHelpOpen, setIsHelpOpen] = useState(false);
 
+  // セット境界トースト
+  const { toastMessage, showToast, dismissToast } = useToast();
+
   // セット間ジャンプ + バックグラウンドプリフェッチ
   const setJump = useSetJump({
     currentNodeId: pdfNodeId,
@@ -141,6 +146,7 @@ export function PdfMangaViewer({
     ancestors,
     mode,
     sort,
+    onBoundary: showToast,
   });
   useSiblingPrefetch({ currentNodeId: pdfNodeId, parentNodeId, ancestors, sort });
 
@@ -306,6 +312,9 @@ export function PdfMangaViewer({
         )}
 
         {/* セット間ジャンプの確認プロンプト */}
+        {/* セット境界トースト */}
+        {toastMessage && <Toast message={toastMessage} onDismiss={dismissToast} />}
+
         {setJump.prompt && (
           <NavigationPrompt
             message={setJump.prompt.message}

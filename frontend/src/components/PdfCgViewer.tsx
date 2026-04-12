@@ -109,6 +109,7 @@ export function PdfCgViewer({
     ancestors,
     mode,
     sort,
+    onBoundary: showToast,
   });
   useSiblingPrefetch({ currentNodeId: pdfNodeId, parentNodeId, ancestors, sort });
 

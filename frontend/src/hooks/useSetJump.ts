@@ -22,6 +22,7 @@ interface UseSetJumpProps {
   ancestors?: AncestorEntry[];
   mode: ViewerMode;
   sort?: SortOrder;
+  onBoundary?: (message: string) => void;
 }
 
 interface Prompt {
@@ -56,6 +57,7 @@ export function useSetJump({
   ancestors = [],
   mode,
   sort = "name-asc",
+  onBoundary,
 }: UseSetJumpProps): UseSetJumpReturn {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -218,7 +220,10 @@ export function useSetJump({
   // PageDown/X: 条件付き確認で次のセットへ
   const goNextSet = useCallback(async () => {
     const result = await findSiblingRecursive("next");
-    if (!result) return;
+    if (!result) {
+      onBoundary?.("最後のセットです");
+      return;
+    }
 
     const targetTopDir = resolveTopLevelDir(
       result.searchDirData.ancestors,
@@ -239,12 +244,15 @@ export function useSetJump({
     } else {
       navigateToTarget(result.target, result.searchDirData.current_node_id);
     }
-  }, [findSiblingRecursive, navigateToTarget]);
+  }, [findSiblingRecursive, navigateToTarget, onBoundary]);
 
   // PageUp/Z: 条件付き確認で前のセットへ
   const goPrevSet = useCallback(async () => {
     const result = await findSiblingRecursive("prev");
-    if (!result) return;
+    if (!result) {
+      onBoundary?.("最初のセットです");
+      return;
+    }
 
     const targetTopDir = resolveTopLevelDir(
       result.searchDirData.ancestors,
@@ -265,7 +273,7 @@ export function useSetJump({
     } else {
       navigateToTarget(result.target, result.searchDirData.current_node_id);
     }
-  }, [findSiblingRecursive, navigateToTarget]);
+  }, [findSiblingRecursive, navigateToTarget, onBoundary]);
 
   // Shift+X: 確認なしで次のセットへ
   const goNextSetParent = useCallback(async () => {
