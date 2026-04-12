@@ -106,7 +106,8 @@ export function useSetJump({
       try {
         const resolved = await resolveFirstViewable(target.node_id, queryClient, sort);
         if (!resolved) {
-          await prefetchAndNavigate(target.node_id, buildSearch({ tab: "images", index: "0" }));
+          // index なしで遷移 → ブラウザーモードでコンテンツを確認
+          await prefetchAndNavigate(target.node_id, buildSearch({ tab: "images" }));
           return;
         }
         if (resolved.entry.kind === "pdf") {
@@ -125,7 +126,8 @@ export function useSetJump({
           );
         }
       } catch {
-        navigate(`/browse/${target.node_id}${buildSearch({ tab: "images", index: "0" })}`);
+        // エラー時も index なしで遷移 → ブラウザーモードでコンテンツを確認
+        navigate(`/browse/${target.node_id}${buildSearch({ tab: "images" })}`);
       }
     },
     [navigate, prefetchAndNavigate, buildSearch, sort, queryClient],
