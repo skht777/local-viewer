@@ -50,7 +50,7 @@ routers → services → 外部クレート/std
 ## メモリ管理
 - `Arc` で共有所有権、`&` で借用を基本とする
 - 大きなデータ (アーカイブ bytes 等) は `Bytes` 型を使用 (参照カウント、ゼロコピー)
-- キャッシュは `moka` クレート (W-TinyLFU、バイトベース制限、非同期対応)
+- キャッシュは `moka` クレート (W-TinyLFU、バイトベース制限、sync feature)
 
 ## CPU バウンド処理とスレッドモデル
 - `rayon`: CPU バウンドな純粋並列処理 (画像リサイズ、アーカイブ展開、並列 stat)。`tokio::sync::oneshot` チャネルで結果を受け取る

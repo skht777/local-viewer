@@ -5,10 +5,11 @@
 - axum + tokio (HTTP フレームワーク + 非同期ランタイム)
 - tower + tower-http (ミドルウェア: CORS, GZip, 静的ファイル)
 - serde + serde_json (JSON シリアライズ)
-- rusqlite (`bundled-full` feature, FTS5 trigram 対応)
+- rusqlite (`bundled` feature, FTS5 trigram 対応)
 - hmac + sha2 (HMAC-SHA256 node_id 生成)
 - image + fast_image_resize (サムネイル生成)
 - zip クレート (ZIP), unrar-free CLI (RAR), p7zip CLI (7z, subprocess)
+- moka (W-TinyLFU キャッシュ, sync)
 - notify (ファイル監視)
 - rayon (並列ディレクトリ走査)
 - clap (CLI 引数パース)
@@ -24,6 +25,7 @@
 - @tanstack/react-virtual (仮想スクロール)
 - pdfjs-dist (PDF描画)
 - react-router-dom (ルーティング)
+- vite-plugin-pwa (PWA キャッシュ: サムネイル CacheFirst, API NetworkFirst)
 
 ## 開発ツール
 - clippy (Rust lint)
@@ -48,4 +50,4 @@
 - actix-web, warp, rocket を提案しない（axum を使用）
 - Pillow 相当のクレートを提案しない（image + fast_image_resize を使用）
 - diesel, sea-orm を提案しない（rusqlite を直接使用）
-- `unsafe` ブロックは極力使わない（使用時は安全性を証明するコメント必須）
+- `unsafe` ブロック完全禁止 (`unsafe_code = "forbid"`)
