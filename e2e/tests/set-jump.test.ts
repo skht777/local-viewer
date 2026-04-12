@@ -142,15 +142,29 @@ test.describe("同親兄弟ジャンプ — 確認なし", () => {
     await expect(page).toHaveURL(/\/browse\//);
   });
 
-  test("最初のセットで Z を押しても何も起きない", async ({ page }) => {
-    await openCgInArchiveZip(page);
+  test("Z キーで同親ディレクトリ sub2 → sub1 に確認なしで遷移する", async ({ page }) => {
+    await openCgInNestedSub2(page);
     const initialUrl = page.url();
 
     await page.keyboard.press("z");
 
     const prompt = page.locator("[data-testid='navigation-prompt']");
     await expect(prompt).not.toBeVisible();
+    await expect(page).not.toHaveURL(initialUrl, { timeout: 5000 });
+    await expect(page).toHaveURL(/\/browse\//);
+  });
+
+  test("最初のセットで Z を押すと境界トーストが表示される", async ({ page }) => {
+    await openCgInArchiveZip(page);
+    const initialUrl = page.url();
+
+    await page.keyboard.press("z");
+
+    // URL は変わらない
     await expect(page).toHaveURL(initialUrl);
+    // 境界トーストが表示される
+    const toast = page.getByText("最初のセットです");
+    await expect(toast).toBeVisible({ timeout: 3000 });
     await expect(page.locator("[data-testid='cg-viewer']")).toBeVisible();
   });
 });
