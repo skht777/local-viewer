@@ -77,15 +77,15 @@ pub(crate) fn natural_sort_key(name: &str) -> Vec<NaturalSortPart> {
 
 /// ファイル名を `SQLite` TEXT 比較で自然順になるソートキーに変換する
 ///
-/// 数値部分を 10 桁ゼロ埋め、テキスト部分は小文字化、
+/// 数値部分を 20 桁ゼロ埋め (`u64::MAX` = 20桁と整合)、テキスト部分は小文字化、
 /// 要素間を NUL 文字で区切る。
-/// 例: "file2.jpg" → "file\x000000000002\x00.jpg"
+/// 例: "file2.jpg" → "file\x0000000000000000000002\x00.jpg"
 #[must_use]
 pub(crate) fn encode_sort_key(name: &str) -> String {
     use std::fmt::Write as _;
 
     let lower = name.to_lowercase();
-    let mut result = String::with_capacity(lower.len() + 20);
+    let mut result = String::with_capacity(lower.len() + 30);
     let mut last_end = 0;
 
     for m in SPLIT_RE.find_iter(&lower) {
@@ -94,8 +94,8 @@ pub(crate) fn encode_sort_key(name: &str) -> String {
         }
         result.push_str(&lower[last_end..m.start()]);
         result.push('\x00');
-        // 10 桁ゼロ埋め
-        let _ = write!(result, "{:0>10}", m.as_str());
+        // 20 桁ゼロ埋め (u64::MAX = 20桁)
+        let _ = write!(result, "{:0>20}", m.as_str());
         last_end = m.end();
     }
 
@@ -173,7 +173,10 @@ mod tests {
 
     #[test]
     fn encode_sort_keyの基本出力() {
-        assert_eq!(encode_sort_key("file2.jpg"), "file\x000000000002\x00.jpg");
+        assert_eq!(
+            encode_sort_key("file2.jpg"),
+            "file\x0000000000000000000002\x00.jpg"
+        );
     }
 
     #[test]
@@ -183,7 +186,10 @@ mod tests {
 
     #[test]
     fn encode_sort_key先頭が数値() {
-        assert_eq!(encode_sort_key("10files"), "\x000000000010\x00files");
+        assert_eq!(
+            encode_sort_key("10files"),
+            "\x0000000000000000000010\x00files"
+        );
     }
 
     // --- 順序整合性 ---
