@@ -1,8 +1,9 @@
-use super::scan::scan_child_meta;
+use super::scan::{PageOptions, scan_child_meta};
 use super::*;
 
 use std::fs;
 
+use crate::services::extensions::EntryKind;
 use tempfile::TempDir;
 
 const TEST_SECRET: &[u8] = b"local-viewer-default-secret";
