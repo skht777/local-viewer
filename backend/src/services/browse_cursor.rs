@@ -691,4 +691,37 @@ mod tests {
         let cursor = encode_cursor(SortOrder::NameAsc, &entry, "etag-1");
         assert_eq!(cursor, expected_cursor);
     }
+
+    // --- 精度境界 f64 ラウンドトリップ ---
+
+    #[test]
+    fn 精度境界のf64値でラウンドトリップが成功する() {
+        // DirIndex 経由: (i64 ns) as f64 / 1e9
+        let mtime_ns: i64 = 1_754_710_694_537_162_500;
+        #[allow(clippy::cast_precision_loss)]
+        let modified_at = mtime_ns as f64 / 1_000_000_000.0;
+        let e = entry_with(
+            "krm_168o.zip",
+            EntryKind::Archive,
+            Some(modified_at),
+            Some(39_549_293),
+        );
+        let cursor = encode_cursor(SortOrder::NameAsc, &e, "test-etag");
+        let data = decode_cursor(&cursor, SortOrder::NameAsc).unwrap();
+        assert_eq!(data.node_id, "id-krm_168o.zip");
+    }
+
+    #[test]
+    fn 新形式カーソルはドット区切りでsigを分離する() {
+        let e = entry_with("a.jpg", EntryKind::Image, Some(100.0), Some(1024));
+        let cursor = encode_cursor(SortOrder::NameAsc, &e, "etag-1");
+        // 新形式: "{base64_payload}.{sig_hex16}"
+        assert!(
+            cursor.contains('.'),
+            "新形式カーソルはドットを含むべき: {cursor}"
+        );
+        let parts: Vec<&str> = cursor.splitn(2, '.').collect();
+        assert_eq!(parts.len(), 2);
+        assert_eq!(parts[1].len(), 16, "sig は 16 hex 文字");
+    }
 }
