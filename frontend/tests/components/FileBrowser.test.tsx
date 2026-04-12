@@ -341,6 +341,63 @@ describe("FileBrowser 選択・ダブルクリック・オーバーレイ", () =
     expect(onOpenViewer).toHaveBeenCalledWith("a1");
   });
 
+  // --- isError ガード ---
+
+  test("isErrorがtrueの場合にエラーメッセージが表示される", () => {
+    renderWithQuery(
+      <FileBrowser
+        entries={mockEntries}
+        isLoading={false}
+        onNavigate={() => {}}
+        tab="filesets"
+        sort="name-asc"
+        hasMore={true}
+        isError={true}
+      />,
+    );
+    expect(screen.getByText("読み込みに失敗しました。ページをリロードしてください。")).toBeInTheDocument();
+  });
+
+  test("isErrorがtrueの場合にonLoadMoreが発火しない", async () => {
+    const onLoadMore = vi.fn();
+    // IntersectionObserver をモック: observe 時に isIntersecting: true で即座にコールバック
+    const originalIO = globalThis.IntersectionObserver;
+    let capturedCallback: IntersectionObserverCallback | null = null;
+    globalThis.IntersectionObserver = class MockIO {
+      constructor(callback: IntersectionObserverCallback) {
+        capturedCallback = callback;
+      }
+      observe() {
+        capturedCallback?.([{ isIntersecting: true } as IntersectionObserverEntry], this as unknown as IntersectionObserver);
+      }
+      disconnect() {}
+      unobserve() {}
+      takeRecords() { return []; }
+      root = null;
+      rootMargin = "";
+      thresholds = [];
+    } as unknown as typeof IntersectionObserver;
+
+    renderWithQuery(
+      <FileBrowser
+        entries={mockEntries}
+        isLoading={false}
+        onNavigate={() => {}}
+        tab="filesets"
+        sort="name-asc"
+        hasMore={true}
+        isLoadingMore={false}
+        isError={true}
+        onLoadMore={onLoadMore}
+      />,
+    );
+
+    // IntersectionObserver が isIntersecting: true で発火しても onLoadMore は呼ばれない
+    expect(onLoadMore).not.toHaveBeenCalled();
+
+    globalThis.IntersectionObserver = originalIO;
+  });
+
   test("ディレクトリの進入ボタンでonNavigateが呼ばれる", async () => {
     const onNavigate = vi.fn();
     renderWithQuery(

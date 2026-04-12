@@ -3,7 +3,7 @@
 import { infiniteQueryOptions, queryOptions } from "@tanstack/react-query";
 import type { SortOrder } from "../../hooks/useViewerParams";
 import type { BrowseResponse, SearchResponse } from "../../types/api";
-import { ApiError, apiFetch } from "./apiClient";
+import { apiFetch } from "./apiClient";
 
 // 特定ディレクトリの中身を取得 (後方互換: ページネーションなし)
 export function browseNodeOptions(nodeId: string | undefined, sort?: SortOrder) {
@@ -27,17 +27,7 @@ export function browseInfiniteOptions(nodeId: string | undefined, sort: SortOrde
         sort,
       });
       if (pageParam) params.set("cursor", pageParam);
-      try {
-        return await apiFetch<BrowseResponse>(`/api/browse/${nodeId}?${params.toString()}`);
-      } catch (e) {
-        if (e instanceof ApiError && e.status === 400 && pageParam) {
-          // カーソルが不正な場合、先頭から再取得してスクロール停止を回避
-          return apiFetch<BrowseResponse>(
-            `/api/browse/${nodeId}?${new URLSearchParams({ limit: String(PAGE_SIZE), sort }).toString()}`,
-          );
-        }
-        throw e;
-      }
+      return apiFetch<BrowseResponse>(`/api/browse/${nodeId}?${params.toString()}`);
     },
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (lastPage) => lastPage.next_cursor ?? undefined,

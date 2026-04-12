@@ -66,6 +66,7 @@ export default function BrowsePage() {
     hasNextPage,
     fetchNextPage,
     isFetchingNextPage,
+    isError,
   } = useInfiniteQuery(browseInfiniteOptions(nodeId, params.sort));
 
   // 全ページの entries を結合し、メタデータは先頭ページから取得
@@ -343,6 +344,7 @@ export default function BrowsePage() {
             keyboardEnabled={focusArea === "browser"}
             hasMore={hasNextPage}
             isLoadingMore={isFetchingNextPage}
+            isError={isError}
             onLoadMore={fetchNextPage}
           />
         )}

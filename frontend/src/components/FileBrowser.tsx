@@ -33,6 +33,7 @@ interface FileBrowserProps {
   keyboardEnabled?: boolean;
   hasMore?: boolean;
   isLoadingMore?: boolean;
+  isError?: boolean;
   onLoadMore?: () => void;
 }
 
@@ -78,6 +79,7 @@ export function FileBrowser({
   keyboardEnabled = true,
   hasMore,
   isLoadingMore,
+  isError,
   onLoadMore,
 }: FileBrowserProps) {
   // サーバーサイドソート済みのため sortEntries はスキップ
@@ -117,7 +119,7 @@ export function FileBrowser({
     if (!el) return;
     const observer = new IntersectionObserver(
       ([entry]) => {
-        if (entry.isIntersecting && !isLoadingMore) {
+        if (entry.isIntersecting && !isLoadingMore && !isError) {
           onLoadMore();
         }
       },
@@ -125,7 +127,7 @@ export function FileBrowser({
     );
     observer.observe(el);
     return () => observer.disconnect();
-  }, [hasMore, isLoadingMore, onLoadMore]);
+  }, [hasMore, isLoadingMore, isError, onLoadMore]);
 
   // 仮想グリッド
   const {
@@ -375,10 +377,13 @@ export function FileBrowser({
           );
         })()}
 
-      {/* 無限スクロール: センチネル + ローディング表示 */}
+      {/* 無限スクロール: センチネル + ローディング/エラー表示 */}
       {hasMore && (
         <div ref={sentinelRef} className="flex justify-center py-4">
           {isLoadingMore && <p className="text-gray-400">読み込み中...</p>}
+          {isError && (
+            <p className="text-red-400">読み込みに失敗しました。ページをリロードしてください。</p>
+          )}
         </div>
       )}
     </main>
