@@ -32,9 +32,15 @@ export interface FirstViewableResponse {
   parent_node_id: string | null;
 }
 
-// sibling API
+// sibling API (単方向)
 export interface SiblingResponse {
   entry: BrowseEntry | null;
+}
+
+// siblings API (prev + next 一括)
+export interface SiblingsResponse {
+  prev: BrowseEntry | null;
+  next: BrowseEntry | null;
 }
 
 // 検索 API
