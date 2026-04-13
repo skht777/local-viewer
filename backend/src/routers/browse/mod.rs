@@ -294,8 +294,28 @@ pub(crate) async fn browse_directory(
                 }
             }
 
+            // fallback 前に parent_key と dirty 世代を取得（self-healing 用）
+            #[allow(
+                clippy::expect_used,
+                reason = "Mutex poison は致命的エラー、パニックが適切"
+            )]
+            let parent_key_for_heal = {
+                let reg = registry.lock().expect("NodeRegistry Mutex poisoned");
+                reg.compute_parent_path_key(&path)
+            };
+            // スキャン開始前の dirty 世代を記録
+            // → スキャン完了後にこの世代と一致すれば、スキャン中の追加変更がなかったことを保証
+            let dirty_generation = parent_key_for_heal.as_ref().and_then(|pk| {
+                if dir_index.is_dir_dirty(pk) {
+                    // dirty なら世代を再マークして取得（現在の世代を上書き）
+                    Some(dir_index.mark_dir_dirty(pk))
+                } else {
+                    None
+                }
+            });
+
             // Two-Phase フォールバック: I/O をロック外で実行
-            browse_directory_blocking(
+            let result = browse_directory_blocking(
                 &registry,
                 &path_security,
                 &path,
@@ -304,7 +324,36 @@ pub(crate) async fn browse_directory(
                 limit,
                 cursor.as_deref(),
                 state_label,
-            )
+            );
+
+            // fallback 成功後に DirIndex を自己修復 (mtime 更新 + dirty 解除)
+            if result.is_ok() {
+                if let Some(ref pk) = parent_key_for_heal {
+                    // 現在の FS mtime で DirIndex を更新
+                    if let Some(mtime_ns) = std::fs::metadata(&path)
+                        .ok()
+                        .and_then(|m| m.modified().ok())
+                        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                        .map(|d| {
+                            #[allow(
+                                clippy::cast_possible_wrap,
+                                reason = "UNIX タイムスタンプは i64 範囲内"
+                            )]
+                            let ns = d.as_nanos() as i64;
+                            ns
+                        })
+                    {
+                        let _ = dir_index.set_dir_mtime(pk, mtime_ns);
+                    }
+                    // dirty 世代が一致する場合のみ dirty を解除
+                    // （スキャン中に FileWatcher が再 dirty 化した場合は世代が進んでいるので解除されない）
+                    if let Some(dg) = dirty_generation {
+                        dir_index.clear_dir_dirty_if_match(pk, dg);
+                    }
+                }
+            }
+
+            result
         })
         .await
         .map_err(|e| AppError::path_security(format!("タスク実行エラー: {e}")))??
