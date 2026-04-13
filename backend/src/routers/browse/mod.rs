@@ -13,7 +13,7 @@ mod sibling;
 mod tests;
 
 pub(crate) use first_viewable::first_viewable;
-pub(crate) use sibling::find_sibling;
+pub(crate) use sibling::{find_sibling, find_siblings};
 
 use std::sync::Arc;
 
@@ -67,6 +67,15 @@ pub(crate) struct SiblingQuery {
     pub sort: SortOrder,
 }
 
+/// `GET /api/browse/{parent_node_id}/siblings` のクエリパラメータ
+#[derive(Debug, Deserialize)]
+pub(crate) struct SiblingsQuery {
+    /// 現在のエントリの `node_id`
+    pub current: String,
+    #[serde(default = "default_sort")]
+    pub sort: SortOrder,
+}
+
 // --- レスポンス型 ---
 
 /// first-viewable API のレスポンス
@@ -76,10 +85,17 @@ pub(crate) struct FirstViewableResponse {
     pub parent_node_id: Option<String>,
 }
 
-/// sibling API のレスポンス
+/// sibling API のレスポンス (単方向)
 #[derive(Debug, Serialize)]
 pub(crate) struct SiblingResponse {
     pub entry: Option<EntryMeta>,
+}
+
+/// siblings API のレスポンス (prev + next を一括返却)
+#[derive(Debug, Serialize)]
+pub(crate) struct SiblingsResponse {
+    pub prev: Option<EntryMeta>,
+    pub next: Option<EntryMeta>,
 }
 
 // --- ETag 計算 ---

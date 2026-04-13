@@ -223,6 +223,10 @@ fn build_app(settings: Settings) -> anyhow::Result<(Router, BackgroundContext)> 
             "/api/browse/{parent_node_id}/sibling",
             get(routers::browse::find_sibling),
         )
+        .route(
+            "/api/browse/{parent_node_id}/siblings",
+            get(routers::browse::find_siblings),
+        )
         .route("/api/file/{node_id}", get(routers::file::serve_file))
         .route(
             "/api/thumbnail/{node_id}",

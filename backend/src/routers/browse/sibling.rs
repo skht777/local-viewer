@@ -13,7 +13,9 @@ use crate::services::models::EntryMeta;
 use crate::services::node_registry::{NodeRegistry, scan_entries, scan_entry_metas, stat_entries};
 use crate::state::AppState;
 
-use super::{SiblingQuery, SiblingResponse, dir_entry_to_entry_meta};
+use super::{
+    SiblingQuery, SiblingResponse, SiblingsQuery, SiblingsResponse, dir_entry_to_entry_meta,
+};
 
 /// `GET /api/browse/{parent_node_id}/sibling`
 ///
@@ -174,4 +176,161 @@ fn try_sibling_from_index(
 
     let meta = dir_entry_to_entry_meta(&de, &root, &parent_key, reg)?;
     Some(SiblingResponse { entry: Some(meta) })
+}
+
+/// `DirIndex` から prev + next の両方向を取得する
+///
+/// 2 回の SQL クエリを発行するが、FS スキャンは不要。
+fn try_siblings_from_index(
+    dir_index: &DirIndex,
+    reg: &mut NodeRegistry,
+    parent_path: &std::path::Path,
+    current_node_id: &str,
+    sort: SortOrder,
+) -> Option<SiblingsResponse> {
+    let parent_key = reg.compute_parent_path_key(parent_path)?;
+    let root = reg
+        .path_security()
+        .find_root_for(parent_path)
+        .map(std::path::Path::to_path_buf)?;
+
+    let current_path = reg.resolve(current_node_id).ok()?;
+    let current_name = current_path.file_name()?.to_string_lossy().into_owned();
+    let current_is_dir = current_path.is_dir();
+
+    let sort_str = match sort {
+        SortOrder::NameAsc => "name-asc",
+        SortOrder::NameDesc => "name-desc",
+        SortOrder::DateAsc => "date-asc",
+        SortOrder::DateDesc => "date-desc",
+    };
+
+    let kinds = &["directory", "archive", "pdf"];
+
+    // prev / next を個別の SQL クエリで取得（軽量）
+    let prev_de = dir_index
+        .query_sibling(
+            &parent_key,
+            &current_name,
+            current_is_dir,
+            "prev",
+            sort_str,
+            kinds,
+        )
+        .ok()?;
+    let next_de = dir_index
+        .query_sibling(
+            &parent_key,
+            &current_name,
+            current_is_dir,
+            "next",
+            sort_str,
+            kinds,
+        )
+        .ok()?;
+
+    let prev = prev_de.and_then(|de| dir_entry_to_entry_meta(&de, &root, &parent_key, reg));
+    let next = next_de.and_then(|de| dir_entry_to_entry_meta(&de, &root, &parent_key, reg));
+
+    Some(SiblingsResponse { prev, next })
+}
+
+/// `GET /api/browse/{parent_node_id}/siblings`
+///
+/// prev + next の両方向を単一リクエストで返す。
+/// フォールバック時は 1 回のスキャンで両方向を解決する。
+pub(crate) async fn find_siblings(
+    State(state): State<Arc<AppState>>,
+    Path(parent_node_id): Path<String>,
+    Query(query): Query<SiblingsQuery>,
+) -> Result<Json<SiblingsResponse>, AppError> {
+    let registry = Arc::clone(&state.node_registry);
+    let dir_index = Arc::clone(&state.dir_index);
+    let sort = query.sort;
+    let current = query.current;
+
+    let result = tokio::task::spawn_blocking(move || {
+        // Phase 0: 短時間ロックでパス解決 + PathSecurity 取得
+        #[allow(
+            clippy::expect_used,
+            reason = "Mutex poison は致命的エラー、パニックが適切"
+        )]
+        let (parent_path, path_security) = {
+            let reg = registry.lock().expect("NodeRegistry Mutex poisoned");
+            let path = reg.resolve(&parent_node_id)?.to_path_buf();
+            let ps = reg.path_security_arc();
+            (path, ps)
+        };
+        if !parent_path.is_dir() {
+            return Err(AppError::NotADirectory {
+                path: parent_path.display().to_string(),
+            });
+        }
+
+        // DirIndex 高速パス: 2 回の軽量 SQL クエリ
+        if dir_index.is_ready() {
+            #[allow(
+                clippy::expect_used,
+                reason = "Mutex poison は致命的エラー、パニックが適切"
+            )]
+            let mut reg = registry.lock().expect("NodeRegistry Mutex poisoned");
+            if let Some(resp) =
+                try_siblings_from_index(&dir_index, &mut reg, &parent_path, &current, sort)
+            {
+                return Ok(resp);
+            }
+        }
+
+        // Two-Phase フォールバック: 1 回のスキャンで prev + next を解決
+        let raw = scan_entries(&path_security, &parent_path)?;
+        let stated = stat_entries(&raw);
+        let scanned = scan_entry_metas(&path_security, stated, 3);
+
+        #[allow(
+            clippy::expect_used,
+            reason = "Mutex poison は致命的エラー、パニックが適切"
+        )]
+        let entries = {
+            let mut reg = registry.lock().expect("NodeRegistry Mutex poisoned");
+            reg.register_scanned_entries(scanned)?
+        };
+
+        let sorted = browse_cursor::sort_entries(entries, sort);
+
+        // 閲覧可能なエントリのみフィルタ
+        let candidates: Vec<&EntryMeta> = sorted
+            .iter()
+            .filter(|e| {
+                matches!(
+                    e.kind,
+                    EntryKind::Directory | EntryKind::Archive | EntryKind::Pdf
+                )
+            })
+            .collect();
+
+        let current_idx = candidates.iter().position(|e| e.node_id == current);
+        let Some(idx) = current_idx else {
+            return Ok(SiblingsResponse {
+                prev: None,
+                next: None,
+            });
+        };
+
+        let prev = if idx > 0 {
+            Some(candidates[idx - 1].clone())
+        } else {
+            None
+        };
+        let next = if idx + 1 < candidates.len() {
+            Some(candidates[idx + 1].clone())
+        } else {
+            None
+        };
+
+        Ok(SiblingsResponse { prev, next })
+    })
+    .await
+    .map_err(|e| AppError::path_security(format!("タスク実行エラー: {e}")))?;
+
+    Ok(Json(result?))
 }
