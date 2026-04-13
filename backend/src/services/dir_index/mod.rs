@@ -4,6 +4,7 @@
 //! `sort_key` による自然順ソートと、カーソルベースのシーク型ページネーションを提供。
 
 mod bulk_insert;
+pub(crate) mod dirty_state;
 mod sort_queries;
 #[cfg(test)]
 mod tests;
@@ -17,6 +18,8 @@ use sort_queries::{
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use rusqlite::{Connection, params};
+
+use dirty_state::DirtyState;
 
 use crate::services::indexer::WalkCallbackArgs;
 use crate::services::natural_sort::encode_sort_key;
@@ -63,6 +66,7 @@ pub(crate) struct DirIndex {
     db_path: String,
     is_ready: AtomicBool,
     is_stale: AtomicBool,
+    dirty: std::sync::Mutex<DirtyState>,
 }
 
 /// 読み取りセッション (1リクエスト内で Connection を再利用)
@@ -81,6 +85,7 @@ impl DirIndex {
             db_path: db_path.to_owned(),
             is_ready: AtomicBool::new(false),
             is_stale: AtomicBool::new(false),
+            dirty: std::sync::Mutex::new(DirtyState::new()),
         }
     }
 
@@ -198,6 +203,40 @@ impl DirIndex {
     pub(crate) fn mark_warm_start(&self) {
         self.is_ready.store(true, Ordering::Relaxed);
         self.is_stale.store(true, Ordering::Relaxed);
+    }
+
+    // --- dirty セット委譲メソッド ---
+
+    /// ディレクトリを dirty にマークし、世代番号を返す
+    pub(crate) fn mark_dir_dirty(&self, parent_key: &str) -> u64 {
+        self.dirty
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .mark_dirty(parent_key)
+    }
+
+    /// ディレクトリが dirty かどうか
+    pub(crate) fn is_dir_dirty(&self, parent_key: &str) -> bool {
+        self.dirty
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .is_dirty(parent_key)
+    }
+
+    /// 世代番号が一致する場合のみ dirty を解除する
+    pub(crate) fn clear_dir_dirty_if_match(&self, parent_key: &str, generation: u64) -> bool {
+        self.dirty
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clear_if_generation_matches(parent_key, generation)
+    }
+
+    /// 全ディレクトリを dirty にマーク (inotify overflow 時)
+    pub(crate) fn mark_all_dirs_dirty(&self, parent_keys: impl IntoIterator<Item = String>) {
+        self.dirty
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .mark_all_dirty(parent_keys);
     }
 
     /// 読み取りセッションを開く (1リクエスト内で Connection を再利用)
