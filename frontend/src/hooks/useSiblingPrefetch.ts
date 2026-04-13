@@ -22,6 +22,11 @@ interface UseSiblingPrefetchProps {
 
 const MAX_DEPTH = 10;
 const IMAGE_PRELOAD_COUNT = 3;
+const PREFETCHED_KEYS_MAX = 500;
+
+// ビューワー再マウントを跨いでもプリフェッチの重複実行を防止する
+// currentNodeId + parentNodeId + sort をキーとして管理
+export const prefetchedKeys = new Set<string>();
 
 // ジャンプ先セットの browse データを infinite キャッシュに温め、最初の数枚の画像をプリロード
 async function prefetchSiblingTarget(
@@ -58,6 +63,10 @@ export function useSiblingPrefetch({
 
   useEffect(() => {
     if (!currentNodeId) return;
+
+    // 同一コンテキストで既にプリフェッチ済みならスキップ
+    const prefetchKey = `${currentNodeId}:${parentNodeId}:${sort}`;
+    if (prefetchedKeys.has(prefetchKey)) return;
 
     let cancelled = false;
     const isCancelled = () => cancelled;
@@ -151,7 +160,12 @@ export function useSiblingPrefetch({
       }
     }
 
-    prefetchBothDirections();
+    prefetchBothDirections().then(() => {
+      if (!cancelled) {
+        if (prefetchedKeys.size >= PREFETCHED_KEYS_MAX) prefetchedKeys.clear();
+        prefetchedKeys.add(prefetchKey);
+      }
+    });
 
     return () => {
       cancelled = true;

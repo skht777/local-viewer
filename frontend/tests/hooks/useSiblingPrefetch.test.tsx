@@ -6,7 +6,7 @@
 import { renderHook, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
-import { useSiblingPrefetch } from "../../src/hooks/useSiblingPrefetch";
+import { prefetchedKeys, useSiblingPrefetch } from "../../src/hooks/useSiblingPrefetch";
 import type { AncestorEntry, BrowseEntry, BrowseResponse } from "../../src/types/api";
 
 // --- ヘルパー ---
@@ -47,6 +47,7 @@ const OriginalImage = globalThis.Image;
 
 beforeEach(() => {
   preloadedSrcs = [];
+  prefetchedKeys.clear();
   globalThis.Image = class MockImage {
     private _src = "";
     get src() {
