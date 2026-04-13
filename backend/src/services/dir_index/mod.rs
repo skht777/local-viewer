@@ -21,8 +21,8 @@ use rusqlite::{Connection, params};
 use crate::services::indexer::WalkCallbackArgs;
 use crate::services::natural_sort::encode_sort_key;
 
-/// スキーマバージョン (v2: `sort_key` ゼロ埋め 10桁→20桁)
-const SCHEMA_VERSION: &str = "2";
+/// スキーマバージョン (v3: マイグレーション時に `dir_meta` + `full_scan_done` もクリア)
+const SCHEMA_VERSION: &str = "3";
 
 /// `BulkInserter` のバッチサイズ
 const BATCH_SIZE: usize = 1000;
@@ -145,10 +145,12 @@ impl DirIndex {
 
         if old_version.as_deref() != Some(SCHEMA_VERSION) {
             tx.execute("DELETE FROM dir_entries", [])?;
+            tx.execute("DELETE FROM dir_meta", [])?;
+            tx.execute("DELETE FROM schema_meta WHERE key = 'full_scan_done'", [])?;
             tracing::info!(
                 old = old_version.as_deref().unwrap_or("none"),
                 new = SCHEMA_VERSION,
-                "DirIndex スキーマバージョン変更: dir_entries をクリア"
+                "DirIndex スキーマバージョン変更: dir_entries + dir_meta をクリア (フルスキャン強制)"
             );
         }
 
