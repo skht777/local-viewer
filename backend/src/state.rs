@@ -2,6 +2,7 @@
 //!
 //! 全サービスを `Arc` で保持し、axum の `State` エクストラクタで各ハンドラに注入する。
 
+use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex};
 
 use tokio::time::Instant;
@@ -47,4 +48,6 @@ pub(crate) struct AppState {
     pub indexer: Arc<Indexer>,
     pub dir_index: Arc<DirIndex>,
     pub last_rebuild: tokio::sync::Mutex<Option<Instant>>,
+    /// 全マウントの初回スキャンが完了したか (cold start 時に使用)
+    pub scan_complete: Arc<AtomicBool>,
 }

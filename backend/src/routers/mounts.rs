@@ -120,6 +120,7 @@ mod tests {
             indexer,
             dir_index,
             last_rebuild: tokio::sync::Mutex::new(None),
+            scan_complete: Arc::new(std::sync::atomic::AtomicBool::new(true)),
         })
     }
 

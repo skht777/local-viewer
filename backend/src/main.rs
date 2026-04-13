@@ -7,8 +7,10 @@ use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
-use axum::http::Method;
+use axum::extract::State;
+use axum::http::{Method, StatusCode};
 use axum::middleware::from_fn;
+use axum::response::IntoResponse;
 use axum::{
     Json, Router,
     routing::{get, post},
@@ -59,6 +61,33 @@ async fn health() -> Json<HealthResponse> {
     })
 }
 
+/// Readiness プローブ
+///
+/// - warm start: `dir_index.is_ready()` が即 true → 200
+/// - cold start: 全マウントスキャン完了後に `scan_complete` が true → 200
+/// - いずれも false → 503
+async fn ready(State(state): State<Arc<AppState>>) -> impl IntoResponse {
+    let is_ready = state
+        .scan_complete
+        .load(std::sync::atomic::Ordering::Relaxed)
+        || state.dir_index.is_ready();
+    if is_ready {
+        (
+            StatusCode::OK,
+            Json(HealthResponse {
+                status: "ready".to_string(),
+            }),
+        )
+    } else {
+        (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(HealthResponse {
+                status: "warming_up".to_string(),
+            }),
+        )
+    }
+}
+
 /// バックグラウンドタスク (ウォームスタート判定 + インデックススキャン) のコンテキスト
 struct BackgroundContext {
     indexer: Arc<services::indexer::Indexer>,
@@ -66,6 +95,7 @@ struct BackgroundContext {
     path_security: Arc<PathSecurity>,
     mount_id_map: HashMap<String, PathBuf>,
     scan_workers: usize,
+    scan_complete: Arc<std::sync::atomic::AtomicBool>,
 }
 
 /// サービス初期化 + ルーター構築
@@ -174,14 +204,16 @@ fn build_app(settings: Settings) -> anyhow::Result<(Router, BackgroundContext)> 
     }
 
     // バックグラウンドタスク用コンテキストを先に構築
+    let scan_complete = Arc::new(std::sync::atomic::AtomicBool::new(false));
+
     let bg_context = BackgroundContext {
         indexer: Arc::clone(&indexer),
         dir_index: Arc::clone(&dir_index),
         path_security: Arc::clone(&path_security),
         mount_id_map,
         scan_workers: settings.scan_workers,
+        scan_complete: Arc::clone(&scan_complete),
     };
-
     let app_state = Arc::new(AppState {
         settings: Arc::new(settings),
         node_registry: Arc::new(Mutex::new(registry)),
@@ -195,6 +227,7 @@ fn build_app(settings: Settings) -> anyhow::Result<(Router, BackgroundContext)> 
         indexer,
         dir_index,
         last_rebuild: tokio::sync::Mutex::new(None),
+        scan_complete: Arc::clone(&scan_complete),
     });
 
     // CORS: 開発用ポートを許可
@@ -210,6 +243,7 @@ fn build_app(settings: Settings) -> anyhow::Result<(Router, BackgroundContext)> 
     // API ルーター構築
     let api_router = Router::new()
         .route("/api/health", get(health))
+        .route("/api/ready", get(ready))
         .route("/api/mounts", get(routers::mounts::list_mounts))
         .route(
             "/api/browse/{node_id}",
@@ -419,6 +453,8 @@ fn spawn_background_tasks(bg: BackgroundContext) {
             let _ = scan_dir_index.mark_full_scan_done();
         }
         scan_dir_index.mark_ready();
+        bg.scan_complete
+            .store(true, std::sync::atomic::Ordering::Relaxed);
     });
 
     // スキャン完了後に FileWatcher を起動
@@ -528,6 +564,7 @@ mod tests {
             indexer,
             dir_index,
             last_rebuild: tokio::sync::Mutex::new(None),
+            scan_complete: Arc::new(std::sync::atomic::AtomicBool::new(true)),
         });
 
         Router::new()
