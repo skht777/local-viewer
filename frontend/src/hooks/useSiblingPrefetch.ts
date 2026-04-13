@@ -7,7 +7,7 @@
 import { useEffect } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { apiFetch } from "./api/apiClient";
-import { browseNodeOptions } from "./api/browseQueries";
+import { browseInfiniteOptions, browseNodeOptions } from "./api/browseQueries";
 import { findNextSet, findPrevSet } from "./useSetNavigation";
 import type { SortOrder } from "./useViewerParams";
 import type { AncestorEntry, BrowseResponse, SiblingResponse } from "../types/api";
@@ -83,11 +83,15 @@ export function useSiblingPrefetch({
         if (sibling) {
           // 兄弟発見 → kind に応じてプリフェッチ
           if (sibling.kind === "directory" || sibling.kind === "archive") {
-            // ジャンプ先の browse データを取得 + 画像プリロード
+            // BrowsePage の useInfiniteQuery キャッシュを温める + 画像プリロード
             try {
-              const targetData = await queryClient.fetchQuery(browseNodeOptions(sibling.node_id));
+              await queryClient.prefetchInfiniteQuery(browseInfiniteOptions(sibling.node_id, sort));
               if (cancelled) return;
-              const images = targetData.entries.filter((e) => e.kind === "image");
+              const cached = queryClient.getQueryData(
+                browseInfiniteOptions(sibling.node_id, sort).queryKey,
+              );
+              const entries = cached?.pages?.[0]?.entries ?? [];
+              const images = entries.filter((e) => e.kind === "image");
               const count = Math.min(IMAGE_PRELOAD_COUNT, images.length);
               for (let i = 0; i < count; i++) {
                 const img = new Image();

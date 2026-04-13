@@ -9,7 +9,7 @@ import { useCallback, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { apiFetch } from "./api/apiClient";
-import { browseNodeOptions } from "./api/browseQueries";
+import { browseInfiniteOptions, browseNodeOptions } from "./api/browseQueries";
 import { findNextSet, findPrevSet, resolveTopLevelDir, shouldConfirm } from "./useSetNavigation";
 import type { SortOrder, ViewerMode } from "./useViewerParams";
 import type { AncestorEntry, BrowseEntry, BrowseResponse, SiblingResponse } from "../types/api";
@@ -77,13 +77,14 @@ export function useSetJump({
   );
 
   // browse ノードにナビゲートする前にデータをプリフェッチ
+  // BrowsePage の useInfiniteQuery キャッシュに直接投入する
   // キャッシュ済みなら即座に返る。未キャッシュでも navigate 前に取得完了する
   const prefetchAndNavigate = useCallback(
     async (nodeId: string, search: string) => {
-      await queryClient.prefetchQuery(browseNodeOptions(nodeId));
+      await queryClient.prefetchInfiniteQuery(browseInfiniteOptions(nodeId, sort));
       navigate(`/browse/${nodeId}${search}`);
     },
-    [queryClient, navigate],
+    [queryClient, navigate, sort],
   );
 
   // 遷移先の kind に応じた URL で遷移

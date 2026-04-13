@@ -87,7 +87,7 @@ function createSeededClient(data: Record<string, BrowseResponse>): QueryClient {
 // --- テスト ---
 
 describe("useSiblingPrefetch", () => {
-  test("次のセットの browse データがプリフェッチされる", async () => {
+  test("次のセットの browse データが infinite キャッシュにプリフェッチされる", async () => {
     // 親ディレクトリ parent に d1(現在), d2(次) がある
     const parentData = browseResponse("parent", null, [
       entry("directory", "d1"),
@@ -99,7 +99,12 @@ describe("useSiblingPrefetch", () => {
       entry("image", "img2"),
     ]);
 
-    const client = createSeededClient({ parent: parentData, d2: d2Data });
+    const client = createSeededClient({ parent: parentData });
+    // d2 は infinite キャッシュ形式で事前投入
+    client.setQueryData(["browse-infinite", "d2", "name-asc"], {
+      pages: [d2Data],
+      pageParams: [undefined],
+    });
     const wrapper = createWrapper(client);
 
     renderHook(
@@ -112,13 +117,13 @@ describe("useSiblingPrefetch", () => {
       { wrapper },
     );
 
-    // d2 の browse データがキャッシュに入る
+    // d2 の infinite キャッシュにデータが入る
     await waitFor(() => {
-      expect(client.getQueryData(["browse", "d2", "name-asc"])).toBeDefined();
+      expect(client.getQueryData(["browse-infinite", "d2", "name-asc"])).toBeDefined();
     });
   });
 
-  test("前のセットの browse データがプリフェッチされる", async () => {
+  test("前のセットの browse データが infinite キャッシュにプリフェッチされる", async () => {
     const parentData = browseResponse("parent", null, [
       entry("directory", "d1"),
       entry("directory", "d2"),
@@ -127,7 +132,11 @@ describe("useSiblingPrefetch", () => {
       entry("image", "img1"),
     ]);
 
-    const client = createSeededClient({ parent: parentData, d1: d1Data });
+    const client = createSeededClient({ parent: parentData });
+    client.setQueryData(["browse-infinite", "d1", "name-asc"], {
+      pages: [d1Data],
+      pageParams: [undefined],
+    });
     const wrapper = createWrapper(client);
 
     renderHook(
@@ -141,7 +150,7 @@ describe("useSiblingPrefetch", () => {
     );
 
     await waitFor(() => {
-      expect(client.getQueryData(["browse", "d1", "name-asc"])).toBeDefined();
+      expect(client.getQueryData(["browse-infinite", "d1", "name-asc"])).toBeDefined();
     });
   });
 
@@ -162,7 +171,10 @@ describe("useSiblingPrefetch", () => {
     const client = createSeededClient({
       parent: parentData,
       grandparent: grandparentData,
-      d2: d2Data,
+    });
+    client.setQueryData(["browse-infinite", "d2", "name-asc"], {
+      pages: [d2Data],
+      pageParams: [undefined],
     });
     const wrapper = createWrapper(client);
 
@@ -176,9 +188,9 @@ describe("useSiblingPrefetch", () => {
       { wrapper },
     );
 
-    // 1階層上がって d2 のデータがプリフェッチされる
+    // 1階層上がって d2 の infinite キャッシュがプリフェッチされる
     await waitFor(() => {
-      expect(client.getQueryData(["browse", "d2", "name-asc"])).toBeDefined();
+      expect(client.getQueryData(["browse-infinite", "d2", "name-asc"])).toBeDefined();
     });
   });
 
@@ -194,7 +206,11 @@ describe("useSiblingPrefetch", () => {
       entry("image", "img4"),
     ]);
 
-    const client = createSeededClient({ parent: parentData, d2: d2Data });
+    const client = createSeededClient({ parent: parentData });
+    client.setQueryData(["browse-infinite", "d2", "name-asc"], {
+      pages: [d2Data],
+      pageParams: [undefined],
+    });
     const wrapper = createWrapper(client);
 
     renderHook(

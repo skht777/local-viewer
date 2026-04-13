@@ -7,7 +7,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
-import { browseInfiniteOptions, browseNodeOptions } from "../hooks/api/browseQueries";
+import { browseInfiniteOptions } from "../hooks/api/browseQueries";
 import { mountListOptions } from "../hooks/api/mountQueries";
 import { useViewerParams, type ViewerTab } from "../hooks/useViewerParams";
 import { useViewerStore } from "../stores/viewerStore";
@@ -321,8 +321,10 @@ export default function BrowsePage() {
                     `/browse/${target.parentNodeId}${buildBrowseSearch({ tab: "images", index: 0 })}`,
                   );
                 } else {
-                  // アーカイブ: プリフェッチしてから進入してビューワーを開く
-                  await queryClient.prefetchQuery(browseNodeOptions(target.entry.node_id));
+                  // アーカイブ: BrowsePage の infinite キャッシュにプリフェッチしてから進入
+                  await queryClient.prefetchInfiniteQuery(
+                    browseInfiniteOptions(target.entry.node_id, params.sort),
+                  );
                   navigate(
                     `/browse/${target.entry.node_id}${buildBrowseSearch({ tab: "images", index: 0 })}`,
                   );
