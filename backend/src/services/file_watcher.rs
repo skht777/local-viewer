@@ -14,6 +14,7 @@ use notify::event::{CreateKind, ModifyKind, RemoveKind, RenameMode};
 use notify::{EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use tracing::{debug, info, warn};
 
+use crate::services::dir_index::DirIndex;
 use crate::services::extensions::{
     ARCHIVE_EXTENSIONS, PDF_EXTENSIONS, VIDEO_EXTENSIONS, classify_for_index, extract_extension,
 };
@@ -41,6 +42,7 @@ pub(crate) enum FileWatcherError {
 pub(crate) struct FileWatcher {
     indexer: Arc<Indexer>,
     path_security: Arc<PathSecurity>,
+    dir_index: Arc<DirIndex>,
     mounts: Vec<(String, PathBuf)>,
     pending: Arc<std::sync::Mutex<HashMap<String, String>>>,
     is_running: AtomicBool,
@@ -55,11 +57,13 @@ impl FileWatcher {
     pub(crate) fn new(
         indexer: Arc<Indexer>,
         path_security: Arc<PathSecurity>,
+        dir_index: Arc<DirIndex>,
         mounts: Vec<(String, PathBuf)>,
     ) -> Self {
         Self {
             indexer,
             path_security,
+            dir_index,
             mounts,
             pending: Arc::new(std::sync::Mutex::new(HashMap::new())),
             is_running: AtomicBool::new(false),
@@ -117,6 +121,7 @@ impl FileWatcher {
         let flush_pending = Arc::clone(&self.pending);
         let flush_indexer = Arc::clone(&self.indexer);
         let flush_path_security = Arc::clone(&self.path_security);
+        let flush_dir_index = Arc::clone(&self.dir_index);
         let flush_mounts: Vec<(String, PathBuf)> = self.mounts.clone();
 
         // flush ワーカーは JoinHandle の abort で停止する方式
@@ -124,6 +129,7 @@ impl FileWatcher {
             flush_pending,
             flush_indexer,
             flush_path_security,
+            flush_dir_index,
             flush_mounts,
         ));
 
@@ -220,11 +226,12 @@ fn enqueue(pending: &std::sync::Mutex<HashMap<String, String>>, path: &Path, act
 
 // ---------- flush ワーカー ----------
 
-/// 1 秒間隔で pending イベントを取り出し、Indexer に反映する
+/// 1 秒間隔で pending イベントを取り出し、`Indexer` + `DirIndex` に反映する
 async fn flush_worker_loop(
     pending: Arc<std::sync::Mutex<HashMap<String, String>>>,
     indexer: Arc<Indexer>,
     path_security: Arc<PathSecurity>,
+    dir_index: Arc<DirIndex>,
     mounts: Vec<(String, PathBuf)>,
 ) {
     loop {
@@ -247,26 +254,36 @@ async fn flush_worker_loop(
         // spawn_blocking 内で同期処理
         let indexer_c = Arc::clone(&indexer);
         let ps_c = Arc::clone(&path_security);
+        let di_c = Arc::clone(&dir_index);
         let mounts_c = mounts.clone();
 
         let _ = tokio::task::spawn_blocking(move || {
             for (path_str, action) in &events {
-                process_event(&indexer_c, &ps_c, &mounts_c, path_str, action);
+                process_event(&indexer_c, &ps_c, &di_c, &mounts_c, path_str, action);
             }
         })
         .await;
     }
 }
 
-/// 1 件のイベントを処理してインデックスに反映する
+/// 1 件のイベントを処理してインデックスに反映し、DirIndex の親ディレクトリを dirty 化する
 fn process_event(
     indexer: &Indexer,
     path_security: &PathSecurity,
+    dir_index: &DirIndex,
     mounts: &[(String, PathBuf)],
     path_str: &str,
     action: &str,
 ) {
     let path = Path::new(path_str);
+
+    // 親ディレクトリの parent_key を計算して dirty 化
+    // remove/rename-from では対象パスが既に存在しないため、存在する親ディレクトリから計算
+    if let Some(parent) = path.parent() {
+        if let Some(parent_key) = compute_relative_path(parent, mounts) {
+            dir_index.mark_dir_dirty(&parent_key);
+        }
+    }
 
     if action == "remove" {
         // 削除: 相対パスを計算して remove_entry

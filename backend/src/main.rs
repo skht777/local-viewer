@@ -331,6 +331,7 @@ fn spawn_background_tasks(bg: BackgroundContext) {
     // FileWatcher 用に先に clone (bg は scan_handle の async move で消費されるため)
     let watcher_indexer = Arc::clone(&bg.indexer);
     let watcher_path_security = Arc::clone(&bg.path_security);
+    let watcher_dir_index = Arc::clone(&bg.dir_index);
     let watcher_mounts: Vec<(String, PathBuf)> = bg
         .mount_id_map
         .iter()
@@ -428,6 +429,7 @@ fn spawn_background_tasks(bg: BackgroundContext) {
         let file_watcher = services::file_watcher::FileWatcher::new(
             watcher_indexer,
             watcher_path_security,
+            watcher_dir_index,
             watcher_mounts,
         );
         if let Err(e) = file_watcher.start() {
