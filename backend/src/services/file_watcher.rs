@@ -79,13 +79,22 @@ impl FileWatcher {
         }
         self.is_running.store(true, Ordering::Release);
 
-        // notify イベントコールバック用の pending 参照
+        // notify イベントコールバック用の参照
         let pending_for_cb = Arc::clone(&self.pending);
+        let dir_index_for_cb = Arc::clone(&self.dir_index);
 
         // watcher 生成 — イベントコールバックで pending に蓄積
         let mut watcher = notify::recommended_watcher(
             move |res: Result<notify::Event, notify::Error>| match res {
-                Ok(event) => handle_notify_event(&pending_for_cb, &event),
+                Ok(event) => {
+                    // inotify Q_OVERFLOW 等で need_rescan が立つ場合、
+                    // DirIndex を stale 化してイベント取りこぼしを補償する
+                    if event.need_rescan() {
+                        warn!("notify: need_rescan 検知、DirIndex を stale 化");
+                        dir_index_for_cb.mark_warm_start();
+                    }
+                    handle_notify_event(&pending_for_cb, &event);
+                }
                 Err(e) => warn!("notify エラー: {e}"),
             },
         )?;
