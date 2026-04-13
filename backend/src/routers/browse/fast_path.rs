@@ -87,6 +87,11 @@ pub(super) fn try_dir_index_browse_split(
         return None;
     }
 
+    // FileWatcher が dirty 化したディレクトリは fallback にフォールバック
+    if dir_index.is_dir_dirty(&parent_key) {
+        return None;
+    }
+
     let sort_str = match sort {
         SortOrder::NameAsc => "name-asc",
         SortOrder::NameDesc => "name-desc",
