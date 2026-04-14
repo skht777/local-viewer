@@ -36,11 +36,13 @@ export function browseInfiniteOptions(nodeId: string | undefined, sort: SortOrde
 }
 
 // キーワード検索
-export function searchOptions(query: string, kind?: string) {
+// scope: ディレクトリスコープの node_id（指定ディレクトリ配下のみ検索）
+export function searchOptions(query: string, kind?: string, scope?: string) {
   const params = new URLSearchParams({ q: query, limit: "50" });
   if (kind) params.set("kind", kind);
+  if (scope) params.set("scope", scope);
   return queryOptions({
-    queryKey: ["search", query, kind],
+    queryKey: ["search", query, kind, scope],
     queryFn: () => apiFetch<SearchResponse>(`/api/search?${params}`),
     enabled: query.length >= 2,
   });

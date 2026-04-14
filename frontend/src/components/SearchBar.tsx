@@ -18,8 +18,16 @@ const KIND_FILTERS = [
   { label: "\u{1F4E6}", value: "archive" },
 ] as const;
 
-export function SearchBar() {
+interface SearchBarProps {
+  scope?: string;
+}
+
+export function SearchBar({ scope }: SearchBarProps) {
   const navigate = useNavigate();
+  // スコープ切替: scope プロップがある場合のみ有効
+  const [isScopeActive, setIsScopeActive] = useState(true);
+  const effectiveScope = scope && isScopeActive ? scope : undefined;
+
   const {
     query,
     setQuery,
@@ -32,7 +40,7 @@ export function SearchBar() {
     isError,
     isIndexing,
     refetch,
-  } = useSearch();
+  } = useSearch(effectiveScope);
 
   const [isOpen, setIsOpen] = useState(false);
   const [activeIndex, setActiveIndex] = useState(-1);
@@ -116,7 +124,7 @@ export function SearchBar() {
             onFocus={() => {
               if (debouncedQuery.length >= 2) setIsOpen(true);
             }}
-            placeholder="検索..."
+            placeholder={effectiveScope ? "このフォルダ内を検索..." : "全体を検索..."}
             aria-label="検索"
             data-testid="search-input"
             className="w-full rounded-lg bg-surface-ground py-2 pl-4 pr-4 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -138,6 +146,22 @@ export function SearchBar() {
               {filter.label}
             </button>
           ))}
+          {/* スコープ切替: scope プロップがある場合のみ表示 */}
+          {scope && (
+            <button
+              type="button"
+              onClick={() => setIsScopeActive((prev) => !prev)}
+              data-testid="scope-toggle"
+              title={isScopeActive ? "このフォルダ内を検索中" : "全体を検索中"}
+              className={`ml-auto rounded px-2.5 py-1 text-sm ${
+                isScopeActive
+                  ? "bg-green-600 text-white"
+                  : "bg-surface-raised text-gray-400 hover:bg-surface-overlay"
+              }`}
+            >
+              {isScopeActive ? "フォルダ" : "全体"}
+            </button>
+          )}
         </div>
       </div>
       {shouldShowDropdown && (

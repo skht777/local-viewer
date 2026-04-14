@@ -21,12 +21,12 @@ function renderSearchBar() {
 describe("SearchBar", () => {
   test("入力欄が表示される", () => {
     renderSearchBar();
-    expect(screen.getByPlaceholderText("検索...")).toBeInTheDocument();
+    expect(screen.getByPlaceholderText("全体を検索...")).toBeInTheDocument();
   });
 
   test("テキスト入力ができる", async () => {
     renderSearchBar();
-    const input = screen.getByPlaceholderText("検索...");
+    const input = screen.getByPlaceholderText("全体を検索...");
     await userEvent.type(input, "test query");
     expect(input).toHaveValue("test query");
   });

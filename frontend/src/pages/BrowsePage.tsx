@@ -288,6 +288,7 @@ export default function BrowsePage() {
         onBreadcrumbSelect={(id) => navigate(`/browse/${id}${buildBrowseSearch()}`)}
         mode={params.mode}
         onModeChange={setMode}
+        nodeId={nodeId}
       />
       <ViewerTabs
         activeTab={params.tab}

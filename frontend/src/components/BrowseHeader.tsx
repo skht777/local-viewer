@@ -19,6 +19,7 @@ interface BrowseHeaderProps {
   onBreadcrumbSelect: (nodeId: string) => void;
   mode: ViewerMode;
   onModeChange: (mode: ViewerMode) => void;
+  nodeId?: string;
 }
 
 export function BrowseHeader({
@@ -27,6 +28,7 @@ export function BrowseHeader({
   onBreadcrumbSelect,
   mode,
   onModeChange,
+  nodeId,
 }: BrowseHeaderProps) {
   const navigate = useNavigate();
   const toggleSidebar = useViewerStore((s) => s.toggleSidebar);
@@ -52,7 +54,7 @@ export function BrowseHeader({
       <div className="ml-auto flex shrink-0 items-center gap-4">
         <ModeToggle mode={mode} onModeChange={onModeChange} />
         <div className="w-80">
-          <SearchBar />
+          <SearchBar scope={nodeId} />
         </div>
       </div>
     </header>

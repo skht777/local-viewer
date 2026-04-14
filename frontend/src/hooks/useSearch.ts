@@ -25,7 +25,7 @@ interface UseSearchReturn {
   refetch: () => void;
 }
 
-export function useSearch(): UseSearchReturn {
+export function useSearch(scope?: string): UseSearchReturn {
   const [query, setQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
   const [kind, setKind] = useState<string | null>(null);
@@ -38,7 +38,7 @@ export function useSearch(): UseSearchReturn {
     return () => clearTimeout(timer);
   }, [query]);
 
-  const opts = searchOptions(debouncedQuery, kind ?? undefined);
+  const opts = searchOptions(debouncedQuery, kind ?? undefined, scope);
   const { data, isLoading, isError, error, refetch } = useQuery({
     ...opts,
     retry: 1,
