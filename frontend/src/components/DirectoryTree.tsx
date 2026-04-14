@@ -57,8 +57,17 @@ function TreeNode({ entry, depth, activeNodeId, ancestorNodeIds, onNavigate }: T
     enabled: isExpanded,
   });
 
-  const handleClick = () => {
+  // アイコンクリック: 展開/折りたたみのみ（ナビゲートしない）
+  const handleChevronClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
     toggleExpanded(entry.node_id);
+  };
+
+  // ラベルクリック: ナビゲート + 未展開なら展開（折りたたみはしない）
+  const handleLabelClick = () => {
+    if (!isExpanded) {
+      toggleExpanded(entry.node_id);
+    }
     onNavigate(entry.node_id);
   };
 
@@ -94,7 +103,7 @@ function TreeNode({ entry, depth, activeNodeId, ancestorNodeIds, onNavigate }: T
         type="button"
         data-testid={`tree-node-${entry.node_id}`}
         data-node-id={entry.node_id}
-        onClick={handleClick}
+        onClick={handleLabelClick}
         onPointerEnter={handlePointerEnter}
         onPointerLeave={handlePointerLeave}
         className={`flex w-full items-center gap-1 px-2 py-1 text-left text-sm transition-colors hover:bg-surface-raised ${
@@ -103,7 +112,15 @@ function TreeNode({ entry, depth, activeNodeId, ancestorNodeIds, onNavigate }: T
         style={{ paddingLeft: `${depth * 16 + 8}px` }}
         tabIndex={-1}
       >
-        <span className="w-4 text-xs text-gray-500">{isExpanded ? "▾" : "▸"}</span>
+        {/* アイコン: クリックで展開/折りたたみのみ（非 tabbable） */}
+        <span
+          role="button"
+          tabIndex={-1}
+          onClick={handleChevronClick}
+          className="w-4 text-xs text-gray-500"
+        >
+          {isExpanded ? "▾" : "▸"}
+        </span>
         <span className="truncate">{entry.name}</span>
       </button>
       {isExpanded && childDirs.length > 0 && (
@@ -208,14 +225,14 @@ export function DirectoryTree({
     }
   }, [toggleExpanded]);
 
+  // Enter: navigate のみ（展開/折りたたみは ←/→ で操作）
   const select = useCallback(() => {
     const focused = document.activeElement as HTMLButtonElement;
     const nodeId = focused?.dataset?.nodeId;
     if (nodeId) {
-      toggleExpanded(nodeId);
       onNavigate(nodeId);
     }
-  }, [toggleExpanded, onNavigate]);
+  }, [onNavigate]);
 
   const goFirst = useCallback(() => {
     const buttons = getVisibleButtons(getContainer());
