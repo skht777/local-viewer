@@ -62,7 +62,7 @@ export function VideoCard({ entry, initialTime, onTimeUpdate }: VideoCardProps) 
             ref={videoRef}
             controls
             preload="none"
-            className="w-full rounded"
+            className="max-h-[85vh] w-full rounded object-contain"
             src={`/api/file/${entry.node_id}`}
             onError={() => setHasError(true)}
             onLoadedMetadata={handleLoadedMetadata}
