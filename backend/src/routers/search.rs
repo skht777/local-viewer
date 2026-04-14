@@ -14,7 +14,7 @@ use axum::response::{IntoResponse, Response};
 use serde::{Deserialize, Serialize};
 
 use crate::errors::AppError;
-use crate::services::indexer::Indexer;
+use crate::services::indexer::{Indexer, SearchParams};
 use crate::services::node_registry::NodeRegistry;
 use crate::state::AppState;
 
@@ -52,6 +52,8 @@ pub(crate) struct SearchQuery {
     pub limit: Option<usize>,
     /// オフセット (デフォルト 0)
     pub offset: Option<usize>,
+    /// ディレクトリスコープ (`node_id`): 指定ディレクトリ配下のみ検索
+    pub scope: Option<String>,
 }
 
 // --- レスポンス型 ---
@@ -123,6 +125,36 @@ pub(crate) async fn search(
     let limit = query.limit.unwrap_or(DEFAULT_LIMIT).clamp(1, MAX_LIMIT);
     let offset = query.offset.unwrap_or(0);
 
+    // scope node_id → ディレクトリプレフィックスの解決
+    let scope_prefix = if let Some(ref scope_node_id) = query.scope {
+        #[allow(
+            clippy::expect_used,
+            reason = "Mutex poison は致命的エラー、パニックが適切"
+        )]
+        let reg = state
+            .node_registry
+            .lock()
+            .expect("NodeRegistry Mutex poisoned");
+
+        // node_id → 絶対パス
+        let abs_path = reg.resolve(scope_node_id)?.to_path_buf();
+
+        // PathSecurity で存在確認 + マウントポイント配下か検証
+        reg.path_security().validate_existing(&abs_path)?;
+
+        // ディレクトリか確認
+        if !abs_path.is_dir() {
+            return Err(AppError::InvalidQuery(
+                "scope はディレクトリの node_id を指定してください".to_string(),
+            ));
+        }
+
+        // {mount_id}/{relative} プレフィックスを算出
+        reg.compute_parent_path_key(&abs_path)
+    } else {
+        None
+    };
+
     // mount_id_map をクローン (不変データ、ロック時間を最小化)
     let mount_id_map = {
         #[allow(
@@ -152,6 +184,7 @@ pub(crate) async fn search(
             kind.as_deref(),
             limit,
             offset,
+            scope_prefix.as_deref(),
         )
     })
     .await
@@ -276,6 +309,7 @@ fn resolve_search_results(
     kind: Option<&str>,
     limit: usize,
     offset: usize,
+    scope_prefix: Option<&str>,
 ) -> Result<(Vec<SearchResultResponse>, bool), AppError> {
     let mut results = Vec::new();
     let mut db_offset = offset;
@@ -284,7 +318,13 @@ fn resolve_search_results(
 
     for _ in 0..MAX_RESOLVE_ITERATIONS {
         let (hits, _) = indexer
-            .search(query, kind, collect_limit, db_offset)
+            .search(&SearchParams {
+                query,
+                kind,
+                limit: collect_limit,
+                offset: db_offset,
+                scope_prefix,
+            })
             .map_err(|e| AppError::path_security(format!("検索エラー: {e}")))?;
 
         let hit_count = hits.len();

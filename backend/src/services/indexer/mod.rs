@@ -12,6 +12,16 @@ mod helpers;
 
 pub(crate) use helpers::SearchHit;
 
+/// 検索パラメータ
+pub(crate) struct SearchParams<'a> {
+    pub query: &'a str,
+    pub kind: Option<&'a str>,
+    pub limit: usize,
+    pub offset: usize,
+    /// ディレクトリスコープ: `{mount_id}/{relative}` 形式のプレフィックス
+    pub scope_prefix: Option<&'a str>,
+}
+
 use std::cell::RefCell;
 use std::collections::HashSet;
 use std::path::Path;
@@ -25,8 +35,8 @@ use crate::services::path_security::PathSecurity;
 
 use helpers::{
     IncrementalScanContext, batch_insert, build_fingerprint, build_fts_query, delete_unseen,
-    load_dir_mtimes, load_existing_entries, make_relative_prefix, process_walk_entry_incremental,
-    prune_unchanged_dir, search_fts, search_like,
+    escape_like_pattern, load_dir_mtimes, load_existing_entries, make_relative_prefix,
+    process_walk_entry_incremental, prune_unchanged_dir, search_fts, search_like,
 };
 
 /// バッチ INSERT のサイズ
@@ -164,32 +174,48 @@ impl Indexer {
     /// - 3 文字以上のトークンがあれば FTS5 MATCH で検索
     /// - なければ LIKE フォールバック (`%query%`)
     /// - `limit + 1` 件取得して `has_more` を判定
-    #[allow(clippy::cast_possible_wrap, reason = "limit/offset は i64 範囲内")]
+    /// - `scope_prefix` 指定時はそのプレフィックス配下のみ検索
     pub(crate) fn search(
         &self,
-        query: &str,
-        kind: Option<&str>,
-        limit: usize,
-        offset: usize,
+        params: &SearchParams<'_>,
     ) -> Result<(Vec<SearchHit>, bool), IndexerError> {
         let conn = self.connect()?;
-        let trimmed = query.trim();
+        let trimmed = params.query.trim();
         if trimmed.is_empty() {
             return Ok((Vec::new(), false));
         }
 
         let fts_query = build_fts_query(trimmed);
-        let fetch_limit = limit + 1;
+        let fetch_limit = params.limit + 1;
+
+        // scope_prefix のワイルドカードエスケープ
+        let scope_pattern = params.scope_prefix.map(|prefix| {
+            let escaped = escape_like_pattern(prefix);
+            format!("{escaped}/%")
+        });
 
         let mut hits = if fts_query.is_empty() {
-            // LIKE フォールバック (全トークンが 3 文字未満)
-            search_like(&conn, trimmed, kind, fetch_limit, offset)?
+            search_like(
+                &conn,
+                trimmed,
+                params.kind,
+                fetch_limit,
+                params.offset,
+                scope_pattern.as_deref(),
+            )?
         } else {
-            search_fts(&conn, &fts_query, kind, fetch_limit, offset)?
+            search_fts(
+                &conn,
+                &fts_query,
+                params.kind,
+                fetch_limit,
+                params.offset,
+                scope_pattern.as_deref(),
+            )?
         };
 
-        let has_more = hits.len() > limit;
-        hits.truncate(limit);
+        let has_more = hits.len() > params.limit;
+        hits.truncate(params.limit);
 
         Ok((hits, has_more))
     }
@@ -511,7 +537,15 @@ mod tests {
         let entry = make_entry("photos/sunset.jpg", "sunset.jpg", "image");
         indexer.add_entry(&entry).unwrap();
 
-        let (hits, has_more) = indexer.search("sunset", None, 10, 0).unwrap();
+        let (hits, has_more) = indexer
+            .search(&SearchParams {
+                query: "sunset",
+                kind: None,
+                limit: 10,
+                offset: 0,
+                scope_prefix: None,
+            })
+            .unwrap();
         assert_eq!(hits.len(), 1);
         assert!(!has_more);
         assert_eq!(hits[0].name, "sunset.jpg");
@@ -531,12 +565,28 @@ mod tests {
             .unwrap();
 
         // kind="video" で検索 — "clip" は 4 文字なので FTS5 パス
-        let (hits, _) = indexer.search("clip", Some("video"), 10, 0).unwrap();
+        let (hits, _) = indexer
+            .search(&SearchParams {
+                query: "clip",
+                kind: Some("video"),
+                limit: 10,
+                offset: 0,
+                scope_prefix: None,
+            })
+            .unwrap();
         assert_eq!(hits.len(), 1);
         assert_eq!(hits[0].kind, "video");
 
         // kind="pdf" で同じクエリ — ヒットしない
-        let (hits, _) = indexer.search("clip", Some("pdf"), 10, 0).unwrap();
+        let (hits, _) = indexer
+            .search(&SearchParams {
+                query: "clip",
+                kind: Some("pdf"),
+                limit: 10,
+                offset: 0,
+                scope_prefix: None,
+            })
+            .unwrap();
         assert!(hits.is_empty());
     }
 
@@ -548,14 +598,30 @@ mod tests {
         indexer.add_entry(&entry).unwrap();
 
         // 削除前: 検索にヒットする
-        let (hits, _) = indexer.search("beach", None, 10, 0).unwrap();
+        let (hits, _) = indexer
+            .search(&SearchParams {
+                query: "beach",
+                kind: None,
+                limit: 10,
+                offset: 0,
+                scope_prefix: None,
+            })
+            .unwrap();
         assert_eq!(hits.len(), 1);
 
         // 削除
         indexer.remove_entry("photos/beach.jpg").unwrap();
 
         // 削除後: 検索にヒットしない
-        let (hits, _) = indexer.search("beach", None, 10, 0).unwrap();
+        let (hits, _) = indexer
+            .search(&SearchParams {
+                query: "beach",
+                kind: None,
+                limit: 10,
+                offset: 0,
+                scope_prefix: None,
+            })
+            .unwrap();
         assert!(hits.is_empty());
     }
 
@@ -567,7 +633,15 @@ mod tests {
         indexer.add_entry(&entry).unwrap();
 
         // "ab" は 2 文字 → LIKE フォールバック
-        let (hits, _) = indexer.search("ab", None, 10, 0).unwrap();
+        let (hits, _) = indexer
+            .search(&SearchParams {
+                query: "ab",
+                kind: None,
+                limit: 10,
+                offset: 0,
+                scope_prefix: None,
+            })
+            .unwrap();
         assert_eq!(hits.len(), 1);
         assert_eq!(hits[0].name, "ab_test.mp4");
     }
@@ -580,7 +654,15 @@ mod tests {
         indexer.add_entry(&entry).unwrap();
 
         // "テスト" は 3 文字 → FTS5 パス
-        let (hits, _) = indexer.search("テスト", None, 10, 0).unwrap();
+        let (hits, _) = indexer
+            .search(&SearchParams {
+                query: "テスト",
+                kind: None,
+                limit: 10,
+                offset: 0,
+                scope_prefix: None,
+            })
+            .unwrap();
         assert_eq!(hits.len(), 1);
         assert_eq!(hits[0].name, "テスト動画.mp4");
     }
@@ -590,7 +672,13 @@ mod tests {
         let (indexer, _tmp) = setup_indexer();
 
         // ダブルクォートやアスタリスクを含むクエリでエラーにならない
-        let result = indexer.search("\"test*", None, 10, 0);
+        let result = indexer.search(&SearchParams {
+            query: "\"test*",
+            kind: None,
+            limit: 10,
+            offset: 0,
+            scope_prefix: None,
+        });
         assert!(result.is_ok());
     }
 
@@ -643,14 +731,156 @@ mod tests {
         }
 
         // limit=2 で検索 → has_more=true
-        let (hits, has_more) = indexer.search("image", None, 2, 0).unwrap();
+        let (hits, has_more) = indexer
+            .search(&SearchParams {
+                query: "image",
+                kind: None,
+                limit: 2,
+                offset: 0,
+                scope_prefix: None,
+            })
+            .unwrap();
         assert_eq!(hits.len(), 2);
         assert!(has_more);
 
         // limit=10 で検索 → has_more=false
-        let (hits, has_more) = indexer.search("image", None, 10, 0).unwrap();
+        let (hits, has_more) = indexer
+            .search(&SearchParams {
+                query: "image",
+                kind: None,
+                limit: 10,
+                offset: 0,
+                scope_prefix: None,
+            })
+            .unwrap();
         assert_eq!(hits.len(), 3);
         assert!(!has_more);
+    }
+
+    // --- scope_prefix テスト ---
+
+    #[test]
+    fn scope_prefix付きでfts検索がプレフィックス一致のみ返す() {
+        let (indexer, _tmp) = setup_indexer();
+
+        indexer
+            .add_entry(&make_entry(
+                "mount1/photos/sunset.jpg",
+                "sunset.jpg",
+                "image",
+            ))
+            .unwrap();
+        indexer
+            .add_entry(&make_entry(
+                "mount1/videos/sunset.mp4",
+                "sunset.mp4",
+                "video",
+            ))
+            .unwrap();
+        indexer
+            .add_entry(&make_entry(
+                "mount2/photos/sunset.png",
+                "sunset.png",
+                "image",
+            ))
+            .unwrap();
+
+        // scope_prefix="mount1/photos" → mount1/photos 配下のみ
+        let (hits, _) = indexer
+            .search(&SearchParams {
+                query: "sunset",
+                kind: None,
+                limit: 10,
+                offset: 0,
+                scope_prefix: Some("mount1/photos"),
+            })
+            .unwrap();
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].relative_path, "mount1/photos/sunset.jpg");
+    }
+
+    #[test]
+    fn scope_prefix付きでlike検索がプレフィックス一致のみ返す() {
+        let (indexer, _tmp) = setup_indexer();
+
+        indexer
+            .add_entry(&make_entry("mount1/ab_test.jpg", "ab_test.jpg", "image"))
+            .unwrap();
+        indexer
+            .add_entry(&make_entry("mount2/ab_other.jpg", "ab_other.jpg", "image"))
+            .unwrap();
+
+        // "ab" は 2 文字 → LIKE フォールバック + scope_prefix
+        let (hits, _) = indexer
+            .search(&SearchParams {
+                query: "ab",
+                kind: None,
+                limit: 10,
+                offset: 0,
+                scope_prefix: Some("mount1"),
+            })
+            .unwrap();
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].relative_path, "mount1/ab_test.jpg");
+    }
+
+    #[test]
+    fn scope_prefix内のlikeワイルドカードがエスケープされる() {
+        let (indexer, _tmp) = setup_indexer();
+
+        // ディレクトリ名に % と _ を含む
+        indexer
+            .add_entry(&make_entry("mount/dir_100%/test.jpg", "test.jpg", "image"))
+            .unwrap();
+        indexer
+            .add_entry(&make_entry("mount/dir_200/test.jpg", "test.jpg", "image"))
+            .unwrap();
+
+        // scope_prefix に % を含む → エスケープされて literal match
+        let (hits, _) = indexer
+            .search(&SearchParams {
+                query: "test",
+                kind: None,
+                limit: 10,
+                offset: 0,
+                scope_prefix: Some("mount/dir_100%"),
+            })
+            .unwrap();
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].relative_path, "mount/dir_100%/test.jpg");
+    }
+
+    #[test]
+    fn scope_prefixがnoneの場合はフィルタなしで全件返す() {
+        let (indexer, _tmp) = setup_indexer();
+
+        indexer
+            .add_entry(&make_entry("mount1/photo.jpg", "photo.jpg", "image"))
+            .unwrap();
+        indexer
+            .add_entry(&make_entry("mount2/photo.jpg", "photo.jpg", "image"))
+            .unwrap();
+
+        let (hits, _) = indexer
+            .search(&SearchParams {
+                query: "photo",
+                kind: None,
+                limit: 10,
+                offset: 0,
+                scope_prefix: None,
+            })
+            .unwrap();
+        assert_eq!(hits.len(), 2);
+    }
+
+    // --- escape_like_pattern テスト ---
+
+    #[test]
+    fn likeパターンのワイルドカードがエスケープされる() {
+        use super::helpers::escape_like_pattern;
+        assert_eq!(escape_like_pattern("normal/path"), "normal/path");
+        assert_eq!(escape_like_pattern("dir_100%"), "dir\\_100\\%");
+        assert_eq!(escape_like_pattern("back\\slash"), "back\\\\slash");
     }
 
     // --- scan_directory / incremental_scan / rebuild テスト ---

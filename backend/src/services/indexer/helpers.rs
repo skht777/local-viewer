@@ -4,6 +4,7 @@
 
 use std::cell::RefCell;
 use std::collections::{BTreeMap, HashMap, HashSet};
+use std::fmt::Write as _;
 use std::path::Path;
 
 use rusqlite::{Connection, params};
@@ -18,6 +19,26 @@ use super::{IndexEntry, IndexerError, WalkCallbackArgs};
 /// FTS5 trigram トークナイザが要求する最小文字数
 const TRIGRAM_MIN_CHARS: usize = 3;
 
+// --- LIKE エスケープ ---
+
+/// LIKE パターンのワイルドカード文字をエスケープする
+///
+/// `\`, `%`, `_` をバックスラッシュでエスケープし、
+/// `LIKE ? ESCAPE '\'` と組み合わせて安全にプレフィックスマッチを行う。
+pub(super) fn escape_like_pattern(s: &str) -> String {
+    let mut result = String::with_capacity(s.len());
+    for ch in s.chars() {
+        match ch {
+            '\\' | '%' | '_' => {
+                result.push('\\');
+                result.push(ch);
+            }
+            _ => result.push(ch),
+        }
+    }
+    result
+}
+
 // --- 検索 ---
 
 /// 検索結果の 1 件
@@ -29,6 +50,9 @@ pub(crate) struct SearchHit {
 }
 
 /// FTS5 MATCH による検索
+///
+/// `scope_pattern` が指定された場合、`e.relative_path LIKE ? ESCAPE '\'` で
+/// プレフィックスマッチを追加する。
 #[allow(clippy::cast_possible_wrap, reason = "limit/offset は i64 範囲内")]
 pub(super) fn search_fts(
     conn: &Connection,
@@ -36,47 +60,52 @@ pub(super) fn search_fts(
     kind: Option<&str>,
     limit: usize,
     offset: usize,
+    scope_pattern: Option<&str>,
 ) -> Result<Vec<SearchHit>, IndexerError> {
-    let (sql, has_kind) = if kind.is_some() {
-        (
-            "SELECT e.relative_path, e.name, e.kind, e.size_bytes \
-             FROM entries_fts f \
-             JOIN entries e ON e.id = f.rowid \
-             WHERE entries_fts MATCH ?1 AND e.kind = ?2 \
-             LIMIT ?3 OFFSET ?4",
-            true,
-        )
-    } else {
-        (
-            "SELECT e.relative_path, e.name, e.kind, e.size_bytes \
-             FROM entries_fts f \
-             JOIN entries e ON e.id = f.rowid \
-             WHERE entries_fts MATCH ?1 \
-             LIMIT ?2 OFFSET ?3",
-            false,
-        )
-    };
+    // SQL を動的に構築（bind parameter のみ使用、文字列埋め込み禁止）
+    let mut sql = String::from(
+        "SELECT e.relative_path, e.name, e.kind, e.size_bytes \
+         FROM entries_fts f \
+         JOIN entries e ON e.id = f.rowid \
+         WHERE entries_fts MATCH ?1",
+    );
+    let mut param_idx = 2;
+    if kind.is_some() {
+        let _ = write!(sql, " AND e.kind = ?{param_idx}");
+        param_idx += 1;
+    }
+    if scope_pattern.is_some() {
+        let _ = write!(sql, " AND e.relative_path LIKE ?{param_idx} ESCAPE '\\'");
+        param_idx += 1;
+    }
+    let _ = write!(sql, " LIMIT ?{param_idx} OFFSET ?{}", param_idx + 1);
 
-    let mut stmt = conn.prepare(sql)?;
+    let mut stmt = conn.prepare(&sql)?;
 
-    let rows = if has_kind {
-        let kind_val = kind.unwrap_or_default();
-        stmt.query_map(
-            params![fts_query, kind_val, limit as i64, offset as i64],
-            map_search_hit,
-        )?
-    } else {
-        stmt.query_map(
-            params![fts_query, limit as i64, offset as i64],
-            map_search_hit,
-        )?
-    };
+    // 動的パラメータバインド
+    let mut bind_values: Vec<Box<dyn rusqlite::types::ToSql>> =
+        vec![Box::new(fts_query.to_string())];
+    if let Some(k) = kind {
+        bind_values.push(Box::new(k.to_string()));
+    }
+    if let Some(sp) = scope_pattern {
+        bind_values.push(Box::new(sp.to_string()));
+    }
+    bind_values.push(Box::new(limit as i64));
+    bind_values.push(Box::new(offset as i64));
+
+    let bind_refs: Vec<&dyn rusqlite::types::ToSql> =
+        bind_values.iter().map(AsRef::as_ref).collect();
+    let rows = stmt.query_map(bind_refs.as_slice(), map_search_hit)?;
 
     rows.collect::<Result<Vec<_>, _>>()
         .map_err(IndexerError::from)
 }
 
 /// LIKE フォールバック検索 (2 文字クエリ等)
+///
+/// `scope_pattern` が指定された場合、`relative_path LIKE ? ESCAPE '\'` で
+/// プレフィックスマッチを追加する。
 #[allow(clippy::cast_possible_wrap, reason = "limit/offset は i64 範囲内")]
 pub(super) fn search_like(
     conn: &Connection,
@@ -84,41 +113,41 @@ pub(super) fn search_like(
     kind: Option<&str>,
     limit: usize,
     offset: usize,
+    scope_pattern: Option<&str>,
 ) -> Result<Vec<SearchHit>, IndexerError> {
     let pattern = format!("%{query}%");
 
-    let (sql, has_kind) = if kind.is_some() {
-        (
-            "SELECT relative_path, name, kind, size_bytes \
-             FROM entries \
-             WHERE (name LIKE ?1 OR relative_path LIKE ?1) AND kind = ?2 \
-             LIMIT ?3 OFFSET ?4",
-            true,
-        )
-    } else {
-        (
-            "SELECT relative_path, name, kind, size_bytes \
-             FROM entries \
-             WHERE name LIKE ?1 OR relative_path LIKE ?1 \
-             LIMIT ?2 OFFSET ?3",
-            false,
-        )
-    };
+    let mut sql = String::from(
+        "SELECT relative_path, name, kind, size_bytes \
+         FROM entries \
+         WHERE (name LIKE ?1 OR relative_path LIKE ?1)",
+    );
+    let mut param_idx = 2;
+    if kind.is_some() {
+        let _ = write!(sql, " AND kind = ?{param_idx}");
+        param_idx += 1;
+    }
+    if scope_pattern.is_some() {
+        let _ = write!(sql, " AND relative_path LIKE ?{param_idx} ESCAPE '\\'");
+        param_idx += 1;
+    }
+    let _ = write!(sql, " LIMIT ?{param_idx} OFFSET ?{}", param_idx + 1);
 
-    let mut stmt = conn.prepare(sql)?;
+    let mut stmt = conn.prepare(&sql)?;
 
-    let rows = if has_kind {
-        let kind_val = kind.unwrap_or_default();
-        stmt.query_map(
-            params![pattern, kind_val, limit as i64, offset as i64],
-            map_search_hit,
-        )?
-    } else {
-        stmt.query_map(
-            params![pattern, limit as i64, offset as i64],
-            map_search_hit,
-        )?
-    };
+    let mut bind_values: Vec<Box<dyn rusqlite::types::ToSql>> = vec![Box::new(pattern)];
+    if let Some(k) = kind {
+        bind_values.push(Box::new(k.to_string()));
+    }
+    if let Some(sp) = scope_pattern {
+        bind_values.push(Box::new(sp.to_string()));
+    }
+    bind_values.push(Box::new(limit as i64));
+    bind_values.push(Box::new(offset as i64));
+
+    let bind_refs: Vec<&dyn rusqlite::types::ToSql> =
+        bind_values.iter().map(AsRef::as_ref).collect();
+    let rows = stmt.query_map(bind_refs.as_slice(), map_search_hit)?;
 
     rows.collect::<Result<Vec<_>, _>>()
         .map_err(IndexerError::from)
