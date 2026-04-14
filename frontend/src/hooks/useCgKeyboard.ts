@@ -10,6 +10,7 @@ interface CgKeyboardCallbacks {
   goFirst: () => void;
   goLast: () => void;
   onEscape: () => void;
+  onClose: () => void;
   toggleFullscreen: () => void;
   setFitWidth: () => void;
   setFitHeight: () => void;
@@ -46,8 +47,11 @@ export function useCgKeyboard(callbacks: CgKeyboardCallbacks): void {
   // フルスクリーン
   useHotkeys("f", () => callbacks.toggleFullscreen());
 
-  // Escape（優先順位は呼び出し元で階層化済み）
+  // Escape（ダイアログ閉じのみ）
   useHotkeys("escape", () => callbacks.onEscape());
+
+  // ビューワーを閉じる
+  useHotkeys("b", () => callbacks.onClose());
 
   // セット間ジャンプ
   useHotkeys("pagedown, x", () => callbacks.goNextSet?.(), { preventDefault: true });

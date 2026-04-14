@@ -53,7 +53,7 @@ export function PdfCgViewer({
   const spreadMode = useViewerStore((s) => s.spreadMode);
   const setFitMode = useViewerStore((s) => s.setFitMode);
   const cycleSpreadMode = useViewerStore((s) => s.cycleSpreadMode);
-  const { isFullscreen, toggleFullscreen } = useFullscreen();
+  const { toggleFullscreen } = useFullscreen();
 
   // PDF ドキュメント読み込み
   const { document, pageCount, isLoading, error } = usePdfDocument(`/api/file/${pdfNodeId}`);
@@ -113,7 +113,7 @@ export function PdfCgViewer({
   });
   useSiblingPrefetch({ currentNodeId: pdfNodeId, parentNodeId, ancestors, sort });
 
-  // Escape 優先順位: (1) ヘルプ閉じ → (2) プロンプト → (3) フルスクリーン → (4) ビューワー閉じ
+  // Escape: ダイアログ閉じのみ（ビューワー閉じは B キー）
   const handleEscape = useCallback(() => {
     if (isHelpOpen) {
       setIsHelpOpen(false);
@@ -121,14 +121,8 @@ export function PdfCgViewer({
     }
     if (setJump.prompt) {
       setJump.dismissPrompt();
-      return;
     }
-    if (isFullscreen) {
-      window.document.exitFullscreen?.();
-      return;
-    }
-    onClose();
-  }, [isHelpOpen, setJump, isFullscreen, onClose]);
+  }, [isHelpOpen, setJump]);
 
   // キーボードショートカット (spread 有効)
   useCgKeyboard({
@@ -137,6 +131,7 @@ export function PdfCgViewer({
     goFirst: nav.goFirst,
     goLast: nav.goLast,
     onEscape: handleEscape,
+    onClose,
     toggleFullscreen,
     setFitWidth: () => setFitMode("width"),
     setFitHeight: () => setFitMode("height"),

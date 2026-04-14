@@ -29,7 +29,8 @@ export const CG_SHORTCUTS: ShortcutEntry[] = [
   { key: "Z / PgUp", description: "前のセット" },
   { key: "Shift+X", description: "次のセット（親）" },
   { key: "Shift+Z", description: "前のセット（親）" },
-  { key: "Esc", description: "閉じる" },
+  { key: "B", description: "閉じる" },
+  { key: "Esc", description: "ダイアログを閉じる" },
   { key: "?", description: "ヘルプ表示/非表示" },
 ];
 
@@ -62,7 +63,8 @@ export const MANGA_SHORTCUTS: ShortcutEntry[] = [
   { key: "Z / PgUp", description: "前のセット" },
   { key: "Shift+X", description: "次のセット（親）" },
   { key: "Shift+Z", description: "前のセット（親）" },
-  { key: "Esc", description: "閉じる" },
+  { key: "B", description: "閉じる" },
+  { key: "Esc", description: "ダイアログを閉じる" },
   { key: "?", description: "ヘルプ表示/非表示" },
 ];
 

@@ -55,7 +55,7 @@ export function MangaViewer({
   const zoomOut = useViewerStore((s) => s.zoomOut);
   const scrollSpeed = useViewerStore((s) => s.scrollSpeed);
   const setScrollSpeed = useViewerStore((s) => s.setScrollSpeed);
-  const { isFullscreen, toggleFullscreen } = useFullscreen();
+  const { toggleFullscreen } = useFullscreen();
 
   // スクロールコンテナ
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -134,7 +134,7 @@ export function MangaViewer({
   });
   useSiblingPrefetch({ currentNodeId, parentNodeId, ancestors, sort });
 
-  // Escape 優先順位: (1) ヘルプ閉じ → (2) プロンプト閉じ → (3) フルスクリーン解除 → (4) ビューワー閉じ
+  // Escape: ダイアログ閉じのみ（ビューワー閉じは B キー）
   const handleEscape = useCallback(() => {
     if (isHelpOpen) {
       setIsHelpOpen(false);
@@ -142,14 +142,8 @@ export function MangaViewer({
     }
     if (setJump.prompt) {
       setJump.dismissPrompt();
-      return;
     }
-    if (isFullscreen) {
-      document.exitFullscreen();
-      return;
-    }
-    onClose();
-  }, [isHelpOpen, setJump, isFullscreen, onClose]);
+  }, [isHelpOpen, setJump]);
 
   // キーボードショートカット
   useMangaKeyboard({
@@ -158,6 +152,7 @@ export function MangaViewer({
     scrollToTop: mangaScroll.scrollToTop,
     scrollToBottom: mangaScroll.scrollToBottom,
     onEscape: handleEscape,
+    onClose,
     toggleFullscreen,
     goNextSet: setJump.prompt ? undefined : setJump.goNextSet,
     goPrevSet: setJump.prompt ? undefined : setJump.goPrevSet,

@@ -53,7 +53,7 @@ export function PdfMangaViewer({
   const zoomOut = useViewerStore((s) => s.zoomOut);
   const scrollSpeed = useViewerStore((s) => s.scrollSpeed);
   const setScrollSpeed = useViewerStore((s) => s.setScrollSpeed);
-  const { isFullscreen, toggleFullscreen } = useFullscreen();
+  const { toggleFullscreen } = useFullscreen();
 
   // PDF ドキュメント読み込み
   const { document, pageCount, isLoading, error } = usePdfDocument(`/api/file/${pdfNodeId}`);
@@ -150,7 +150,7 @@ export function PdfMangaViewer({
   });
   useSiblingPrefetch({ currentNodeId: pdfNodeId, parentNodeId, ancestors, sort });
 
-  // Escape 優先順位: (1) ヘルプ閉じ → (2) プロンプト → (3) フルスクリーン → (4) ビューワー閉じ
+  // Escape: ダイアログ閉じのみ（ビューワー閉じは B キー）
   const handleEscape = useCallback(() => {
     if (isHelpOpen) {
       setIsHelpOpen(false);
@@ -158,14 +158,8 @@ export function PdfMangaViewer({
     }
     if (setJump.prompt) {
       setJump.dismissPrompt();
-      return;
     }
-    if (isFullscreen) {
-      globalThis.document.exitFullscreen();
-      return;
-    }
-    onClose();
-  }, [isHelpOpen, setJump, isFullscreen, onClose]);
+  }, [isHelpOpen, setJump]);
 
   // キーボードショートカット
   useMangaKeyboard({
@@ -174,6 +168,7 @@ export function PdfMangaViewer({
     scrollToTop: mangaScroll.scrollToTop,
     scrollToBottom: mangaScroll.scrollToBottom,
     onEscape: handleEscape,
+    onClose,
     toggleFullscreen,
     goNextSet: setJump.prompt ? undefined : setJump.goNextSet,
     goPrevSet: setJump.prompt ? undefined : setJump.goPrevSet,

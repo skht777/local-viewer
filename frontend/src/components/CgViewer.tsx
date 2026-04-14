@@ -71,7 +71,7 @@ export function CgViewer({
   const spreadMode = useViewerStore((s) => s.spreadMode);
   const setFitMode = useViewerStore((s) => s.setFitMode);
   const cycleSpreadMode = useViewerStore((s) => s.cycleSpreadMode);
-  const { isFullscreen, toggleFullscreen } = useFullscreen();
+  const { toggleFullscreen } = useFullscreen();
   const nav = useCgNavigation(images.length, currentIndex, onIndexChange, spreadMode);
 
   // 隣接画像プリフェッチ (見開き時は range を拡大)
@@ -112,7 +112,7 @@ export function CgViewer({
   });
   useSiblingPrefetch({ currentNodeId, parentNodeId, ancestors, sort });
 
-  // Escape 優先順位: (1) ヘルプ閉じ → (2) プロンプト閉じ → (3) フルスクリーン解除 → (4) ビューワー閉じ
+  // Escape: ダイアログ閉じのみ（ビューワー閉じは B キー）
   const handleEscape = useCallback(() => {
     if (isHelpOpen) {
       setIsHelpOpen(false);
@@ -120,14 +120,8 @@ export function CgViewer({
     }
     if (setJump.prompt) {
       setJump.dismissPrompt();
-      return;
     }
-    if (isFullscreen) {
-      document.exitFullscreen();
-      return;
-    }
-    onClose();
-  }, [isHelpOpen, setJump, isFullscreen, onClose]);
+  }, [isHelpOpen, setJump]);
 
   // キーボードショートカット
   useCgKeyboard({
@@ -136,6 +130,7 @@ export function CgViewer({
     goFirst: nav.goFirst,
     goLast: nav.goLast,
     onEscape: handleEscape,
+    onClose,
     toggleFullscreen,
     setFitWidth: () => setFitMode("width"),
     setFitHeight: () => setFitMode("height"),
