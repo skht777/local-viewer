@@ -13,6 +13,7 @@ import { browseInfiniteOptions, browseNodeOptions } from "./api/browseQueries";
 import { findNextSet, findPrevSet, resolveTopLevelDir, shouldConfirm } from "./useSetNavigation";
 import type { SortOrder, ViewerMode } from "./useViewerParams";
 import type { AncestorEntry, BrowseEntry, BrowseResponse, SiblingResponse } from "../types/api";
+import { useViewerStore } from "../stores/viewerStore";
 import { resolveFirstViewable } from "../utils/resolveFirstViewable";
 import { sortEntries } from "../utils/sortEntries";
 
@@ -62,6 +63,8 @@ export function useSetJump({
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [prompt, setPrompt] = useState<Prompt | null>(null);
+  const startViewerTransition = useViewerStore((s) => s.startViewerTransition);
+  const viewerTransitionId = useViewerStore((s) => s.viewerTransitionId);
 
   const dismissPrompt = useCallback(() => setPrompt(null), []);
 
@@ -79,12 +82,14 @@ export function useSetJump({
   // browse ノードにナビゲートする前にデータをプリフェッチ
   // BrowsePage の useInfiniteQuery キャッシュに直接投入する
   // キャッシュ済みなら即座に返る。未キャッシュでも navigate 前に取得完了する
+  // replace モード: セットジャンプは履歴を汚染しない
   const prefetchAndNavigate = useCallback(
     async (nodeId: string, search: string) => {
+      startViewerTransition();
       await queryClient.prefetchInfiniteQuery(browseInfiniteOptions(nodeId, sort));
-      navigate(`/browse/${nodeId}${search}`);
+      navigate(`/browse/${nodeId}${search}`, { replace: true });
     },
-    [queryClient, navigate, sort],
+    [queryClient, navigate, sort, startViewerTransition],
   );
 
   // 遷移先の kind に応じた URL で遷移
@@ -120,7 +125,11 @@ export function useSetJump({
           );
         } else if (resolved.entry.kind === "image") {
           // parentNodeId は resolveFirstViewable 内でキャッシュ済み
-          navigate(`/browse/${resolved.parentNodeId}${buildSearch({ tab: "images", index: "0" })}`);
+          startViewerTransition();
+          navigate(
+            `/browse/${resolved.parentNodeId}${buildSearch({ tab: "images", index: "0" })}`,
+            { replace: true },
+          );
         } else {
           // アーカイブ: プリフェッチしてから進入
           await prefetchAndNavigate(
@@ -130,10 +139,10 @@ export function useSetJump({
         }
       } catch {
         // エラー時も index なしで遷移 → ブラウザーモードでコンテンツを確認
-        navigate(`/browse/${target.node_id}${buildSearch({ tab: "images" })}`);
+        navigate(`/browse/${target.node_id}${buildSearch({ tab: "images" })}`, { replace: true });
       }
     },
-    [navigate, prefetchAndNavigate, buildSearch, sort, queryClient],
+    [navigate, prefetchAndNavigate, buildSearch, sort, queryClient, startViewerTransition],
   );
 
   // 再帰的に親を辿って兄弟セットを探索
@@ -218,8 +227,9 @@ export function useSetJump({
     [currentNodeId, parentNodeId, ancestors, sort, queryClient],
   );
 
-  // PageDown/X: 条件付き確認で次のセットへ
+  // PageDown/X: 条件付き確認で次のセットへ（トランジション中は無効化）
   const goNextSet = useCallback(async () => {
+    if (viewerTransitionId > 0) return;
     const result = await findSiblingRecursive("next");
     if (!result) {
       onBoundary?.("最後のセットです");
@@ -245,10 +255,11 @@ export function useSetJump({
     } else {
       navigateToTarget(result.target, result.searchDirData.current_node_id);
     }
-  }, [findSiblingRecursive, navigateToTarget, onBoundary]);
+  }, [findSiblingRecursive, navigateToTarget, onBoundary, viewerTransitionId]);
 
-  // PageUp/Z: 条件付き確認で前のセットへ
+  // PageUp/Z: 条件付き確認で前のセットへ（トランジション中は無効化）
   const goPrevSet = useCallback(async () => {
+    if (viewerTransitionId > 0) return;
     const result = await findSiblingRecursive("prev");
     if (!result) {
       onBoundary?.("最初のセットです");
@@ -274,19 +285,21 @@ export function useSetJump({
     } else {
       navigateToTarget(result.target, result.searchDirData.current_node_id);
     }
-  }, [findSiblingRecursive, navigateToTarget, onBoundary]);
+  }, [findSiblingRecursive, navigateToTarget, onBoundary, viewerTransitionId]);
 
-  // Shift+X: 確認なしで次のセットへ
+  // Shift+X: 確認なしで次のセットへ（トランジション中は無効化）
   const goNextSetParent = useCallback(async () => {
+    if (viewerTransitionId > 0) return;
     const result = await findSiblingRecursive("next");
     if (result) navigateToTarget(result.target, result.searchDirData.current_node_id);
-  }, [findSiblingRecursive, navigateToTarget]);
+  }, [findSiblingRecursive, navigateToTarget, viewerTransitionId]);
 
-  // Shift+Z: 確認なしで前のセットへ
+  // Shift+Z: 確認なしで前のセットへ（トランジション中は無効化）
   const goPrevSetParent = useCallback(async () => {
+    if (viewerTransitionId > 0) return;
     const result = await findSiblingRecursive("prev");
     if (result) navigateToTarget(result.target, result.searchDirData.current_node_id);
-  }, [findSiblingRecursive, navigateToTarget]);
+  }, [findSiblingRecursive, navigateToTarget, viewerTransitionId]);
 
   return { goNextSet, goPrevSet, goNextSetParent, goPrevSetParent, prompt, dismissPrompt };
 }

@@ -35,6 +35,8 @@ export default function BrowsePage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const isSidebarOpen = useViewerStore((s) => s.isSidebarOpen);
+  const viewerTransitionId = useViewerStore((s) => s.viewerTransitionId);
+  const endViewerTransition = useViewerStore((s) => s.endViewerTransition);
   const {
     params,
     setTab,
@@ -79,6 +81,13 @@ export default function BrowsePage() {
       entries: allEntries,
     };
   }, [infiniteData]);
+
+  // セットジャンプのトランジション完了: データ到着でクリア
+  useEffect(() => {
+    if (viewerTransitionId > 0 && data && !isLoading) {
+      endViewerTransition(viewerTransitionId);
+    }
+  }, [viewerTransitionId, data, isLoading, endViewerTransition]);
 
   // マウントポイント一覧 (ツリー用)
   const { data: mountData } = useQuery(mountListOptions());
@@ -220,6 +229,18 @@ export default function BrowsePage() {
       return <PdfMangaViewer {...commonProps} />;
     }
     return <PdfCgViewer {...commonProps} />;
+  }
+
+  // セットジャンプのトランジション中: ローディングオーバーレイを表示
+  if (viewerTransitionId > 0) {
+    return (
+      <div
+        data-testid="viewer-transition"
+        className="fixed inset-0 z-50 flex items-center justify-center bg-black"
+      >
+        <div className="text-gray-400">読み込み中...</div>
+      </div>
+    );
   }
 
   // 画像ビューワー表示中

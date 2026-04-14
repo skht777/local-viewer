@@ -9,6 +9,12 @@ import { persist } from "zustand/middleware";
 export type FitMode = "width" | "height" | "original";
 export type SpreadMode = "single" | "spread" | "spread-offset";
 
+// ビューワーを開いた時の起点情報（閉じる時に戻る先）
+export interface ViewerOrigin {
+  nodeId: string;
+  search: string;
+}
+
 const SPREAD_CYCLE: SpreadMode[] = ["single", "spread", "spread-offset"];
 
 interface ViewerState {
@@ -38,6 +44,16 @@ interface ViewerState {
   // マンガモード: スクロール速度倍率（永続化）
   scrollSpeed: number;
   setScrollSpeed: (speed: number) => void;
+
+  // ビューワー起点（永続化しない）: セットジャンプ後に閉じた時の復帰先
+  viewerOrigin: ViewerOrigin | null;
+  setViewerOrigin: (origin: ViewerOrigin | null) => void;
+
+  // セットジャンプ中のトランジション ID（永続化しない）
+  // 0: トランジションなし、>0: トランジション中
+  viewerTransitionId: number;
+  startViewerTransition: () => number;
+  endViewerTransition: (id: number) => void;
 }
 
 export const useViewerStore = create<ViewerState>()(
@@ -85,6 +101,28 @@ export const useViewerStore = create<ViewerState>()(
       scrollSpeed: 1.0,
 
       setScrollSpeed: (speed) => set({ scrollSpeed: Math.max(0.5, Math.min(3.0, speed)) }),
+
+      viewerOrigin: null,
+
+      setViewerOrigin: (origin) => set({ viewerOrigin: origin }),
+
+      viewerTransitionId: 0,
+
+      startViewerTransition: () => {
+        let newId = 0;
+        set((state) => {
+          newId = state.viewerTransitionId + 1;
+          return { viewerTransitionId: newId };
+        });
+        return newId;
+      },
+
+      endViewerTransition: (id) =>
+        set((state) => {
+          // stale な遷移完了は無視
+          if (state.viewerTransitionId !== id) return state;
+          return { viewerTransitionId: 0 };
+        }),
     }),
     {
       name: "viewer-store",

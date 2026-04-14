@@ -6,7 +6,8 @@
 // - index/pdf/page は viewer スコープ: ビューワー close で削除
 // - pdf と index は排他: openPdfViewer で index/tab 削除、openViewer で pdf/page 削除
 
-import { useSearchParams } from "react-router-dom";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { useViewerStore } from "../stores/viewerStore";
 
 export type ViewerTab = "filesets" | "images" | "videos";
 export type ViewerMode = "cg" | "manga";
@@ -40,7 +41,11 @@ interface UseViewerParamsReturn {
 }
 
 export function useViewerParams(): UseViewerParamsReturn {
+  const { nodeId } = useParams<{ nodeId: string }>();
+  const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
+  const setViewerOrigin = useViewerStore((s) => s.setViewerOrigin);
+  const viewerOrigin = useViewerStore((s) => s.viewerOrigin);
 
   const tab = (searchParams.get("tab") ?? "filesets") as ViewerTab;
   const hasIndex = searchParams.has("index");
@@ -113,53 +118,75 @@ export function useViewerParams(): UseViewerParamsReturn {
 
   // 画像ビューワーを開く: tab=images + index を設定、pdf/page を削除
   // mode は browse スコープで管理済みなのでここでは操作しない
-  // push モード: ブラウザ Back でビューワー状態に復帰可能
+  // replace モード: ブラウザ Back で前のページに戻る
   const openViewer = (newIndex: number) => {
-    setSearchParams((prev) => {
-      const next = new URLSearchParams(prev);
-      next.set("tab", "images");
-      next.set("index", String(newIndex));
-      // PDF パラメータを排他的に削除
-      next.delete("pdf");
-      next.delete("page");
-      return next;
-    });
+    // 起点情報を保存（閉じる時に戻る先）
+    if (nodeId) {
+      setViewerOrigin({ nodeId, search: buildBrowseSearch() });
+    }
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        next.set("tab", "images");
+        next.set("index", String(newIndex));
+        next.delete("pdf");
+        next.delete("page");
+        return next;
+      },
+      { replace: true },
+    );
   };
 
-  // 画像ビューワーを閉じる: viewer スコープ (index) のみ削除
-  // push モード: ブラウザ Back でビューワー状態に復帰可能
+  // 画像ビューワーを閉じる: 起点に戻るか、履歴を1つ戻る
   const closeViewer = () => {
-    setSearchParams((prev) => {
-      const next = new URLSearchParams(prev);
-      next.delete("index");
-      return next;
-    });
+    if (viewerOrigin) {
+      const origin = viewerOrigin;
+      setViewerOrigin(null);
+      navigate(`/browse/${origin.nodeId}${origin.search}`, { replace: true });
+    } else {
+      // deep link 等で origin がない場合: 現在ディレクトリに留まる
+      setSearchParams((prev) => {
+        const next = new URLSearchParams(prev);
+        next.delete("index");
+        return next;
+      });
+    }
   };
 
   // PDF ビューワーを開く: pdf/page を設定、index/tab を削除
   // mode は browse スコープで管理済みなのでここでは操作しない
-  // push モード: ブラウザ Back でビューワー状態に復帰可能
-  const openPdfViewer = (nodeId: string) => {
-    setSearchParams((prev) => {
-      const next = new URLSearchParams(prev);
-      next.set("pdf", nodeId);
-      next.set("page", "1");
-      // 画像ビューワーパラメータを排他的に削除
-      next.delete("index");
-      next.delete("tab");
-      return next;
-    });
+  // replace モード: ブラウザ Back で前のページに戻る
+  const openPdfViewer = (pdfNodeId: string) => {
+    if (nodeId) {
+      setViewerOrigin({ nodeId, search: buildBrowseSearch() });
+    }
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        next.set("pdf", pdfNodeId);
+        next.set("page", "1");
+        next.delete("index");
+        next.delete("tab");
+        return next;
+      },
+      { replace: true },
+    );
   };
 
-  // PDF ビューワーを閉じる: viewer スコープ (pdf/page) のみ削除
-  // push モード: ブラウザ Back でビューワー状態に復帰可能
+  // PDF ビューワーを閉じる: 起点に戻るか、現在ディレクトリに留まる
   const closePdfViewer = () => {
-    setSearchParams((prev) => {
-      const next = new URLSearchParams(prev);
-      next.delete("pdf");
-      next.delete("page");
-      return next;
-    });
+    if (viewerOrigin) {
+      const origin = viewerOrigin;
+      setViewerOrigin(null);
+      navigate(`/browse/${origin.nodeId}${origin.search}`, { replace: true });
+    } else {
+      setSearchParams((prev) => {
+        const next = new URLSearchParams(prev);
+        next.delete("pdf");
+        next.delete("page");
+        return next;
+      });
+    }
   };
 
   // PDF ページ番号を更新
