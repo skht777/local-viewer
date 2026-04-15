@@ -5,10 +5,11 @@
 // - PDF クリック → openPdfViewer で PDF ビューワーを開く
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { browseInfiniteOptions } from "../hooks/api/browseQueries";
 import { mountListOptions } from "../hooks/api/mountQueries";
+import { useOpenViewerFromEntry } from "../hooks/useOpenViewerFromEntry";
 import { useViewerParams, type ViewerTab } from "../hooks/useViewerParams";
 import { useViewerStore } from "../stores/viewerStore";
 import { BrowseHeader } from "../components/BrowseHeader";
@@ -20,7 +21,6 @@ import { PdfCgViewer } from "../components/PdfCgViewer";
 import { PdfMangaViewer } from "../components/PdfMangaViewer";
 import { VideoFeed } from "../components/VideoFeed";
 import { ViewerTabs } from "../components/ViewerTabs";
-import { resolveFirstViewable } from "../utils/resolveFirstViewable";
 
 // ソート方向反転マップ
 const SORT_FLIP = {
@@ -33,7 +33,6 @@ const SORT_FLIP = {
 export default function BrowsePage() {
   const { nodeId } = useParams<{ nodeId: string }>();
   const navigate = useNavigate();
-  const queryClient = useQueryClient();
   const isSidebarOpen = useViewerStore((s) => s.isSidebarOpen);
   const viewerTransitionId = useViewerStore((s) => s.viewerTransitionId);
   const endViewerTransition = useViewerStore((s) => s.endViewerTransition);
@@ -52,6 +51,12 @@ export default function BrowsePage() {
     setPdfPage,
     buildBrowseSearch,
   } = useViewerParams();
+
+  const openViewerFromEntry = useOpenViewerFromEntry({
+    mode: params.mode,
+    sort: params.sort,
+    buildBrowseSearch,
+  });
 
   // 検索結果からの遷移で select パラメータが指定されている場合のハイライト用
   const [searchParams] = useSearchParams();
@@ -320,42 +325,7 @@ export default function BrowsePage() {
             }}
             onImageClick={openViewer}
             onPdfClick={openPdfViewer}
-            onOpenViewer={async (id) => {
-              // ディレクトリ内を再帰探索し、最初の閲覧対象を見つけてビューワーを開く
-              try {
-                const target = await resolveFirstViewable(id, queryClient, params.sort);
-                if (!target) {
-                  navigate(`/browse/${id}${buildBrowseSearch()}`);
-                  return;
-                }
-
-                if (target.entry.kind === "pdf") {
-                  // PDF: 親ディレクトリでPDFビューワーを開く (browse スコープを保持)
-                  const sp = new URLSearchParams();
-                  sp.set("pdf", target.entry.node_id);
-                  sp.set("page", "1");
-                  if (params.mode === "manga") sp.set("mode", "manga");
-                  if (params.sort !== "name-asc") sp.set("sort", params.sort);
-                  navigate(`/browse/${target.parentNodeId}?${sp}`);
-                } else if (target.entry.kind === "image") {
-                  // 画像: 親ディレクトリでビューワーを開く
-                  navigate(
-                    `/browse/${target.parentNodeId}${buildBrowseSearch({ tab: "images", index: 0 })}`,
-                  );
-                } else {
-                  // アーカイブ: BrowsePage の infinite キャッシュにプリフェッチしてから進入
-                  await queryClient.prefetchInfiniteQuery(
-                    browseInfiniteOptions(target.entry.node_id, params.sort),
-                  );
-                  navigate(
-                    `/browse/${target.entry.node_id}${buildBrowseSearch({ tab: "images", index: 0 })}`,
-                  );
-                }
-              } catch {
-                // エラー時は進入にフォールバック
-                navigate(`/browse/${id}${buildBrowseSearch()}`);
-              }
-            }}
+            onOpenViewer={openViewerFromEntry}
             onGoParent={handleGoParent}
             onTabChange={setTab}
             onFocusTree={handleFocusTree}
