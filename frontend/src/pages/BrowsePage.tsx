@@ -53,6 +53,7 @@ export default function BrowsePage() {
   } = useViewerParams();
 
   const openViewerFromEntry = useOpenViewerFromEntry({
+    nodeId,
     mode: params.mode,
     sort: params.sort,
     buildBrowseSearch,
