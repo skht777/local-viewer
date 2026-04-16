@@ -8,6 +8,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { browseInfiniteOptions } from "../hooks/api/browseQueries";
+import { compareEntryName } from "../utils/sortEntries";
 import { mountListOptions } from "../hooks/api/mountQueries";
 import { useOpenViewerFromEntry } from "../hooks/useOpenViewerFromEntry";
 import { useViewerParams, type ViewerTab } from "../hooks/useViewerParams";
@@ -148,10 +149,31 @@ export default function BrowsePage() {
     [data?.ancestors],
   );
 
-  // 現在のディレクトリ内の画像エントリのみ（CgViewer の表示範囲）
+  // 現在のディレクトリ内の画像エントリ（ブラウズソート順）
   const images = useMemo(
     () => (data?.entries ?? []).filter((e) => e.kind === "image"),
     [data?.entries],
+  );
+
+  // ビューワー用: ブラウズのソート順に関わらず名前昇順で表示
+  const viewerImages = useMemo(() => [...images].sort(compareEntryName), [images]);
+
+  // ブラウズ順インデックス → ビューワー順インデックスの変換マップ
+  const viewerIndexMap = useMemo(() => {
+    const map = new Map<string, number>();
+    viewerImages.forEach((img, idx) => map.set(img.node_id, idx));
+    return map;
+  }, [viewerImages]);
+
+  // FileBrowser からのブラウズ順インデックスをビューワー順に変換して開く
+  const openViewerNameSorted = useCallback(
+    (browseIndex: number) => {
+      const img = images[browseIndex];
+      if (!img) return;
+      const viewerIdx = viewerIndexMap.get(img.node_id) ?? 0;
+      openViewer(viewerIdx);
+    },
+    [images, viewerIndexMap, openViewer],
   );
 
   // 動画エントリ（VideoFeed の表示対象）
@@ -249,14 +271,14 @@ export default function BrowsePage() {
     );
   }
 
-  // 画像ビューワー表示中
-  if (isViewerOpen && images.length > 0) {
-    const safeIndex = Math.max(0, Math.min(params.index, images.length - 1));
+  // 画像ビューワー表示中（viewerImages は常に名前昇順）
+  if (isViewerOpen && viewerImages.length > 0) {
+    const safeIndex = Math.max(0, Math.min(params.index, viewerImages.length - 1));
 
     if (params.mode === "manga") {
       return (
         <MangaViewer
-          images={images}
+          images={viewerImages}
           currentIndex={safeIndex}
           setName={data?.current_name ?? ""}
           parentNodeId={data?.parent_node_id ?? null}
@@ -272,7 +294,7 @@ export default function BrowsePage() {
 
     return (
       <CgViewer
-        images={images}
+        images={viewerImages}
         currentIndex={safeIndex}
         setName={data?.current_name ?? ""}
         parentNodeId={data?.parent_node_id ?? null}
@@ -324,7 +346,7 @@ export default function BrowsePage() {
             onNavigate={(id, options) => {
               navigate(`/browse/${id}${buildBrowseSearch({ tab: options?.tab })}`);
             }}
-            onImageClick={openViewer}
+            onImageClick={openViewerNameSorted}
             onPdfClick={openPdfViewer}
             onOpenViewer={openViewerFromEntry}
             onGoParent={handleGoParent}
