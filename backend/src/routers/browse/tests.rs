@@ -69,6 +69,7 @@ fn app(state: Arc<AppState>) -> Router {
         .route("/api/browse/{node_id}", get(browse_directory))
         .route("/api/browse/{node_id}/first-viewable", get(first_viewable))
         .route("/api/browse/{node_id}/sibling", get(find_sibling))
+        .route("/api/browse/{node_id}/siblings", get(find_siblings))
         .with_state(state)
 }
 
@@ -510,6 +511,95 @@ async fn siblingで存在しないcurrentはnull() {
 
     assert_eq!(status, StatusCode::OK);
     assert!(json["entry"].is_null());
+}
+
+// --- find_siblings (combined prev+next) テスト ---
+
+#[tokio::test]
+async fn siblingsでprevとnextが同時に返る() {
+    let dir = TempDir::new().unwrap();
+    let root = fs::canonicalize(dir.path()).unwrap();
+    fs::create_dir_all(root.join("set_a")).unwrap();
+    fs::create_dir_all(root.join("set_b")).unwrap();
+    fs::create_dir_all(root.join("set_c")).unwrap();
+
+    let state = test_state(&root, HashMap::new());
+    let root_id = register_node_id(&state, &root);
+    let set_b_id = register_node_id(&state, &root.join("set_b"));
+
+    let (status, json) = get_json(
+        app(state),
+        &format!("/api/browse/{root_id}/siblings?current={set_b_id}"),
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(json["prev"]["name"], "set_a");
+    assert_eq!(json["next"]["name"], "set_c");
+}
+
+#[tokio::test]
+async fn siblingsで先頭ではprevがnull() {
+    let dir = TempDir::new().unwrap();
+    let root = fs::canonicalize(dir.path()).unwrap();
+    fs::create_dir_all(root.join("set_a")).unwrap();
+    fs::create_dir_all(root.join("set_b")).unwrap();
+
+    let state = test_state(&root, HashMap::new());
+    let root_id = register_node_id(&state, &root);
+    let set_a_id = register_node_id(&state, &root.join("set_a"));
+
+    let (status, json) = get_json(
+        app(state),
+        &format!("/api/browse/{root_id}/siblings?current={set_a_id}"),
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::OK);
+    assert!(json["prev"].is_null());
+    assert_eq!(json["next"]["name"], "set_b");
+}
+
+#[tokio::test]
+async fn siblingsで末尾ではnextがnull() {
+    let dir = TempDir::new().unwrap();
+    let root = fs::canonicalize(dir.path()).unwrap();
+    fs::create_dir_all(root.join("set_a")).unwrap();
+    fs::create_dir_all(root.join("set_b")).unwrap();
+
+    let state = test_state(&root, HashMap::new());
+    let root_id = register_node_id(&state, &root);
+    let set_b_id = register_node_id(&state, &root.join("set_b"));
+
+    let (status, json) = get_json(
+        app(state),
+        &format!("/api/browse/{root_id}/siblings?current={set_b_id}"),
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(json["prev"]["name"], "set_a");
+    assert!(json["next"].is_null());
+}
+
+#[tokio::test]
+async fn siblingsで存在しないcurrentは両方null() {
+    let dir = TempDir::new().unwrap();
+    let root = fs::canonicalize(dir.path()).unwrap();
+    fs::create_dir_all(root.join("set_a")).unwrap();
+
+    let state = test_state(&root, HashMap::new());
+    let root_id = register_node_id(&state, &root);
+
+    let (status, json) = get_json(
+        app(state),
+        &format!("/api/browse/{root_id}/siblings?current=nonexistent"),
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::OK);
+    assert!(json["prev"].is_null());
+    assert!(json["next"].is_null());
 }
 
 // --- compute_etag テスト ---
