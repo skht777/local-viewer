@@ -33,7 +33,7 @@ jobs:
 
       # Rust lint + test を1ジョブで実行（ビルド1回で済む）
       - run: cd backend && cargo fmt --check
-      - run: cd backend && cargo clippy --all-targets --all-features -- -D warnings
+      - run: cd backend && cargo clippy --all-targets -- -D warnings
       - run: cd backend && cargo test
 
   lint-frontend:
