@@ -12,6 +12,8 @@ describe("viewerStore", () => {
       spreadMode: "single",
       zoomLevel: 100,
       scrollSpeed: 1.0,
+      viewerOrigin: null,
+      viewerTransitionId: 0,
     });
   });
 
@@ -187,5 +189,61 @@ describe("viewerStore", () => {
     expect(useViewerStore.getState().scrollSpeed).toBe(3.0);
     useViewerStore.getState().setScrollSpeed(0.1);
     expect(useViewerStore.getState().scrollSpeed).toBe(0.5);
+  });
+
+  // --- viewerOrigin / viewerTransitionId (persist 除外) ---
+
+  test("初期状態で viewerOrigin が null", () => {
+    expect(useViewerStore.getState().viewerOrigin).toBeNull();
+  });
+
+  test("setViewerOrigin で nodeId と search が保存される", () => {
+    useViewerStore
+      .getState()
+      .setViewerOrigin({ nodeId: "dir1", search: "?tab=images&sort=date-desc" });
+    const origin = useViewerStore.getState().viewerOrigin;
+    expect(origin).toEqual({ nodeId: "dir1", search: "?tab=images&sort=date-desc" });
+  });
+
+  test("setViewerOrigin(null) で起点をクリアできる", () => {
+    useViewerStore.getState().setViewerOrigin({ nodeId: "dir1", search: "" });
+    useViewerStore.getState().setViewerOrigin(null);
+    expect(useViewerStore.getState().viewerOrigin).toBeNull();
+  });
+
+  test("viewerOrigin は localStorage に永続化されない", () => {
+    useViewerStore.getState().setViewerOrigin({ nodeId: "dir1", search: "?tab=images" });
+    const stored = JSON.parse(localStorage.getItem("viewer-store") ?? "{}");
+    expect(stored.state?.viewerOrigin).toBeUndefined();
+  });
+
+  test("初期状態で viewerTransitionId が 0", () => {
+    expect(useViewerStore.getState().viewerTransitionId).toBe(0);
+  });
+
+  test("startViewerTransition で ID がインクリメントされ返値と一致する", () => {
+    const id = useViewerStore.getState().startViewerTransition();
+    expect(id).toBeGreaterThan(0);
+    expect(useViewerStore.getState().viewerTransitionId).toBe(id);
+  });
+
+  test("endViewerTransition で ID 一致時のみ 0 にリセットされる", () => {
+    const id = useViewerStore.getState().startViewerTransition();
+    useViewerStore.getState().endViewerTransition(id);
+    expect(useViewerStore.getState().viewerTransitionId).toBe(0);
+  });
+
+  test("endViewerTransition で stale な ID は無視される", () => {
+    const id = useViewerStore.getState().startViewerTransition();
+    const newerId = useViewerStore.getState().startViewerTransition();
+    // 古い id を渡しても現在のトランジションはクリアされない
+    useViewerStore.getState().endViewerTransition(id);
+    expect(useViewerStore.getState().viewerTransitionId).toBe(newerId);
+  });
+
+  test("viewerTransitionId は localStorage に永続化されない", () => {
+    useViewerStore.getState().startViewerTransition();
+    const stored = JSON.parse(localStorage.getItem("viewer-store") ?? "{}");
+    expect(stored.state?.viewerTransitionId).toBeUndefined();
   });
 });
