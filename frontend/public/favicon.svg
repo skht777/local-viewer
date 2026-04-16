@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <!-- 背景: 角丸ダーク -->
+  <rect width="32" height="32" rx="6" fill="#1e1e2e"/>
+  <!-- フォルダ本体 -->
+  <path d="M5 10h8l2-3h12v18H5z" fill="#3b82f6" opacity="0.85"/>
+  <!-- フォルダ前面 -->
+  <path d="M5 12h22v13a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2z" fill="#60a5fa"/>
+  <!-- 再生三角 -->
+  <polygon points="13,15 13,24 21,19.5" fill="#1e1e2e" opacity="0.9"/>
+</svg>
