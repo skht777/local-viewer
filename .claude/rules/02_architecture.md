@@ -31,7 +31,7 @@ local-viewer/
 │   │   ├── services/        # ビジネスロジック (モジュール分割済み)
 │   │   │   ├── archive/     # ZIP/RAR/7z (reader, security)
 │   │   │   ├── node_registry/ # node_id マッピング (directory, scan)
-│   │   │   ├── dir_index/   # ディレクトリインデックス (bulk_insert, sort_queries)
+│   │   │   ├── dir_index/   # ディレクトリインデックス (bulk_insert, sort_queries, dirty_state)
 │   │   │   ├── indexer/     # FTS5 検索インデックス (helpers)
 │   │   │   └── ...          # 他サービス (path_security, thumbnail_*, video_converter 等)
 │   │   └── middleware/      # カスタムミドルウェア (skip_gzip_binary)
@@ -65,6 +65,8 @@ routers → services → 外部クレート/std
 - 状態管理: `AppState` 構造体 + `Arc<T>`
 - CPU バウンド処理: `tokio::task::spawn_blocking`
 - SQLite 操作: `spawn_blocking` 内で同期 rusqlite
+- services 間の依存は許容（例: `file_watcher → dir_index` の dirty 化通知、`browse → dir_index` の自己修復 write-back）
+- routers 間の直接依存は不可（共通処理は services へ抽出）
 
 ### Frontend
 ```
@@ -77,6 +79,7 @@ stores → (外部依存なし、純粋なUI状態)
 - components 間の直接依存は避ける（共通化は hooks または親 page で行う）
 - hooks 間の相互依存は禁止（単方向のみ）
 - stores は TanStack Query のデータを複製しない
+- 一時的なナビ状態（`viewerOrigin`, `viewerTransitionId` 等）は zustand の `partialize` で persist 除外する（リロード後に恒久状態化するバグを防止）
 
 ## アーキテクチャパターン
 - Backend: レイヤードアーキテクチャ (Router → Service → Infrastructure)、axum + tower ミドルウェア

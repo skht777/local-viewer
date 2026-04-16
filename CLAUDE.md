@@ -62,10 +62,11 @@ cd e2e && npx playwright test --ui   # UI モード
 
 ### Rust バックエンド
 - `backend/Cargo.toml` — 依存クレート定義
-- `backend/src/main.rs` — エントリポイント（AppState 初期化、ルーター登録）
+- `backend/src/main.rs` — エントリポイント（AppState 初期化、ルーター登録、`/api/health` + `/api/ready` 分離）
 - `backend/src/config.rs` — 環境変数ベースの設定
-- `backend/src/routers/` — API ルーター（browse/, file/, thumbnail/ はサブモジュール分割済み）
+- `backend/src/routers/` — API ルーター（browse/, file/, thumbnail/ はサブモジュール分割済み。browse は `/sibling`（単方向）と `/siblings`（双方向 combined）を提供）
 - `backend/src/services/` — ビジネスロジック（node_registry/, archive/, dir_index/, indexer/ はサブモジュール分割済み）
+- `backend/src/services/dir_index/dirty_state.rs` — FileWatcher 連動の dirty セット + 世代カウンタ（TOCTOU 対策）
 - `backend/src/middleware/` — カスタムミドルウェア（skip_gzip_binary）
 - `backend/rust-toolchain.toml` — Rust ツールチェーン固定
 - `backend/clippy.toml` — Clippy 設定
@@ -80,8 +81,10 @@ cd e2e && npx playwright test --ui   # UI モード
 - `config/mounts.json` — マウントポイント定義ファイル（Docker ではバインドマウント ./config:/app/config）
 - `frontend/vite.config.ts` — Vite + Tailwind v4 + /api プロキシ + Vitest
 - `frontend/src/index.css` — Tailwind v4 `@theme` カスタムトークン定義
-- `frontend/src/hooks/api/browseQueries.ts` — TanStack Query（browseNodeOptions, browseInfiniteOptions, searchOptions）
+- `frontend/src/hooks/api/browseQueries.ts` — TanStack Query（browseNodeOptions, browseInfiniteOptions, searchOptions。`scope` 引数で配下検索）
 - `frontend/src/hooks/api/thumbnailQueries.ts` — バッチサムネイルフック（useBatchThumbnails）
+- `frontend/src/hooks/useOpenViewerFromEntry.ts` — ▶開く/Space 経路のビューワー起動（起点復帰 + トランジション + prefetch + replace）
+- `frontend/src/stores/viewerStore.ts` — `viewerOrigin` / `viewerTransitionId` は `partialize` で persist 除外
 - `.env.example` — Docker ボリューム/ポート/リソース設定テンプレート
 - `e2e/playwright.config.ts` — E2E テスト設定
 
@@ -90,6 +93,13 @@ cd e2e && npx playwright test --ui   # UI モード
 - **Tailwind v4** — `tailwind.config.js` や `postcss.config.js` は不要、`@tailwindcss/vite` プラグインを使用
 - **node_id 不透明ID** — API はクライアントに実ファイルパスを公開しない。生成時にルートパスを含めて複数マウントポイント間の衝突を回避
 - **デフォルト 127.0.0.1 バインド** — LAN アクセスには `.env` で `BIND_HOST=0.0.0.0` を明示指定
+- **ビューワー履歴モデル** — 開く系はすべて `{ replace: true }`（`openViewer` / `openPdfViewer` / `useOpenViewerFromEntry` / セットジャンプ）。閉じる系は `navigate(-1)` + `viewerOrigin` フォールバック。ブラウザバック 1 クリックで前のページに戻れることを保証
+- **ビューワー閉じキー** — `B`（Esc はヘルプ/NavigationPrompt/フルスクリーン解除のみ）
+- **ビューワー画像表示順** — 常に名前昇順固定（ブラウズソート順と独立、`compareEntryName` で統一）。セット間ジャンプの兄弟探索はブラウズソート順を維持
+- **スコープ検索** — BrowsePage の SearchBar はスコープトグルあり（ON: 配下検索、OFF: 全体）。TopPage はトグル非表示。バックエンドは `NodeRegistry::resolve` + `PathSecurity::validate_existing` + `is_dir` 検証必須
+- **DirIndex 自己修復** — FileWatcher が影響ディレクトリを dirty 化（世代カウンタ）→ fast-path は dirty チェックで fallback 行き → fallback 後に `bulk_upsert_from_scan` で write-back + 世代一致時のみ dirty 解除
+- **readiness プローブ** — `/api/ready`（初回スキャン完了判定、503/200）と `/api/health`（liveness、常時 200）を分離。docker-compose healthcheck は `/api/ready` を使用
+- **infinite query プリフェッチ** — `fetchQuery` 不可。`prefetchInfiniteQuery` / `fetchInfiniteQuery` を使用しキャッシュキーを `browseInfiniteOptions` に統一
 
 ## 実装時に特に気を付けたいこと
 
