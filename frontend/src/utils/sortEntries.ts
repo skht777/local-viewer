@@ -6,12 +6,17 @@
 import type { SortOrder } from "../hooks/useViewerParams";
 import type { BrowseEntry } from "../types/api";
 
+// 名前の自然順比較（numeric-aware）
+export function compareEntryName(a: BrowseEntry, b: BrowseEntry): number {
+  return a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: "base" });
+}
+
 // ディレクトリ優先 + 名前の自然順比較
 function compareByName(a: BrowseEntry, b: BrowseEntry): number {
   const aIsDir = a.kind === "directory" ? 0 : 1;
   const bIsDir = b.kind === "directory" ? 0 : 1;
   if (aIsDir !== bIsDir) return aIsDir - bIsDir;
-  return a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: "base" });
+  return compareEntryName(a, b);
 }
 
 export function sortEntries(entries: BrowseEntry[], sort: SortOrder): BrowseEntry[] {
@@ -22,7 +27,7 @@ export function sortEntries(entries: BrowseEntry[], sort: SortOrder): BrowseEntr
       const aIsDir = a.kind === "directory" ? 0 : 1;
       const bIsDir = b.kind === "directory" ? 0 : 1;
       if (aIsDir !== bIsDir) return aIsDir - bIsDir;
-      return b.name.localeCompare(a.name, undefined, { numeric: true, sensitivity: "base" });
+      return compareEntryName(b, a);
     }
 
     // date ソート: null は末尾、同一日時は名前昇順タイブレーカー (Windows Explorer 準拠)
@@ -33,6 +38,6 @@ export function sortEntries(entries: BrowseEntry[], sort: SortOrder): BrowseEntr
     const dateCmp =
       sort === "date-desc" ? b.modified_at - a.modified_at : a.modified_at - b.modified_at;
     if (dateCmp !== 0) return dateCmp;
-    return a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: "base" });
+    return compareEntryName(a, b);
   });
 }
