@@ -9,6 +9,9 @@ on:
 env:
   HUSKY: "0"
   CARGO_INCREMENTAL: 0
+  # CI では target-cpu=native を無効化 (proc-macro .so が runner CPU で SIGILL を起こすため)。
+  # mold リンカ指定は引き継ぐ (.cargo/config.toml の build.rustflags は RUSTFLAGS env により上書きされるため)。
+  RUSTFLAGS: "-C link-arg=-fuse-ld=mold"
 
 jobs:
   lint-and-test-backend:
