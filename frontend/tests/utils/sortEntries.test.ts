@@ -5,7 +5,7 @@
 
 import { describe, expect, test } from "vitest";
 import type { BrowseEntry } from "../../src/types/api";
-import { sortEntries } from "../../src/utils/sortEntries";
+import { compareEntryName, sortEntries } from "../../src/utils/sortEntries";
 
 function entry(
   name: string,
@@ -62,7 +62,11 @@ describe("sortEntries", () => {
 
   describe("date-desc", () => {
     test("新しい順に並ぶ", () => {
-      const entries = [entry("a", "image", 100), entry("b", "image", 300), entry("c", "image", 200)];
+      const entries = [
+        entry("a", "image", 100),
+        entry("b", "image", 300),
+        entry("c", "image", 200),
+      ];
       const result = sortEntries(entries, "date-desc");
       expect(result.map((e) => e.modified_at)).toEqual([300, 200, 100]);
     });
@@ -77,7 +81,11 @@ describe("sortEntries", () => {
 
   describe("date-asc", () => {
     test("古い順に並ぶ", () => {
-      const entries = [entry("c", "image", 300), entry("a", "image", 100), entry("b", "image", 200)];
+      const entries = [
+        entry("c", "image", 300),
+        entry("a", "image", 100),
+        entry("b", "image", 200),
+      ];
       const result = sortEntries(entries, "date-asc");
       expect(result.map((e) => e.modified_at)).toEqual([100, 200, 300]);
     });
@@ -120,6 +128,33 @@ describe("sortEntries", () => {
 
     test("空配列で空配列を返す", () => {
       expect(sortEntries([], "name-asc")).toEqual([]);
+    });
+  });
+
+  // compareEntryName はビューワーの画像表示順統一で再利用されるため
+  // 単独でも振る舞いを保証する
+  describe("compareEntryName", () => {
+    test("自然順で数値を数値として比較する", () => {
+      const images = [entry("img10.jpg"), entry("img1.jpg"), entry("img2.jpg")];
+      const result = [...images].sort(compareEntryName);
+      expect(result.map((e) => e.name)).toEqual(["img1.jpg", "img2.jpg", "img10.jpg"]);
+    });
+
+    test("大文字小文字を区別しない昇順", () => {
+      const images = [entry("Beta.jpg"), entry("alpha.jpg"), entry("CHARLIE.jpg")];
+      const result = [...images].sort(compareEntryName);
+      expect(result.map((e) => e.name)).toEqual(["alpha.jpg", "Beta.jpg", "CHARLIE.jpg"]);
+    });
+
+    test("ブラウズ date-desc 順の配列をコピーソートしても名前昇順になる", () => {
+      // ビューワー表示順: ブラウズソートと独立の名前昇順固定
+      const dateDescOrder = [
+        entry("late.jpg", "image", 300),
+        entry("mid.jpg", "image", 200),
+        entry("early.jpg", "image", 100),
+      ];
+      const viewerOrder = [...dateDescOrder].sort(compareEntryName);
+      expect(viewerOrder.map((e) => e.name)).toEqual(["early.jpg", "late.jpg", "mid.jpg"]);
     });
   });
 });
