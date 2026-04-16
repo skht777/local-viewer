@@ -26,6 +26,10 @@ async function openCgInPictures(page: import("@playwright/test").Page) {
 
   // CGビューワーが表示される
   await expect(page.locator("[data-testid='cg-viewer']")).toBeVisible();
+
+  // ページカウンター (N / M) が反映されるまで待機 (keyboard ハンドラ登録と
+  // 画像データ取得の完了を待ち、直後のキー送信が取りこぼされないようにする)
+  await expect(page.getByTestId("page-counter")).toHaveText(/\d+\s*\/\s*\d+/);
 }
 
 test.describe("キーボード — CG モード", () => {
@@ -47,10 +51,11 @@ test.describe("キーボード — CG モード", () => {
 
   test("Home で先頭ページ", async ({ page }) => {
     await openCgInPictures(page);
-    // 数ページ進む（URL 更新 + ページ遷移を待ちながら）
+    // 数ページ進む（URL 更新 + page-counter 反映を都度待ちながら、
+    // 2 回目のキーが 1 回目の state 更新途中に重なって取りこぼされるのを防ぐ）
     await page.keyboard.press("d");
     await expect(page).toHaveURL(/index=1/);
-    // URL 更新の expect で十分 (waitForTimeout 禁止: 10_e2e_testing)
+    await expect(page.getByTestId("page-counter")).toHaveText(/2\s*\/\s*\d+/);
     await page.keyboard.press("d");
     await expect(page).toHaveURL(/index=2/);
     await page.keyboard.press("Home");

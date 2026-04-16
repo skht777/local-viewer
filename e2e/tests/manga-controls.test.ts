@@ -5,7 +5,12 @@
 // P3: MC-9(スクロール速度スライダー)
 
 import { test, expect } from "@playwright/test";
-import { openMangaViewer, showToolbar, waitForScrollable } from "./helpers/navigation";
+import {
+  openMangaViewer,
+  showToolbar,
+  waitForScrollable,
+  waitForScrollStable,
+} from "./helpers/navigation";
 
 test.describe("マンガモード — キーバインド", () => {
   test("MC-1: + キーでズームインする", async ({ page }) => {
@@ -42,6 +47,8 @@ test.describe("マンガモード — キーバインド", () => {
     await openMangaViewer(page);
 
     const scrollArea = page.getByTestId("manga-scroll-area");
+    // 仮想スクロール測定前に s キーを送ると効かないため ready を待つ
+    await waitForScrollStable(scrollArea);
     const initialScroll = await scrollArea.evaluate((el) => el.scrollTop);
 
     await page.keyboard.press("s");
@@ -90,6 +97,9 @@ test.describe("マンガモード — ナビゲーション", () => {
     await openMangaViewer(page);
     const scrollArea = page.getByTestId("manga-scroll-area");
 
+    // 仮想スクロールの scrollHeight 確定前だと s キーが効かないため ready 待ち
+    await waitForScrollStable(scrollArea);
+
     // まず S キーでスクロール
     await page.keyboard.press("s");
     await page.keyboard.press("s");
@@ -110,6 +120,11 @@ test.describe("マンガモード — ナビゲーション", () => {
     await openMangaViewer(page);
     const scrollArea = page.getByTestId("manga-scroll-area");
 
+    // 仮想スクロールの scrollHeight が確定してから End キーを送る
+    // （確定前だと End キー時点の scrollHeight に対してスクロールするため、
+    //   その後の再測定で末尾判定が false に揺れる flaky 原因になる）
+    await waitForScrollStable(scrollArea);
+
     await page.keyboard.press("End");
 
     // 末尾到達（仮想スクロールの再測定による誤差を許容）
@@ -125,6 +140,9 @@ test.describe("マンガモード — ナビゲーション", () => {
   test("MC-10: ページセレクトで対象画像付近にスクロールする", async ({ page }) => {
     await openMangaViewer(page);
     const scrollArea = page.getByTestId("manga-scroll-area");
+
+    // 仮想スクロール測定前だと selectOption 後の scroll が効かないため ready 待ち
+    await waitForScrollStable(scrollArea);
 
     // 初期スクロール位置を記録
     const initialScroll = await scrollArea.evaluate((el) => el.scrollTop);

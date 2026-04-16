@@ -83,6 +83,21 @@ export async function waitForScrollable(scrollArea: Locator, timeout = 10_000) {
   ).toBeTruthy();
 }
 
+// 仮想スクロールの scrollHeight が安定するまで待機する
+// 2 連続で同じ値を観測したら確定とみなす（画像計測途中の揺れを吸収）
+export async function waitForScrollStable(scrollArea: Locator, timeout = 10_000) {
+  let lastHeight = -1;
+  await expect.poll(
+    async () => {
+      const h = await scrollArea.evaluate((el) => el.scrollHeight);
+      const stable = h === lastHeight && h > 0;
+      lastHeight = h;
+      return stable;
+    },
+    { message: "scrollHeight が安定するまで待機", timeout, intervals: [200] },
+  ).toBeTruthy();
+}
+
 // 検索インデックス構築完了を待機する
 // バックエンド起動直後はインデックス未構築で 503 を返すか、200 でも結果が空の場合がある
 // ※ 画像はインデックス対象外のため、動画ファイル名 (clip) で確認する
