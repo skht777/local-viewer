@@ -181,7 +181,7 @@ impl ArchiveReader for RarArchiveReader {
         }
 
         self.validator.validate_total_size(total_uncompressed)?;
-        entries.sort_by(|a, b| natural_sort_key(&a.name).cmp(&natural_sort_key(&b.name)));
+        entries.sort_by_cached_key(|e| natural_sort_key(&e.name));
         Ok(entries)
     }
 

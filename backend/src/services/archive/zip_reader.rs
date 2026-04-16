@@ -126,7 +126,7 @@ impl ArchiveReader for ZipArchiveReader {
         self.validator.validate_total_size(total_uncompressed)?;
 
         // 自然順ソート
-        entries.sort_by(|a, b| natural_sort_key(&a.name).cmp(&natural_sort_key(&b.name)));
+        entries.sort_by_cached_key(|e| natural_sort_key(&e.name));
 
         Ok(entries)
     }
