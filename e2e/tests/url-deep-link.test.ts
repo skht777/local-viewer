@@ -64,18 +64,17 @@ test.describe("URL 直接遷移", () => {
 });
 
 test.describe("URL 履歴・排他制御", () => {
-  test("UD-4: ブラウザ戻るボタンで前の URL 状態に復帰する", async ({ page }) => {
+  test("UD-4: 閉じた後の goBack でビューワーが再表示されない（replace 設計）", async ({ page }) => {
     await openCgViewer(page);
     await expect(page).toHaveURL(/index=/);
-    const cgUrl = page.url();
 
-    // Escape でビューワーを閉じる
-    await page.keyboard.press("Escape");
+    // B キーでビューワーを閉じる（openViewer/closeViewer は replace: true で履歴を積まない）
+    await page.keyboard.press("b");
     await expect(page.getByTestId("cg-viewer")).not.toBeVisible();
 
-    // ブラウザ戻る → CG ビューワーの URL に復帰
+    // ブラウザ戻る → viewer URL は履歴に無いため再表示されない
     await page.goBack();
-    await expect(page).toHaveURL(cgUrl);
+    await expect(page.getByTestId("cg-viewer")).not.toBeVisible();
   });
 
   test("UD-5: pdf と index が同時指定された場合 PDF が優先される", async ({ page, request }) => {
