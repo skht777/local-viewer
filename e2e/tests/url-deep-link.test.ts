@@ -99,7 +99,7 @@ test.describe("localStorage 永続化", () => {
     await expect(wBtn).toHaveAttribute("aria-pressed", "true");
 
     // ビューワーを閉じる
-    await page.keyboard.press("Escape");
+    await page.keyboard.press("b");
     await expect(page.getByTestId("cg-viewer")).not.toBeVisible();
 
     // CG ビューワーを再度開く
@@ -118,7 +118,7 @@ test.describe("localStorage 永続化", () => {
     await expect(page.getByTestId("manga-zoom-level")).toHaveText("125%");
 
     // ビューワーを閉じる
-    await page.keyboard.press("Escape");
+    await page.keyboard.press("b");
     await expect(page.getByTestId("manga-viewer")).not.toBeVisible();
 
     // マンガビューワーを再度開く
@@ -155,7 +155,7 @@ test.describe("localStorage 永続化", () => {
     await expect(page.getByTestId("manga-scroll-speed-label")).toHaveText("2x");
 
     // ビューワーを閉じてリロード
-    await page.keyboard.press("Escape");
+    await page.keyboard.press("b");
     await page.reload();
 
     // マンガビューワーを再度開く

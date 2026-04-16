@@ -67,8 +67,8 @@ test.describe("モード切替トグル", () => {
     await clickFileCard(page.locator("[data-testid^='file-card-']").first());
     await expect(page.getByTestId("manga-viewer")).toBeVisible();
 
-    // Escape で閉じる
-    await page.keyboard.press("Escape");
+    // B キーで閉じる
+    await page.keyboard.press("b");
     await expect(page.getByTestId("manga-viewer")).not.toBeVisible();
 
     // mode=manga が URL に残っている

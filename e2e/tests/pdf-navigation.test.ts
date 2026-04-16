@@ -1,6 +1,6 @@
 // PDF ナビゲーションテスト
-// P1: PN-1(D次ページ), PN-2(A前ページ), PN-3(Mマンガ), PN-4(MCG復帰), PN-5(Escape閉じ)
-// P2: PN-6(Escapeマンガ閉じ), PN-7(ページセレクト), PN-8(Home/End),
+// P1: PN-1(D次ページ), PN-2(A前ページ), PN-3(Mマンガ), PN-4(MCG復帰), PN-5(B閉じ)
+// P2: PN-6(Bマンガ閉じ), PN-7(ページセレクト), PN-8(Home/End),
 //     PN-9(V幅フィット), PN-10(H高さフィット), PN-11(Q無効),
 //     PN-12(X セット間ジャンプ確認なし), PN-13(PdfPageSidebar クリック)
 // P3: PN-14(破損PDF エラー表示)
@@ -28,11 +28,11 @@ test.describe("PDF ナビゲーション — 基本", () => {
     await expect(page).toHaveURL(/page=1/);
   });
 
-  test("PN-5: Escape で CG ビューワーを閉じる", async ({ page }) => {
+  test("PN-5: B キーで CG ビューワーを閉じる", async ({ page }) => {
     await openPdfViewer(page);
     await expect(page).toHaveURL(/pdf=/);
 
-    await page.keyboard.press("Escape");
+    await page.keyboard.press("b");
 
     // URL から pdf/page/mode が消去される
     await expect(page).not.toHaveURL(/pdf=/);
@@ -42,7 +42,7 @@ test.describe("PDF ナビゲーション — 基本", () => {
 });
 
 test.describe("PDF ナビゲーション — P2", () => {
-  test("PN-6: Escape でマンガビューワーを閉じる", async ({ page }) => {
+  test("PN-6: B キーでマンガビューワーを閉じる", async ({ page }) => {
     // ツールバーでマンガモードを選択してから PDF を開く
     await navigateToMount(page, "docs");
     await page.getByTestId("mode-toggle-manga").click();
@@ -52,8 +52,8 @@ test.describe("PDF ナビゲーション — P2", () => {
     await pdfCard.dblclick();
     await expect(page.getByTestId("pdf-manga-viewer")).toBeVisible();
 
-    // Escape で閉じる
-    await page.keyboard.press("Escape");
+    // B キーで閉じる
+    await page.keyboard.press("b");
 
     await expect(page).not.toHaveURL(/pdf=/);
     await expect(page).not.toHaveURL(/page=/);

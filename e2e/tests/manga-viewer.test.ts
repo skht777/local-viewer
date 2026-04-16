@@ -41,9 +41,9 @@ test.describe("マンガモード", () => {
     await expect(images.first()).toBeVisible();
   });
 
-  test("Escape でビューワーを閉じる", async ({ page }) => {
+  test("B キーでビューワーを閉じる", async ({ page }) => {
     await openMangaViewer(page);
-    await page.keyboard.press("Escape");
+    await page.keyboard.press("b");
     await expect(
       page.locator("[data-testid='manga-viewer']"),
     ).not.toBeVisible();

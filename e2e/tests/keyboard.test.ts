@@ -64,9 +64,9 @@ test.describe("キーボード — CG モード", () => {
     await expect(page).toHaveURL(/index=3/);
   });
 
-  test("Escape でビューワーを閉じる", async ({ page }) => {
+  test("B キーでビューワーを閉じる", async ({ page }) => {
     await openCgInPictures(page);
-    await page.keyboard.press("Escape");
+    await page.keyboard.press("b");
     await expect(page.locator("[data-testid='cg-viewer']")).not.toBeVisible();
   });
 

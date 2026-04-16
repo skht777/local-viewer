@@ -27,9 +27,9 @@ test.describe("URL SSOT", () => {
     await clickFileCard(page.locator("[data-testid^='file-card-']").first());
     await expect(page).toHaveURL(/index=0/);
 
-    // ビューワーを閉じる（Escape キー）
+    // ビューワーを閉じる（B キー）
     await expect(page.locator("[data-testid='cg-viewer']")).toBeVisible();
-    await page.keyboard.press("Escape");
+    await page.keyboard.press("b");
     await expect(page.locator("[data-testid='cg-viewer']")).not.toBeVisible({ timeout: 10_000 });
     await expect(page).not.toHaveURL(/index=/);
   });

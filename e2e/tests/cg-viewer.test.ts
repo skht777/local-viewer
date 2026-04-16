@@ -61,9 +61,9 @@ test.describe("CGモード", () => {
     await expect(page).toHaveURL(/index=0/);
   });
 
-  test("Escape でビューワーを閉じてブラウズに戻る", async ({ page }) => {
+  test("B キーでビューワーを閉じてブラウズに戻る", async ({ page }) => {
     await openCgViewer(page);
-    await page.keyboard.press("Escape");
+    await page.keyboard.press("b");
     await expect(page.locator("[data-testid='cg-viewer']")).not.toBeVisible();
     await expect(page).not.toHaveURL(/index=/);
   });
