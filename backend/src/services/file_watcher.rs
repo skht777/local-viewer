@@ -5,7 +5,7 @@
 //! 1 秒間隔のバッチフラッシュで高頻度イベントをデバウンスする。
 
 use std::collections::HashMap;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, UNIX_EPOCH};
@@ -82,6 +82,7 @@ impl FileWatcher {
         // notify イベントコールバック用の参照
         let pending_for_cb = Arc::clone(&self.pending);
         let dir_index_for_cb = Arc::clone(&self.dir_index);
+        let mounts_for_cb: Vec<(String, PathBuf)> = self.mounts.clone();
 
         // watcher 生成 — イベントコールバックで pending に蓄積
         let mut watcher = notify::recommended_watcher(
@@ -93,7 +94,7 @@ impl FileWatcher {
                         warn!("notify: need_rescan 検知、DirIndex を stale 化");
                         dir_index_for_cb.mark_warm_start();
                     }
-                    handle_notify_event(&pending_for_cb, &event);
+                    handle_notify_event(&pending_for_cb, &event, &mounts_for_cb);
                 }
                 Err(e) => warn!("notify エラー: {e}"),
             },
@@ -190,7 +191,11 @@ impl FileWatcher {
 // ---------- notify イベントハンドラ ----------
 
 /// notify イベントを pending マップに蓄積する
-fn handle_notify_event(pending: &std::sync::Mutex<HashMap<String, String>>, event: &notify::Event) {
+fn handle_notify_event(
+    pending: &std::sync::Mutex<HashMap<String, String>>,
+    event: &notify::Event,
+    mounts: &[(String, PathBuf)],
+) {
     let action = match &event.kind {
         EventKind::Create(CreateKind::File | CreateKind::Folder)
         | EventKind::Modify(ModifyKind::Name(RenameMode::To)) => "add",
@@ -200,14 +205,19 @@ fn handle_notify_event(pending: &std::sync::Mutex<HashMap<String, String>>, even
     };
 
     for path in &event.paths {
-        enqueue(pending, path, action);
+        enqueue(pending, path, action, mounts);
     }
 }
 
 /// 対象パスを pending に追加する (隠しファイル・非対象拡張子をスキップ)
-fn enqueue(pending: &std::sync::Mutex<HashMap<String, String>>, path: &Path, action: &str) {
-    // 隠しファイル/ディレクトリをスキップ
-    if is_hidden(path) {
+fn enqueue(
+    pending: &std::sync::Mutex<HashMap<String, String>>,
+    path: &Path,
+    action: &str,
+    mounts: &[(String, PathBuf)],
+) {
+    // 隠しファイル/ディレクトリをスキップ (full scan の parallel_walk と同じ判定基準)
+    if is_hidden_under_mounts(path, mounts) {
         return;
     }
 
@@ -370,10 +380,26 @@ fn process_event(
 
 // ---------- ヘルパー関数 ----------
 
-/// パスが隠しファイル/ディレクトリか判定する (名前が '.' で始まる)
-fn is_hidden(path: &Path) -> bool {
-    path.file_name()
-        .is_some_and(|n| n.to_string_lossy().starts_with('.'))
+/// パスがマウント配下で隠し要素 (名前が '.' で始まる) を含むか判定する
+///
+/// - マウントルートからの相対パスを取り、各コンポーネントを検査
+/// - いずれかのコンポーネント名が '.' で始まるなら hidden
+/// - マウントルート自身の名前は判定対象外（`parallel_walk::scan_one` の BFS 起点が
+///   `skip_hidden` の対象外であるのと一致。`/data/.archive` をマウント登録しても配下は走査される）
+/// - マウント外パスは fail-safe として hidden 扱い（FileWatcher は通常マウント配下のみ監視）
+fn is_hidden_under_mounts(path: &Path, mounts: &[(String, PathBuf)]) -> bool {
+    for (_, root) in mounts {
+        if let Ok(rel) = path.strip_prefix(root) {
+            return rel.components().any(|comp| {
+                if let Component::Normal(name) = comp {
+                    name.to_string_lossy().starts_with('.')
+                } else {
+                    false
+                }
+            });
+        }
+    }
+    true
 }
 
 /// 拡張子がインデックス対象 (動画/アーカイブ/PDF) か判定する
@@ -410,18 +436,55 @@ mod tests {
     use rstest::rstest;
     use std::path::PathBuf;
 
-    // --- is_hidden ---
+    // --- is_hidden_under_mounts ---
+
+    fn pictures_mount() -> Vec<(String, PathBuf)> {
+        vec![("pictures".to_string(), PathBuf::from("/data/pictures"))]
+    }
 
     #[rstest]
-    #[case("/tmp/.hidden", true)]
-    #[case("/tmp/.gitignore", true)]
-    #[case("/tmp/visible.txt", false)]
-    #[case("/tmp/dir/file.zip", false)]
+    // マウント直下のファイル名が . 始まり (既存ケース)
+    #[case("/data/pictures/.hidden", true)]
+    #[case("/data/pictures/.gitignore", true)]
+    // 通常ケース
+    #[case("/data/pictures/visible.txt", false)]
+    #[case("/data/pictures/dir/file.zip", false)]
+    // 親 hidden + 子は通常名 (本改修で拾うケース)
+    #[case("/data/pictures/.hidden/foo.mp4", true)]
+    // 中間 hidden (より深いネスト)
+    #[case("/data/pictures/dir/.hidden/sub/foo.mp4", true)]
     fn 隠しファイルのフィルタリングが正しく動作する(
         #[case] path: &str,
         #[case] expected: bool,
     ) {
-        assert_eq!(is_hidden(Path::new(path)), expected);
+        assert_eq!(
+            is_hidden_under_mounts(Path::new(path), &pictures_mount()),
+            expected,
+        );
+    }
+
+    #[test]
+    fn マウント外パスは安全側で隠し扱いにする() {
+        // FileWatcher は本来マウント配下のみ監視するため、マウント外は fail-safe で hidden
+        assert!(is_hidden_under_mounts(
+            Path::new("/other/path/file.txt"),
+            &pictures_mount(),
+        ));
+    }
+
+    #[test]
+    fn マウントルート自身がドット始まりでも配下は通常パスなら通す() {
+        // parallel_walk::scan_one の BFS 起点が skip_hidden 対象外なのと一致させる
+        let mounts = vec![("archive".to_string(), PathBuf::from("/data/.archive"))];
+        assert!(!is_hidden_under_mounts(
+            Path::new("/data/.archive/album/pic.jpg"),
+            &mounts,
+        ));
+        // 配下に . 始まりがあれば hidden
+        assert!(is_hidden_under_mounts(
+            Path::new("/data/.archive/.secret/pic.jpg"),
+            &mounts,
+        ));
     }
 
     // --- compute_relative_path ---
