@@ -6,7 +6,7 @@
 import { useQueries } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef } from "react";
 import { areNodeIdsEqual, useDebouncedValue } from "../useDebouncedValue";
-import { mergeThumbnailQueryResults } from "../../utils/mergeThumbnailResults";
+import { useMergedThumbnailData } from "../useMergedThumbnailData";
 import { apiPost } from "./apiClient";
 
 // 安定チャンク分割の状態
@@ -105,17 +105,8 @@ export function useBatchThumbnails(nodeIds: string[]): {
     })),
   });
 
-  // 全チャンク結果をマージ (dataUpdatedAt で実際のデータ変更を追跡)
-  // pure 関数 mergeThumbnailQueryResults に委譲し、dataUpdatedAt 配列を依存に使って
-  // 「データ到着」のみで再計算するよう制御する。
-  const dataKey = chunkResults.map((r) => r.dataUpdatedAt).join(",");
-  const rawData = useMemo(
-    () => mergeThumbnailQueryResults(chunkResults),
-    // dataKey は依存として記載するが、実際には chunkResults の dataUpdatedAt を連結した値。
-    // chunkResults 自体は毎レンダリング新規生成されるため依存には入れない（意図的）。
-    // biome-ignore lint/correctness/useExhaustiveDependencies: dataKey で変更を追跡
-    [dataKey], // eslint-disable-line react-hooks/exhaustive-deps
-  );
+  // 全チャンク結果をマージ: dataUpdatedAt シグナルで memoize する責務は useMergedThumbnailData に委譲
+  const rawData = useMergedThumbnailData(chunkResults);
 
   // Blob URL の差分管理 (共通 ID は再利用、不要分のみ revoke)
   const prevUrlsRef = useRef(new Map<string, string>());
