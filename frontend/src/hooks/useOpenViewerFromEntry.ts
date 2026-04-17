@@ -12,6 +12,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { browseInfiniteOptions } from "./api/browseQueries";
 import { resolveFirstViewable } from "../utils/resolveFirstViewable";
 import { useViewerStore } from "../stores/viewerStore";
+import { buildOpenPdfSearch } from "../utils/viewerNavigation";
 import type { SortOrder, ViewerMode } from "./useViewerParams";
 
 interface UseOpenViewerFromEntryProps {
@@ -23,10 +24,12 @@ interface UseOpenViewerFromEntryProps {
 
 export function useOpenViewerFromEntry({
   nodeId,
-  mode,
+  mode: _mode,
   sort,
   buildBrowseSearch,
 }: UseOpenViewerFromEntryProps): (entryNodeId: string) => Promise<void> {
+  // mode は現時点では URL 構築側 (buildBrowseSearch) が担うため直接参照しない。
+  // props として維持するのはコール側の型互換性のため。
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const setViewerOrigin = useViewerStore((s) => s.setViewerOrigin);
@@ -50,13 +53,12 @@ export function useOpenViewerFromEntry({
 
         if (target.entry.kind === "pdf") {
           // PDF: プリフェッチ → 親ディレクトリで PDF ビューワーを開く
+          // browse スコープ (mode/sort) を維持しつつ viewerNavigation で pdf/page を付与
           await queryClient.prefetchInfiniteQuery(browseInfiniteOptions(target.parentNodeId, sort));
-          const sp = new URLSearchParams();
-          sp.set("pdf", target.entry.node_id);
-          sp.set("page", "1");
-          if (mode === "manga") sp.set("mode", "manga");
-          if (sort !== "name-asc") sp.set("sort", sort);
-          navigate(`/browse/${target.parentNodeId}?${sp}`, { replace: true });
+          const browseBase = new URLSearchParams(buildBrowseSearch().replace(/^\?/, ""));
+          const withPdf = buildOpenPdfSearch(browseBase, { pdfNodeId: target.entry.node_id });
+          const searchStr = withPdf.toString() ? `?${withPdf}` : "";
+          navigate(`/browse/${target.parentNodeId}${searchStr}`, { replace: true });
         } else if (target.entry.kind === "image") {
           // 画像: プリフェッチ → 親ディレクトリでビューワーを開く
           await queryClient.prefetchInfiniteQuery(browseInfiniteOptions(target.parentNodeId, sort));
@@ -83,7 +85,6 @@ export function useOpenViewerFromEntry({
       navigate,
       queryClient,
       nodeId,
-      mode,
       sort,
       buildBrowseSearch,
       setViewerOrigin,
