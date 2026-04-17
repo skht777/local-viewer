@@ -24,12 +24,14 @@ vi.mock("react-router-dom", async () => {
   return { ...actual, useNavigate: () => mockNavigate };
 });
 
-// browseInfiniteOptions をモック (prefetch の引数検証用)
+// browseInfiniteOptions / fetchAllBrowsePages をモック
+const mockFetchAllBrowsePages = vi.fn<[unknown, string, string], Promise<void>>();
 vi.mock("../../src/hooks/api/browseQueries", () => ({
   browseInfiniteOptions: (nodeId: string, sort: string) => ({
     queryKey: ["browse-infinite", nodeId, sort],
     queryFn: () => Promise.resolve({ pages: [], pageParams: [] }),
   }),
+  fetchAllBrowsePages: (...args: [unknown, string, string]) => mockFetchAllBrowsePages(...args),
 }));
 
 // テスト用エントリ生成
@@ -76,6 +78,7 @@ const defaultProps = {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mockFetchAllBrowsePages.mockResolvedValue(undefined);
   localStorage.clear();
   useViewerStore.setState({
     viewerOrigin: null,
@@ -229,7 +232,7 @@ describe("useOpenViewerFromEntry", () => {
   });
 
   describe("プリフェッチ", () => {
-    test("画像を開くときに prefetchInfiniteQuery が呼ばれる", async () => {
+    test("画像を開くときに親ディレクトリの全ページが fetch される", async () => {
       mockResolveFirstViewable.mockResolvedValue({
         entry: makeEntry({ kind: "image", node_id: "img-1" }),
         parentNodeId: "parent-1",
@@ -238,10 +241,32 @@ describe("useOpenViewerFromEntry", () => {
         wrapper: createWrapper(),
       });
       await act(() => result.current("dir-1"));
-      expect(testQueryClient.prefetchInfiniteQuery).toHaveBeenCalled();
+      expect(mockFetchAllBrowsePages).toHaveBeenCalledWith(
+        expect.anything(),
+        "parent-1",
+        "name-asc",
+      );
+      expect(testQueryClient.prefetchInfiniteQuery).not.toHaveBeenCalled();
     });
 
-    test("PDF を開くときに prefetchInfiniteQuery が呼ばれる", async () => {
+    test("アーカイブを開くときにアーカイブ内の全ページが fetch される", async () => {
+      mockResolveFirstViewable.mockResolvedValue({
+        entry: makeEntry({ kind: "archive", node_id: "archive-1" }),
+        parentNodeId: "parent-1",
+      });
+      const { result } = renderHook(() => useOpenViewerFromEntry(defaultProps), {
+        wrapper: createWrapper(),
+      });
+      await act(() => result.current("dir-1"));
+      expect(mockFetchAllBrowsePages).toHaveBeenCalledWith(
+        expect.anything(),
+        "archive-1",
+        "name-asc",
+      );
+      expect(testQueryClient.prefetchInfiniteQuery).not.toHaveBeenCalled();
+    });
+
+    test("PDF を開くときは 1 ページ prefetch のまま（全ページ fetch しない）", async () => {
       mockResolveFirstViewable.mockResolvedValue({
         entry: makeEntry({ kind: "pdf", node_id: "pdf-1" }),
         parentNodeId: "parent-1",
@@ -251,6 +276,20 @@ describe("useOpenViewerFromEntry", () => {
       });
       await act(() => result.current("dir-1"));
       expect(testQueryClient.prefetchInfiniteQuery).toHaveBeenCalled();
+      expect(mockFetchAllBrowsePages).not.toHaveBeenCalled();
+    });
+
+    test("fetch が失敗したときはディレクトリに navigate する", async () => {
+      mockResolveFirstViewable.mockResolvedValue({
+        entry: makeEntry({ kind: "image", node_id: "img-1" }),
+        parentNodeId: "parent-1",
+      });
+      mockFetchAllBrowsePages.mockRejectedValue(new Error("network error"));
+      const { result } = renderHook(() => useOpenViewerFromEntry(defaultProps), {
+        wrapper: createWrapper(),
+      });
+      await act(() => result.current("dir-1"));
+      expect(mockNavigate).toHaveBeenCalledWith("/browse/dir-1");
     });
   });
 

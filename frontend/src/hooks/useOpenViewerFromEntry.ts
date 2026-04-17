@@ -3,13 +3,14 @@
 // - PDF / 画像 / アーカイブの種別に応じて適切な URL で遷移
 // - 起点を viewerOrigin に保存し、閉じたときに元のディレクトリに復帰
 // - startViewerTransition でトランジション中のブラウズ画面レンダリングを抑制
-// - prefetchInfiniteQuery でデータを先読みし、ビューワー表示を高速化
+// - 画像/アーカイブは fetchAllBrowsePages で全ページ先読み（100 件超の兄弟画像対応）
+// - PDF は prefetchInfiniteQuery で 1 ページ先読み（PDF 本体は別途読み込まれる）
 // - 閲覧対象が見つからない場合はディレクトリ進入にフォールバック
 
 import { useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
-import { browseInfiniteOptions } from "./api/browseQueries";
+import { browseInfiniteOptions, fetchAllBrowsePages } from "./api/browseQueries";
 import { resolveFirstViewable } from "../utils/resolveFirstViewable";
 import { useViewerStore } from "../stores/viewerStore";
 import { buildOpenPdfSearch } from "../utils/viewerNavigation";
@@ -60,17 +61,16 @@ export function useOpenViewerFromEntry({
           const searchStr = withPdf.toString() ? `?${withPdf}` : "";
           navigate(`/browse/${target.parentNodeId}${searchStr}`, { replace: true });
         } else if (target.entry.kind === "image") {
-          // 画像: プリフェッチ → 親ディレクトリでビューワーを開く
-          await queryClient.prefetchInfiniteQuery(browseInfiniteOptions(target.parentNodeId, sort));
+          // 画像: 親ディレクトリの全ページをプリフェッチ → ビューワーを開く
+          // 100 件超の兄弟画像が infinite query の 1 ページ目に収まらないケースに対応
+          await fetchAllBrowsePages(queryClient, target.parentNodeId, sort);
           navigate(
             `/browse/${target.parentNodeId}${buildBrowseSearch({ tab: "images", index: 0 })}`,
             { replace: true },
           );
         } else {
-          // アーカイブ: プリフェッチしてから進入
-          await queryClient.prefetchInfiniteQuery(
-            browseInfiniteOptions(target.entry.node_id, sort),
-          );
+          // アーカイブ: 中身の全ページをプリフェッチしてから進入
+          await fetchAllBrowsePages(queryClient, target.entry.node_id, sort);
           navigate(
             `/browse/${target.entry.node_id}${buildBrowseSearch({ tab: "images", index: 0 })}`,
             { replace: true },
