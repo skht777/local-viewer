@@ -11,7 +11,7 @@ use crate::config::Settings;
 use crate::services::archive::ArchiveService;
 use crate::services::dir_index::DirIndex;
 use crate::services::indexer::Indexer;
-use crate::services::node_registry::NodeRegistry;
+use crate::services::node_registry::{NodeRegistry, PopulateStats};
 use crate::services::temp_file_cache::TempFileCache;
 use crate::services::thumbnail_service::ThumbnailService;
 use crate::services::thumbnail_warmer::ThumbnailWarmer;
@@ -50,4 +50,9 @@ pub(crate) struct AppState {
     pub last_rebuild: tokio::sync::Mutex<Option<Instant>>,
     /// 全マウントの初回スキャンが完了したか (cold start 時に使用)
     pub scan_complete: Arc<AtomicBool>,
+    /// 起動時 `NodeRegistry` populate の結果統計
+    ///
+    /// - 再起動後の `node_id` deep link 回復状況を運用から確認するため `/api/health` に含める
+    /// - 値は `build_app` で一度だけ設定され、以降 immutable
+    pub registry_populate_stats: Arc<PopulateStats>,
 }

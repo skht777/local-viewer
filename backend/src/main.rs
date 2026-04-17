@@ -33,9 +33,12 @@ mod state;
 
 use config::Settings;
 use services::mount_config::load_mount_config;
-use services::node_registry::NodeRegistry;
+use services::node_registry::{NodeRegistry, PopulateStats, populate_registry};
 use services::path_security::PathSecurity;
 use state::AppState;
+
+/// 起動時 populate を skip する既定の上限エントリ数
+const POPULATE_MAX_ENTRIES_DEFAULT: usize = 2_000_000;
 
 /// CLI 引数
 #[derive(Parser, Debug)]
@@ -196,6 +199,12 @@ fn build_app(settings: Settings) -> anyhow::Result<(Router, BackgroundContext)> 
         tracing::error!("インデックス DB 初期化失敗: {e}");
     }
 
+    // 起動時 NodeRegistry populate（再起動後 deep link 回復）
+    // - Indexer の永続エントリから {mount_id}/{rest} を列挙し、
+    //   HMAC 冪等性で再起動前と同じ node_id を再生成して id_to_path に登録
+    // - 閾値超えや list_entry_paths 失敗時は lazy フォールバックへ縮退
+    let populate_stats = hydrate_node_registry(&mut registry, &indexer, &mount_id_map);
+
     // DirIndex 初期化
     let dir_index_path = settings.index_db_path.replace(".db", "-dir.db");
     let dir_index = Arc::new(services::dir_index::DirIndex::new(&dir_index_path));
@@ -228,6 +237,7 @@ fn build_app(settings: Settings) -> anyhow::Result<(Router, BackgroundContext)> 
         dir_index,
         last_rebuild: tokio::sync::Mutex::new(None),
         scan_complete: Arc::clone(&scan_complete),
+        registry_populate_stats: Arc::new(populate_stats),
     });
 
     // CORS: 開発用ポートを許可
@@ -285,6 +295,60 @@ fn build_app(settings: Settings) -> anyhow::Result<(Router, BackgroundContext)> 
         .layer(TraceLayer::new_for_http());
 
     Ok((app, bg_context))
+}
+
+/// 起動時に `NodeRegistry` を `Indexer` の永続エントリから rehydrate する
+///
+/// - Indexer の `list_entry_paths` から `{mount_id}/{rest}` を取得
+/// - 閾値 `POPULATE_MAX_ENTRIES`（環境変数、デフォルト 2,000,000）を超える場合は skip して縮退
+/// - `list_entry_paths` 失敗時も縮退（`degraded = true`）し `build_app` は継続させる
+fn hydrate_node_registry(
+    registry: &mut NodeRegistry,
+    indexer: &services::indexer::Indexer,
+    mount_id_map: &HashMap<String, PathBuf>,
+) -> PopulateStats {
+    let start = std::time::Instant::now();
+    let max_entries = std::env::var("POPULATE_MAX_ENTRIES")
+        .ok()
+        .and_then(|v| v.parse::<usize>().ok())
+        .unwrap_or(POPULATE_MAX_ENTRIES_DEFAULT);
+
+    let paths = match indexer.list_entry_paths() {
+        Ok(paths) => paths,
+        Err(e) => {
+            tracing::error!("NodeRegistry populate: list_entry_paths 失敗: {e}");
+            return PopulateStats {
+                degraded: true,
+                ..PopulateStats::default()
+            };
+        }
+    };
+
+    if paths.len() > max_entries {
+        tracing::warn!(
+            entries = paths.len(),
+            max_entries,
+            "NodeRegistry populate: 閾値超えのため skip（縮退モード）"
+        );
+        return PopulateStats {
+            degraded: true,
+            ..PopulateStats::default()
+        };
+    }
+
+    let stats = populate_registry(registry, &paths, mount_id_map);
+    let elapsed = start.elapsed();
+    tracing::info!(
+        registered = stats.registered,
+        skipped_missing_mount = stats.skipped_missing_mount,
+        skipped_malformed = stats.skipped_malformed,
+        skipped_traversal = stats.skipped_traversal,
+        errors = stats.errors,
+        degraded = stats.degraded,
+        elapsed_ms = elapsed.as_millis() as u64,
+        "NodeRegistry populate 完了"
+    );
+    stats
 }
 
 /// 静的ファイル配信 + SPA フォールバックを追加する
@@ -565,6 +629,7 @@ mod tests {
             dir_index,
             last_rebuild: tokio::sync::Mutex::new(None),
             scan_complete: Arc::new(std::sync::atomic::AtomicBool::new(true)),
+            registry_populate_stats: Arc::new(PopulateStats::default()),
         });
 
         Router::new()
@@ -595,6 +660,242 @@ mod tests {
             .oneshot(
                 Request::builder()
                     .uri("/api/mounts")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+    }
+
+    // --- 再起動後の deep link 回復（populate_registry 経路）回帰テスト ---
+    //
+    // 想定シナリオ: 前セッションで Indexer に永続化された {mount_id}/{rest} を元に、
+    // 新しい NodeRegistry を populate_registry で rehydrate → 古い node_id が
+    // そのまま各エンドポイントで解決できることを検証する（HMAC 冪等性）。
+
+    use crate::services::indexer::IndexEntry;
+
+    /// 非画像エントリを含む warm-start 相当の `AppState` を構築する
+    ///
+    /// - `TempDir` にサブディレクトリ / .mp4 / .pdf を配置
+    /// - 元の `NodeRegistry` で `register_resolved` して想定 `node_id` を取得
+    /// - `Indexer` に `add_entry` で `{mount_id}/{rest}` を登録
+    /// - 新しい `NodeRegistry` を作って `populate_registry` → 同じ `node_id` が再生成されることを確認
+    #[allow(
+        clippy::type_complexity,
+        clippy::too_many_lines,
+        clippy::similar_names,
+        reason = "テストヘルパー: warm-start セットアップを一箇所にまとめる"
+    )]
+    fn warm_state() -> (Arc<AppState>, WarmTargets) {
+        let dir = tempfile::TempDir::new().unwrap();
+        let root = std::fs::canonicalize(dir.path()).unwrap();
+        std::mem::forget(dir);
+
+        // サンプルエントリ（非画像）を配置
+        std::fs::create_dir_all(root.join("videos")).unwrap();
+        std::fs::create_dir_all(root.join("docs")).unwrap();
+        std::fs::write(root.join("videos/clip.mp4"), b"\x00\x00\x00\x20ftypmp42").unwrap();
+        std::fs::write(root.join("docs/manual.pdf"), b"%PDF-1.4\n").unwrap();
+
+        let settings = Settings::from_map(&HashMap::from([(
+            "MOUNT_BASE_DIR".to_string(),
+            root.to_string_lossy().into_owned(),
+        )]))
+        .unwrap();
+
+        let mut mount_names = HashMap::new();
+        mount_names.insert(root.clone(), "test_mount".to_string());
+        let mut mount_id_map = HashMap::new();
+        mount_id_map.insert("test_mount".to_string(), root.clone());
+
+        let ps = Arc::new(PathSecurity::new(vec![root.clone()], false).unwrap());
+
+        // Step 1: 元の NodeRegistry で node_id を生成（前セッション相当）
+        let dir_id = {
+            let mut r = NodeRegistry::new(Arc::clone(&ps), 100_000, mount_names.clone());
+            r.set_mount_id_map(mount_id_map.clone());
+            r.register(&root.join("videos")).unwrap()
+        };
+        let video_id = {
+            let mut r = NodeRegistry::new(Arc::clone(&ps), 100_000, mount_names.clone());
+            r.set_mount_id_map(mount_id_map.clone());
+            r.register(&root.join("videos/clip.mp4")).unwrap()
+        };
+        let pdf_id = {
+            let mut r = NodeRegistry::new(Arc::clone(&ps), 100_000, mount_names.clone());
+            r.set_mount_id_map(mount_id_map.clone());
+            r.register(&root.join("docs/manual.pdf")).unwrap()
+        };
+
+        // Step 2: Indexer に永続化（前セッションのスキャン結果相当）
+        // NamedTempFile は drop で unlink されるため、TempDir 内の固定名ファイルを使う
+        let db_dir = tempfile::TempDir::new().unwrap().keep();
+        let index_db_path = db_dir.join("index.db");
+        let indexer = Arc::new(services::indexer::Indexer::new(
+            index_db_path.to_str().unwrap(),
+        ));
+        indexer.init_db().unwrap();
+        // テストでは warm-start 相当として is_ready フラグを立てておく
+        indexer.mark_warm_start();
+        for (rel, name, kind) in [
+            ("test_mount/videos", "videos", "directory"),
+            ("test_mount/videos/clip.mp4", "clip.mp4", "video"),
+            ("test_mount/docs/manual.pdf", "manual.pdf", "pdf"),
+        ] {
+            indexer
+                .add_entry(&IndexEntry {
+                    relative_path: rel.to_string(),
+                    name: name.to_string(),
+                    kind: kind.to_string(),
+                    size_bytes: Some(128),
+                    mtime_ns: 1_000_000_000,
+                })
+                .unwrap();
+        }
+
+        // Step 3: 新しい NodeRegistry を populate_registry で rehydrate
+        let mut registry = NodeRegistry::new(Arc::clone(&ps), 100_000, mount_names);
+        registry.set_mount_id_map(mount_id_map.clone());
+        let paths = indexer.list_entry_paths().unwrap();
+        let stats = populate_registry(&mut registry, &paths, &mount_id_map);
+        assert_eq!(stats.registered, 3);
+        assert_eq!(stats.errors, 0);
+
+        // 新 registry で同じ node_id が引けることを確認
+        assert_eq!(
+            registry
+                .path_to_id_get(&root.join("videos").to_string_lossy())
+                .unwrap(),
+            dir_id
+        );
+
+        // AppState を組み立てる
+        let archive_service = Arc::new(services::archive::ArchiveService::new(&settings));
+        let temp_file_cache = Arc::new(
+            TempFileCache::new(tempfile::TempDir::new().unwrap().keep(), 10 * 1024 * 1024).unwrap(),
+        );
+        let thumbnail_service = Arc::new(ThumbnailService::new(Arc::clone(&temp_file_cache)));
+        let video_converter =
+            Arc::new(VideoConverter::new(Arc::clone(&temp_file_cache), &settings));
+        let thumbnail_warmer = Arc::new(ThumbnailWarmer::new(4));
+
+        let dir_index_path = db_dir.join("dir_index.db");
+        let dir_index = Arc::new(DirIndex::new(dir_index_path.to_str().unwrap()));
+        dir_index.init_db().unwrap();
+
+        let state = Arc::new(AppState {
+            settings: Arc::new(settings),
+            node_registry: Arc::new(Mutex::new(registry)),
+            archive_service,
+            temp_file_cache,
+            thumbnail_service,
+            video_converter,
+            thumbnail_warmer,
+            thumb_semaphore: Arc::new(tokio::sync::Semaphore::new(8)),
+            archive_thumb_semaphore: Arc::new(tokio::sync::Semaphore::new(4)),
+            indexer,
+            dir_index,
+            last_rebuild: tokio::sync::Mutex::new(None),
+            scan_complete: Arc::new(std::sync::atomic::AtomicBool::new(true)),
+            registry_populate_stats: Arc::new(stats),
+        });
+
+        (
+            state,
+            WarmTargets {
+                dir_id,
+                video_id,
+                pdf_id,
+            },
+        )
+    }
+
+    #[allow(
+        clippy::struct_field_names,
+        reason = "各フィールドは異なる node_id を表すため _id 付きで統一"
+    )]
+    struct WarmTargets {
+        dir_id: String,
+        video_id: String,
+        #[allow(dead_code, reason = "PDF の deep link テスト用")]
+        pdf_id: String,
+    }
+
+    fn warm_router(state: Arc<AppState>) -> Router {
+        Router::new()
+            .route(
+                "/api/browse/{node_id}",
+                get(routers::browse::browse_directory),
+            )
+            .route("/api/file/{node_id}", get(routers::file::serve_file))
+            .route(
+                "/api/thumbnail/{node_id}",
+                get(routers::thumbnail::serve_thumbnail),
+            )
+            .route("/api/search", get(routers::search::search))
+            .with_state(state)
+    }
+
+    #[tokio::test]
+    async fn 再起動後にbrowse_deep_linkが200を返す() {
+        let (state, targets) = warm_state();
+        let app = warm_router(state);
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri(format!("/api/browse/{}", targets.dir_id))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn 再起動後にfile_deep_linkが200を返す() {
+        let (state, targets) = warm_state();
+        let app = warm_router(state);
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri(format!("/api/file/{}", targets.video_id))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn 再起動後にthumbnail_deep_linkが成功する() {
+        let (state, targets) = warm_state();
+        let app = warm_router(state);
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri(format!("/api/thumbnail/{}", targets.video_id))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        // サムネイル生成は ffmpeg 有無に依存するため 200/500 どちらでも許容。
+        // 404（未登録 node_id）ではないこと＝rehydrate が効いていることを検証する。
+        assert_ne!(response.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn 再起動後にsearch_scope_deep_linkが200を返す() {
+        let (state, targets) = warm_state();
+        let app = warm_router(state);
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri(format!("/api/search?q=clip&scope={}", targets.dir_id))
                     .body(Body::empty())
                     .unwrap(),
             )

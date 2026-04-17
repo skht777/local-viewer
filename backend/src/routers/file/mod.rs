@@ -283,6 +283,9 @@ mod tests {
             dir_index,
             last_rebuild: tokio::sync::Mutex::new(None),
             scan_complete: Arc::new(std::sync::atomic::AtomicBool::new(true)),
+            registry_populate_stats: Arc::new(
+                crate::services::node_registry::PopulateStats::default(),
+            ),
         });
 
         let app = Router::new()
