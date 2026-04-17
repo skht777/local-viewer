@@ -25,6 +25,7 @@ pub(crate) mod node_registry;
 pub(crate) mod parallel_walk;
 #[allow(dead_code, reason = "Phase 4+ で追加メソッドを使用")]
 pub(crate) mod path_security;
+pub(crate) mod security;
 #[allow(dead_code, reason = "Phase 5 のサムネイル・動画サービスで使用")]
 pub(crate) mod temp_file_cache;
 #[allow(dead_code, reason = "Phase 5 のサムネイルルーターで使用")]
