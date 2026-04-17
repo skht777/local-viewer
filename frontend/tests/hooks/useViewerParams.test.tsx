@@ -1,6 +1,7 @@
 import { renderHook, act } from "@testing-library/react";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { useViewerParams } from "../../src/hooks/useViewerParams";
+import { useViewerStore } from "../../src/stores/viewerStore";
 import type { ReactNode } from "react";
 
 function createWrapper(initialEntries: string[] = ["/"]) {
@@ -88,6 +89,86 @@ describe("useViewerParams", () => {
     expect(result.current.isViewerOpen).toBe(false);
     // index パラメータが削除されていること
     expect(result.current.params.index).toBe(-1);
+  });
+
+  // --- closeViewerToOrigin 規約（viewerOrigin フォールバック）---
+  //
+  // 履歴モデル: 開く系は replace:true で履歴を積まず、閉じる系は viewerOrigin
+  // を起点にブラウザ履歴上の browse ページへ戻す（open-viewer-return.test.ts も参照）。
+  // 背景: レビュー M1 — closeViewer の分岐は deep link 時の stay-in-place と
+  // origin 存在時の restore の 2 経路を明示的に回帰テスト化する。
+
+  test("viewerOriginが設定されていればcloseViewerでorigin側のbrowseURLへ戻る", () => {
+    // open 時に setViewerOrigin された状態を再現
+    useViewerStore.getState().setViewerOrigin({
+      nodeId: "origin-node",
+      search: "?mode=manga",
+    });
+
+    function LocationProbe({
+      onChange,
+    }: {
+      onChange: (path: string, search: string) => void;
+    }) {
+      const { useLocation } = require("react-router-dom") as typeof import("react-router-dom");
+      const loc = useLocation();
+      onChange(loc.pathname, loc.search);
+      return null;
+    }
+
+    let currentPath = "";
+    let currentSearch = "";
+    function Wrapper({ children }: { children: ReactNode }) {
+      return (
+        <MemoryRouter initialEntries={["/browse/viewer-node?tab=images&index=4&mode=manga"]}>
+          <Routes>
+            <Route
+              path="/browse/:nodeId"
+              element={
+                <>
+                  <LocationProbe
+                    onChange={(p, s) => {
+                      currentPath = p;
+                      currentSearch = s;
+                    }}
+                  />
+                  {children}
+                </>
+              }
+            />
+          </Routes>
+        </MemoryRouter>
+      );
+    }
+
+    const { result } = renderHook(() => useViewerParams(), { wrapper: Wrapper });
+    act(() => {
+      result.current.closeViewer();
+    });
+
+    // viewerOrigin が消費されていること
+    expect(useViewerStore.getState().viewerOrigin).toBeNull();
+    // URL が origin 側へ復元されていること
+    expect(currentPath).toBe("/browse/origin-node");
+    expect(currentSearch).toBe("?mode=manga");
+  });
+
+  test("viewerOriginがnullならcloseViewerはindexだけを削除し現在位置に留まる", () => {
+    // 明示的に origin を null に初期化（前テストの持ち越しを避ける）
+    useViewerStore.getState().setViewerOrigin(null);
+
+    const { result } = renderHook(() => useViewerParams(), {
+      wrapper: createWrapper(["/browse/current-node?tab=images&index=4&mode=manga"]),
+    });
+    act(() => {
+      result.current.closeViewer();
+    });
+
+    // 現在ディレクトリに留まる: mode/tab は維持し index のみ消える
+    expect(result.current.params.index).toBe(-1);
+    expect(result.current.params.mode).toBe("manga");
+    expect(result.current.params.tab).toBe("images");
+    expect(useViewerStore.getState().viewerOrigin).toBeNull();
   });
 
   // --- Phase 6: PDF ビューワー状態 ---
