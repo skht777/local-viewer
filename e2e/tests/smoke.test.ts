@@ -13,7 +13,8 @@ test.describe("smoke テスト", () => {
     const response = await request.get("/api/health");
     expect(response.ok()).toBeTruthy();
     const body = await response.json();
-    expect(body).toEqual({ status: "ok" });
+    // status は "ok" を維持。registry_populate 等の追加フィールドは検証対象外
+    expect(body).toMatchObject({ status: "ok" });
   });
 
   test("マウントポイントカードが表示される", async ({ page }) => {
