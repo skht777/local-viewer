@@ -256,6 +256,22 @@ impl Indexer {
         Ok(count as usize)
     }
 
+    /// 永続化された全エントリの `relative_path` を列挙する
+    ///
+    /// - 起動時に `NodeRegistry` を rehydrate するための入力を提供
+    /// - 戻り値の形式は `{mount_id}/{rest}`（`helpers::make_relative_prefix` と整合）
+    /// - ディレクトリ / ファイル / アーカイブ等の区別はしない（kind フィルタなし）
+    pub(crate) fn list_entry_paths(&self) -> Result<Vec<String>, IndexerError> {
+        let conn = self.connect()?;
+        let mut stmt = conn.prepare("SELECT relative_path FROM entries")?;
+        let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
+        let mut paths = Vec::new();
+        for row in rows {
+            paths.push(row?);
+        }
+        Ok(paths)
+    }
+
     /// インデックスが使用可能かどうか
     pub(crate) fn is_ready(&self) -> bool {
         self.is_ready.load(Ordering::Relaxed)
@@ -1050,5 +1066,41 @@ mod tests {
         // is_rebuilding は完了後 false
         assert!(!env.indexer.is_rebuilding());
         assert!(env.indexer.is_ready());
+    }
+
+    #[test]
+    fn list_entry_pathsは空テーブルで空vecを返す() {
+        let (indexer, _tmp) = setup_indexer();
+        let paths = indexer.list_entry_paths().unwrap();
+        assert!(paths.is_empty());
+    }
+
+    #[test]
+    fn list_entry_pathsは登録済みrelative_pathを返す() {
+        let (indexer, _tmp) = setup_indexer();
+        indexer
+            .add_entry(&make_entry(
+                "mount_a/photos/sunset.jpg",
+                "sunset.jpg",
+                "image",
+            ))
+            .unwrap();
+        indexer
+            .add_entry(&make_entry("mount_a/videos/clip.mp4", "clip.mp4", "video"))
+            .unwrap();
+        indexer
+            .add_entry(&make_entry("mount_b/docs/manual.pdf", "manual.pdf", "pdf"))
+            .unwrap();
+
+        let mut paths = indexer.list_entry_paths().unwrap();
+        paths.sort();
+        assert_eq!(
+            paths,
+            vec![
+                "mount_a/photos/sunset.jpg".to_string(),
+                "mount_a/videos/clip.mp4".to_string(),
+                "mount_b/docs/manual.pdf".to_string(),
+            ]
+        );
     }
 }
