@@ -4,7 +4,9 @@
 // - Query キャッシュには raw base64 data のみ、Blob URL はローカルで差分管理
 
 import { useQueries } from "@tanstack/react-query";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef } from "react";
+import { areNodeIdsEqual, useDebouncedValue } from "../useDebouncedValue";
+import { mergeThumbnailQueryResults } from "../../utils/mergeThumbnailResults";
 import { apiPost } from "./apiClient";
 
 // 安定チャンク分割の状態
@@ -76,12 +78,8 @@ export function useBatchThumbnails(nodeIds: string[]): {
   isLoading: boolean;
 } {
   // デバウンス: 短時間の連続変更をまとめる (タブ切替・フィルタ変更対応)
-  const [debouncedIds, setDebouncedIds] = useState(nodeIds);
-  const key = useMemo(() => nodeIds.join(","), [nodeIds]);
-  useEffect(() => {
-    const timer = setTimeout(() => setDebouncedIds(nodeIds), 50);
-    return () => clearTimeout(timer);
-  }, [key]); // eslint-disable-line react-hooks/exhaustive-deps
+  // areNodeIdsEqual で配列の構造同一性を判定し、参照変更のみのケースを除外する。
+  const debouncedIds = useDebouncedValue(nodeIds, 50, areNodeIdsEqual);
 
   // 安定チャンク分割: 追加のみなら既存チャンクを維持し、新規 ID だけ新チャンクに
   const chunksRef = useRef<ChunkState>({ chunks: [], idSet: new Set() });
@@ -108,21 +106,16 @@ export function useBatchThumbnails(nodeIds: string[]): {
   });
 
   // 全チャンク結果をマージ (dataUpdatedAt で実際のデータ変更を追跡)
+  // pure 関数 mergeThumbnailQueryResults に委譲し、dataUpdatedAt 配列を依存に使って
+  // 「データ到着」のみで再計算するよう制御する。
   const dataKey = chunkResults.map((r) => r.dataUpdatedAt).join(",");
-  const rawData = useMemo(() => {
-    const merged = new Map<string, string>();
-    for (const result of chunkResults) {
-      if (result.data) {
-        for (const [id, thumb] of Object.entries(result.data.thumbnails)) {
-          if (thumb.data) {
-            merged.set(id, thumb.data);
-          }
-        }
-      }
-    }
-    return merged;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dataKey]);
+  const rawData = useMemo(
+    () => mergeThumbnailQueryResults(chunkResults),
+    // dataKey は依存として記載するが、実際には chunkResults の dataUpdatedAt を連結した値。
+    // chunkResults 自体は毎レンダリング新規生成されるため依存には入れない（意図的）。
+    // biome-ignore lint/correctness/useExhaustiveDependencies: dataKey で変更を追跡
+    [dataKey], // eslint-disable-line react-hooks/exhaustive-deps
+  );
 
   // Blob URL の差分管理 (共通 ID は再利用、不要分のみ revoke)
   const prevUrlsRef = useRef(new Map<string, string>());
@@ -159,8 +152,7 @@ export function useBatchThumbnails(nodeIds: string[]): {
   }, []);
 
   // ローディング状態: デバウンス待ちまたはチャンク取得中
-  const debouncedKey = useMemo(() => debouncedIds.join(","), [debouncedIds]);
-  const isDebouncing = key !== debouncedKey;
+  const isDebouncing = !areNodeIdsEqual(nodeIds, debouncedIds);
   const isLoading = nodeIds.length > 0 && (isDebouncing || chunkResults.some((r) => r.isLoading));
 
   return { thumbnails: urlMap, isLoading };
