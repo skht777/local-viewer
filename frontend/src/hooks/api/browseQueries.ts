@@ -1,6 +1,6 @@
 // browse API の TanStack Query オプション定義
 
-import { infiniteQueryOptions, queryOptions } from "@tanstack/react-query";
+import { infiniteQueryOptions, queryOptions, type QueryClient } from "@tanstack/react-query";
 import type { SortOrder } from "../../hooks/useViewerParams";
 import type { BrowseResponse, SearchResponse } from "../../types/api";
 import { apiFetch } from "./apiClient";
@@ -33,6 +33,34 @@ export function browseInfiniteOptions(nodeId: string | undefined, sort: SortOrde
     getNextPageParam: (lastPage) => lastPage.next_cursor ?? undefined,
     enabled: !!nodeId,
   });
+}
+
+// ビューワー起動時の全ページプリフェッチ上限（= 最大 20,000 エントリ）
+// `fetchInfiniteQuery` の `pages` に渡すと、`getNextPageParam` が undefined を返した時点で
+// ライブラリ側の do-while ループが自発的に break する。安全上限として機能。
+export const MAX_PAGES = 200;
+
+// browseInfiniteOptions の全ページを逐次フェッチしてキャッシュに詰める
+// - ビューワー起動時に兄弟画像が 100 件で打ち切られないようにするためのヘルパー
+// - `prefetchInfiniteQuery` は例外を握り潰すため、呼び元の try/catch で拾える
+//   `fetchInfiniteQuery` を使う
+// - 上限到達（最終ページに `next_cursor` が残っている）は警告のみで続行
+export async function fetchAllBrowsePages(
+  queryClient: QueryClient,
+  nodeId: string,
+  sort: SortOrder,
+): Promise<void> {
+  const options = browseInfiniteOptions(nodeId, sort);
+  const result = await queryClient.fetchInfiniteQuery({
+    ...options,
+    pages: MAX_PAGES,
+  });
+  const lastPage = result.pages[result.pages.length - 1];
+  if (result.pages.length >= MAX_PAGES && lastPage?.next_cursor) {
+    console.warn(
+      `fetchAllBrowsePages: MAX_PAGES (${MAX_PAGES}) に到達しました。nodeId=${nodeId} の続きのページは取得されていません`,
+    );
+  }
 }
 
 // キーワード検索
