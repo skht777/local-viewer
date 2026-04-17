@@ -106,10 +106,11 @@ function TreeNode({ entry, depth, activeNodeId, ancestorNodeIds, onNavigate }: T
         onClick={handleLabelClick}
         onPointerEnter={handlePointerEnter}
         onPointerLeave={handlePointerLeave}
-        className={`flex w-full items-center gap-1 px-2 py-1 text-left text-sm transition-colors hover:bg-surface-raised ${
+        className={`flex w-full items-center gap-1 py-1 pr-2 pl-[calc(var(--depth,0)*16px+8px)] text-left text-sm transition-colors hover:bg-surface-raised ${
           isActive ? "bg-surface-raised text-white" : "text-gray-300"
         }`}
-        style={{ paddingLeft: `${depth * 16 + 8}px` }}
+        // CSS 変数注入のみ inline style (frontend-react.md Styling 例外条項準拠)
+        style={{ "--depth": depth } as React.CSSProperties}
         tabIndex={-1}
       >
         {/* アイコン: クリックで展開/折りたたみのみ（非 tabbable） */}
