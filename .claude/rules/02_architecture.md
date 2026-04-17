@@ -67,6 +67,7 @@ routers → services → 外部クレート/std
 - SQLite 操作: `spawn_blocking` 内で同期 rusqlite
 - services 間の依存は許容（例: `file_watcher → dir_index` の dirty 化通知、`browse → dir_index` の自己修復 write-back）
 - routers 間の直接依存は不可（共通処理は services へ抽出）
+- `mount_id_map` は `bg_context` 経由で scan（Indexer）と watcher（FileWatcher）双方の反復元になる。片方だけ触って永続化形式（先頭 `/` 有無等）の不整合を生まないよう、書き込み経路全体の整合を確認する
 
 ### Frontend
 ```

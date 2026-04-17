@@ -25,6 +25,11 @@ Red → Green → Refactor を小刻みに回す:
 - **API テスト**: 各エンドポイントの正常系・異常系 (`tower::ServiceExt::oneshot`)
 - **サービステスト**: path_security, node_registry, archive, indexer のユニットテスト
 - **セキュリティ回帰テスト**: traversal, symlink, zip bomb, 壊れたアーカイブ
+
+### node_id 復元・startup rehydrate を触る変更のテスト必須項目
+`NodeRegistry` の populate や `node_id` の永続復元を変更する場合:
+- 統合テストは `browse` だけでなく `/api/file`, `/api/thumbnail`, `/api/search?scope=` も含めた 4 エンドポイント以上で warm-start 後の 200 回帰を検証する
+- 負例テストを必ず含める: `../` や絶対パス混入（traversal）、missing mount、空 mount_id、malformed row（NUL バイト等）
 ### テスト実行
 ```bash
 cd backend && cargo test                    # 全テスト
