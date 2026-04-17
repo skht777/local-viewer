@@ -123,14 +123,12 @@ pub(super) fn process_event(
             i64::try_from(d.as_nanos()).unwrap_or(i64::MAX)
         });
 
-    #[allow(
-        clippy::cast_possible_wrap,
-        reason = "ファイルサイズが i64::MAX を超えることはない"
-    )]
     let size_bytes = if is_dir {
         None
     } else {
-        Some(meta.len() as i64)
+        // ファイルサイズが i64::MAX を超えることは現実的には無いが、
+        // `as i64` の wrap を避けるために try_from で clamp する
+        Some(i64::try_from(meta.len()).unwrap_or(i64::MAX))
     };
 
     let entry = IndexEntry {

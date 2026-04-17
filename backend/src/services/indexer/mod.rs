@@ -238,12 +238,12 @@ impl Indexer {
     }
 
     /// 登録済みエントリ数を返す
-    #[allow(clippy::cast_possible_wrap, reason = "エントリ数は i64 範囲内")]
     pub(crate) fn entry_count(&self) -> Result<usize, IndexerError> {
         let conn = self.connect()?;
         let count: i64 = conn.query_row("SELECT COUNT(*) FROM entries", [], |row| row.get(0))?;
-        #[allow(clippy::cast_sign_loss, reason = "COUNT(*) は非負")]
-        Ok(count as usize)
+        // COUNT(*) は非負なので try_from は成功する。
+        // 万一 usize::MAX を超えても（64bit 環境ではあり得ない）clamp で安全側に倒す
+        Ok(usize::try_from(count).unwrap_or(usize::MAX))
     }
 
     /// 永続化された全エントリの `relative_path` を列挙する

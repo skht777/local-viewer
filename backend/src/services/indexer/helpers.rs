@@ -53,7 +53,6 @@ pub(crate) struct SearchHit {
 ///
 /// `scope_pattern` が指定された場合、`e.relative_path LIKE ? ESCAPE '\'` で
 /// プレフィックスマッチを追加する。
-#[allow(clippy::cast_possible_wrap, reason = "limit/offset は i64 範囲内")]
 pub(super) fn search_fts(
     conn: &Connection,
     fts_query: &str,
@@ -91,8 +90,9 @@ pub(super) fn search_fts(
     if let Some(sp) = scope_pattern {
         bind_values.push(Box::new(sp.to_string()));
     }
-    bind_values.push(Box::new(limit as i64));
-    bind_values.push(Box::new(offset as i64));
+    // usize → i64: LIMIT/OFFSET は実用範囲内なので try_from でクランプ
+    bind_values.push(Box::new(i64::try_from(limit).unwrap_or(i64::MAX)));
+    bind_values.push(Box::new(i64::try_from(offset).unwrap_or(i64::MAX)));
 
     let bind_refs: Vec<&dyn rusqlite::types::ToSql> =
         bind_values.iter().map(AsRef::as_ref).collect();
@@ -106,7 +106,6 @@ pub(super) fn search_fts(
 ///
 /// `scope_pattern` が指定された場合、`relative_path LIKE ? ESCAPE '\'` で
 /// プレフィックスマッチを追加する。
-#[allow(clippy::cast_possible_wrap, reason = "limit/offset は i64 範囲内")]
 pub(super) fn search_like(
     conn: &Connection,
     query: &str,
@@ -142,8 +141,9 @@ pub(super) fn search_like(
     if let Some(sp) = scope_pattern {
         bind_values.push(Box::new(sp.to_string()));
     }
-    bind_values.push(Box::new(limit as i64));
-    bind_values.push(Box::new(offset as i64));
+    // usize → i64: LIMIT/OFFSET は実用範囲内なので try_from でクランプ
+    bind_values.push(Box::new(i64::try_from(limit).unwrap_or(i64::MAX)));
+    bind_values.push(Box::new(i64::try_from(offset).unwrap_or(i64::MAX)));
 
     let bind_refs: Vec<&dyn rusqlite::types::ToSql> =
         bind_values.iter().map(AsRef::as_ref).collect();
@@ -439,7 +439,6 @@ pub(super) fn load_dir_mtimes(conn: &Connection) -> Result<HashMap<String, i64>,
 ///
 /// 一時テーブルに seen パスをバッチ INSERT し、NOT IN で一括 DELETE することで
 /// 個別 DELETE の N 回の SQL 実行を 1 回に削減する。
-#[allow(clippy::cast_sign_loss, reason = "削除件数は非負")]
 pub(super) fn delete_unseen(
     conn: &Connection,
     seen: &HashSet<String>,
