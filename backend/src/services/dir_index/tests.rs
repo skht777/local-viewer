@@ -1,4 +1,5 @@
 use super::*;
+use crate::services::indexer::WalkCallbackArgs;
 
 /// テスト用の一時 DB パスで `DirIndex` を生成する
 fn setup() -> (DirIndex, tempfile::NamedTempFile) {

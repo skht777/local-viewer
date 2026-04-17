@@ -5,7 +5,8 @@ use rusqlite::{Connection, params};
 use crate::services::indexer::WalkCallbackArgs;
 use crate::services::natural_sort::encode_sort_key;
 
-use super::{BATCH_SIZE, DirIndexError, PendingEntry, build_parent_path, classify_kind};
+use super::sort_queries::{build_parent_path, classify_kind};
+use super::{BATCH_SIZE, DirIndexError, PendingEntry};
 
 pub(crate) struct BulkInserter {
     pub(super) conn: Connection,
