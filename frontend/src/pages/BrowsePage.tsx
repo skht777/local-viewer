@@ -14,12 +14,9 @@ import { useOpenViewerFromEntry } from "../hooks/useOpenViewerFromEntry";
 import { useViewerParams, type ViewerTab } from "../hooks/useViewerParams";
 import { useViewerStore } from "../stores/viewerStore";
 import { BrowseHeader } from "../components/BrowseHeader";
-import { CgViewer } from "../components/CgViewer";
+import { BrowsePageViewerSwitch } from "../components/BrowsePageViewerSwitch";
 import { DirectoryTree } from "../components/DirectoryTree";
 import { FileBrowser } from "../components/FileBrowser";
-import { MangaViewer } from "../components/MangaViewer";
-import { PdfCgViewer } from "../components/PdfCgViewer";
-import { PdfMangaViewer } from "../components/PdfMangaViewer";
 import { VideoFeed } from "../components/VideoFeed";
 import { ViewerTabs } from "../components/ViewerTabs";
 
@@ -233,79 +230,28 @@ export default function BrowsePage() {
     selectedCard?.focus();
   }, []);
 
-  // PDF ファイル名を entries から取得
-  const pdfEntry = useMemo(
-    () => (data?.entries ?? []).find((e) => e.node_id === params.pdfNodeId),
-    [data?.entries, params.pdfNodeId],
+  // ビューワー (PDF / 画像 / トランジション) を先に判定し、該当する場合はそれを返す
+  const viewerSwitch = (
+    <BrowsePageViewerSwitch
+      nodeId={nodeId}
+      data={data}
+      mode={params.mode}
+      sort={params.sort}
+      isPdfViewerOpen={isPdfViewerOpen}
+      isViewerOpen={isViewerOpen}
+      pdfNodeId={params.pdfNodeId}
+      pdfPage={params.pdfPage}
+      index={params.index}
+      viewerTransitionId={viewerTransitionId}
+      viewerImages={viewerImages}
+      setIndex={setIndex}
+      setPdfPage={setPdfPage}
+      closeViewer={closeViewer}
+      closePdfViewer={closePdfViewer}
+    />
   );
-
-  // PDF ビューワー表示中 (画像ビューワーより先に判定)
-  if (isPdfViewerOpen && params.pdfNodeId) {
-    const pdfName = pdfEntry?.name ?? "";
-    const commonProps = {
-      pdfNodeId: params.pdfNodeId,
-      pdfName,
-      parentNodeId: data?.current_node_id ?? nodeId ?? null,
-      ancestors: data?.ancestors,
-      initialPage: params.pdfPage,
-      mode: params.mode,
-      sort: params.sort,
-      onPageChange: setPdfPage,
-      onClose: closePdfViewer,
-    };
-    if (params.mode === "manga") {
-      return <PdfMangaViewer {...commonProps} />;
-    }
-    return <PdfCgViewer {...commonProps} />;
-  }
-
-  // セットジャンプのトランジション中: ローディングオーバーレイを表示
-  if (viewerTransitionId > 0) {
-    return (
-      <div
-        data-testid="viewer-transition"
-        className="fixed inset-0 z-50 flex items-center justify-center bg-black"
-      >
-        <div className="text-gray-400">読み込み中...</div>
-      </div>
-    );
-  }
-
-  // 画像ビューワー表示中（viewerImages は常に名前昇順）
-  if (isViewerOpen && viewerImages.length > 0) {
-    const safeIndex = Math.max(0, Math.min(params.index, viewerImages.length - 1));
-
-    if (params.mode === "manga") {
-      return (
-        <MangaViewer
-          images={viewerImages}
-          currentIndex={safeIndex}
-          setName={data?.current_name ?? ""}
-          parentNodeId={data?.parent_node_id ?? null}
-          currentNodeId={data?.current_node_id ?? null}
-          ancestors={data?.ancestors}
-          mode={params.mode}
-          sort={params.sort}
-          onIndexChange={setIndex}
-          onClose={closeViewer}
-        />
-      );
-    }
-
-    return (
-      <CgViewer
-        images={viewerImages}
-        currentIndex={safeIndex}
-        setName={data?.current_name ?? ""}
-        parentNodeId={data?.parent_node_id ?? null}
-        currentNodeId={data?.current_node_id ?? null}
-        ancestors={data?.ancestors}
-        mode={params.mode}
-        sort={params.sort}
-        onIndexChange={setIndex}
-        onClose={closeViewer}
-      />
-    );
+  if (isPdfViewerOpen || viewerTransitionId > 0 || (isViewerOpen && viewerImages.length > 0)) {
+    return viewerSwitch;
   }
 
   return (
