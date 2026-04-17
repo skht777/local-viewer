@@ -6,10 +6,13 @@
 //! - クライアントに実パスを公開しない
 
 mod directory;
+mod populate;
 mod scan;
 #[cfg(test)]
 mod tests;
 
+#[allow(unused_imports, reason = "Green-3 コミットで main.rs から使用する")]
+pub(crate) use populate::{PopulateStats, populate_registry};
 pub(crate) use scan::{ScannedEntry, scan_entries, scan_entry_metas, stat_entries};
 
 use std::collections::{HashMap, VecDeque};
