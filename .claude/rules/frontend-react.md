@@ -33,6 +33,7 @@ paths:
 - Tailwind CSS v4 utility classes exclusively
 - No inline styles, no CSS modules
 - Dark theme fixed (bg-surface-base, text-white base, @theme tokens)
+- 例外: ランタイム計算値（仮想化の座標計算 `translateY` / `height` / grid 列数、スタガーアニメーションの CSS 変数注入 `--stagger-delay` など）は inline style を許容する。Tailwind 任意値で表現できる静的値には適用しない
 
 ## PWA
 - vite-plugin-pwa でオフラインキャッシュ
