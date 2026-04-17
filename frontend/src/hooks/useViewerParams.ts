@@ -5,15 +5,24 @@
 // - sort は browse スコープ: "name-asc"(デフォルト) は省略、他は URL に書き込み
 // - index/pdf/page は viewer スコープ: ビューワー close で削除
 // - pdf と index は排他: openPdfViewer で index/tab 削除、openViewer で pdf/page 削除
+//
+// URL 構築の pure ロジックは utils/viewerNavigation.ts に分離し、
+// 本 hook は副作用（setSearchParams / navigate / viewerOrigin の更新）のみを担当する。
 
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useViewerStore } from "../stores/viewerStore";
+import { updateSearchParams } from "../utils/searchParamUpdater";
+import {
+  buildBrowseSearch as buildBrowseSearchPure,
+  buildCloseImageSearch,
+  buildClosePdfSearch,
+  buildOpenImageSearch,
+  buildOpenPdfSearch,
+  VALID_SORT_ORDERS,
+} from "../utils/viewerNavigation";
 
-export type ViewerTab = "filesets" | "images" | "videos";
-export type ViewerMode = "cg" | "manga";
-export type SortOrder = "name-asc" | "name-desc" | "date-asc" | "date-desc";
-
-const VALID_SORT_ORDERS: Set<string> = new Set(["name-asc", "name-desc", "date-asc", "date-desc"]);
+export type { SortOrder, ViewerMode, ViewerTab } from "../utils/viewerNavigation";
+import type { SortOrder, ViewerMode, ViewerTab } from "../utils/viewerNavigation";
 
 interface ViewerParams {
   tab: ViewerTab;
@@ -65,21 +74,23 @@ export function useViewerParams(): UseViewerParamsReturn {
   const isViewerOpen =
     !isPdfViewerOpen && hasIndex && tab === "images" && (mode === "cg" || mode === "manga");
 
+  const buildBrowseSearch = (overrides?: { tab?: string; index?: number }): string =>
+    buildBrowseSearchPure(searchParams, overrides);
+
   const setTab = (newTab: ViewerTab) => {
-    setSearchParams((prev) => {
-      const next = new URLSearchParams(prev);
-      next.set("tab", newTab);
-      return next;
-    });
+    setSearchParams((prev) =>
+      updateSearchParams(prev, (next) => {
+        next.set("tab", newTab);
+      }),
+    );
   };
 
   const setIndex = (newIndex: number) => {
     setSearchParams(
-      (prev) => {
-        const next = new URLSearchParams(prev);
-        next.set("index", String(newIndex));
-        return next;
-      },
+      (prev) =>
+        updateSearchParams(prev, (next) => {
+          next.set("index", String(newIndex));
+        }),
       { replace: true },
     );
   };
@@ -87,15 +98,14 @@ export function useViewerParams(): UseViewerParamsReturn {
   // mode 正規化: "manga" のみ URL に書き込み、"cg" は省略（デフォルト）
   const setMode = (newMode: ViewerMode) => {
     setSearchParams(
-      (prev) => {
-        const next = new URLSearchParams(prev);
-        if (newMode === "manga") {
-          next.set("mode", "manga");
-        } else {
-          next.delete("mode");
-        }
-        return next;
-      },
+      (prev) =>
+        updateSearchParams(prev, (next) => {
+          if (newMode === "manga") {
+            next.set("mode", "manga");
+          } else {
+            next.delete("mode");
+          }
+        }),
       { replace: true },
     );
   };
@@ -103,15 +113,14 @@ export function useViewerParams(): UseViewerParamsReturn {
   // sort 正規化: "name-asc"(デフォルト) は省略、他は URL に書き込み
   const setSort = (newSort: SortOrder) => {
     setSearchParams(
-      (prev) => {
-        const next = new URLSearchParams(prev);
-        if (newSort === "name-asc") {
-          next.delete("sort");
-        } else {
-          next.set("sort", newSort);
-        }
-        return next;
-      },
+      (prev) =>
+        updateSearchParams(prev, (next) => {
+          if (newSort === "name-asc") {
+            next.delete("sort");
+          } else {
+            next.set("sort", newSort);
+          }
+        }),
       { replace: true },
     );
   };
@@ -124,17 +133,7 @@ export function useViewerParams(): UseViewerParamsReturn {
     if (nodeId) {
       setViewerOrigin({ nodeId, search: buildBrowseSearch() });
     }
-    setSearchParams(
-      (prev) => {
-        const next = new URLSearchParams(prev);
-        next.set("tab", "images");
-        next.set("index", String(newIndex));
-        next.delete("pdf");
-        next.delete("page");
-        return next;
-      },
-      { replace: true },
-    );
+    setSearchParams((prev) => buildOpenImageSearch(prev, { index: newIndex }), { replace: true });
   };
 
   // 画像ビューワーを閉じる: 起点に戻るか、履歴を1つ戻る
@@ -145,11 +144,7 @@ export function useViewerParams(): UseViewerParamsReturn {
       navigate(`/browse/${origin.nodeId}${origin.search}`, { replace: true });
     } else {
       // deep link 等で origin がない場合: 現在ディレクトリに留まる
-      setSearchParams((prev) => {
-        const next = new URLSearchParams(prev);
-        next.delete("index");
-        return next;
-      });
+      setSearchParams(buildCloseImageSearch);
     }
   };
 
@@ -160,17 +155,7 @@ export function useViewerParams(): UseViewerParamsReturn {
     if (nodeId) {
       setViewerOrigin({ nodeId, search: buildBrowseSearch() });
     }
-    setSearchParams(
-      (prev) => {
-        const next = new URLSearchParams(prev);
-        next.set("pdf", pdfNodeId);
-        next.set("page", "1");
-        next.delete("index");
-        next.delete("tab");
-        return next;
-      },
-      { replace: true },
-    );
+    setSearchParams((prev) => buildOpenPdfSearch(prev, { pdfNodeId }), { replace: true });
   };
 
   // PDF ビューワーを閉じる: 起点に戻るか、現在ディレクトリに留まる
@@ -180,41 +165,19 @@ export function useViewerParams(): UseViewerParamsReturn {
       setViewerOrigin(null);
       navigate(`/browse/${origin.nodeId}${origin.search}`, { replace: true });
     } else {
-      setSearchParams((prev) => {
-        const next = new URLSearchParams(prev);
-        next.delete("pdf");
-        next.delete("page");
-        return next;
-      });
+      setSearchParams(buildClosePdfSearch);
     }
   };
 
   // PDF ページ番号を更新
   const setPdfPage = (page: number) => {
     setSearchParams(
-      (prev) => {
-        const next = new URLSearchParams(prev);
-        next.set("page", String(page));
-        return next;
-      },
+      (prev) =>
+        updateSearchParams(prev, (next) => {
+          next.set("page", String(page));
+        }),
       { replace: true },
     );
-  };
-
-  // browse スコープのパラメータを維持し、viewer スコープだけ除外した search 文字列を返す
-  // ディレクトリ遷移時に mode/tab を引き継ぐために使用
-  const buildBrowseSearch = (overrides?: { tab?: string; index?: number }): string => {
-    const next = new URLSearchParams();
-    const currentMode = searchParams.get("mode");
-    if (currentMode === "manga") next.set("mode", "manga");
-    const nextTab = overrides?.tab ?? searchParams.get("tab");
-    if (nextTab && nextTab !== "filesets") next.set("tab", nextTab);
-    const currentSort = searchParams.get("sort");
-    if (currentSort && VALID_SORT_ORDERS.has(currentSort) && currentSort !== "name-asc") {
-      next.set("sort", currentSort);
-    }
-    if (overrides?.index != null) next.set("index", String(overrides.index));
-    return next.toString() ? `?${next}` : "";
   };
 
   return {
