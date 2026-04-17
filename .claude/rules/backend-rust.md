@@ -17,7 +17,7 @@ routers → services → 外部クレート/std
 ## axum パターン
 
 ### ルーティング
-- 1 リソース 1 ファイル: `mounts.rs`, `browse.rs`, `file.rs`, `thumbnail.rs`, `search.rs`
+- 1 リソース 1 モジュール: `mounts.rs` は単一ファイル、`browse/`・`file/`・`thumbnail/`・`search/` はサブモジュール分割（`mod.rs` + 機能別ファイル）
 - 全ルート `/api/` プレフィックス
 - node_id パスパラメータを使用、生ファイルパスは公開しない
 - axum 0.8 のパス構文: `/{node_id}` (`/:id` ではない)

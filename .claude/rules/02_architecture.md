@@ -18,21 +18,25 @@ local-viewer/
 │   ├── clippy.toml          # Clippy 設定
 │   ├── rustfmt.toml         # rustfmt 設定
 │   ├── src/
-│   │   ├── main.rs          # エントリポイント (AppState 初期化、ルーター登録)
+│   │   ├── main.rs          # エントリポイント (CLI パース + サーバー起動のみ)
 │   │   ├── config.rs        # 環境変数ベースの設定
 │   │   ├── errors.rs        # 共通エラー型 (IntoResponse)
 │   │   ├── state.rs         # AppState (DI コンテナ相当)
+│   │   ├── bootstrap/       # 起動時組み立て (state, api_router, http_layers, static_files, background_tasks)
 │   │   ├── routers/         # API ルーター (モジュール分割済み)
 │   │   │   ├── browse/      # browse API (fast_path, pagination, sibling, archive, first_viewable)
 │   │   │   ├── file/        # ファイル配信 (archive_entry)
 │   │   │   ├── thumbnail/   # サムネイル (batch)
-│   │   │   ├── search.rs    # 検索
+│   │   │   ├── search/      # 検索 (handler, rebuild)
 │   │   │   └── mounts.rs    # マウント一覧
 │   │   ├── services/        # ビジネスロジック (モジュール分割済み)
 │   │   │   ├── archive/     # ZIP/RAR/7z (reader, security)
-│   │   │   ├── node_registry/ # node_id マッピング (directory, scan)
-│   │   │   ├── dir_index/   # ディレクトリインデックス (bulk_insert, sort_queries, dirty_state)
-│   │   │   ├── indexer/     # FTS5 検索インデックス (helpers)
+│   │   │   ├── node_registry/ # node_id マッピング (directory, scan, populate)
+│   │   │   ├── dir_index/   # ディレクトリインデックス (bulk_insert, sort_queries, dirty_state, writes)
+│   │   │   ├── indexer/     # FTS5 検索インデックス (scan, helpers)
+│   │   │   ├── file_watcher/ # ファイル監視 (events, filter, worker)
+│   │   │   ├── search/      # 検索実装 (resolver, scope, rebuild_rate_limiter)
+│   │   │   ├── security/    # HMAC 等 (cursor_hmac)
 │   │   │   └── ...          # 他サービス (path_security, thumbnail_*, video_converter 等)
 │   │   └── middleware/      # カスタムミドルウェア (skip_gzip_binary)
 │   └── tests/               # 統合テスト + fixtures

@@ -36,7 +36,7 @@
 ## Pre-commit
 - Husky + lint-staged が自動実行
 - Frontend: oxlint + oxfmt --write
-- Backend: ruff format + ruff check --fix
+- Backend: cargo fmt --check + cargo clippy --all-targets -- -D warnings
 
 ## ブランチ戦略
 - `main` — 安定版、デプロイ可能

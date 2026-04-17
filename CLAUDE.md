@@ -62,7 +62,8 @@ cd e2e && npx playwright test --ui   # UI モード
 
 ### Rust バックエンド
 - `backend/Cargo.toml` — 依存クレート定義
-- `backend/src/main.rs` — エントリポイント（AppState 初期化、ルーター登録、`/api/health` + `/api/ready` 分離）
+- `backend/src/main.rs` — エントリポイント（CLI パース + `axum::serve` のみ。組み立ては `bootstrap` に委譲）
+- `backend/src/bootstrap/` — 起動時組み立て（`state` で `AppState` 構築、`api_router` で `/api/health` + `/api/ready` 分離ルート登録、`http_layers`/`static_files`/`background_tasks`）
 - `backend/src/config.rs` — 環境変数ベースの設定
 - `backend/src/routers/` — API ルーター（browse/, file/, thumbnail/ はサブモジュール分割済み。browse は `/sibling`（単方向）と `/siblings`（双方向 combined）を提供）
 - `backend/src/services/` — ビジネスロジック（node_registry/, archive/, dir_index/, indexer/ はサブモジュール分割済み）
