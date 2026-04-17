@@ -5,8 +5,9 @@
 // - 検索バーにフォーカス中はビューワーのキーボードショートカット無効化 (既存動作)
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { useSearch } from "../hooks/useSearch";
+import { useViewerStore } from "../stores/viewerStore";
 import type { SearchResult } from "../types/api";
 import { SearchResults } from "./SearchResults";
 
@@ -24,6 +25,8 @@ interface SearchBarProps {
 
 export function SearchBar({ scope }: SearchBarProps) {
   const navigate = useNavigate();
+  const location = useLocation();
+  const setViewerOrigin = useViewerStore((s) => s.setViewerOrigin);
   // スコープ切替: scope プロップがある場合のみ有効
   const [isScopeActive, setIsScopeActive] = useState(true);
   const effectiveScope = scope && isScopeActive ? scope : undefined;
@@ -72,24 +75,49 @@ export function SearchBar({ scope }: SearchBarProps) {
   }, []);
 
   // 検索結果の選択 → ナビゲーション
+  // - ディレクトリ/アーカイブ: ビューワー起動ではないため通常 push 遷移
+  // - pdf/image/video（ビューワー起動）: 現在 URL の mode/sort を継承し、
+  //   scope プロップがある (= BrowsePage 文脈) なら viewerOrigin を設定して replace 遷移
+  //   （isScopeActive トグル状態には依存しない。トグル OFF でも `B` で元に戻れるようにするため）
   const handleSelect = useCallback(
     (result: SearchResult) => {
       setIsOpen(false);
       setQuery("");
 
       if (result.kind === "directory" || result.kind === "archive") {
-        // ディレクトリ/アーカイブ → 直接開く
         navigate(`/browse/${result.node_id}`);
-      } else if (result.kind === "pdf" && result.parent_node_id) {
-        // PDF → ビューワー直接起動
-        navigate(`/browse/${result.parent_node_id}?pdf=${result.node_id}`);
-      } else if (result.parent_node_id) {
-        // ファイル → 親ディレクトリを開き、対象を選択状態に
+        return;
+      }
+
+      if (!result.parent_node_id) return;
+
+      // 現在 URL から mode/sort を継承（既定値は URL に書かない）
+      const current = new URLSearchParams(location.search);
+      const target = new URLSearchParams();
+      if (result.kind === "pdf") {
+        target.set("pdf", result.node_id);
+      } else {
         const tab = result.kind === "video" ? "videos" : "images";
-        navigate(`/browse/${result.parent_node_id}?tab=${tab}&select=${result.node_id}`);
+        target.set("tab", tab);
+        target.set("select", result.node_id);
+      }
+      const mode = current.get("mode");
+      const sort = current.get("sort");
+      if (mode) target.set("mode", mode);
+      if (sort) target.set("sort", sort);
+
+      const url = `/browse/${result.parent_node_id}?${target}`;
+
+      if (scope) {
+        // BrowsePage 文脈: viewer 閉じ時に元ディレクトリへ戻るための origin を設定
+        setViewerOrigin({ nodeId: scope, search: location.search });
+        navigate(url, { replace: true });
+      } else {
+        // TopPage 文脈: origin 無し、push 遷移
+        navigate(url);
       }
     },
-    [navigate, setQuery],
+    [navigate, setQuery, location.search, scope, setViewerOrigin],
   );
 
   // キーボード操作
