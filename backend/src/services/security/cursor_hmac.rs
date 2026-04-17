@@ -4,8 +4,9 @@
 //! - 署名形式: HMAC-SHA256 の先頭 16 hex 文字 (64bit ビット強度)
 //! - 比較: タイミング攻撃耐性のある定数時間比較
 //!
-//! `NODE_SECRET` が未設定の場合は `"local-viewer-default-secret"` へフォールバックする既存挙動を
-//! 維持する（`09_security` の panic 契約へ寄せる修正は本プラン範囲外）。
+//! `NODE_SECRET` は本番/通常運用で必須の環境変数（`09_security`）。
+//! 未設定または空文字の場合は起動時に panic する。テストビルドのみ
+//! 固定フォールバック値を許容する。
 
 use hmac::{Hmac, Mac};
 use sha2::Sha256;
@@ -13,10 +14,26 @@ use sha2::Sha256;
 type HmacSha256 = Hmac<Sha256>;
 
 /// `NODE_SECRET` を環境変数から取得する
+///
+/// - 設定済み（非空）: その値を返す
+/// - 未設定/空: 非テストビルドでは panic、テストビルドでは固定値
 pub(crate) fn get_secret() -> Vec<u8> {
-    std::env::var("NODE_SECRET")
-        .unwrap_or_else(|_| "local-viewer-default-secret".to_string())
-        .into_bytes()
+    match std::env::var("NODE_SECRET") {
+        Ok(s) if !s.is_empty() => s.into_bytes(),
+        _ => {
+            #[cfg(test)]
+            {
+                b"local-viewer-default-secret".to_vec()
+            }
+            #[cfg(not(test))]
+            {
+                panic!(
+                    "NODE_SECRET environment variable is required but not set (or empty). \
+                     Set it in .env or export it before starting the server."
+                );
+            }
+        }
+    }
 }
 
 /// HMAC-SHA256 の先頭 16 hex 文字を返す

@@ -24,6 +24,7 @@ use sha2::Sha256;
 use crate::errors::AppError;
 use crate::services::models::EntryMeta;
 use crate::services::path_security::PathSecurity;
+use crate::services::security::cursor_hmac;
 
 type HmacSha256 = Hmac<Sha256>;
 
@@ -61,9 +62,9 @@ impl NodeRegistry {
     ) -> Self {
         let root_entries = path_security.root_entries().to_vec();
 
-        let secret = std::env::var("NODE_SECRET")
-            .unwrap_or_else(|_| "local-viewer-default-secret".to_string())
-            .into_bytes();
+        // `NODE_SECRET` は `cursor_hmac::get_secret()` 経由で取得し、
+        // 未設定時の panic 契約（`09_security`）を単一点に集約する
+        let secret = cursor_hmac::get_secret();
 
         Self {
             path_security,
