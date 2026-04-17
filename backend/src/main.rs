@@ -58,9 +58,42 @@ struct HealthResponse {
     status: String,
 }
 
-async fn health() -> Json<HealthResponse> {
-    Json(HealthResponse {
+/// `/api/health` に含める起動時 populate 統計
+///
+/// 縮退観測用: 再起動後 `node_id` deep link が正しく回復しているかを JSON で公開する
+#[derive(Serialize)]
+struct RegistryPopulateStats {
+    registered: usize,
+    skipped_missing_mount: usize,
+    skipped_malformed: usize,
+    skipped_traversal: usize,
+    errors: usize,
+    degraded: bool,
+}
+
+impl From<&PopulateStats> for RegistryPopulateStats {
+    fn from(s: &PopulateStats) -> Self {
+        Self {
+            registered: s.registered,
+            skipped_missing_mount: s.skipped_missing_mount,
+            skipped_malformed: s.skipped_malformed,
+            skipped_traversal: s.skipped_traversal,
+            errors: s.errors,
+            degraded: s.degraded,
+        }
+    }
+}
+
+#[derive(Serialize)]
+struct HealthResponseWithStats {
+    status: String,
+    registry_populate: RegistryPopulateStats,
+}
+
+async fn health(State(state): State<Arc<AppState>>) -> Json<HealthResponseWithStats> {
+    Json(HealthResponseWithStats {
         status: "ok".to_string(),
+        registry_populate: RegistryPopulateStats::from(state.registry_populate_stats.as_ref()),
     })
 }
 
@@ -651,6 +684,34 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(response.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn ヘルスレスポンスにregistry_populate統計が含まれる() {
+        let app = test_app();
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/api/health")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        let stats = json
+            .get("registry_populate")
+            .expect("registry_populate セクションが存在する");
+        assert!(stats.get("registered").is_some());
+        assert!(stats.get("skipped_missing_mount").is_some());
+        assert!(stats.get("skipped_malformed").is_some());
+        assert!(stats.get("skipped_traversal").is_some());
+        assert!(stats.get("errors").is_some());
+        assert!(stats.get("degraded").is_some());
     }
 
     #[tokio::test]
