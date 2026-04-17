@@ -9,6 +9,7 @@ import type { KeyboardEvent } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useBatchThumbnails } from "../hooks/api/thumbnailQueries";
 import { useBrowseKeyboard } from "../hooks/useBrowseKeyboard";
+import { useFileBrowserInfiniteScroll } from "../hooks/useFileBrowserInfiniteScroll";
 import { useVirtualGrid } from "../hooks/useVirtualGrid";
 import type { SortOrder, ViewerTab } from "../hooks/useViewerParams";
 import type { BrowseEntry } from "../types/api";
@@ -112,22 +113,12 @@ export function FileBrowser({
     return ids;
   }, [filtered]);
   // 無限スクロール: センチネル要素の IntersectionObserver
-  const sentinelRef = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (!hasMore || !onLoadMore) return;
-    const el = sentinelRef.current;
-    if (!el) return;
-    const observer = new IntersectionObserver(
-      ([entry]) => {
-        if (entry.isIntersecting && !isLoadingMore && !isError) {
-          onLoadMore();
-        }
-      },
-      { rootMargin: "200px" },
-    );
-    observer.observe(el);
-    return () => observer.disconnect();
-  }, [hasMore, isLoadingMore, isError, onLoadMore]);
+  const { sentinelRef } = useFileBrowserInfiniteScroll({
+    hasMore,
+    isLoadingMore,
+    isError,
+    onLoadMore,
+  });
 
   // 仮想グリッド
   const {
