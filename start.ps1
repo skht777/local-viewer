@@ -40,4 +40,11 @@ Sync-ComposeOverride `
     -MountBaseDir $mountBaseDir `
     -CallerName 'start.ps1'
 
+# Docker Desktop の WSL 統合環境では start.sh (WSL) と同じデーモンを共有するため、
+# ボリューム/コンテナ名が衝突しないよう Windows 側は専用プロジェクト名を使う。
+# ユーザーが既に COMPOSE_PROJECT_NAME を設定している場合は尊重する。
+if (-not $env:COMPOSE_PROJECT_NAME) {
+    $env:COMPOSE_PROJECT_NAME = 'local-viewer-win'
+}
+
 docker compose up --build

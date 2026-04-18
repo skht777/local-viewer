@@ -44,4 +44,11 @@ check_dependencies
 load_mount_base_dir
 sync_compose "$MOUNTS_JSON" "$OVERRIDE_FILE" "$MOUNT_BASE_DIR" "start.sh"
 
+# Docker Desktop の WSL 統合環境では start.ps1 (Windows) と同じデーモンを共有するため、
+# ボリューム/コンテナ名が衝突しないよう WSL 検出時のみプロジェクト名を切り替える。
+# ユーザーが既に COMPOSE_PROJECT_NAME を設定している場合は尊重する。
+if [[ -z "${COMPOSE_PROJECT_NAME:-}" ]] && grep -qiE 'microsoft|wsl' /proc/version 2>/dev/null; then
+    export COMPOSE_PROJECT_NAME="local-viewer-wsl"
+fi
+
 docker compose up --build
