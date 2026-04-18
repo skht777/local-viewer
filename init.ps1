@@ -3,7 +3,8 @@
 #
 # 1. .env が存在しなければ .env.example からコピー
 # 2. 論理 CPU 数に基づいて CPUS / SCAN_WORKERS を最適化
-# 3. config/mounts.json が無ければ空スケルトンを作成
+# 3. NODE_SECRET が未設定なら 32 バイトのランダム hex を自動生成
+# 4. config/mounts.json が無ければ空スケルトンを作成
 #
 # TUI は起動しない。マウントポイント追加はユーザーが config\mounts.json を
 # 手動編集する (または WSL2 から ./manage_mounts.sh を実行する)。
@@ -47,6 +48,21 @@ function Set-EnvVar {
 
 $envContent = Set-EnvVar $envContent 'CPUS' "$cpuCount.0"
 $envContent = Set-EnvVar $envContent 'SCAN_WORKERS' "$scanWorkers"
+
+# NODE_SECRET が空なら 32 バイトの hex をランダム生成
+# - 既に値が入っている場合は尊重し上書きしない
+$currentSecret = ''
+if ($envContent -match '(?m)^NODE_SECRET=(.*)$') {
+    $currentSecret = $Matches[1]
+}
+if ([string]::IsNullOrEmpty($currentSecret)) {
+    $bytes = New-Object byte[] 32
+    [System.Security.Cryptography.RandomNumberGenerator]::Fill($bytes)
+    $secret = -join ($bytes | ForEach-Object { $_.ToString('x2') })
+    $envContent = Set-EnvVar $envContent 'NODE_SECRET' $secret
+    Write-Host 'NODE_SECRET を自動生成しました。'
+}
+
 [System.IO.File]::WriteAllText($envFile, $envContent, $utf8NoBom)
 
 Write-Host "ホスト CPU: $cpuCount コア → CPUS=$cpuCount.0, SCAN_WORKERS=$scanWorkers"
