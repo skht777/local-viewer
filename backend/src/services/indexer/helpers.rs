@@ -58,7 +58,8 @@ pub(crate) struct SearchHit {
 /// 全トークンを SQL 上で AND 結合して、日本語 2 文字名詞 + 複数キーワードの
 /// 実用的な検索に対応する。
 ///
-/// - `scope_pattern` が指定された場合、`relative_path LIKE ? ESCAPE '\'` でスコープ限定
+/// - `scope_range` が指定された場合、`relative_path >= ?lo AND < ?hi` で
+///   インデックス利用可能な range scan によりスコープ限定する（BINARY collation 前提）
 /// - FTS5 トークンが 1 つ以上ある場合は `entries_fts JOIN entries`、
 ///   全てが LIKE の場合は `entries` 直接の動的 SQL を構築する
 pub(super) fn search_combined(
@@ -67,7 +68,7 @@ pub(super) fn search_combined(
     kind: Option<&str>,
     limit: usize,
     offset: usize,
-    scope_pattern: Option<&str>,
+    scope_range: Option<(&str, &str)>,
 ) -> Result<Vec<SearchHit>, IndexerError> {
     let (fts_tokens, like_tokens): (Vec<&str>, Vec<&str>) = query
         .split_whitespace()
@@ -121,13 +122,18 @@ pub(super) fn search_combined(
         param_idx += 1;
     }
 
-    if let Some(sp) = scope_pattern {
+    if let Some((lo, hi)) = scope_range {
+        // BETWEEN 形式で range scan (SCAN ではなく SEARCH USING INDEX になる)
+        let lo_idx = param_idx;
+        let hi_idx = param_idx + 1;
         let _ = write!(
             sql,
-            " AND {col_prefix}relative_path LIKE ?{param_idx} ESCAPE '\\'"
+            " AND {col_prefix}relative_path >= ?{lo_idx} \
+               AND {col_prefix}relative_path < ?{hi_idx}"
         );
-        bind_values.push(Box::new(sp.to_string()));
-        param_idx += 1;
+        bind_values.push(Box::new(lo.to_string()));
+        bind_values.push(Box::new(hi.to_string()));
+        param_idx += 2;
     }
 
     let _ = write!(sql, " LIMIT ?{param_idx} OFFSET ?{}", param_idx + 1);
@@ -398,20 +404,41 @@ fn upsert_entry(
 
 // --- データ読み込み ---
 
-/// `mount_id` から `"{mount_id}/%"` 形式の LIKE パターンを組み立てる
+/// `mount_id` 配下の entries を range scan するための `(lo, hi)` を返す
 ///
-/// `mount_id` は HMAC 16 進で通常安全だが、将来的に `%` `_` `\` が混入しても
-/// literal match になるよう `escape_like_pattern` を経由する。`mount_id` が
-/// 空文字の場合は形式不整合を招くため `IndexerError::Other` で reject する
-/// （`file_watcher::compute_relative_path` / `populate_registry` とのキー
-/// 形式整合性に依存する）。
-pub(super) fn mount_scope_pattern(mount_id: &str) -> Result<String, IndexerError> {
-    if mount_id.is_empty() {
-        return Err(IndexerError::Other(
-            "空の mount_id はサポートされていません".to_string(),
-        ));
+/// - **invariant**: `mount_id` は lowercase hex 16 桁 (`[0-9a-f]{16}`) を想定
+///   （HMAC-SHA256 先頭 16 桁で生成される前提、`node_registry::build_mount_id` と整合）
+/// - `entries.relative_path` の collation 既定 (BINARY) での range scan を前提に
+///   lexicographic な範囲 `[lo, hi)` を返す
+/// - `/` (ASCII 0x2F) の次の文字 `0` (0x30) で終端を閉じる
+///   （`mount_id` に `/` `0` より小さい文字が含まれないことが invariant で保証される）
+/// - invariant 違反 (空 / 長さ不一致 / 非 hex) は `IndexerError::Other` で reject
+///   することで、`mount1/photos` 等のネスト prefix 経路との混同を防ぐ
+pub(super) fn mount_scope_range(mount_id: &str) -> Result<(String, String), IndexerError> {
+    fn is_valid(id: &str) -> bool {
+        id.len() == 16 && id.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
     }
-    Ok(format!("{}/%", escape_like_pattern(mount_id)))
+    if !is_valid(mount_id) {
+        return Err(IndexerError::Other(format!(
+            "mount_id invariant 違反 (lowercase hex 16 桁): len={}",
+            mount_id.len()
+        )));
+    }
+    Ok((format!("{mount_id}/"), format!("{mount_id}0")))
+}
+
+/// search の `scope_prefix` 用の range `(lo, hi)` を返す
+///
+/// - 入力: ワイルドカード非含みの literal prefix。末尾 `/` を含めない生の prefix
+///   を想定（例: `mount1/photos`, `mount/dir_100%`）
+/// - `(lo, hi)` = `(format!("{prefix}/"), format!("{prefix}0"))`
+///   - ASCII 順で `/` (0x2F) の次は `0` (0x30)、`{prefix}/` 以降のすべての
+///     キーはこの半開区間に収まる（`{prefix}0` は `{prefix}/...` よりも大きい）
+/// - `mount_scope_range` と違い、この関数は invariant を課さない
+///   （`mount_id` 専用ではないため）
+/// - `%` `_` `\` を含む literal prefix でも escape 不要で range に乗る
+pub(super) fn prefix_scope_range(prefix: &str) -> (String, String) {
+    (format!("{prefix}/"), format!("{prefix}0"))
 }
 
 /// 既存エントリの (`relative_path`, `mtime_ns`) を `BTreeMap` に読み込む
@@ -420,16 +447,18 @@ pub(super) fn mount_scope_pattern(mount_id: &str) -> Result<String, IndexerError
 ///   （他マウントの行を混ぜると `delete_unseen` が誤削除するため）
 /// - `BTreeMap` を使用することで `prune_unchanged_dir` でのプレフィックスマッチを
 ///   `range()` で O(log n + k) に最適化できる（`HashMap` での O(n) 全走査を回避）。
+/// - SQL 側は `mount_scope_range` による BETWEEN 形式で range scan（`SCAN entries`
+///   ではなく `SEARCH ... USING INDEX idx_entries_relative_path` になる）
 pub(super) fn load_existing_entries(
     conn: &Connection,
     mount_id: &str,
 ) -> Result<BTreeMap<String, i64>, IndexerError> {
-    let pattern = mount_scope_pattern(mount_id)?;
+    let (scope_lo, scope_hi) = mount_scope_range(mount_id)?;
     let mut stmt = conn.prepare(
         "SELECT relative_path, mtime_ns FROM entries \
-         WHERE relative_path LIKE ?1 ESCAPE '\\'",
+         WHERE relative_path >= ?1 AND relative_path < ?2",
     )?;
-    let rows = stmt.query_map(params![pattern], |row| {
+    let rows = stmt.query_map(params![scope_lo, scope_hi], |row| {
         Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
     })?;
     let mut map = BTreeMap::new();
@@ -442,17 +471,19 @@ pub(super) fn load_existing_entries(
 
 /// ディレクトリエントリの (`relative_path`, `mtime_ns`) を `HashMap` に読み込む
 ///
-/// 指定された `mount_id` プレフィックス配下のみを対象とする。
+/// 指定された `mount_id` プレフィックス配下のみを対象とする。`mount_scope_range`
+/// による BETWEEN 形式で range scan する。
 pub(super) fn load_dir_mtimes(
     conn: &Connection,
     mount_id: &str,
 ) -> Result<HashMap<String, i64>, IndexerError> {
-    let pattern = mount_scope_pattern(mount_id)?;
+    let (scope_lo, scope_hi) = mount_scope_range(mount_id)?;
     let mut stmt = conn.prepare(
         "SELECT relative_path, mtime_ns FROM entries \
-         WHERE kind = 'directory' AND relative_path LIKE ?1 ESCAPE '\\'",
+         WHERE kind = 'directory' \
+           AND relative_path >= ?1 AND relative_path < ?2",
     )?;
-    let rows = stmt.query_map(params![pattern], |row| {
+    let rows = stmt.query_map(params![scope_lo, scope_hi], |row| {
         Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
     })?;
     let mut map = HashMap::new();
@@ -472,12 +503,13 @@ pub(super) fn load_dir_mtimes(
 ///   でリセットされる前提（前マウント分の seen を混ぜない）
 /// - 一時テーブルに seen パスをバッチ INSERT し、NOT IN で一括 DELETE することで
 ///   個別 DELETE の N 回の SQL 実行を 1 回に削減する。
+/// - `mount_scope_range` による BETWEEN で range scan（SCAN entries にならない）
 pub(super) fn delete_unseen(
     conn: &Connection,
     seen: &HashSet<String>,
     mount_id: &str,
 ) -> Result<usize, IndexerError> {
-    let scope_pattern = mount_scope_pattern(mount_id)?;
+    let (scope_lo, scope_hi) = mount_scope_range(mount_id)?;
 
     // 一時テーブルを作成し、seen パスを INSERT
     conn.execute_batch(
@@ -498,9 +530,9 @@ pub(super) fn delete_unseen(
     // seen に含まれず、かつ自マウント配下のエントリを一括削除
     let deleted = conn.execute(
         "DELETE FROM entries \
-         WHERE relative_path LIKE ?1 ESCAPE '\\' \
+         WHERE relative_path >= ?1 AND relative_path < ?2 \
            AND relative_path NOT IN (SELECT path FROM seen_paths)",
-        params![scope_pattern],
+        params![scope_lo, scope_hi],
     )?;
 
     conn.execute("DROP TABLE IF EXISTS seen_paths", [])?;

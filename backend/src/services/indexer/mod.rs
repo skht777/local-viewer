@@ -182,11 +182,8 @@ impl Indexer {
 
         let fetch_limit = params.limit + 1;
 
-        // scope_prefix のワイルドカードエスケープ
-        let scope_pattern = params.scope_prefix.map(|prefix| {
-            let escaped = helpers::escape_like_pattern(prefix);
-            format!("{escaped}/%")
-        });
+        // scope_prefix を range `(lo, hi)` に変換（BINARY range scan で SEARCH USING INDEX）
+        let scope_range = params.scope_prefix.map(helpers::prefix_scope_range);
 
         let mut hits = search_combined(
             &conn,
@@ -194,7 +191,9 @@ impl Indexer {
             params.kind,
             fetch_limit,
             params.offset,
-            scope_pattern.as_deref(),
+            scope_range
+                .as_ref()
+                .map(|(lo, hi)| (lo.as_str(), hi.as_str())),
         )?;
 
         let has_more = hits.len() > params.limit;
