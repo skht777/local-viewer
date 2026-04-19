@@ -174,6 +174,156 @@ fn 日本語ファイル名の部分一致検索() {
 }
 
 #[test]
+fn 日本語スペース区切りで複数トークンがand検索になる() {
+    let (indexer, _tmp) = setup_indexer();
+
+    indexer
+        .add_entry(&make_entry(
+            "動画/夏の旅行記録.mp4",
+            "夏の旅行記録.mp4",
+            "video",
+        ))
+        .unwrap();
+    indexer
+        .add_entry(&make_entry("動画/冬の山.mp4", "冬の山.mp4", "video"))
+        .unwrap();
+    indexer
+        .add_entry(&make_entry("動画/旅行メモ.mp4", "旅行メモ.mp4", "video"))
+        .unwrap();
+
+    // 「夏 旅行」→ 両方を含むファイルのみヒット (AND)
+    let (hits, _) = indexer
+        .search(&SearchParams {
+            query: "夏 旅行",
+            kind: None,
+            limit: 10,
+            offset: 0,
+            scope_prefix: None,
+        })
+        .unwrap();
+    assert_eq!(
+        hits.len(),
+        1,
+        "hits={:?}",
+        hits.iter().map(|h| &h.name).collect::<Vec<_>>()
+    );
+    assert_eq!(hits[0].name, "夏の旅行記録.mp4");
+}
+
+#[test]
+fn 三文字以上と二文字日本語の混在トークンがandになる() {
+    let (indexer, _tmp) = setup_indexer();
+
+    indexer
+        .add_entry(&make_entry(
+            "作品/テスト画像集.zip",
+            "テスト画像集.zip",
+            "archive",
+        ))
+        .unwrap();
+    indexer
+        .add_entry(&make_entry("作品/テスト.zip", "テスト.zip", "archive"))
+        .unwrap();
+    indexer
+        .add_entry(&make_entry(
+            "素材/画像まとめ.zip",
+            "画像まとめ.zip",
+            "archive",
+        ))
+        .unwrap();
+
+    // 「テスト 画像」→ 「テスト」(3文字, FTS) AND 「画像」(2文字, LIKE)
+    let (hits, _) = indexer
+        .search(&SearchParams {
+            query: "テスト 画像",
+            kind: None,
+            limit: 10,
+            offset: 0,
+            scope_prefix: None,
+        })
+        .unwrap();
+    assert_eq!(
+        hits.len(),
+        1,
+        "hits={:?}",
+        hits.iter().map(|h| &h.name).collect::<Vec<_>>()
+    );
+    assert_eq!(hits[0].name, "テスト画像集.zip");
+}
+
+#[test]
+fn 二文字日本語フォルダ名で検索できる() {
+    let (indexer, _tmp) = setup_indexer();
+
+    indexer
+        .add_entry(&make_entry("mount/写真", "写真", "directory"))
+        .unwrap();
+    indexer
+        .add_entry(&make_entry("mount/動画", "動画", "directory"))
+        .unwrap();
+    indexer
+        .add_entry(&make_entry("mount/写真/beach.jpg", "beach.jpg", "image"))
+        .unwrap();
+
+    // 「写真」(2文字) で検索 → 「写真」ディレクトリが name 一致で 1 件ヒット
+    let (hits, _) = indexer
+        .search(&SearchParams {
+            query: "写真",
+            kind: Some("directory"),
+            limit: 10,
+            offset: 0,
+            scope_prefix: None,
+        })
+        .unwrap();
+    assert_eq!(
+        hits.len(),
+        1,
+        "hits={:?}",
+        hits.iter().map(|h| &h.name).collect::<Vec<_>>()
+    );
+    assert_eq!(hits[0].name, "写真");
+    assert_eq!(hits[0].kind, "directory");
+}
+
+#[test]
+fn 二文字日本語複数トークンがand検索になる() {
+    let (indexer, _tmp) = setup_indexer();
+
+    indexer
+        .add_entry(&make_entry(
+            "写真/風景の記録.zip",
+            "風景の記録.zip",
+            "archive",
+        ))
+        .unwrap();
+    indexer
+        .add_entry(&make_entry("写真/夜景.zip", "夜景.zip", "archive"))
+        .unwrap();
+    indexer
+        .add_entry(&make_entry("動画/風景.mp4", "風景.mp4", "video"))
+        .unwrap();
+
+    // 「写真 風景」→ 両トークン2文字。LIKE AND 合流でヒット。
+    // relative_path が「写真/...」で name に「風景」を含むものだけ。
+    let (hits, _) = indexer
+        .search(&SearchParams {
+            query: "写真 風景",
+            kind: None,
+            limit: 10,
+            offset: 0,
+            scope_prefix: None,
+        })
+        .unwrap();
+    assert_eq!(
+        hits.len(),
+        1,
+        "hits={:?}",
+        hits.iter().map(|h| &h.name).collect::<Vec<_>>()
+    );
+    assert_eq!(hits[0].relative_path, "写真/風景の記録.zip");
+}
+
+#[test]
 fn 特殊文字入力でエラーにならない() {
     let (indexer, _tmp) = setup_indexer();
 

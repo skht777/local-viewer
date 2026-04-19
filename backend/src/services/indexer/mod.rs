@@ -27,7 +27,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use rusqlite::{Connection, params};
 
-use helpers::{build_fingerprint, build_fts_query, escape_like_pattern, search_fts, search_like};
+use helpers::{build_fingerprint, search_combined};
 
 /// バッチ INSERT のサイズ
 const BATCH_SIZE: usize = 1000;
@@ -161,8 +161,13 @@ impl Indexer {
 
     /// キーワード検索を実行する
     ///
-    /// - 3 文字以上のトークンがあれば FTS5 MATCH で検索
-    /// - なければ LIKE フォールバック (`%query%`)
+    /// クエリをスペース区切りで分割し、トークンごとにルーティング:
+    /// - 3 文字以上のトークン → FTS5 MATCH
+    /// - 2 文字以下のトークン → `name LIKE %t% OR relative_path LIKE %t%`
+    ///
+    /// 全トークンを SQL 上で AND 結合する (日本語 2 文字名詞 + 複数キーワードの
+    /// 実用検索に対応)。
+    ///
     /// - `limit + 1` 件取得して `has_more` を判定
     /// - `scope_prefix` 指定時はそのプレフィックス配下のみ検索
     pub(crate) fn search(
@@ -175,34 +180,22 @@ impl Indexer {
             return Ok((Vec::new(), false));
         }
 
-        let fts_query = build_fts_query(trimmed);
         let fetch_limit = params.limit + 1;
 
         // scope_prefix のワイルドカードエスケープ
         let scope_pattern = params.scope_prefix.map(|prefix| {
-            let escaped = escape_like_pattern(prefix);
+            let escaped = helpers::escape_like_pattern(prefix);
             format!("{escaped}/%")
         });
 
-        let mut hits = if fts_query.is_empty() {
-            search_like(
-                &conn,
-                trimmed,
-                params.kind,
-                fetch_limit,
-                params.offset,
-                scope_pattern.as_deref(),
-            )?
-        } else {
-            search_fts(
-                &conn,
-                &fts_query,
-                params.kind,
-                fetch_limit,
-                params.offset,
-                scope_pattern.as_deref(),
-            )?
-        };
+        let mut hits = search_combined(
+            &conn,
+            trimmed,
+            params.kind,
+            fetch_limit,
+            params.offset,
+            scope_pattern.as_deref(),
+        )?;
 
         let has_more = hits.len() > params.limit;
         hits.truncate(params.limit);

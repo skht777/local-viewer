@@ -49,64 +49,19 @@ pub(crate) struct SearchHit {
     pub size_bytes: Option<i64>,
 }
 
-/// FTS5 MATCH による検索
+/// キーワード検索を実行する
 ///
-/// `scope_pattern` が指定された場合、`e.relative_path LIKE ? ESCAPE '\'` で
-/// プレフィックスマッチを追加する。
-pub(super) fn search_fts(
-    conn: &Connection,
-    fts_query: &str,
-    kind: Option<&str>,
-    limit: usize,
-    offset: usize,
-    scope_pattern: Option<&str>,
-) -> Result<Vec<SearchHit>, IndexerError> {
-    // SQL を動的に構築（bind parameter のみ使用、文字列埋め込み禁止）
-    let mut sql = String::from(
-        "SELECT e.relative_path, e.name, e.kind, e.size_bytes \
-         FROM entries_fts f \
-         JOIN entries e ON e.id = f.rowid \
-         WHERE entries_fts MATCH ?1",
-    );
-    let mut param_idx = 2;
-    if kind.is_some() {
-        let _ = write!(sql, " AND e.kind = ?{param_idx}");
-        param_idx += 1;
-    }
-    if scope_pattern.is_some() {
-        let _ = write!(sql, " AND e.relative_path LIKE ?{param_idx} ESCAPE '\\'");
-        param_idx += 1;
-    }
-    let _ = write!(sql, " LIMIT ?{param_idx} OFFSET ?{}", param_idx + 1);
-
-    let mut stmt = conn.prepare(&sql)?;
-
-    // 動的パラメータバインド
-    let mut bind_values: Vec<Box<dyn rusqlite::types::ToSql>> =
-        vec![Box::new(fts_query.to_string())];
-    if let Some(k) = kind {
-        bind_values.push(Box::new(k.to_string()));
-    }
-    if let Some(sp) = scope_pattern {
-        bind_values.push(Box::new(sp.to_string()));
-    }
-    // usize → i64: LIMIT/OFFSET は実用範囲内なので try_from でクランプ
-    bind_values.push(Box::new(i64::try_from(limit).unwrap_or(i64::MAX)));
-    bind_values.push(Box::new(i64::try_from(offset).unwrap_or(i64::MAX)));
-
-    let bind_refs: Vec<&dyn rusqlite::types::ToSql> =
-        bind_values.iter().map(AsRef::as_ref).collect();
-    let rows = stmt.query_map(bind_refs.as_slice(), map_search_hit)?;
-
-    rows.collect::<Result<Vec<_>, _>>()
-        .map_err(IndexerError::from)
-}
-
-/// LIKE フォールバック検索 (2 文字クエリ等)
+/// クエリをスペース区切りで分割し、トークンごとに以下のようにルーティングする:
+/// - 3 文字以上: FTS5 MATCH (trigram インデックス)
+/// - 2 文字以下: `name LIKE %t% OR relative_path LIKE %t%`
 ///
-/// `scope_pattern` が指定された場合、`relative_path LIKE ? ESCAPE '\'` で
-/// プレフィックスマッチを追加する。
-pub(super) fn search_like(
+/// 全トークンを SQL 上で AND 結合して、日本語 2 文字名詞 + 複数キーワードの
+/// 実用的な検索に対応する。
+///
+/// - `scope_pattern` が指定された場合、`relative_path LIKE ? ESCAPE '\'` でスコープ限定
+/// - FTS5 トークンが 1 つ以上ある場合は `entries_fts JOIN entries`、
+///   全てが LIKE の場合は `entries` 直接の動的 SQL を構築する
+pub(super) fn search_combined(
     conn: &Connection,
     query: &str,
     kind: Option<&str>,
@@ -114,37 +69,73 @@ pub(super) fn search_like(
     offset: usize,
     scope_pattern: Option<&str>,
 ) -> Result<Vec<SearchHit>, IndexerError> {
-    let pattern = format!("%{query}%");
+    let (fts_tokens, like_tokens): (Vec<&str>, Vec<&str>) = query
+        .split_whitespace()
+        .partition(|t| t.chars().count() >= TRIGRAM_MIN_CHARS);
 
-    let mut sql = String::from(
-        "SELECT relative_path, name, kind, size_bytes \
-         FROM entries \
-         WHERE (name LIKE ?1 OR relative_path LIKE ?1)",
-    );
-    let mut param_idx = 2;
-    if kind.is_some() {
-        let _ = write!(sql, " AND kind = ?{param_idx}");
+    if fts_tokens.is_empty() && like_tokens.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let use_fts = !fts_tokens.is_empty();
+
+    // LIKE トークンはワイルドカードをエスケープして `%t%` パターンを構築
+    let like_patterns: Vec<String> = like_tokens
+        .iter()
+        .map(|t| format!("%{}%", escape_like_pattern(t)))
+        .collect();
+
+    // SQL と bind パラメータを動的に構築（bind のみ使用、文字列埋め込み禁止）
+    let mut sql = if use_fts {
+        String::from(
+            "SELECT e.relative_path, e.name, e.kind, e.size_bytes \
+             FROM entries_fts f \
+             JOIN entries e ON e.id = f.rowid \
+             WHERE entries_fts MATCH ?1",
+        )
+    } else {
+        String::from("SELECT relative_path, name, kind, size_bytes FROM entries WHERE 1=1")
+    };
+    let col_prefix = if use_fts { "e." } else { "" };
+    let mut bind_values: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
+    let mut param_idx: usize = 1;
+
+    if use_fts {
+        bind_values.push(Box::new(build_fts_match_query(&fts_tokens)));
         param_idx += 1;
     }
-    if scope_pattern.is_some() {
-        let _ = write!(sql, " AND relative_path LIKE ?{param_idx} ESCAPE '\\'");
+
+    for pattern in &like_patterns {
+        let _ = write!(
+            sql,
+            " AND ({col_prefix}name LIKE ?{param_idx} ESCAPE '\\' OR \
+              {col_prefix}relative_path LIKE ?{param_idx} ESCAPE '\\')"
+        );
+        bind_values.push(Box::new(pattern.clone()));
         param_idx += 1;
     }
-    let _ = write!(sql, " LIMIT ?{param_idx} OFFSET ?{}", param_idx + 1);
 
-    let mut stmt = conn.prepare(&sql)?;
-
-    let mut bind_values: Vec<Box<dyn rusqlite::types::ToSql>> = vec![Box::new(pattern)];
     if let Some(k) = kind {
+        let _ = write!(sql, " AND {col_prefix}kind = ?{param_idx}");
         bind_values.push(Box::new(k.to_string()));
+        param_idx += 1;
     }
+
     if let Some(sp) = scope_pattern {
+        let _ = write!(
+            sql,
+            " AND {col_prefix}relative_path LIKE ?{param_idx} ESCAPE '\\'"
+        );
         bind_values.push(Box::new(sp.to_string()));
+        param_idx += 1;
     }
+
+    let _ = write!(sql, " LIMIT ?{param_idx} OFFSET ?{}", param_idx + 1);
     // usize → i64: LIMIT/OFFSET は実用範囲内なので try_from でクランプ
     bind_values.push(Box::new(i64::try_from(limit).unwrap_or(i64::MAX)));
     bind_values.push(Box::new(i64::try_from(offset).unwrap_or(i64::MAX)));
 
+    let mut stmt = conn.prepare(&sql)?;
     let bind_refs: Vec<&dyn rusqlite::types::ToSql> =
         bind_values.iter().map(AsRef::as_ref).collect();
     let rows = stmt.query_map(bind_refs.as_slice(), map_search_hit)?;
@@ -153,18 +144,16 @@ pub(super) fn search_like(
         .map_err(IndexerError::from)
 }
 
-/// FTS5 クエリ文字列を組み立てる
+/// FTS5 MATCH 用のクエリ文字列を組み立てる
 ///
-/// スペース区切りで分割し、3 文字以上のトークンをダブルクォートで囲む。
-/// 内部のダブルクォートは `""` にエスケープする。
+/// 各トークンをダブルクォートで囲み、内部のダブルクォートは `""` にエスケープする。
 /// トークン間はスペース (暗黙 AND) で結合する。
-pub(super) fn build_fts_query(query: &str) -> String {
-    let tokens: Vec<String> = query
-        .split_whitespace()
-        .filter(|w| w.chars().count() >= TRIGRAM_MIN_CHARS)
+fn build_fts_match_query(tokens: &[&str]) -> String {
+    tokens
+        .iter()
         .map(|w| format!("\"{}\"", w.replace('"', "\"\"")))
-        .collect();
-    tokens.join(" ")
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 /// `rusqlite::Row` から `SearchHit` にマッピングする
