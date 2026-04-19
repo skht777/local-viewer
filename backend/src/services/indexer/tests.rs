@@ -738,3 +738,216 @@ fn list_entry_pathsは登録済みrelative_pathを返す() {
         ]
     );
 }
+
+// --- マルチマウント回帰テスト ---
+//
+// scan_directory / incremental_scan / rebuild を複数マウントで逐次実行したとき、
+// 他マウントのエントリが削除されないことを保証する。
+// `delete_unseen` / `Indexer::rebuild` の `DELETE` が mount スコープに限定される
+// 修正を担保する回帰テスト。
+
+/// 2 マウント構成のスキャン用フィクスチャ
+struct MultiMountEnv {
+    #[allow(dead_code, reason = "TempDir のドロップでディレクトリを保持")]
+    _dir_a: TempDir,
+    #[allow(dead_code, reason = "TempDir のドロップでディレクトリを保持")]
+    _dir_b: TempDir,
+    root_a: PathBuf,
+    root_b: PathBuf,
+    indexer: Indexer,
+    #[allow(dead_code, reason = "NamedTempFile のドロップで DB を保持")]
+    _db_file: tempfile::NamedTempFile,
+}
+
+impl MultiMountEnv {
+    /// 2 マウント (`mount_a` / `mount_b`) を作成し、初期スキャンで両方を登録する
+    fn new_with_initial_scan() -> Self {
+        let dir_a = TempDir::new().unwrap();
+        let dir_b = TempDir::new().unwrap();
+        let root_a = fs::canonicalize(dir_a.path()).unwrap();
+        let root_b = fs::canonicalize(dir_b.path()).unwrap();
+
+        // mount_a: sub_a/ + movie_a.mp4 + doc_a.pdf
+        fs::create_dir_all(root_a.join("sub_a")).unwrap();
+        fs::write(root_a.join("sub_a/inner_a.mp4"), b"a-video").unwrap();
+        fs::write(root_a.join("doc_a.pdf"), b"pdf-a").unwrap();
+        // mount_b: sub_b/ + movie_b.mp4 + doc_b.pdf
+        fs::create_dir_all(root_b.join("sub_b")).unwrap();
+        fs::write(root_b.join("sub_b/inner_b.mp4"), b"b-video").unwrap();
+        fs::write(root_b.join("doc_b.pdf"), b"pdf-b").unwrap();
+
+        let db_file = tempfile::NamedTempFile::new().unwrap();
+        let indexer = Indexer::new(db_file.path().to_str().unwrap());
+        indexer.init_db().unwrap();
+
+        let ps_a = PathSecurity::new(vec![root_a.clone()], false).unwrap();
+        let ps_b = PathSecurity::new(vec![root_b.clone()], false).unwrap();
+        indexer
+            .scan_directory(&root_a, &ps_a, "mount_a", 2, None)
+            .unwrap();
+        indexer
+            .scan_directory(&root_b, &ps_b, "mount_b", 2, None)
+            .unwrap();
+
+        Self {
+            _dir_a: dir_a,
+            _dir_b: dir_b,
+            root_a,
+            root_b,
+            indexer,
+            _db_file: db_file,
+        }
+    }
+
+    fn ps_a(&self) -> PathSecurity {
+        PathSecurity::new(vec![self.root_a.clone()], false).unwrap()
+    }
+
+    fn ps_b(&self) -> PathSecurity {
+        PathSecurity::new(vec![self.root_b.clone()], false).unwrap()
+    }
+
+    /// `list_entry_paths()` のうち指定プレフィックスで始まる件数を返す
+    fn count_with_prefix(&self, prefix: &str) -> usize {
+        self.indexer
+            .list_entry_paths()
+            .unwrap()
+            .into_iter()
+            .filter(|p| p.starts_with(prefix))
+            .count()
+    }
+}
+
+#[test]
+fn incremental_scanは他マウントのエントリを削除しない() {
+    // 2 マウントを初期スキャンで登録 → mount_a 分 + mount_b 分の両方が entries にある
+    let env = MultiMountEnv::new_with_initial_scan();
+    let before_a = env.count_with_prefix("mount_a/");
+    let before_b = env.count_with_prefix("mount_b/");
+    assert!(
+        before_a >= 3,
+        "mount_a の初期件数が想定より少ない: {before_a}"
+    );
+    assert!(
+        before_b >= 3,
+        "mount_b の初期件数が想定より少ない: {before_b}"
+    );
+
+    // mount_a → mount_b の順で incremental_scan を逐次実行
+    env.indexer
+        .incremental_scan(&env.root_a, &env.ps_a(), "mount_a", 2, None)
+        .unwrap();
+    env.indexer
+        .incremental_scan(&env.root_b, &env.ps_b(), "mount_b", 2, None)
+        .unwrap();
+
+    // 両マウントのエントリが残っていることを prefix 厳密検証
+    let after_a = env.count_with_prefix("mount_a/");
+    let after_b = env.count_with_prefix("mount_b/");
+    assert_eq!(
+        after_a, before_a,
+        "mount_a のエントリが他マウントの incremental_scan で削除された"
+    );
+    assert_eq!(
+        after_b, before_b,
+        "mount_b のエントリが他マウントの incremental_scan で削除された"
+    );
+}
+
+#[test]
+fn rebuildは他マウントのエントリを削除しない() {
+    let env = MultiMountEnv::new_with_initial_scan();
+    let before_a = env.count_with_prefix("mount_a/");
+    let before_b = env.count_with_prefix("mount_b/");
+    assert!(before_a >= 3);
+    assert!(before_b >= 3);
+
+    // mount_a → mount_b の順で rebuild
+    env.indexer
+        .rebuild(&env.root_a, &env.ps_a(), "mount_a")
+        .unwrap();
+    env.indexer
+        .rebuild(&env.root_b, &env.ps_b(), "mount_b")
+        .unwrap();
+
+    // 両マウントのエントリが残っていることを prefix 厳密検証
+    let after_a = env.count_with_prefix("mount_a/");
+    let after_b = env.count_with_prefix("mount_b/");
+    assert_eq!(
+        after_a, before_a,
+        "mount_a のエントリが他マウントの rebuild で削除された"
+    );
+    assert_eq!(
+        after_b, before_b,
+        "mount_b のエントリが他マウントの rebuild で削除された"
+    );
+}
+
+#[test]
+fn incremental_scanで自マウントの削除済みファイルだけを消す() {
+    let env = MultiMountEnv::new_with_initial_scan();
+    let before_a = env.count_with_prefix("mount_a/");
+    let before_b = env.count_with_prefix("mount_b/");
+
+    // mount_a 配下の doc_a.pdf を物理削除
+    fs::remove_file(env.root_a.join("doc_a.pdf")).unwrap();
+    // mount_a の incremental_scan で削除が反映されるはず
+    env.indexer
+        .incremental_scan(&env.root_a, &env.ps_a(), "mount_a", 2, None)
+        .unwrap();
+
+    let after_a = env.count_with_prefix("mount_a/");
+    let after_b = env.count_with_prefix("mount_b/");
+    assert_eq!(
+        after_a,
+        before_a - 1,
+        "mount_a の削除済みファイルがインデックスから消されていない"
+    );
+    assert_eq!(
+        after_b, before_b,
+        "mount_b のエントリが mount_a の incremental_scan で影響を受けた"
+    );
+}
+
+#[test]
+fn incremental_scanはread_dir失敗時に既存行を削除しない() {
+    // mount_a のルート自体が存在しなくなったケース
+    // scan_one の read_dir 失敗 → WalkReport.error_count >= 1 → delete_unseen スキップ
+    let env = MultiMountEnv::new_with_initial_scan();
+    let before_a = env.count_with_prefix("mount_a/");
+    assert!(before_a >= 3);
+
+    // 存在しないパスで incremental_scan を実行（ルート read_dir 失敗を誘発）
+    let missing_root = env.root_a.join("does_not_exist");
+    let ps_missing = PathSecurity::new(vec![missing_root.clone()], false).unwrap();
+    // PathSecurity が存在しないルートを弾く場合は validate を通すため親を許可
+    let _ = env
+        .indexer
+        .incremental_scan(&missing_root, &ps_missing, "mount_a", 2, None);
+
+    // 既存行が残っていることを確認
+    let after_a = env.count_with_prefix("mount_a/");
+    assert_eq!(
+        after_a, before_a,
+        "read_dir 失敗でも既存行を保護すべきだが削除された"
+    );
+}
+
+#[test]
+fn rebuildはスキャン失敗時に既存行を削除しない() {
+    let env = MultiMountEnv::new_with_initial_scan();
+    let before_a = env.count_with_prefix("mount_a/");
+    assert!(before_a >= 3);
+
+    // 存在しないルートで rebuild → スキャン失敗 (WalkReport.error_count >= 1)
+    // 既存の mount_a 行は削除されずに残ること
+    let missing_root = env.root_a.join("does_not_exist");
+    let ps_missing = PathSecurity::new(vec![missing_root.clone()], false).unwrap();
+    let _ = env.indexer.rebuild(&missing_root, &ps_missing, "mount_a");
+
+    let after_a = env.count_with_prefix("mount_a/");
+    assert_eq!(
+        after_a, before_a,
+        "rebuild スキャン失敗時でも既存行を保護すべきだが削除された"
+    );
+}
