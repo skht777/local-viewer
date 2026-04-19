@@ -6,6 +6,7 @@
 
 use std::collections::HashSet;
 
+use crate::services::dir_index::DirIndex;
 use crate::services::indexer::Indexer;
 
 /// 旧 fingerprint と現 `mount_id` セットの差分から stale `mount_id` を列挙する
@@ -53,9 +54,31 @@ where
     all_ok
 }
 
+/// `Indexer` + `DirIndex` 両方に stale cleanup を実行する convenience（本番経路）
+///
+/// - 内部で `perform_stale_cleanup` を 2 回呼ぶだけの薄いラッパー
+/// - unit test は `perform_stale_cleanup<F,E>` を直接使うこと（mock 差し込みが容易）
+/// - **呼び出し位置**: 必ず `spawn_blocking` 内
+/// - 片側失敗でも全件試行する（どちらのサービスが失敗したか両方のログに残す）
+pub(crate) fn perform_full_stale_cleanup(
+    stale_ids: &[String],
+    indexer: &Indexer,
+    dir_index: &DirIndex,
+) -> bool {
+    if stale_ids.is_empty() {
+        return true;
+    }
+    let idx_ok = perform_stale_cleanup("entries", stale_ids, |id| indexer.delete_mount_entries(id));
+    let dir_ok = perform_stale_cleanup("dir_entries", stale_ids, |id| {
+        dir_index.delete_mount_entries(id)
+    });
+    idx_ok && dir_ok
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::services::dir_index::DirIndex;
     use crate::services::indexer::{Indexer, IndexerError};
 
     const MOUNT_A: &str = "aaaaaaaaaaaaaaaa";
@@ -150,5 +173,43 @@ mod tests {
         let mut stale_sorted = stale.clone();
         stale_sorted.sort();
         assert_eq!(stale_sorted, vec![MOUNT_A.to_string(), MOUNT_B.to_string()]);
+    }
+
+    /// `perform_full_stale_cleanup` 用の `DirIndex` fixture を作成する
+    fn setup_dir_index() -> (DirIndex, tempfile::NamedTempFile) {
+        let tmp = tempfile::NamedTempFile::new().unwrap();
+        let idx = DirIndex::new(tmp.path().to_str().unwrap());
+        idx.init_db().unwrap();
+        (idx, tmp)
+    }
+
+    #[test]
+    fn perform_full_stale_cleanupはstale_ids空でtrueを返しno_opになる() {
+        let (indexer, _t1) = setup_indexer();
+        let (dir_index, _t2) = setup_dir_index();
+        // 空の stale_ids → 早期 return true、delete_mount_entries は呼ばれない
+        assert!(perform_full_stale_cleanup(&[], &indexer, &dir_index));
+    }
+
+    #[test]
+    fn perform_full_stale_cleanupは両サービスを呼び両方成功でtrueを返す() {
+        let (indexer, _t1) = setup_indexer();
+        let (dir_index, _t2) = setup_dir_index();
+        // 登録なしの mount_id でも invariant が通れば 0 件削除で成功扱い
+        let ok = perform_full_stale_cleanup(
+            &[MOUNT_A.to_string(), MOUNT_B.to_string()],
+            &indexer,
+            &dir_index,
+        );
+        assert!(ok);
+    }
+
+    #[test]
+    fn perform_full_stale_cleanupは無効mount_idでfalseを返す() {
+        let (indexer, _t1) = setup_indexer();
+        let (dir_index, _t2) = setup_dir_index();
+        // "bad" は 16 桁 hex invariant 違反 → Indexer / DirIndex 両方でエラー
+        let ok = perform_full_stale_cleanup(&["bad".to_string()], &indexer, &dir_index);
+        assert!(!ok);
     }
 }
