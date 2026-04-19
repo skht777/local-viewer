@@ -548,3 +548,103 @@ pub(super) fn build_fingerprint(mount_ids: &[&str]) -> String {
     sorted.sort_unstable();
     sorted.join(",")
 }
+
+// --- 削除スキップ判定 ---
+
+/// 絶対値の閾値: このエラー件数以上で削除をスキップ（= `observed_entries` が
+/// 100 未満の小規模でも、1 件エラーがあればスキップする根拠に使う）
+pub(super) const MAX_ABS_SKIP_THRESHOLD: usize = 100;
+
+/// 率の閾値: `observed_entries` に対してこの割合以上でスキップ（1%）
+pub(super) const MAX_RATE_SKIP_THRESHOLD: f64 = 0.01;
+
+/// `incremental_scan` / `rebuild` の削除フェーズをスキップすべきか判定する
+///
+/// ハイブリッド閾値（絶対 + 率）による保守的な判定:
+/// - `total_errors == 0` → 削除実行（false）
+/// - `observed_entries < MAX_ABS_SKIP_THRESHOLD` (小規模) → 1 件でもスキップ（true）
+/// - 大規模では `total_errors >= MAX_ABS_SKIP_THRESHOLD` または
+///   エラー率 `>= MAX_RATE_SKIP_THRESHOLD` でスキップ
+///
+/// 引数:
+/// - `walk_errors`: `WalkReport.error_count()` の真値（サンプル cap とは独立）
+/// - `upsert_errors`: `IncrementalScanContext.upsert_errors` の集計値
+/// - `observed_entries`: `WalkReport.observed_entries`
+///   (`visited_dirs + visible_children + 各種失敗件数` の合算、実試行数)
+pub(super) fn should_skip_delete(
+    walk_errors: usize,
+    upsert_errors: usize,
+    observed_entries: usize,
+) -> bool {
+    let total_errors = walk_errors + upsert_errors;
+    if total_errors == 0 {
+        return false;
+    }
+    // 小規模は 1 件でもスキップ（既存テスト互換 + 試行数が少ない時に率判定は
+    // ノイズに弱い）
+    if observed_entries < MAX_ABS_SKIP_THRESHOLD {
+        return true;
+    }
+    // 大規模: 絶対閾値 or 率のどちらかを超えたらスキップ
+    if total_errors >= MAX_ABS_SKIP_THRESHOLD {
+        return true;
+    }
+    #[allow(
+        clippy::cast_precision_loss,
+        reason = "usize → f64 の精度損失は実運用の規模 (< 10^15) で影響しない"
+    )]
+    let rate = total_errors as f64 / observed_entries as f64;
+    rate >= MAX_RATE_SKIP_THRESHOLD
+}
+
+#[cfg(test)]
+mod skip_delete_tests {
+    use super::*;
+
+    #[test]
+    fn should_skip_deleteはエラー0で削除許可する() {
+        assert!(!should_skip_delete(0, 0, 100_000));
+    }
+
+    #[test]
+    fn should_skip_deleteは小規模エラー1件でもスキップする() {
+        // 既存テスト挙動互換: observed < 100 の小規模は 1 件でもスキップ
+        assert!(should_skip_delete(1, 0, 10));
+        // upsert エラーのみでも同様
+        assert!(should_skip_delete(0, 1, 10));
+    }
+
+    #[test]
+    fn should_skip_deleteは境界99_100_101で正しく分岐する() {
+        // observed=99, total_errors=1 → 小規模分岐で true (スキップ)
+        assert!(should_skip_delete(1, 0, 99));
+        // observed=100, total_errors=1 → 小規模分岐を抜ける、率 1% 未満 かつ
+        //   total_errors < MAX_ABS_SKIP_THRESHOLD → false (削除)
+        // ただし 1/100 = 0.01 は >= 1% なので true (スキップ)
+        assert!(should_skip_delete(1, 0, 100));
+        // observed=101, total_errors=2 → rate=2/101 ≈ 1.98% > 1% → true (スキップ)
+        assert!(should_skip_delete(2, 0, 101));
+    }
+
+    #[test]
+    fn should_skip_deleteは大規模で率1percent未満なら削除を許可する() {
+        // observed=100_000, total_errors=50 → rate=0.05%, total<100 (絶対閾値未満)
+        // → false (削除を許可)。単発の transient エラーで stale 行が溜まるのを防ぐ。
+        assert!(!should_skip_delete(50, 0, 100_000));
+    }
+
+    #[test]
+    fn should_skip_deleteは絶対値100件超でスキップする() {
+        // observed=1_000_000, total_errors=150 → rate=0.015% < 1% だが
+        // total >= MAX_ABS_SKIP_THRESHOLD (100) → true (スキップ)
+        assert!(should_skip_delete(150, 0, 1_000_000));
+    }
+
+    #[test]
+    fn should_skip_deleteはwalk_errorsとupsert_errorsを合算する() {
+        // 合算で 100 件以上 → 絶対閾値ヒットでスキップ
+        assert!(should_skip_delete(60, 40, 1_000_000));
+        // 合算で 99 件 → 絶対閾値未満、率 0.0099% < 1% → 削除許可
+        assert!(!should_skip_delete(50, 49, 1_000_000));
+    }
+}

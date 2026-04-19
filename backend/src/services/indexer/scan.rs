@@ -15,7 +15,7 @@ use crate::services::path_security::PathSecurity;
 
 use super::helpers::{
     IncrementalScanContext, batch_insert, delete_unseen, load_dir_mtimes, load_existing_entries,
-    make_relative_prefix, process_walk_entry_incremental, prune_unchanged_dir,
+    make_relative_prefix, process_walk_entry_incremental, prune_unchanged_dir, should_skip_delete,
 };
 use super::{BATCH_SIZE, IndexEntry, Indexer, IndexerError, WalkCallbackArgs};
 
@@ -196,24 +196,27 @@ impl Indexer {
 
         let seen = seen.into_inner();
         let upsert_err_count = *upsert_errors.borrow();
-        let total_errors = walk_report.error_count() + upsert_err_count;
+        let walk_err_count = walk_report.error_count();
 
-        // 走査/UPSERT エラーが 1 件でもあれば delete_unseen をスキップする。
-        // 「一時的に見えなかっただけ」の行を誤削除するデータロスを回避。
-        // 次回 incremental で再試行されるため可逆。
-        // NOTE: ハイブリッド閾値 (should_skip_delete) への差し替えは Phase C 後半で実施
-        let deleted = if total_errors == 0 {
-            delete_unseen(&conn, &seen, mount_id)?
-        } else {
+        // ハイブリッド閾値 (絶対 100 件 or 率 1%) に基づき削除スキップを判定。
+        // 小規模 (observed < 100) は従来どおり 1 件でもスキップして既存挙動と互換。
+        // 大規模では単発の EACCES 等で stale 行が溜まるのを防ぐため削除を許容。
+        let deleted = if should_skip_delete(
+            walk_err_count,
+            upsert_err_count,
+            walk_report.observed_entries,
+        ) {
             tracing::warn!(
-                walk_errors = walk_report.error_count(),
+                walk_errors = walk_err_count,
                 upsert_errors = upsert_err_count,
                 observed = walk_report.observed_entries,
                 entries = walk_report.entry_count,
                 kind_counts = ?walk_report.error_kind_counts,
-                "incremental_scan: エラーを検出、delete_unseen をスキップ (mount_id={mount_id})"
+                "incremental_scan: エラー閾値超過、delete_unseen をスキップ (mount_id={mount_id})"
             );
             0
+        } else {
+            delete_unseen(&conn, &seen, mount_id)?
         };
 
         self.is_ready.store(true, Ordering::Relaxed);
@@ -285,20 +288,20 @@ impl Indexer {
             }
         };
 
-        // 走査エラー無しなら stale 行 (seen に含まれない自マウント行) を削除
-        // NOTE: ハイブリッド閾値 (should_skip_delete) への差し替えは Phase C 後半で実施
-        if walk_report.error_count() == 0 {
-            let conn = self.connect()?;
-            let seen_set = seen.into_inner();
-            let _deleted = delete_unseen(&conn, &seen_set, mount_id)?;
-        } else {
+        // ハイブリッド閾値判定で stale 行 (seen に含まれない自マウント行) の削除を判断
+        // rebuild は UPSERT エラーを個別集計しないため upsert_errors=0 固定
+        if should_skip_delete(walk_report.error_count(), 0, walk_report.observed_entries) {
             tracing::warn!(
                 walk_errors = walk_report.error_count(),
                 observed = walk_report.observed_entries,
                 entries = walk_report.entry_count,
                 kind_counts = ?walk_report.error_kind_counts,
-                "rebuild: 走査エラー検出、stale 行の削除をスキップ (mount_id={mount_id})"
+                "rebuild: エラー閾値超過、stale 行の削除をスキップ (mount_id={mount_id})"
             );
+        } else {
+            let conn = self.connect()?;
+            let seen_set = seen.into_inner();
+            let _deleted = delete_unseen(&conn, &seen_set, mount_id)?;
         }
 
         self.is_rebuilding.store(false, Ordering::Relaxed);
