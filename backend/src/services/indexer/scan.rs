@@ -10,7 +10,7 @@ use std::path::Path;
 use std::sync::atomic::Ordering;
 
 use crate::services::extensions::classify_for_index;
-use crate::services::parallel_walk::{self, WalkEntry};
+use crate::services::parallel_walk::{self, WalkEntry, WalkReport};
 use crate::services::path_security::PathSecurity;
 
 use super::helpers::{
@@ -44,7 +44,7 @@ impl Indexer {
         // on_walk_entry を外部から受け取る
         let mut on_walk_entry = on_walk_entry;
 
-        parallel_walk::parallel_walk(
+        let walk_report: WalkReport = parallel_walk::parallel_walk(
             root_dir,
             workers,
             true, // skip_hidden
@@ -117,6 +117,14 @@ impl Indexer {
             batch_insert(&conn, &batch)?;
         }
 
+        if walk_report.error_count > 0 {
+            tracing::warn!(
+                "scan_directory: 走査中に {} 件のエラーを検出 (mount_id={mount_id}, entries={})",
+                walk_report.error_count,
+                walk_report.entry_count
+            );
+        }
+
         self.is_ready.store(true, Ordering::Relaxed);
         self.is_stale.store(false, Ordering::Relaxed);
 
@@ -168,7 +176,7 @@ impl Indexer {
         let mut dir_filter =
             |path: &Path, mtime_ns: i64| -> bool { prune_unchanged_dir(path, mtime_ns, &ctx) };
 
-        parallel_walk::parallel_walk(
+        let walk_report: WalkReport = parallel_walk::parallel_walk(
             root_dir,
             workers,
             true,
@@ -180,6 +188,14 @@ impl Indexer {
                 updated += u;
             },
         );
+
+        if walk_report.error_count > 0 {
+            tracing::warn!(
+                "incremental_scan: 走査中に {} 件のエラーを検出 (mount_id={mount_id}, entries={})",
+                walk_report.error_count,
+                walk_report.entry_count
+            );
+        }
 
         let seen = seen.into_inner();
         let deleted = delete_unseen(&conn, &seen)?;
