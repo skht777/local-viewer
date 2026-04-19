@@ -15,6 +15,8 @@ pub(crate) mod file_watcher;
 #[allow(dead_code, reason = "Phase 6a の search ルーターで使用")]
 pub(crate) mod indexer;
 pub(crate) mod models;
+#[allow(dead_code, reason = "Phase 6b の bootstrap から使用")]
+pub(crate) mod mount_cleanup;
 #[allow(dead_code, reason = "Phase 5+ で save/add/remove を使用")]
 pub(crate) mod mount_config;
 #[allow(dead_code, reason = "Phase 6b で encode_sort_key を使用")]

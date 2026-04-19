@@ -8,13 +8,12 @@
 //! - `scan_handle` panic 時は `FileWatcher` 起動を中止し `scan_complete=false`
 //!   のまま維持（partial init 防止）
 
-use std::collections::HashSet;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use crate::services;
-use crate::services::indexer::{Indexer, IndexerError};
+use crate::services::mount_cleanup::{enumerate_stale_mount_ids, perform_stale_cleanup};
 
 use super::BackgroundContext;
 
@@ -51,6 +50,7 @@ pub(crate) fn spawn_background_tasks(bg: BackgroundContext) {
     } else {
         enumerate_stale_mount_ids(&bg.indexer, &mount_id_refs)
     };
+    drop(mount_id_refs); // 以降で使わないので早期 drop
     if !stale_mount_ids.is_empty() {
         tracing::info!(
             stale_count = stale_mount_ids.len(),
@@ -95,8 +95,9 @@ pub(crate) fn spawn_background_tasks(bg: BackgroundContext) {
             let stale_for_task = stale_mount_ids.clone();
             let cleanup_ok_ref = Arc::clone(&scan_cleanup_ok);
             let cleanup_result = tokio::task::spawn_blocking(move || {
-                let delete_one = |id: &str| cleanup_indexer.delete_mount_entries(id);
-                let all_ok = perform_stale_cleanup(&stale_for_task, delete_one);
+                let all_ok = perform_stale_cleanup("entries", &stale_for_task, |id| {
+                    cleanup_indexer.delete_mount_entries(id)
+                });
                 if !all_ok {
                     cleanup_ok_ref.store(false, Ordering::Relaxed);
                 }
@@ -233,146 +234,4 @@ pub(crate) fn spawn_background_tasks(bg: BackgroundContext) {
             }
         }
     });
-}
-
-/// 旧 fingerprint と現 `mount_id` セットの差分から stale `mount_id` を列挙する
-///
-/// - 旧 fingerprint 読み取り失敗時は `tracing::warn!` + 空 `Vec`（cleanup を
-///   スキップ、次回起動で再試行）
-/// - 同期呼び出し用（`spawn_background_tasks` 冒頭の列挙フェーズ）
-fn enumerate_stale_mount_ids(indexer: &Indexer, current_ids: &[&str]) -> Vec<String> {
-    match indexer.load_stored_mount_ids() {
-        Ok(old_ids) => {
-            let current_set: HashSet<&str> = current_ids.iter().copied().collect();
-            old_ids
-                .into_iter()
-                .filter(|id| !current_set.contains(id.as_str()))
-                .collect()
-        }
-        Err(e) => {
-            tracing::warn!("旧 fingerprint 読み出し失敗 (stale cleanup skip): {e}");
-            Vec::new()
-        }
-    }
-}
-
-/// `stale_ids` に対応する entries 行を順次削除し、全成功可否を返す
-///
-/// - **呼び出し位置**: 必ず `tokio::task::spawn_blocking` の**内部**で呼ぶ
-///   （同期 DB I/O のため）
-/// - `delete_one`: `Fn(&str) -> Result<usize, IndexerError>` で fault injection
-///   可能化（テストでは 2 件目のみ `Err` を返す closure 等を注入）
-/// - 各 mount の削除成功件数を `tracing::info!` で記録、失敗は `tracing::error!`
-/// - 返値: 全 mount の削除が成功したかどうか
-pub(super) fn perform_stale_cleanup<F>(stale_ids: &[String], delete_one: F) -> bool
-where
-    F: Fn(&str) -> Result<usize, IndexerError>,
-{
-    let mut all_ok = true;
-    for id in stale_ids {
-        match delete_one(id) {
-            Ok(n) => tracing::info!("stale mount 行削除: mount_id={id}, rows={n}"),
-            Err(e) => {
-                tracing::error!("stale mount 行削除失敗: mount_id={id}, err={e}");
-                all_ok = false;
-            }
-        }
-    }
-    all_ok
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::services::indexer::Indexer;
-
-    /// テスト用の一時 DB パスでインデクサーを生成する
-    fn setup_indexer() -> (Indexer, tempfile::NamedTempFile) {
-        let tmp = tempfile::NamedTempFile::new().unwrap();
-        let indexer = Indexer::new(tmp.path().to_str().unwrap());
-        indexer.init_db().unwrap();
-        (indexer, tmp)
-    }
-
-    // 16 桁 lowercase hex の mount_id 定数
-    const MOUNT_A: &str = "aaaaaaaaaaaaaaaa";
-    const MOUNT_B: &str = "bbbbbbbbbbbbbbbb";
-    const MOUNT_C: &str = "cccccccccccccccc";
-
-    // --- perform_stale_cleanup の回帰テスト ---
-
-    #[test]
-    fn perform_stale_cleanup全成功時はtrueを返す() {
-        let calls = std::sync::Mutex::new(Vec::<String>::new());
-        let ids = vec![MOUNT_A.to_string(), MOUNT_B.to_string()];
-        let ok = perform_stale_cleanup(&ids, |id| {
-            calls.lock().unwrap().push(id.to_string());
-            Ok(5)
-        });
-        assert!(ok);
-        let calls = calls.into_inner().unwrap();
-        assert_eq!(calls, vec![MOUNT_A.to_string(), MOUNT_B.to_string()]);
-    }
-
-    #[test]
-    fn perform_stale_cleanup部分失敗時はfalseを返し全件試行する() {
-        // codex v2 Warning 反映: fault injection で部分失敗をシミュレート
-        // (load_stored_mount_ids の all-or-nothing filter とは独立の経路)
-        let calls = std::sync::Mutex::new(Vec::<String>::new());
-        let ids = vec![
-            MOUNT_A.to_string(),
-            MOUNT_B.to_string(),
-            MOUNT_C.to_string(),
-        ];
-        let ok = perform_stale_cleanup(&ids, |id| {
-            calls.lock().unwrap().push(id.to_string());
-            if id == MOUNT_B {
-                Err(IndexerError::Other("forced failure".into()))
-            } else {
-                Ok(3)
-            }
-        });
-        assert!(!ok, "部分失敗なら false を返すべき");
-        // 失敗しても残りの mount も試行される
-        let calls = calls.into_inner().unwrap();
-        assert_eq!(
-            calls,
-            vec![
-                MOUNT_A.to_string(),
-                MOUNT_B.to_string(),
-                MOUNT_C.to_string()
-            ]
-        );
-    }
-
-    // --- enumerate_stale_mount_ids の回帰テスト ---
-
-    #[test]
-    fn enumerate_stale_mount_idsは旧と新の差分を返す() {
-        let (indexer, _tmp) = setup_indexer();
-        indexer.save_mount_fingerprint(&[MOUNT_A, MOUNT_B]).unwrap();
-        // 新構成: mountA + mountC (mountB が stale)
-        let stale = enumerate_stale_mount_ids(&indexer, &[MOUNT_A, MOUNT_C]);
-        assert_eq!(stale, vec![MOUNT_B.to_string()]);
-    }
-
-    #[test]
-    fn enumerate_stale_mount_idsはfingerprint未保存で空vecを返す() {
-        let (indexer, _tmp) = setup_indexer();
-        let stale = enumerate_stale_mount_ids(&indexer, &[MOUNT_A, MOUNT_B]);
-        assert!(stale.is_empty());
-    }
-
-    #[test]
-    fn enumerate_stale_mount_idsは全マウント変更時に旧全件を返す() {
-        let (indexer, _tmp) = setup_indexer();
-        indexer.save_mount_fingerprint(&[MOUNT_A, MOUNT_B]).unwrap();
-        // 新構成: 全く別のマウント集合
-        let new_mount = "0123456789abcdef";
-        let stale = enumerate_stale_mount_ids(&indexer, &[new_mount]);
-        // MOUNT_A, MOUNT_B の両方が stale
-        let mut stale_sorted = stale.clone();
-        stale_sorted.sort();
-        assert_eq!(stale_sorted, vec![MOUNT_A.to_string(), MOUNT_B.to_string()]);
-    }
 }

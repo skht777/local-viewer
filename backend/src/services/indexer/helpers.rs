@@ -414,7 +414,7 @@ fn upsert_entry(
 ///   （`mount_id` に `/` `0` より小さい文字が含まれないことが invariant で保証される）
 /// - invariant 違反 (空 / 長さ不一致 / 非 hex) は `IndexerError::Other` で reject
 ///   することで、`mount1/photos` 等のネスト prefix 経路との混同を防ぐ
-pub(super) fn mount_scope_range(mount_id: &str) -> Result<(String, String), IndexerError> {
+pub(crate) fn mount_scope_range(mount_id: &str) -> Result<(String, String), IndexerError> {
     fn is_valid(id: &str) -> bool {
         id.len() == 16 && id.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
     }

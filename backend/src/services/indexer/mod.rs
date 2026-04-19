@@ -12,6 +12,9 @@ mod helpers;
 mod scan;
 
 pub(crate) use helpers::SearchHit;
+// DirIndex など他 service から `{mount_id}/` の range scan キーを組み立てるための
+// 再エクスポート。invariant (16 桁 lowercase hex) は helpers 側で強制。
+pub(crate) use helpers::mount_scope_range;
 
 /// 検索パラメータ
 pub(crate) struct SearchParams<'a> {
@@ -28,7 +31,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use rusqlite::{Connection, params};
 
-use helpers::{build_fingerprint, mount_scope_range, search_combined};
+use helpers::{build_fingerprint, search_combined};
 
 /// バッチ INSERT のサイズ
 const BATCH_SIZE: usize = 1000;
