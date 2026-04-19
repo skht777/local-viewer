@@ -9,13 +9,16 @@ use std::collections::HashSet;
 use std::path::Path;
 use std::sync::atomic::Ordering;
 
+use rusqlite::params;
+
 use crate::services::extensions::classify_for_index;
 use crate::services::parallel_walk::{self, WalkEntry, WalkReport};
 use crate::services::path_security::PathSecurity;
 
 use super::helpers::{
-    IncrementalScanContext, batch_insert, delete_unseen, load_dir_mtimes, load_existing_entries,
-    make_relative_prefix, process_walk_entry_incremental, prune_unchanged_dir,
+    IncrementalScanContext, batch_insert, delete_unseen, escape_like_pattern, load_dir_mtimes,
+    load_existing_entries, make_relative_prefix, process_walk_entry_incremental,
+    prune_unchanged_dir,
 };
 use super::{BATCH_SIZE, IndexEntry, Indexer, IndexerError, WalkCallbackArgs};
 
@@ -145,8 +148,8 @@ impl Indexer {
         on_walk_entry: Option<&mut dyn FnMut(WalkCallbackArgs)>,
     ) -> Result<(usize, usize, usize), IndexerError> {
         let conn = self.connect()?;
-        let existing = load_existing_entries(&conn)?;
-        let dir_mtimes = load_dir_mtimes(&conn)?;
+        let existing = load_existing_entries(&conn, mount_id)?;
+        let dir_mtimes = load_dir_mtimes(&conn, mount_id)?;
 
         // 子ディレクトリを持つディレクトリを事前計算 (リーフのみ枝刈りするため)
         let has_subdirs: HashSet<String> = dir_mtimes
@@ -198,7 +201,7 @@ impl Indexer {
         }
 
         let seen = seen.into_inner();
-        let deleted = delete_unseen(&conn, &seen)?;
+        let deleted = delete_unseen(&conn, &seen, mount_id)?;
 
         self.is_ready.store(true, Ordering::Relaxed);
         self.is_stale.store(false, Ordering::Relaxed);
@@ -206,7 +209,10 @@ impl Indexer {
         Ok((added, updated, deleted))
     }
 
-    /// インデックスを全削除して再構築する
+    /// 指定マウント配下のエントリを全削除して再構築する
+    ///
+    /// `DELETE` は **当該 `mount_id` のプレフィックス配下に限定**される。
+    /// 複数マウントがある場合に他マウントの行を巻き込まない。
     pub(crate) fn rebuild(
         &self,
         root_dir: &Path,
@@ -215,9 +221,19 @@ impl Indexer {
     ) -> Result<usize, IndexerError> {
         self.is_rebuilding.store(true, Ordering::Relaxed);
 
-        // 全エントリを削除
+        // 自マウント配下のエントリのみを削除
         let conn = self.connect()?;
-        conn.execute("DELETE FROM entries", [])?;
+        if mount_id.is_empty() {
+            self.is_rebuilding.store(false, Ordering::Relaxed);
+            return Err(IndexerError::Other(
+                "空の mount_id はサポートされていません".to_string(),
+            ));
+        }
+        let scope_pattern = format!("{}/%", escape_like_pattern(mount_id));
+        conn.execute(
+            "DELETE FROM entries WHERE relative_path LIKE ?1 ESCAPE '\\'",
+            params![scope_pattern],
+        )?;
         drop(conn);
 
         let result = self.scan_directory(root_dir, path_security, mount_id, 8, None);

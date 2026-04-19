@@ -390,15 +390,38 @@ fn upsert_entry(
 
 // --- データ読み込み ---
 
+/// `mount_id` から `"{mount_id}/%"` 形式の LIKE パターンを組み立てる
+///
+/// `mount_id` は HMAC 16 進で通常安全だが、将来的に `%` `_` `\` が混入しても
+/// literal match になるよう `escape_like_pattern` を経由する。`mount_id` が
+/// 空文字の場合は形式不整合を招くため `IndexerError::Other` で reject する
+/// （`file_watcher::compute_relative_path` / `populate_registry` とのキー
+/// 形式整合性に依存する）。
+pub(super) fn mount_scope_pattern(mount_id: &str) -> Result<String, IndexerError> {
+    if mount_id.is_empty() {
+        return Err(IndexerError::Other(
+            "空の mount_id はサポートされていません".to_string(),
+        ));
+    }
+    Ok(format!("{}/%", escape_like_pattern(mount_id)))
+}
+
 /// 既存エントリの (`relative_path`, `mtime_ns`) を `BTreeMap` に読み込む
 ///
-/// `BTreeMap` を使用することで `prune_unchanged_dir` でのプレフィックスマッチを
-/// `range()` で O(log n + k) に最適化できる（`HashMap` での O(n) 全走査を回避）。
+/// - 指定された `mount_id` プレフィックス配下のみを対象とする
+///   （他マウントの行を混ぜると `delete_unseen` が誤削除するため）
+/// - `BTreeMap` を使用することで `prune_unchanged_dir` でのプレフィックスマッチを
+///   `range()` で O(log n + k) に最適化できる（`HashMap` での O(n) 全走査を回避）。
 pub(super) fn load_existing_entries(
     conn: &Connection,
+    mount_id: &str,
 ) -> Result<BTreeMap<String, i64>, IndexerError> {
-    let mut stmt = conn.prepare("SELECT relative_path, mtime_ns FROM entries")?;
-    let rows = stmt.query_map([], |row| {
+    let pattern = mount_scope_pattern(mount_id)?;
+    let mut stmt = conn.prepare(
+        "SELECT relative_path, mtime_ns FROM entries \
+         WHERE relative_path LIKE ?1 ESCAPE '\\'",
+    )?;
+    let rows = stmt.query_map(params![pattern], |row| {
         Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
     })?;
     let mut map = BTreeMap::new();
@@ -410,10 +433,18 @@ pub(super) fn load_existing_entries(
 }
 
 /// ディレクトリエントリの (`relative_path`, `mtime_ns`) を `HashMap` に読み込む
-pub(super) fn load_dir_mtimes(conn: &Connection) -> Result<HashMap<String, i64>, IndexerError> {
-    let mut stmt =
-        conn.prepare("SELECT relative_path, mtime_ns FROM entries WHERE kind = 'directory'")?;
-    let rows = stmt.query_map([], |row| {
+///
+/// 指定された `mount_id` プレフィックス配下のみを対象とする。
+pub(super) fn load_dir_mtimes(
+    conn: &Connection,
+    mount_id: &str,
+) -> Result<HashMap<String, i64>, IndexerError> {
+    let pattern = mount_scope_pattern(mount_id)?;
+    let mut stmt = conn.prepare(
+        "SELECT relative_path, mtime_ns FROM entries \
+         WHERE kind = 'directory' AND relative_path LIKE ?1 ESCAPE '\\'",
+    )?;
+    let rows = stmt.query_map(params![pattern], |row| {
         Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
     })?;
     let mut map = HashMap::new();
@@ -424,14 +455,22 @@ pub(super) fn load_dir_mtimes(conn: &Connection) -> Result<HashMap<String, i64>,
     Ok(map)
 }
 
-/// `seen` に含まれないエントリを削除し、削除件数を返す
+/// `seen` に含まれない指定マウントのエントリを削除し、削除件数を返す
 ///
-/// 一時テーブルに seen パスをバッチ INSERT し、NOT IN で一括 DELETE することで
-/// 個別 DELETE の N 回の SQL 実行を 1 回に削減する。
+/// - 削除対象は **指定 `mount_id` プレフィックス配下**に限定する
+///   （他マウントのエントリを巻き込んで削除する cross-mount データロスを防止）
+/// - `seen_paths` は**接続ローカルの TEMP TABLE**。同一接続で per-mount の
+///   `delete_unseen` を逐次呼ぶ場合、各呼び出しの冒頭 `DELETE FROM seen_paths`
+///   でリセットされる前提（前マウント分の seen を混ぜない）
+/// - 一時テーブルに seen パスをバッチ INSERT し、NOT IN で一括 DELETE することで
+///   個別 DELETE の N 回の SQL 実行を 1 回に削減する。
 pub(super) fn delete_unseen(
     conn: &Connection,
     seen: &HashSet<String>,
+    mount_id: &str,
 ) -> Result<usize, IndexerError> {
+    let scope_pattern = mount_scope_pattern(mount_id)?;
+
     // 一時テーブルを作成し、seen パスを INSERT
     conn.execute_batch(
         "CREATE TEMP TABLE IF NOT EXISTS seen_paths(path TEXT PRIMARY KEY);
@@ -448,10 +487,12 @@ pub(super) fn delete_unseen(
     }
     tx.commit()?;
 
-    // seen に含まれないエントリを一括削除
+    // seen に含まれず、かつ自マウント配下のエントリを一括削除
     let deleted = conn.execute(
-        "DELETE FROM entries WHERE relative_path NOT IN (SELECT path FROM seen_paths)",
-        [],
+        "DELETE FROM entries \
+         WHERE relative_path LIKE ?1 ESCAPE '\\' \
+           AND relative_path NOT IN (SELECT path FROM seen_paths)",
+        params![scope_pattern],
     )?;
 
     conn.execute("DROP TABLE IF EXISTS seen_paths", [])?;
