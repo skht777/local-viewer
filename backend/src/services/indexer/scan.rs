@@ -120,10 +120,10 @@ impl Indexer {
             batch_insert(&conn, &batch)?;
         }
 
-        if walk_report.error_count > 0 {
+        if walk_report.error_count() > 0 {
             tracing::warn!(
                 "scan_directory: 走査中に {} 件のエラーを検出 (mount_id={mount_id}, entries={})",
-                walk_report.error_count,
+                walk_report.error_count(),
                 walk_report.entry_count
             );
         }
@@ -196,21 +196,22 @@ impl Indexer {
 
         let seen = seen.into_inner();
         let upsert_err_count = *upsert_errors.borrow();
-        let total_errors = walk_report.error_count + upsert_err_count;
+        let total_errors = walk_report.error_count() + upsert_err_count;
 
         // 走査/UPSERT エラーが 1 件でもあれば delete_unseen をスキップする。
         // 「一時的に見えなかっただけ」の行を誤削除するデータロスを回避。
         // 次回 incremental で再試行されるため可逆。
+        // NOTE: ハイブリッド閾値 (should_skip_delete) への差し替えは Phase C 後半で実施
         let deleted = if total_errors == 0 {
             delete_unseen(&conn, &seen, mount_id)?
         } else {
             tracing::warn!(
-                "incremental_scan: {} 件のエラーを検出、delete_unseen をスキップ \
-                 (mount_id={mount_id}, walk_errors={}, upsert_errors={}, entries={})",
-                total_errors,
-                walk_report.error_count,
-                upsert_err_count,
-                walk_report.entry_count
+                walk_errors = walk_report.error_count(),
+                upsert_errors = upsert_err_count,
+                observed = walk_report.observed_entries,
+                entries = walk_report.entry_count,
+                kind_counts = ?walk_report.error_kind_counts,
+                "incremental_scan: エラーを検出、delete_unseen をスキップ (mount_id={mount_id})"
             );
             0
         };
@@ -285,16 +286,18 @@ impl Indexer {
         };
 
         // 走査エラー無しなら stale 行 (seen に含まれない自マウント行) を削除
-        if walk_report.error_count == 0 {
+        // NOTE: ハイブリッド閾値 (should_skip_delete) への差し替えは Phase C 後半で実施
+        if walk_report.error_count() == 0 {
             let conn = self.connect()?;
             let seen_set = seen.into_inner();
             let _deleted = delete_unseen(&conn, &seen_set, mount_id)?;
         } else {
             tracing::warn!(
-                "rebuild: {} 件の走査エラー、stale 行の削除をスキップ \
-                 (mount_id={mount_id}, entries={})",
-                walk_report.error_count,
-                walk_report.entry_count
+                walk_errors = walk_report.error_count(),
+                observed = walk_report.observed_entries,
+                entries = walk_report.entry_count,
+                kind_counts = ?walk_report.error_kind_counts,
+                "rebuild: 走査エラー検出、stale 行の削除をスキップ (mount_id={mount_id})"
             );
         }
 

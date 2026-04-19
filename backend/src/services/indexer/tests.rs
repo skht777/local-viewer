@@ -596,7 +596,7 @@ fn scan_directoryでディレクトリを走査してインデックスに登録
     // sub1 (directory) + movie.mp4 (video) + doc.pdf (pdf) = 3
     // image.jpg は画像なのでインデックス対象外
     assert_eq!(count, 3);
-    assert_eq!(report.error_count, 0);
+    assert_eq!(report.error_count(), 0);
     assert_eq!(env.indexer.entry_count().unwrap(), 3);
 
     // is_ready が true に設定される
