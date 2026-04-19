@@ -23,11 +23,12 @@ pub(crate) struct SearchParams<'a> {
     pub scope_prefix: Option<&'a str>,
 }
 
+use std::collections::BTreeSet;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use rusqlite::{Connection, params};
 
-use helpers::{build_fingerprint, search_combined};
+use helpers::{build_fingerprint, mount_scope_range, search_combined};
 
 /// バッチ INSERT のサイズ
 const BATCH_SIZE: usize = 1000;
@@ -304,6 +305,64 @@ impl Indexer {
             params![fingerprint],
         )?;
         Ok(())
+    }
+
+    /// 保存済み fingerprint から旧 `mount_id` リストを復元する（all-or-nothing）
+    ///
+    /// - 全 token が `len == 16 && [0-9a-f]` を満たす場合のみ採用
+    /// - 1 件でも不正 → `tracing::warn!` + 空 `Vec`（破損 fingerprint から意図せず
+    ///   cleanup しない）
+    /// - 重複は `BTreeSet` で排除、空文字 token は除外
+    /// - `QueryReturnedNoRows` は `None` に正規化、それ以外の `Sqlite` エラーは
+    ///   `IndexerError::Sqlite` で伝播（silent skip を禁止、
+    ///   `check_mount_fingerprint` との観測性不一致を回避）
+    pub(crate) fn load_stored_mount_ids(&self) -> Result<Vec<String>, IndexerError> {
+        let conn = self.connect()?;
+        let raw: Option<String> = match conn.query_row(
+            "SELECT value FROM schema_meta WHERE key = 'mount_fingerprint'",
+            [],
+            |r| r.get(0),
+        ) {
+            Ok(v) => Some(v),
+            Err(rusqlite::Error::QueryReturnedNoRows) => None,
+            Err(e) => return Err(IndexerError::Sqlite(e)),
+        };
+        let Some(raw) = raw else {
+            return Ok(Vec::new());
+        };
+        let tokens: Vec<&str> = raw.split(',').filter(|t| !t.is_empty()).collect();
+        let valid = !tokens.is_empty()
+            && tokens.iter().all(|t| {
+                t.len() == 16
+                    && t.bytes()
+                        .all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase())
+            });
+        if !valid {
+            tracing::warn!(
+                raw_len = raw.len(),
+                "破損した mount_fingerprint 検出、cleanup をスキップ"
+            );
+            return Ok(Vec::new());
+        }
+        let uniq: BTreeSet<String> = tokens.into_iter().map(String::from).collect();
+        Ok(uniq.into_iter().collect())
+    }
+
+    /// 指定 `mount_id` 配下の `entries` 行を range scan で一括削除する
+    ///
+    /// - `mount_scope_range` で BINARY range scan → `idx_entries_relative_path`
+    ///   を利用（`SCAN entries` にならない）
+    /// - FTS trigger (`entries_ad`) が連動するため `entries_fts` 側にも
+    ///   削除行数と同数の DELETE が発行される
+    /// - 返値は削除行数
+    pub(crate) fn delete_mount_entries(&self, mount_id: &str) -> Result<usize, IndexerError> {
+        let (lo, hi) = mount_scope_range(mount_id)?;
+        let conn = self.connect()?;
+        let deleted = conn.execute(
+            "DELETE FROM entries WHERE relative_path >= ?1 AND relative_path < ?2",
+            params![lo, hi],
+        )?;
+        Ok(deleted)
     }
 }
 

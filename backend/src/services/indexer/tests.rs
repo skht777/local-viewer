@@ -1208,3 +1208,92 @@ fn mount_scope_rangeはinvariant違反でrejectする() {
     assert_eq!(lo, "0123456789abcdef/");
     assert_eq!(hi, "0123456789abcdef0");
 }
+
+// --- Phase B: load_stored_mount_ids / delete_mount_entries の回帰テスト ---
+
+const MOUNT_HEX_A: &str = "aaaaaaaaaaaaaaaa";
+const MOUNT_HEX_B: &str = "bbbbbbbbbbbbbbbb";
+
+#[test]
+fn load_stored_mount_idsはfingerprint未保存で空vecを返す() {
+    let (indexer, _tmp) = setup_indexer();
+    let ids = indexer.load_stored_mount_ids().unwrap();
+    assert!(ids.is_empty());
+}
+
+#[test]
+fn load_stored_mount_idsはソート済み重複排除されたvecを返す() {
+    let (indexer, _tmp) = setup_indexer();
+    // build_fingerprint は sort_unstable + join なのでここで重複 + 逆順を混ぜる
+    indexer
+        .save_mount_fingerprint(&[MOUNT_HEX_B, MOUNT_HEX_A, MOUNT_HEX_A])
+        .unwrap();
+    let ids = indexer.load_stored_mount_ids().unwrap();
+    // BTreeSet でソート + 重複排除
+    assert_eq!(ids, vec![MOUNT_HEX_A.to_string(), MOUNT_HEX_B.to_string()]);
+}
+
+#[test]
+fn 破損fingerprint行はall_or_nothingで空vecを返す() {
+    // codex v2 Warning 反映: 1 件でも不正な token があれば全体 reject
+    for broken in [
+        "short",                    // 短い
+        "toolong_mount_id_17chars", // 長い
+        "ABCDEF0123456789",         // uppercase hex (lowercase 限定)
+        "aaaaaaaa_bbbbbbb",         // 非 hex (_) 含む 16 chars
+        "0123456789abcdef,broken",  // 片方が非 hex
+    ] {
+        let (indexer, _tmp) = setup_indexer();
+        // save_mount_fingerprint は build_fingerprint でソート・結合するだけで
+        // invariant 検証しないため、壊れた値を直接 schema_meta に書く
+        let conn = indexer.connect().unwrap();
+        conn.execute(
+            "INSERT OR REPLACE INTO schema_meta (key, value) \
+             VALUES ('mount_fingerprint', ?1)",
+            rusqlite::params![broken],
+        )
+        .unwrap();
+        let ids = indexer.load_stored_mount_ids().unwrap();
+        assert!(ids.is_empty(), "broken={broken:?} で空 Vec を期待");
+    }
+}
+
+#[test]
+fn delete_mount_entriesは自マウント配下のみ削除する() {
+    let (indexer, _tmp) = setup_indexer();
+    indexer
+        .add_entry(&make_entry(
+            &format!("{MOUNT_HEX_A}/file1.jpg"),
+            "file1.jpg",
+            "image",
+        ))
+        .unwrap();
+    indexer
+        .add_entry(&make_entry(
+            &format!("{MOUNT_HEX_A}/sub/file2.mp4"),
+            "file2.mp4",
+            "video",
+        ))
+        .unwrap();
+    indexer
+        .add_entry(&make_entry(
+            &format!("{MOUNT_HEX_B}/file3.pdf"),
+            "file3.pdf",
+            "pdf",
+        ))
+        .unwrap();
+
+    let deleted = indexer.delete_mount_entries(MOUNT_HEX_A).unwrap();
+    assert_eq!(deleted, 2);
+
+    let remaining = indexer.list_entry_paths().unwrap();
+    assert_eq!(remaining, vec![format!("{MOUNT_HEX_B}/file3.pdf")]);
+}
+
+#[test]
+fn delete_mount_entriesはinvariant違反でrejectする() {
+    let (indexer, _tmp) = setup_indexer();
+    assert!(indexer.delete_mount_entries("").is_err());
+    assert!(indexer.delete_mount_entries("short").is_err());
+    assert!(indexer.delete_mount_entries("ABCDEF0123456789").is_err());
+}
