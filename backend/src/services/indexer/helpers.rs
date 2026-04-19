@@ -171,7 +171,8 @@ fn map_search_hit(row: &rusqlite::Row<'_>) -> rusqlite::Result<SearchHit> {
 /// `incremental_scan` の共有コンテキスト
 ///
 /// `prune_unchanged_dir` と `process_walk_entry_incremental` が
-/// 必要とするパラメータをまとめる。
+/// 必要とするパラメータをまとめる。`upsert_errors` は UPSERT 失敗件数を
+/// 集計し、呼び出し側が `delete_unseen` を実行するか判断する際に参照する。
 pub(super) struct IncrementalScanContext<'a> {
     pub root_dir: &'a Path,
     pub mount_id: &'a str,
@@ -180,6 +181,7 @@ pub(super) struct IncrementalScanContext<'a> {
     pub dir_mtimes: &'a HashMap<String, i64>,
     pub seen: &'a RefCell<HashSet<String>>,
     pub has_subdirs: &'a HashSet<String>,
+    pub upsert_errors: &'a RefCell<usize>,
 }
 
 /// mtime 未変更のディレクトリを枝刈りし、配下エントリを seen に追加する
@@ -276,7 +278,10 @@ pub(super) fn process_walk_entry_incremental(
                 Ok(UpsertResult::Added) => added += 1,
                 Ok(UpsertResult::Updated) => updated += 1,
                 Ok(UpsertResult::Unchanged) => {}
-                Err(e) => tracing::error!("UPSERT 失敗: {e}"),
+                Err(e) => {
+                    tracing::error!("UPSERT 失敗: {e}");
+                    *ctx.upsert_errors.borrow_mut() += 1;
+                }
             }
             ctx.seen.borrow_mut().insert(relative_path);
         }
@@ -297,7 +302,10 @@ pub(super) fn process_walk_entry_incremental(
                 Ok(UpsertResult::Added) => added += 1,
                 Ok(UpsertResult::Updated) => updated += 1,
                 Ok(UpsertResult::Unchanged) => {}
-                Err(e) => tracing::error!("UPSERT 失敗: {e}"),
+                Err(e) => {
+                    tracing::error!("UPSERT 失敗: {e}");
+                    *ctx.upsert_errors.borrow_mut() += 1;
+                }
             }
             ctx.seen.borrow_mut().insert(relative_path);
         }

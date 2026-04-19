@@ -2,23 +2,20 @@
 //!
 //! - `scan_directory`: フルスキャンで全エントリを登録
 //! - `incremental_scan`: `mtime` 差分で追加/更新/削除を反映
-//! - `rebuild`: 既存エントリを全削除してからフルスキャン
+//! - `rebuild`: 自マウント配下をスキャンし直してから stale 行を削除 (scan → delete)
 
 use std::cell::RefCell;
 use std::collections::HashSet;
 use std::path::Path;
 use std::sync::atomic::Ordering;
 
-use rusqlite::params;
-
 use crate::services::extensions::classify_for_index;
 use crate::services::parallel_walk::{self, WalkEntry, WalkReport};
 use crate::services::path_security::PathSecurity;
 
 use super::helpers::{
-    IncrementalScanContext, batch_insert, delete_unseen, escape_like_pattern, load_dir_mtimes,
-    load_existing_entries, make_relative_prefix, process_walk_entry_incremental,
-    prune_unchanged_dir,
+    IncrementalScanContext, batch_insert, delete_unseen, load_dir_mtimes, load_existing_entries,
+    make_relative_prefix, process_walk_entry_incremental, prune_unchanged_dir,
 };
 use super::{BATCH_SIZE, IndexEntry, Indexer, IndexerError, WalkCallbackArgs};
 
@@ -28,6 +25,9 @@ impl Indexer {
     /// - `parallel_walk` で並列走査し、インデクサブルなファイル/ディレクトリを登録
     /// - `on_walk_entry` コールバックで `DirIndex` 連携 (Phase 6b 用)
     /// - 完了後 `is_ready=true`, `is_stale=false` に設定
+    /// - 戻り値: `(登録件数, WalkReport)`。呼び出し側 (`rebuild` 等) は
+    ///   `WalkReport.error_count` を参照して「走査エラー時は削除を抑止」の
+    ///   判断に使える
     pub(crate) fn scan_directory(
         &self,
         root_dir: &Path,
@@ -35,7 +35,7 @@ impl Indexer {
         mount_id: &str,
         workers: usize,
         on_walk_entry: Option<&mut dyn FnMut(WalkCallbackArgs)>,
-    ) -> Result<usize, IndexerError> {
+    ) -> Result<(usize, WalkReport), IndexerError> {
         let conn = self.connect()?;
 
         let mut batch: Vec<IndexEntry> = Vec::with_capacity(BATCH_SIZE);
@@ -131,7 +131,7 @@ impl Indexer {
         self.is_ready.store(true, Ordering::Relaxed);
         self.is_stale.store(false, Ordering::Relaxed);
 
-        Ok(total)
+        Ok((total, walk_report))
     }
 
     /// 差分スキャンで変更のあったエントリのみ更新する
@@ -159,6 +159,7 @@ impl Indexer {
 
         // dir_filter と entry_callback の両方から借用するため RefCell
         let seen = RefCell::new(HashSet::new());
+        let upsert_errors = RefCell::new(0_usize);
         let mut added: usize = 0;
         let mut updated: usize = 0;
 
@@ -170,6 +171,7 @@ impl Indexer {
             dir_mtimes: &dir_mtimes,
             seen: &seen,
             has_subdirs: &has_subdirs,
+            upsert_errors: &upsert_errors,
         };
 
         let validator = |path: &Path| -> bool { path_security.validate(path).is_ok() };
@@ -192,16 +194,26 @@ impl Indexer {
             },
         );
 
-        if walk_report.error_count > 0 {
+        let seen = seen.into_inner();
+        let upsert_err_count = *upsert_errors.borrow();
+        let total_errors = walk_report.error_count + upsert_err_count;
+
+        // 走査/UPSERT エラーが 1 件でもあれば delete_unseen をスキップする。
+        // 「一時的に見えなかっただけ」の行を誤削除するデータロスを回避。
+        // 次回 incremental で再試行されるため可逆。
+        let deleted = if total_errors == 0 {
+            delete_unseen(&conn, &seen, mount_id)?
+        } else {
             tracing::warn!(
-                "incremental_scan: 走査中に {} 件のエラーを検出 (mount_id={mount_id}, entries={})",
+                "incremental_scan: {} 件のエラーを検出、delete_unseen をスキップ \
+                 (mount_id={mount_id}, walk_errors={}, upsert_errors={}, entries={})",
+                total_errors,
                 walk_report.error_count,
+                upsert_err_count,
                 walk_report.entry_count
             );
-        }
-
-        let seen = seen.into_inner();
-        let deleted = delete_unseen(&conn, &seen, mount_id)?;
+            0
+        };
 
         self.is_ready.store(true, Ordering::Relaxed);
         self.is_stale.store(false, Ordering::Relaxed);
@@ -209,9 +221,16 @@ impl Indexer {
         Ok((added, updated, deleted))
     }
 
-    /// 指定マウント配下のエントリを全削除して再構築する
+    /// 指定マウント配下のエントリを再構築する
     ///
-    /// `DELETE` は **当該 `mount_id` のプレフィックス配下に限定**される。
+    /// 方針（走査エラー時のデータロスを避けるため `scan → delete` の順）:
+    /// 1. `scan_directory` (INSERT OR REPLACE) で新しい行を登録しつつ、コールバック
+    ///    で走査で見えた相対パス集合 `seen` を収集
+    /// 2. 走査が成功 (`WalkReport.error_count == 0`) した場合のみ、seen に無い
+    ///    自マウント配下の行 (= stale 行) を `delete_unseen` で一括削除
+    /// 3. 走査エラー時は削除をスキップし、既存行を保護（次回 rebuild で再試行）
+    ///
+    /// `DELETE` は **当該 `mount_id` のプレフィックス配下に限定**されるため、
     /// 複数マウントがある場合に他マウントの行を巻き込まない。
     pub(crate) fn rebuild(
         &self,
@@ -219,27 +238,68 @@ impl Indexer {
         path_security: &PathSecurity,
         mount_id: &str,
     ) -> Result<usize, IndexerError> {
-        self.is_rebuilding.store(true, Ordering::Relaxed);
-
-        // 自マウント配下のエントリのみを削除
-        let conn = self.connect()?;
         if mount_id.is_empty() {
-            self.is_rebuilding.store(false, Ordering::Relaxed);
             return Err(IndexerError::Other(
                 "空の mount_id はサポートされていません".to_string(),
             ));
         }
-        let scope_pattern = format!("{}/%", escape_like_pattern(mount_id));
-        conn.execute(
-            "DELETE FROM entries WHERE relative_path LIKE ?1 ESCAPE '\\'",
-            params![scope_pattern],
-        )?;
-        drop(conn);
 
-        let result = self.scan_directory(root_dir, path_security, mount_id, 8, None);
+        self.is_rebuilding.store(true, Ordering::Relaxed);
+
+        // scan_directory のコールバックで seen（走査で見えた相対パス）を収集
+        let seen: RefCell<HashSet<String>> = RefCell::new(HashSet::new());
+        let mut on_walk_entry = |args: WalkCallbackArgs| {
+            // walk_entry_path を root_dir からの相対パスへ変換
+            let dir_relative = Path::new(&args.walk_entry_path)
+                .strip_prefix(Path::new(&args.root_dir))
+                .map(|p| p.to_string_lossy().into_owned())
+                .unwrap_or_default();
+            let prefix = make_relative_prefix(&args.mount_id, &dir_relative);
+            let mut s = seen.borrow_mut();
+            for (name, _) in &args.subdirs {
+                if classify_for_index(name, true).is_some() {
+                    s.insert(format!("{prefix}{name}"));
+                }
+            }
+            for (name, _, _) in &args.files {
+                if classify_for_index(name, false).is_some() {
+                    s.insert(format!("{prefix}{name}"));
+                }
+            }
+        };
+
+        let scan_result = self.scan_directory(
+            root_dir,
+            path_security,
+            mount_id,
+            8,
+            Some(&mut on_walk_entry),
+        );
+
+        let (count, walk_report) = match scan_result {
+            Ok(r) => r,
+            Err(e) => {
+                self.is_rebuilding.store(false, Ordering::Relaxed);
+                return Err(e);
+            }
+        };
+
+        // 走査エラー無しなら stale 行 (seen に含まれない自マウント行) を削除
+        if walk_report.error_count == 0 {
+            let conn = self.connect()?;
+            let seen_set = seen.into_inner();
+            let _deleted = delete_unseen(&conn, &seen_set, mount_id)?;
+        } else {
+            tracing::warn!(
+                "rebuild: {} 件の走査エラー、stale 行の削除をスキップ \
+                 (mount_id={mount_id}, entries={})",
+                walk_report.error_count,
+                walk_report.entry_count
+            );
+        }
 
         self.is_rebuilding.store(false, Ordering::Relaxed);
 
-        result
+        Ok(count)
     }
 }

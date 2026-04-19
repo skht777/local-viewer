@@ -588,7 +588,7 @@ fn scan_directoryでディレクトリを走査してインデックスに登録
     let env = ScanTestEnv::new();
     let ps = env.path_security();
 
-    let count = env
+    let (count, report) = env
         .indexer
         .scan_directory(&env.root, &ps, "test_mount", 2, None)
         .unwrap();
@@ -596,6 +596,7 @@ fn scan_directoryでディレクトリを走査してインデックスに登録
     // sub1 (directory) + movie.mp4 (video) + doc.pdf (pdf) = 3
     // image.jpg は画像なのでインデックス対象外
     assert_eq!(count, 3);
+    assert_eq!(report.error_count, 0);
     assert_eq!(env.indexer.entry_count().unwrap(), 3);
 
     // is_ready が true に設定される
@@ -909,43 +910,93 @@ fn incremental_scanで自マウントの削除済みファイルだけを消す(
     );
 }
 
+/// サブディレクトリの read permission を外して `scan_one` の `read_dir` を
+/// 失敗させる。`WalkReport.error_count >= 1` が立ち、後続の削除判定を
+/// トリガーする回帰テスト用の補助関数。
+///
+/// `TempDir` の drop で削除できなくなるため、テスト末尾で必ず
+/// `restore_read_perms` を呼んで 0o755 に戻す。
+#[cfg(unix)]
+fn strip_read_perms(path: &std::path::Path) {
+    use std::os::unix::fs::PermissionsExt;
+    let mut perms = fs::metadata(path).unwrap().permissions();
+    perms.set_mode(0o000);
+    fs::set_permissions(path, perms).unwrap();
+}
+
+#[cfg(unix)]
+fn restore_read_perms(path: &std::path::Path) {
+    use std::os::unix::fs::PermissionsExt;
+    let mut perms = fs::metadata(path).unwrap().permissions();
+    perms.set_mode(0o755);
+    fs::set_permissions(path, perms).unwrap();
+}
+
+#[cfg(unix)]
 #[test]
 fn incremental_scanはread_dir失敗時に既存行を削除しない() {
-    // mount_a のルート自体が存在しなくなったケース
-    // scan_one の read_dir 失敗 → WalkReport.error_count >= 1 → delete_unseen スキップ
+    // mount_a 内のサブディレクトリに read 権限が無いケース。
+    // scan_one の read_dir 失敗 → WalkReport.error_count >= 1 → delete_unseen スキップ。
     let env = MultiMountEnv::new_with_initial_scan();
-    let before_a = env.count_with_prefix("mount_a/");
-    assert!(before_a >= 3);
+    // sub_a 配下に追加の動画ファイル + 更に深いサブディレクトリを作り、
+    // その一部から read 権限を剥奪することで走査エラーを誘発する
+    let restricted = env.root_a.join("sub_a/restricted_dir");
+    fs::create_dir_all(&restricted).unwrap();
+    fs::write(restricted.join("deep.mp4"), b"deep").unwrap();
 
-    // 存在しないパスで incremental_scan を実行（ルート read_dir 失敗を誘発）
-    let missing_root = env.root_a.join("does_not_exist");
-    let ps_missing = PathSecurity::new(vec![missing_root.clone()], false).unwrap();
-    // PathSecurity が存在しないルートを弾く場合は validate を通すため親を許可
+    // 追加エントリを一度インデックスに登録
+    env.indexer
+        .incremental_scan(&env.root_a, &env.ps_a(), "mount_a", 2, None)
+        .unwrap();
+    let before_a = env.count_with_prefix("mount_a/");
+    assert!(before_a >= 4);
+
+    // restricted ディレクトリから read 権限を剥奪
+    strip_read_perms(&restricted);
+
+    // incremental_scan 実行。sub_a から restricted を subdir として列挙するが、
+    // restricted 自体の read_dir は EACCES で失敗し WalkReport.error_count >= 1
     let _ = env
         .indexer
-        .incremental_scan(&missing_root, &ps_missing, "mount_a", 2, None);
+        .incremental_scan(&env.root_a, &env.ps_a(), "mount_a", 2, None);
 
-    // 既存行が残っていることを確認
     let after_a = env.count_with_prefix("mount_a/");
+
+    // 権限を戻す (TempDir の drop で削除できるようにする)
+    restore_read_perms(&restricted);
+
+    // 既存行が全件残っていることを確認（read_dir 失敗時に delete_unseen がスキップされた）
     assert_eq!(
         after_a, before_a,
         "read_dir 失敗でも既存行を保護すべきだが削除された"
     );
 }
 
+#[cfg(unix)]
 #[test]
 fn rebuildはスキャン失敗時に既存行を削除しない() {
+    // mount_a 内のサブディレクトリに read 権限が無い状態で rebuild を実行。
+    // 走査エラー時は stale 行の削除をスキップし、既存行を保護する。
     let env = MultiMountEnv::new_with_initial_scan();
+    let restricted = env.root_a.join("sub_a/restricted_dir");
+    fs::create_dir_all(&restricted).unwrap();
+    fs::write(restricted.join("deep.mp4"), b"deep").unwrap();
+
+    // 追加エントリを登録
+    env.indexer
+        .incremental_scan(&env.root_a, &env.ps_a(), "mount_a", 2, None)
+        .unwrap();
     let before_a = env.count_with_prefix("mount_a/");
-    assert!(before_a >= 3);
+    assert!(before_a >= 4);
 
-    // 存在しないルートで rebuild → スキャン失敗 (WalkReport.error_count >= 1)
-    // 既存の mount_a 行は削除されずに残ること
-    let missing_root = env.root_a.join("does_not_exist");
-    let ps_missing = PathSecurity::new(vec![missing_root.clone()], false).unwrap();
-    let _ = env.indexer.rebuild(&missing_root, &ps_missing, "mount_a");
-
+    // 権限剥奪 → rebuild 実行 → 権限復元
+    strip_read_perms(&restricted);
+    let _ = env.indexer.rebuild(&env.root_a, &env.ps_a(), "mount_a");
     let after_a = env.count_with_prefix("mount_a/");
+    restore_read_perms(&restricted);
+
+    // rebuild で走査エラーが発生した場合、stale 行削除はスキップされるため
+    // 既存行は全件残っているべき
     assert_eq!(
         after_a, before_a,
         "rebuild スキャン失敗時でも既存行を保護すべきだが削除された"
