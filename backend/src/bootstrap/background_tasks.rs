@@ -10,12 +10,12 @@
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::Ordering;
 
 use crate::services;
 use crate::services::dir_index::DirIndex;
 use crate::services::indexer::{Indexer, WalkCallbackArgs};
-use crate::services::mount_cleanup::{enumerate_stale_mount_ids, perform_stale_cleanup};
+use crate::services::mount_cleanup::{enumerate_stale_mount_ids, perform_full_stale_cleanup};
 use crate::services::path_security::PathSecurity;
 
 use super::BackgroundContext;
@@ -25,24 +25,13 @@ use super::BackgroundContext;
 /// - `scan_ok`: `incremental_scan` / `scan_directory` が `Ok` を返したか
 /// - `dir_index_ok`: `DirIndex` への書き込み経路 (`begin_bulk` + `ingest` + `flush`) が
 ///   すべて成功したか
-///
-/// Phase C1 では**本 struct は集約のみで使用し、Step 3/4 の分岐には使わない**
-/// （振る舞い不変）。Phase C2 で readiness / fingerprint ガードに統合する。
 #[derive(Debug, Clone, Copy, Default)]
-#[allow(
-    dead_code,
-    reason = "Phase C1 では集約のみ。Phase C2 で readiness gate に統合"
-)]
 pub(super) struct MountScanOutcome {
     pub(super) scan_ok: bool,
     pub(super) dir_index_ok: bool,
 }
 
 impl MountScanOutcome {
-    #[allow(
-        dead_code,
-        reason = "Phase C1 では aggregate_scan_readiness 内のみで使用、Phase C2 で本番経路にも使う"
-    )]
     pub(super) fn is_ok(self) -> bool {
         self.scan_ok && self.dir_index_ok
     }
@@ -112,37 +101,35 @@ pub(crate) fn spawn_background_tasks(bg: BackgroundContext) {
         .map(|(id, p)| (id.clone(), p.clone()))
         .collect();
 
-    // stale cleanup の全成功可否を非同期フェーズ間で共有
-    let cleanup_all_ok = Arc::new(AtomicBool::new(true));
-
     // マウントごとのスキャンを逐次実行
     // Indexer と DirIndex は同一 SQLite DB を共有するため、並行書き込みで
     // SQLITE_BUSY によるトランザクション失敗を回避する
-    let scan_cleanup_ok = Arc::clone(&cleanup_all_ok);
-    let scan_handle = tokio::spawn(async move {
+    //
+    // scan_handle は (is_warm_start, all_ok) を返し、外側の tokio::spawn で
+    // FileWatcher 起動判定に使う（cold partial は FileWatcher 起動中止）
+    let scan_handle: tokio::task::JoinHandle<(bool, bool)> = tokio::spawn(async move {
         // Step 1: stale mount rows 削除（あれば、spawn_blocking 内で同期実行）
-        if !stale_mount_ids.is_empty() {
+        //         Indexer + DirIndex 両方に対して cleanup を実行
+        let cleanup_ok = if stale_mount_ids.is_empty() {
+            true
+        } else {
             let cleanup_indexer = Arc::clone(&bg.indexer);
+            let cleanup_dir_index = Arc::clone(&bg.dir_index);
             let stale_for_task = stale_mount_ids.clone();
-            let cleanup_ok_ref = Arc::clone(&scan_cleanup_ok);
             let cleanup_result = tokio::task::spawn_blocking(move || {
-                let all_ok = perform_stale_cleanup("entries", &stale_for_task, |id| {
-                    cleanup_indexer.delete_mount_entries(id)
-                });
-                if !all_ok {
-                    cleanup_ok_ref.store(false, Ordering::Relaxed);
-                }
+                perform_full_stale_cleanup(&stale_for_task, &cleanup_indexer, &cleanup_dir_index)
             })
             .await;
-            if let Err(e) = cleanup_result {
-                tracing::error!("stale cleanup タスクがパニック: {e}");
-                scan_cleanup_ok.store(false, Ordering::Relaxed);
+            match cleanup_result {
+                Ok(ok) => ok,
+                Err(e) => {
+                    tracing::error!("stale cleanup タスクがパニック: {e}");
+                    false
+                }
             }
-        }
+        };
 
         // Step 2: per-mount scan ループ
-        // 各 mount の outcome を集約する（Phase C1 では集約のみ、
-        // Phase C2 で readiness/fingerprint gate に使う）
         let mut mount_outcomes: Vec<Option<MountScanOutcome>> =
             Vec::with_capacity(scan_mounts.len());
         for (mount_id, root) in scan_mounts {
@@ -174,49 +161,89 @@ pub(crate) fn spawn_background_tasks(bg: BackgroundContext) {
             mount_outcomes.push(outcome_opt);
         }
 
-        // Phase C1: mount_outcomes は集約のみで使用しない
-        // （Phase C2 で mark_ready / mark_full_scan_done / fingerprint gate に統合）
-        let _ = &mount_outcomes;
+        // Step 3: readiness フラグの gate
+        //   partial 時は mark_full_scan_done / mark_ready / scan_complete を
+        //   すべてスキップし、/api/ready を 503 (cold) / 既存 warm 応答に留める
+        let (cleanup_ok, scans_ok, all_ok) = aggregate_scan_readiness(cleanup_ok, &mount_outcomes);
 
-        // Step 3: 全マウントスキャン完了後にフラグを設定
-        if !is_warm_start {
+        if !is_warm_start && all_ok {
             let _ = scan_dir_index.mark_full_scan_done();
         }
-        scan_dir_index.mark_ready();
+        if all_ok {
+            scan_dir_index.mark_ready();
+            bg.scan_complete.store(true, Ordering::Relaxed);
+        } else {
+            tracing::warn!(
+                cleanup_ok,
+                scans_ok,
+                is_warm_start,
+                "cleanup / per-mount scan の部分失敗のため、ready 到達を保留 \
+                 (/api/ready: warm=200 既存データで応答 / cold=503 維持)"
+            );
+        }
 
-        // Step 4: 全 stale 削除成功時のみ fingerprint を新構成で上書き
-        //         部分失敗時は旧 fingerprint を残して次回起動で再試行可能にする
-        if scan_cleanup_ok.load(Ordering::Relaxed) {
+        // Step 4: fingerprint 更新 or クリア
+        //   - 全成功: 現構成で fingerprint を保存
+        //   - warm partial: fingerprint をクリアして次回 cold start を強制
+        //       （incremental_scan の mtime 枝刈りで DirIndex 欠損が埋まらない問題の復旧経路）
+        //   - cold partial: fingerprint 更新を保留（次回起動で再試行）
+        if all_ok {
             let refs: Vec<&str> = fingerprint_mount_ids.iter().map(String::as_str).collect();
             if let Err(e) = fingerprint_indexer.save_mount_fingerprint(&refs) {
                 tracing::error!("マウントフィンガープリント保存失敗: {e}");
             }
+        } else if is_warm_start {
+            // warm partial: 次回起動を cold start に落として fresh full scan で復旧させる
+            if let Err(e) = fingerprint_indexer.clear_mount_fingerprint() {
+                tracing::error!("warm partial 時の fingerprint クリア失敗: {e}");
+            } else {
+                tracing::warn!(
+                    cleanup_ok,
+                    scans_ok,
+                    "warm partial failure: fingerprint クリア、次回起動を cold start に落として復旧"
+                );
+            }
         } else {
             tracing::warn!(
-                "stale cleanup が部分失敗のため、fingerprint 更新を保留（次回起動で再試行）"
+                cleanup_ok,
+                scans_ok,
+                "cold partial failure: fingerprint 更新を保留、再起動で再試行"
             );
         }
 
-        bg.scan_complete.store(true, Ordering::Relaxed);
+        (is_warm_start, all_ok)
     });
 
-    // スキャン完了後に FileWatcher を起動（panic 時は起動中止）
+    // スキャン完了後に FileWatcher を起動
+    //   - 全成功 or warm partial: 起動（warm partial は fingerprint クリア済で
+    //     次回 cold start で復旧するが、稼働中は既存 entries で応答 + 増分追従）
+    //   - cold partial: 起動中止（再起動での復旧に一本化、DB 状態を静的に保つ）
+    //   - panic: 起動中止（partial init 防止）
     tokio::spawn(async move {
         match scan_handle.await {
-            Ok(()) => {
-                tracing::info!("全マウントのスキャン完了、FileWatcher を起動");
+            Ok((is_warm_start, all_ok)) => {
+                let should_start_watcher = all_ok || is_warm_start;
+                if should_start_watcher {
+                    tracing::info!(all_ok, is_warm_start, "FileWatcher を起動");
 
-                let file_watcher = services::file_watcher::FileWatcher::new(
-                    watcher_indexer,
-                    watcher_path_security,
-                    watcher_dir_index,
-                    watcher_mounts,
-                );
-                if let Err(e) = file_watcher.start() {
-                    tracing::error!("FileWatcher 起動失敗: {e}");
+                    let file_watcher = services::file_watcher::FileWatcher::new(
+                        watcher_indexer,
+                        watcher_path_security,
+                        watcher_dir_index,
+                        watcher_mounts,
+                    );
+                    if let Err(e) = file_watcher.start() {
+                        tracing::error!("FileWatcher 起動失敗: {e}");
+                    }
+                    // FileWatcher を維持 (drop で停止するため)
+                    std::mem::forget(file_watcher);
+                } else {
+                    tracing::warn!(
+                        all_ok,
+                        is_warm_start,
+                        "cold start partial failure: FileWatcher 起動を中止、再起動で復旧"
+                    );
                 }
-                // FileWatcher を維持 (drop で停止するため)
-                std::mem::forget(file_watcher);
             }
             Err(e) => {
                 // partial init 防止: FileWatcher を起動せず、scan_complete も false のまま
@@ -335,10 +362,6 @@ fn run_mount_scan(
 /// - 返値: `(cleanup_ok, scans_ok, all_ok)` タプル
 /// - **空配列セマンティクス**: `outcomes.len() == 0` は「スキャン対象 0 件 = no-op success」
 ///   として `scans_ok == true` を返す
-#[allow(
-    dead_code,
-    reason = "Phase C1 では unit test のみで使用、Phase C2 で本番経路に統合"
-)]
 pub(super) fn aggregate_scan_readiness(
     cleanup_ok: bool,
     outcomes: &[Option<MountScanOutcome>],

@@ -358,6 +358,34 @@ fn mount_fingerprintの保存と検証() {
 }
 
 #[test]
+fn clear_mount_fingerprintは保存済み値を削除する() {
+    let (indexer, _tmp) = setup_indexer();
+
+    let ids = vec!["aaaaaaaaaaaaaaaa", "bbbbbbbbbbbbbbbb"];
+    indexer.save_mount_fingerprint(&ids).unwrap();
+    assert!(indexer.check_mount_fingerprint(&ids).unwrap());
+
+    indexer.clear_mount_fingerprint().unwrap();
+
+    // クリア後は任意の ID リストに対して false
+    assert!(!indexer.check_mount_fingerprint(&ids).unwrap());
+    // load_stored_mount_ids も空 Vec を返す（次回起動は cold start に落ちる）
+    assert!(indexer.load_stored_mount_ids().unwrap().is_empty());
+}
+
+#[test]
+fn clear_mount_fingerprintは未保存時no_opで成功する() {
+    let (indexer, _tmp) = setup_indexer();
+
+    // 未保存状態でもエラーにならず no-op で成功
+    indexer.clear_mount_fingerprint().unwrap();
+    // 冪等性: 2 度目も成功
+    indexer.clear_mount_fingerprint().unwrap();
+
+    assert!(indexer.load_stored_mount_ids().unwrap().is_empty());
+}
+
+#[test]
 fn mark_warm_startでis_readyとis_staleが設定される() {
     let (indexer, _tmp) = setup_indexer();
 

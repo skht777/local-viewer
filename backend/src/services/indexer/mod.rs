@@ -310,6 +310,23 @@ impl Indexer {
         Ok(())
     }
 
+    /// 保存済みマウントフィンガープリントを削除する（warm partial 復旧用）
+    ///
+    /// - warm start で per-mount scan が部分失敗した場合、`incremental_scan` の
+    ///   mtime 枝刈りにより `DirIndex` 欠損が埋まらないまま fingerprint が現構成と
+    ///   一致し続ける。次回起動も warm start と判定され復旧不能になる問題を防ぐ
+    /// - fingerprint を削除すると次回起動時に `check_mount_fingerprint` が false を
+    ///   返し、cold start (fresh full scan) に落ちて確実に復旧できる
+    /// - 未保存状態で呼んでも 0 件 DELETE で no-op（冪等）
+    pub(crate) fn clear_mount_fingerprint(&self) -> Result<(), IndexerError> {
+        let conn = self.connect()?;
+        conn.execute(
+            "DELETE FROM schema_meta WHERE key = 'mount_fingerprint'",
+            [],
+        )?;
+        Ok(())
+    }
+
     /// 保存済み fingerprint から旧 `mount_id` リストを復元する（all-or-nothing）
     ///
     /// - 全 token が `len == 16 && [0-9a-f]` を満たす場合のみ採用
