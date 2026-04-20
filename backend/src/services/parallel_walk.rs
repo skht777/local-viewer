@@ -67,6 +67,8 @@ pub(crate) struct WalkError {
 ///   `MAX_WALK_ERROR_SAMPLES` を超えても減らない
 /// - `error_kind_counts`: 種別ごとの件数（観測・監視向け、軽量）
 /// - `error_samples`: 先頭 `MAX_WALK_ERROR_SAMPLES` 件のみ詳細保持
+/// - `cancelled`: 協調キャンセルで中断したか。`true` の場合 `entry_count` は partial
+///   で、呼び出し側は readiness マークや削除判定を skip すべき
 ///
 /// 削除判定側は `error_count()` で真値、`observed_entries` で分母を参照する。
 #[derive(Debug, Default)]
@@ -76,6 +78,7 @@ pub(crate) struct WalkReport {
     pub total_error_count: usize,
     pub error_kind_counts: BTreeMap<WalkErrorKind, usize>,
     pub error_samples: Vec<WalkError>,
+    pub cancelled: bool,
 }
 
 impl WalkReport {
@@ -120,21 +123,37 @@ impl LocalErrorBatch {
 ///
 /// - `path_validator` が指定されている場合、stat 前にパスを検証する
 /// - 隠しファイル/ディレクトリ (先頭 '.') は `skip_hidden=true` でスキップ
+/// - `cancelled()` を `read_dir` 前と各子エントリ処理の前で check、true なら
+///   早期 return して空の batch を返す（呼び出し側は level 境界でもキャンセルを検知する）
 /// - スレッドローカルなバッチを返すので lock-free。呼び出し側がレベル単位で
 ///   マージする
 fn scan_one(
     dir_path: &Path,
     skip_hidden: bool,
     path_validator: PathValidator<'_>,
+    cancelled: &(dyn Fn() -> bool + Sync),
 ) -> (WalkEntry, LocalErrorBatch) {
     let mut subdirs = Vec::new();
     let mut files = Vec::new();
     let mut batch = LocalErrorBatch::default();
 
+    if cancelled() {
+        let entry = WalkEntry {
+            path: dir_path.to_path_buf(),
+            mtime_ns: 0,
+            subdirs,
+            files,
+        };
+        return (entry, batch);
+    }
+
     match std::fs::read_dir(dir_path) {
         Ok(entries) => {
             batch.visited_dirs = 1;
             for entry_result in entries {
+                if cancelled() {
+                    break;
+                }
                 let entry = match entry_result {
                     Ok(e) => e,
                     Err(e) => {
@@ -219,6 +238,10 @@ fn scan_one(
 /// - `entry_callback`: 走査結果を 1 ディレクトリずつ通知するコールバック
 /// - 戻り値 `WalkReport`: 通知件数 + エラー詳細サマリ + 観測試行数。呼び出し側
 ///   はエラー発生時に「見えなかった行を DELETE しない」判断に使える。
+#[allow(
+    clippy::too_many_arguments,
+    reason = "BFS 走査に必要な 4 種のコールバック + cancelled をまとめて渡す都合で閾値超過"
+)]
 pub(crate) fn parallel_walk(
     root: &Path,
     workers: usize,
@@ -226,6 +249,7 @@ pub(crate) fn parallel_walk(
     path_validator: PathValidator<'_>,
     dir_filter: &mut dyn FnMut(&Path, i64) -> bool,
     entry_callback: &mut dyn FnMut(WalkEntry),
+    cancelled: &(dyn Fn() -> bool + Sync),
 ) -> WalkReport {
     let mut report = WalkReport::default();
 
@@ -244,12 +268,19 @@ pub(crate) fn parallel_walk(
     let mut current_level = vec![root.to_path_buf()];
 
     while !current_level.is_empty() {
+        // level 境界でキャンセル確認。partial WalkReport を返すため
+        // 呼び出し側が `cancelled = true` を見て readiness マークを skip する
+        if cancelled() {
+            report.cancelled = true;
+            return report;
+        }
+
         // 現在のレベルのディレクトリを並列スキャン（スレッドローカルバッチで lock-free）
         let results: Vec<(WalkEntry, LocalErrorBatch)> = pool.install(|| {
             use rayon::prelude::*;
             current_level
                 .par_iter()
-                .map(|d| scan_one(d, skip_hidden, path_validator))
+                .map(|d| scan_one(d, skip_hidden, path_validator, cancelled))
                 .collect()
         });
 
@@ -342,9 +373,17 @@ mod tests {
         let tree = TestTree::new();
         let mut entries = Vec::new();
 
-        let report = parallel_walk(&tree.root, 2, true, None, &mut |_, _| true, &mut |e| {
-            entries.push(e);
-        });
+        let report = parallel_walk(
+            &tree.root,
+            2,
+            true,
+            None,
+            &mut |_, _| true,
+            &mut |e| {
+                entries.push(e);
+            },
+            &|| false,
+        );
 
         // ルート + sub1 + sub2 = 3 ディレクトリ (.hidden はスキップ)
         assert_eq!(entries.len(), 3);
@@ -364,9 +403,17 @@ mod tests {
         let tree = TestTree::new();
         let mut entries = Vec::new();
 
-        parallel_walk(&tree.root, 2, true, None, &mut |_, _| true, &mut |e| {
-            entries.push(e);
-        });
+        parallel_walk(
+            &tree.root,
+            2,
+            true,
+            None,
+            &mut |_, _| true,
+            &mut |e| {
+                entries.push(e);
+            },
+            &|| false,
+        );
 
         // .hidden ディレクトリが子エントリとして含まれない (ルート自体は除外)
         let root_entry = entries.iter().find(|e| e.path == tree.root).unwrap();
@@ -386,9 +433,17 @@ mod tests {
         let tree = TestTree::new();
         let mut entries = Vec::new();
 
-        parallel_walk(&tree.root, 2, false, None, &mut |_, _| true, &mut |e| {
-            entries.push(e);
-        });
+        parallel_walk(
+            &tree.root,
+            2,
+            false,
+            None,
+            &mut |_, _| true,
+            &mut |e| {
+                entries.push(e);
+            },
+            &|| false,
+        );
 
         // .hidden ディレクトリも含まれる → root + sub1 + sub2 + .hidden = 4
         assert_eq!(entries.len(), 4);
@@ -410,6 +465,7 @@ mod tests {
             Some(&validator),
             &mut |_, _| true,
             &mut |e| entries.push(e),
+            &|| false,
         );
 
         // sub1 がサブディレクトリとして認識されない → root + sub2 = 2
@@ -430,6 +486,7 @@ mod tests {
             None,
             &mut |path, _| !path.starts_with(&sub2_path),
             &mut |e| entries.push(e),
+            &|| false,
         );
 
         // sub2 は枝刈りされて走査されない → root + sub1 = 2
@@ -441,9 +498,17 @@ mod tests {
         let tree = TestTree::new();
         let mut entries = Vec::new();
 
-        parallel_walk(&tree.root, 2, true, None, &mut |_, _| true, &mut |e| {
-            entries.push(e);
-        });
+        parallel_walk(
+            &tree.root,
+            2,
+            true,
+            None,
+            &mut |_, _| true,
+            &mut |e| {
+                entries.push(e);
+            },
+            &|| false,
+        );
 
         let sub1 = entries
             .iter()
@@ -461,9 +526,17 @@ mod tests {
         let nonexistent = PathBuf::from("/nonexistent/path/xyz");
         let mut entries = Vec::new();
 
-        let report = parallel_walk(&nonexistent, 2, true, None, &mut |_, _| true, &mut |e| {
-            entries.push(e);
-        });
+        let report = parallel_walk(
+            &nonexistent,
+            2,
+            true,
+            None,
+            &mut |_, _| true,
+            &mut |e| {
+                entries.push(e);
+            },
+            &|| false,
+        );
 
         // ルート 1 件は WalkEntry として返る (空の subdirs/files + mtime_ns=0)
         assert_eq!(report.entry_count, 1);
@@ -497,9 +570,17 @@ mod tests {
         let tree = TestTree::new();
         let mut entries = Vec::new();
 
-        let report = parallel_walk(&tree.root, 2, true, None, &mut |_, _| true, &mut |e| {
-            entries.push(e);
-        });
+        let report = parallel_walk(
+            &tree.root,
+            2,
+            true,
+            None,
+            &mut |_, _| true,
+            &mut |e| {
+                entries.push(e);
+            },
+            &|| false,
+        );
 
         // .hidden はスキップされるが、metadata が呼ばれる前に名前判定で弾かれるため
         // visible_children には含まれない
@@ -525,7 +606,9 @@ mod tests {
             fs::set_permissions(&sub, perms).unwrap();
         }
 
-        let report = parallel_walk(&root, 2, true, None, &mut |_, _| true, &mut |_| {});
+        let report = parallel_walk(&root, 2, true, None, &mut |_, _| true, &mut |_| {}, &|| {
+            false
+        });
 
         // 権限復元（TempDir drop のため）
         for i in 0..n {
@@ -548,5 +631,45 @@ mod tests {
                 .copied(),
             Some(n)
         );
+    }
+
+    #[test]
+    fn cancel後にlevel境界で早期returnしcancelled_trueを返す() {
+        // cancelled 初回から true → root の scan もスキップされ、level ループ先頭で bail
+        let tree = TestTree::new();
+        let mut entries = Vec::new();
+
+        let report = parallel_walk(
+            &tree.root,
+            2,
+            true,
+            None,
+            &mut |_, _| true,
+            &mut |e| entries.push(e),
+            &|| true, // 常に cancel
+        );
+
+        assert!(report.cancelled, "cancelled フラグが true であること");
+        assert_eq!(entries.len(), 0, "level 先頭で bail するので entry 0 件");
+        assert_eq!(report.entry_count, 0);
+    }
+
+    #[test]
+    fn cancelされない通常経路ではcancelled_falseが返る() {
+        let tree = TestTree::new();
+        let mut entries = Vec::new();
+
+        let report = parallel_walk(
+            &tree.root,
+            2,
+            true,
+            None,
+            &mut |_, _| true,
+            &mut |e| entries.push(e),
+            &|| false,
+        );
+
+        assert!(!report.cancelled);
+        assert_eq!(report.entry_count, 3);
     }
 }

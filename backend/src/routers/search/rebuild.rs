@@ -84,7 +84,7 @@ pub(crate) async fn rebuild_index(
                 )]
                 let reg = registry_ref.lock().expect("NodeRegistry Mutex poisoned");
                 let path_security = reg.path_security();
-                indexer_ref.rebuild(&root, path_security, &mount_id_for_task)
+                indexer_ref.rebuild(&root, path_security, &mount_id_for_task, &|| false)
             })
             .await;
 

@@ -35,14 +35,28 @@ pub(crate) fn enumerate_stale_mount_ids(indexer: &Indexer, current_ids: &[&str])
 /// - **呼び出し位置**: 必ず `spawn_blocking` の**内部**で呼ぶ（同期 DB I/O のため）
 /// - `label` はログ識別用（`"entries"` / `"dir_entries"` 等）
 /// - エラー型はジェネリック (`Display`) で `Indexer` / `DirIndex` 両方に対応
+/// - `cancelled()` を mount ループ先頭で check、true なら残 mount を skip して
+///   `all_ok = false` で早期 return（cleanup 部分成功を成功扱いしない）
 /// - **unit test の第一選択**。`delete_one` に fault injection closure を渡す
-pub(crate) fn perform_stale_cleanup<F, E>(label: &str, stale_ids: &[String], delete_one: F) -> bool
+pub(crate) fn perform_stale_cleanup<F, E>(
+    label: &str,
+    stale_ids: &[String],
+    delete_one: F,
+    cancelled: &(dyn Fn() -> bool + Sync),
+) -> bool
 where
     F: Fn(&str) -> Result<usize, E>,
     E: std::fmt::Display,
 {
     let mut all_ok = true;
     for id in stale_ids {
+        if cancelled() {
+            tracing::warn!(
+                "stale {label} cleanup を shutdown により中断 (remaining={})",
+                stale_ids.len() - stale_ids.iter().position(|x| x == id).unwrap_or(0)
+            );
+            return false;
+        }
         match delete_one(id) {
             Ok(n) => tracing::info!("stale {label} 行削除: mount_id={id}, rows={n}"),
             Err(e) => {
@@ -64,14 +78,23 @@ pub(crate) fn perform_full_stale_cleanup(
     stale_ids: &[String],
     indexer: &Indexer,
     dir_index: &DirIndex,
+    cancelled: &(dyn Fn() -> bool + Sync),
 ) -> bool {
     if stale_ids.is_empty() {
         return true;
     }
-    let idx_ok = perform_stale_cleanup("entries", stale_ids, |id| indexer.delete_mount_entries(id));
-    let dir_ok = perform_stale_cleanup("dir_entries", stale_ids, |id| {
-        dir_index.delete_mount_entries(id)
-    });
+    let idx_ok = perform_stale_cleanup(
+        "entries",
+        stale_ids,
+        |id| indexer.delete_mount_entries(id),
+        cancelled,
+    );
+    let dir_ok = perform_stale_cleanup(
+        "dir_entries",
+        stale_ids,
+        |id| dir_index.delete_mount_entries(id),
+        cancelled,
+    );
     idx_ok && dir_ok
 }
 
@@ -96,10 +119,15 @@ mod tests {
     fn perform_stale_cleanupは全成功時trueを返す() {
         let calls = std::sync::Mutex::new(Vec::<String>::new());
         let ids = vec![MOUNT_A.to_string(), MOUNT_B.to_string()];
-        let ok = perform_stale_cleanup("entries", &ids, |id| -> Result<usize, IndexerError> {
-            calls.lock().unwrap().push(id.to_string());
-            Ok(5)
-        });
+        let ok = perform_stale_cleanup(
+            "entries",
+            &ids,
+            |id| -> Result<usize, IndexerError> {
+                calls.lock().unwrap().push(id.to_string());
+                Ok(5)
+            },
+            &|| false,
+        );
         assert!(ok);
         let calls = calls.into_inner().unwrap();
         assert_eq!(calls, vec![MOUNT_A.to_string(), MOUNT_B.to_string()]);
@@ -113,14 +141,19 @@ mod tests {
             MOUNT_B.to_string(),
             MOUNT_C.to_string(),
         ];
-        let ok = perform_stale_cleanup("entries", &ids, |id| -> Result<usize, IndexerError> {
-            calls.lock().unwrap().push(id.to_string());
-            if id == MOUNT_B {
-                Err(IndexerError::Other("forced failure".into()))
-            } else {
-                Ok(3)
-            }
-        });
+        let ok = perform_stale_cleanup(
+            "entries",
+            &ids,
+            |id| -> Result<usize, IndexerError> {
+                calls.lock().unwrap().push(id.to_string());
+                if id == MOUNT_B {
+                    Err(IndexerError::Other("forced failure".into()))
+                } else {
+                    Ok(3)
+                }
+            },
+            &|| false,
+        );
         assert!(!ok, "部分失敗なら false を返すべき");
         let calls = calls.into_inner().unwrap();
         assert_eq!(
@@ -145,7 +178,12 @@ mod tests {
             }
         }
         let ids = vec![MOUNT_A.to_string()];
-        let ok = perform_stale_cleanup("any_label", &ids, |_| -> Result<usize, DummyErr> { Ok(1) });
+        let ok = perform_stale_cleanup(
+            "any_label",
+            &ids,
+            |_| -> Result<usize, DummyErr> { Ok(1) },
+            &|| false,
+        );
         assert!(ok);
     }
 
@@ -188,7 +226,12 @@ mod tests {
         let (indexer, _t1) = setup_indexer();
         let (dir_index, _t2) = setup_dir_index();
         // 空の stale_ids → 早期 return true、delete_mount_entries は呼ばれない
-        assert!(perform_full_stale_cleanup(&[], &indexer, &dir_index));
+        assert!(perform_full_stale_cleanup(
+            &[],
+            &indexer,
+            &dir_index,
+            &|| false
+        ));
     }
 
     #[test]
@@ -200,8 +243,40 @@ mod tests {
             &[MOUNT_A.to_string(), MOUNT_B.to_string()],
             &indexer,
             &dir_index,
+            &|| false,
         );
         assert!(ok);
+    }
+
+    #[test]
+    fn perform_stale_cleanupはcancel検知時にfalseを返し残mountをskipする() {
+        let calls = std::sync::Mutex::new(Vec::<String>::new());
+        let ids = vec![
+            MOUNT_A.to_string(),
+            MOUNT_B.to_string(),
+            MOUNT_C.to_string(),
+        ];
+        let cancel_flag = std::sync::atomic::AtomicBool::new(false);
+        let ok = perform_stale_cleanup(
+            "entries",
+            &ids,
+            |id| -> Result<usize, IndexerError> {
+                calls.lock().unwrap().push(id.to_string());
+                if id == MOUNT_A {
+                    // MOUNT_A 処理後に cancel を立てる → MOUNT_B 以降は skip
+                    cancel_flag.store(true, std::sync::atomic::Ordering::SeqCst);
+                }
+                Ok(0)
+            },
+            &|| cancel_flag.load(std::sync::atomic::Ordering::SeqCst),
+        );
+        assert!(!ok, "cancel 検知で false を返すべき");
+        let calls = calls.into_inner().unwrap();
+        assert_eq!(
+            calls,
+            vec![MOUNT_A.to_string()],
+            "MOUNT_A のみ処理されるはず"
+        );
     }
 
     #[test]
@@ -209,7 +284,7 @@ mod tests {
         let (indexer, _t1) = setup_indexer();
         let (dir_index, _t2) = setup_dir_index();
         // "bad" は 16 桁 hex invariant 違反 → Indexer / DirIndex 両方でエラー
-        let ok = perform_full_stale_cleanup(&["bad".to_string()], &indexer, &dir_index);
+        let ok = perform_full_stale_cleanup(&["bad".to_string()], &indexer, &dir_index, &|| false);
         assert!(!ok);
     }
 }

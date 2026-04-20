@@ -109,8 +109,11 @@ pub(crate) async fn reload_mounts(
         let indexer = Arc::clone(&state.indexer);
         let dir_index = Arc::clone(&state.dir_index);
         let ids_for_task = removed_ids.clone();
+        // `shutdown_token` を clone して `spawn_blocking` 内で参照可能にする
+        let cancel_token = state.shutdown_token.clone();
         match tokio::task::spawn_blocking(move || {
-            perform_full_stale_cleanup(&ids_for_task, &indexer, &dir_index)
+            let cancelled_fn = || cancel_token.is_cancelled();
+            perform_full_stale_cleanup(&ids_for_task, &indexer, &dir_index, &cancelled_fn)
         })
         .await
         {

@@ -28,6 +28,10 @@ impl Indexer {
     /// - 戻り値: `(登録件数, WalkReport)`。呼び出し側 (`rebuild` 等) は
     ///   `WalkReport.error_count` を参照して「走査エラー時は削除を抑止」の
     ///   判断に使える
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "scan に必要な依存 + cancelled を個別に受ける設計、閾値超過を許容"
+    )]
     pub(crate) fn scan_directory(
         &self,
         root_dir: &Path,
@@ -35,6 +39,7 @@ impl Indexer {
         mount_id: &str,
         workers: usize,
         on_walk_entry: Option<&mut dyn FnMut(WalkCallbackArgs)>,
+        cancelled: &(dyn Fn() -> bool + Sync),
     ) -> Result<(usize, WalkReport), IndexerError> {
         let conn = self.connect()?;
 
@@ -112,9 +117,17 @@ impl Indexer {
                     batch.clear();
                 }
             },
+            cancelled,
         );
 
-        // 残りをフラッシュ
+        // 協調キャンセル検知時は readiness を更新せず Cancelled を返す。
+        // parallel_walk が partial WalkReport を返していても、readiness/stale の
+        // 状態は現状維持（次回起動で再試行）
+        if walk_report.cancelled {
+            return Err(IndexerError::Cancelled);
+        }
+
+        // 残りをフラッシュ（cancel されていなければ通常フロー）
         if !batch.is_empty() {
             total += batch.len();
             batch_insert(&conn, &batch)?;
@@ -139,6 +152,10 @@ impl Indexer {
     /// - 既存エントリの `mtime_ns` を `HashMap` に読み込み
     /// - `parallel_walk` で `dir_filter` コールバックを使い mtime 変更のないディレクトリを枝刈り
     /// - 追加/更新/削除の件数を返す
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "scan に必要な依存 + cancelled を個別に受ける設計、閾値超過を許容"
+    )]
     pub(crate) fn incremental_scan(
         &self,
         root_dir: &Path,
@@ -146,6 +163,7 @@ impl Indexer {
         mount_id: &str,
         workers: usize,
         on_walk_entry: Option<&mut dyn FnMut(WalkCallbackArgs)>,
+        cancelled: &(dyn Fn() -> bool + Sync),
     ) -> Result<(usize, usize, usize), IndexerError> {
         let conn = self.connect()?;
         let existing = load_existing_entries(&conn, mount_id)?;
@@ -192,7 +210,13 @@ impl Indexer {
                 added += a;
                 updated += u;
             },
+            cancelled,
         );
+
+        // 協調キャンセル検知時は readiness / delete_unseen を skip
+        if walk_report.cancelled {
+            return Err(IndexerError::Cancelled);
+        }
 
         let seen = seen.into_inner();
         let upsert_err_count = *upsert_errors.borrow();
@@ -241,6 +265,7 @@ impl Indexer {
         root_dir: &Path,
         path_security: &PathSecurity,
         mount_id: &str,
+        cancelled: &(dyn Fn() -> bool + Sync),
     ) -> Result<usize, IndexerError> {
         if mount_id.is_empty() {
             return Err(IndexerError::Other(
@@ -276,6 +301,7 @@ impl Indexer {
             mount_id,
             8,
             Some(&mut on_walk_entry),
+            cancelled,
         );
 
         let (count, walk_report) = scan_result?;

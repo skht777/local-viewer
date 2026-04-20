@@ -99,6 +99,8 @@ pub(crate) fn spawn_background_tasks(bg: BackgroundContext) {
     let watcher_dir_index = Arc::clone(&bg.dir_index);
     let watcher_rebuild_guard = Arc::clone(&bg.rebuild_guard);
     let watcher_slot = Arc::clone(&bg.file_watcher);
+    // shutdown_token を scan_handle 内で使う用に clone（bg は move される）
+    let shutdown_token_for_scan = bg.shutdown_token.clone();
     let watcher_mounts: Vec<(String, PathBuf)> = bg
         .mount_id_map
         .iter()
@@ -120,8 +122,15 @@ pub(crate) fn spawn_background_tasks(bg: BackgroundContext) {
             let cleanup_indexer = Arc::clone(&bg.indexer);
             let cleanup_dir_index = Arc::clone(&bg.dir_index);
             let stale_for_task = stale_mount_ids.clone();
+            let cleanup_token = shutdown_token_for_scan.clone();
             let cleanup_result = tokio::task::spawn_blocking(move || {
-                perform_full_stale_cleanup(&stale_for_task, &cleanup_indexer, &cleanup_dir_index)
+                let cancelled_fn = || cleanup_token.is_cancelled();
+                perform_full_stale_cleanup(
+                    &stale_for_task,
+                    &cleanup_indexer,
+                    &cleanup_dir_index,
+                    &cancelled_fn,
+                )
             })
             .await;
             match cleanup_result {
@@ -358,6 +367,7 @@ fn run_mount_scan(
                     mount_id,
                     workers_per_mount,
                     Some(&mut callback),
+                    &|| false,
                 )
                 .map(|_| ())
         } else {
@@ -368,6 +378,7 @@ fn run_mount_scan(
                     mount_id,
                     workers_per_mount,
                     Some(&mut callback),
+                    &|| false,
                 )
                 .map(|(_, report)| {
                     walk_metrics = Some(WalkMetrics::from(&report));
