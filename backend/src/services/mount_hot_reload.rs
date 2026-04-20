@@ -59,6 +59,13 @@ pub(crate) async fn reload_mounts(
     state: Arc<AppState>,
     new_config: MountConfig,
 ) -> Result<MountReloadResult, AppError> {
+    // Step 0: shutdown 中なら即時 503 を返す（冒頭 check）
+    if state.shutdown_token.is_cancelled() {
+        return Err(AppError::ShutdownInProgress(
+            "shutdown 中のため mounts reload を拒否".to_string(),
+        ));
+    }
+
     let base_dir = state.settings.mount_base_dir.clone();
 
     // Step 1: 新 config から (mount_id, resolved_root) ペアを構築
@@ -125,6 +132,14 @@ pub(crate) async fn reload_mounts(
         }
     };
 
+    // cleanup 直後の check: cleanup 中に cancel された場合は 503 に寄せる
+    //   （cleanup が部分成功でも成功扱いを避ける、shutdown を観測から明示）
+    if state.shutdown_token.is_cancelled() {
+        return Err(AppError::ShutdownInProgress(
+            "shutdown 中に mounts reload の stale cleanup が中断された".to_string(),
+        ));
+    }
+
     // Step 5: NodeRegistry から削除 mount を除去（短時間 lock）
     {
         #[allow(
@@ -163,6 +178,14 @@ pub(crate) async fn reload_mounts(
             .lock()
             .expect("NodeRegistry Mutex poisoned");
         reg.rebuild_root_entries_cache();
+    }
+
+    // watcher 再起動前の check: shutdown 中なら新 watcher を起動せず 503 を返す
+    //   （late-install 抑止、main の drain_long_tasks と競合しない）
+    if state.shutdown_token.is_cancelled() {
+        return Err(AppError::ShutdownInProgress(
+            "shutdown 中のため FileWatcher 再起動を抑止".to_string(),
+        ));
     }
 
     // Step 8: FileWatcher を新構成で再起動
@@ -405,5 +428,25 @@ mod tests {
         // MOUNT_A (/a) は PathSecurity から外れた
         assert!(env.state.path_security.validate(&base.join("a")).is_err());
         assert!(env.state.path_security.validate(&base.join("b")).is_ok());
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn reload_mountsはshutdown_token_cancel時にShutdownInProgressを返す() {
+        let env = setup_two_mounts();
+        // shutdown_token を先に cancel
+        env.state.shutdown_token.cancel();
+
+        let new_config = config_with_mounts(&env, &[(MOUNT_A, "a")]);
+        let result = reload_mounts(Arc::clone(&env.state), new_config).await;
+        match result {
+            Err(AppError::ShutdownInProgress(msg)) => {
+                assert!(msg.contains("shutdown"), "shutdown メッセージを含むべき");
+            }
+            other => panic!("ShutdownInProgress を期待: {other:?}"),
+        }
+        // mount_id_map は変更されない（cancel で早期 return）
+        let reg = env.state.node_registry.lock().unwrap();
+        assert!(reg.mount_id_map().contains_key(MOUNT_A));
+        assert!(reg.mount_id_map().contains_key(MOUNT_B));
     }
 }

@@ -5,6 +5,7 @@
 
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::sync::atomic::Ordering;
 
 use axum::Json;
 use axum::extract::State;
@@ -12,6 +13,7 @@ use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 
 use crate::errors::AppError;
+use crate::services::rebuild_task::RebuildTaskHandle;
 use crate::services::scan_diagnostics::{
     FingerprintAction, MountDiagnostic, ScanDiagnostics, finalize_scan_success,
 };
@@ -64,18 +66,33 @@ pub(crate) async fn rebuild_index(
             .collect()
     };
 
-    tokio::spawn(async move {
+    // shutdown_token を spawn_blocking 内の cancelled 判定に渡すため clone
+    let shutdown_token_for_rebuild = state.shutdown_token.clone();
+    // rebuild_task slot の自己解除に使う generation を採番
+    let my_gen = state.rebuild_generation.fetch_add(1, Ordering::SeqCst);
+
+    let inner = tokio::spawn(async move {
         // guard を task 内でバインド（Drop は task 終了時 or panic 時）
         let _guard = guard;
         let mut all_success = true;
         let mut mount_diagnostics: Vec<MountDiagnostic> = Vec::with_capacity(mount_entries.len());
 
         for (mount_id, root) in &mount_entries {
+            // mount ループ先頭で shutdown 検知 → 残 mount を skip
+            if shutdown_token_for_rebuild.is_cancelled() {
+                tracing::info!(
+                    "rebuild: shutdown_token cancel を検知、残 mount を skip ({mount_id})"
+                );
+                all_success = false;
+                break;
+            }
+
             let indexer_ref = Arc::clone(&indexer);
             let registry_ref = Arc::clone(&registry);
             let root = root.clone();
             let mount_id_for_task = mount_id.clone();
             let mount_id_for_log = mount_id.clone();
+            let task_token = shutdown_token_for_rebuild.clone();
 
             let result = tokio::task::spawn_blocking(move || {
                 #[allow(
@@ -84,7 +101,8 @@ pub(crate) async fn rebuild_index(
                 )]
                 let reg = registry_ref.lock().expect("NodeRegistry Mutex poisoned");
                 let path_security = reg.path_security();
-                indexer_ref.rebuild(&root, path_security, &mount_id_for_task, &|| false)
+                let cancelled_fn = || task_token.is_cancelled();
+                indexer_ref.rebuild(&root, path_security, &mount_id_for_task, &cancelled_fn)
             })
             .await;
 
@@ -173,6 +191,51 @@ pub(crate) async fn rebuild_index(
         // 本処理成功時のみ last_rebuild を commit（失敗時はレート制限消費せず再試行可）
         if all_success {
             rebuild_rate_limiter::commit_now(&state_for_commit.last_rebuild).await;
+        }
+    });
+
+    // rebuild task slot に RebuildTaskHandle を設置。既存 Some(..) があれば abort
+    // してから差し替える（通常は guard で 1 個のみだが防御的に処理）
+    let handle = Arc::new(RebuildTaskHandle::new(my_gen, inner));
+    {
+        #[allow(
+            clippy::expect_used,
+            reason = "Mutex poison は致命的エラー、パニックが適切"
+        )]
+        let mut slot = state
+            .rebuild_task
+            .lock()
+            .expect("rebuild_task Mutex poisoned");
+        if let Some(old) = slot.take() {
+            old.abort.abort();
+        }
+        *slot = Some(Arc::clone(&handle));
+    }
+
+    // wrapper task: inner.await 完了後、自分の generation と slot.generation が
+    // 一致していれば slot を None に戻す（後続の rebuild 登録で上書きされていたら触らない）
+    let task_state = Arc::clone(&state);
+    let wrapper_handle = Arc::clone(&handle);
+    tokio::spawn(async move {
+        let join = wrapper_handle
+            .join
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .take();
+        if let Some(j) = join {
+            // drain_long_tasks が先に take していたら何もしない
+            let _ = j.await;
+        }
+        #[allow(
+            clippy::expect_used,
+            reason = "Mutex poison は致命的エラー、パニックが適切"
+        )]
+        let mut slot = task_state
+            .rebuild_task
+            .lock()
+            .expect("rebuild_task Mutex poisoned");
+        if slot.as_ref().map(|h| h.generation) == Some(my_gen) {
+            *slot = None;
         }
     });
 

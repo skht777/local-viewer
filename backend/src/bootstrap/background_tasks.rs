@@ -150,12 +150,20 @@ pub(crate) fn spawn_background_tasks(bg: BackgroundContext) -> tokio::task::Join
         let mut mount_results: Vec<(String, Option<MountScanOutcome>, Option<WalkMetrics>)> =
             Vec::with_capacity(scan_mounts.len());
         for (mount_id, root) in scan_mounts {
+            // mount ループ先頭で shutdown 検知 → 残 mount を skip
+            if shutdown_token_for_scan.is_cancelled() {
+                tracing::info!("scan: shutdown_token cancel を検知、残 mount を skip ({mount_id})");
+                break;
+            }
+
             let indexer = Arc::clone(&bg.indexer);
             let dir_index = Arc::clone(&bg.dir_index);
             let path_security = Arc::clone(&bg.path_security);
             let mount_id_owned = mount_id.clone();
+            let scan_token = shutdown_token_for_scan.clone();
 
             let result = tokio::task::spawn_blocking(move || {
+                let cancelled_fn = || scan_token.is_cancelled();
                 run_mount_scan(
                     is_warm_start,
                     &mount_id_owned,
@@ -164,6 +172,7 @@ pub(crate) fn spawn_background_tasks(bg: BackgroundContext) -> tokio::task::Join
                     &dir_index,
                     &path_security,
                     workers_per_mount,
+                    &cancelled_fn,
                 )
             })
             .await;
@@ -335,7 +344,7 @@ pub(crate) fn spawn_background_tasks(bg: BackgroundContext) -> tokio::task::Join
 ///   - warm start (`incremental_scan`) は `WalkReport` を返さないため常に `None`
 #[allow(
     clippy::too_many_arguments,
-    reason = "scan 組み立てに必要な Arc/参照をまとめるため、現状の閾値超過を許容"
+    reason = "scan 組み立てに必要な Arc/参照 + cancelled をまとめるため、閾値超過を許容"
 )]
 fn run_mount_scan(
     is_warm_start: bool,
@@ -345,6 +354,7 @@ fn run_mount_scan(
     dir_index: &DirIndex,
     path_security: &PathSecurity,
     workers_per_mount: usize,
+    cancelled: &(dyn Fn() -> bool + Sync),
 ) -> (MountScanOutcome, Option<WalkMetrics>) {
     let (mut bulk_opt, begin_bulk_ok) = match dir_index.begin_bulk() {
         Ok(b) => (Some(b), true),
@@ -377,7 +387,7 @@ fn run_mount_scan(
                     mount_id,
                     workers_per_mount,
                     Some(&mut callback),
-                    &|| false,
+                    cancelled,
                 )
                 .map(|_| ())
         } else {
@@ -388,7 +398,7 @@ fn run_mount_scan(
                     mount_id,
                     workers_per_mount,
                     Some(&mut callback),
-                    &|| false,
+                    cancelled,
                 )
                 .map(|(_, report)| {
                     walk_metrics = Some(WalkMetrics::from(&report));
