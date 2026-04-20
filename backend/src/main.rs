@@ -102,7 +102,7 @@ mod tests {
         .unwrap();
 
         let ps = Arc::new(PathSecurity::new(vec![root], false).unwrap());
-        let registry = NodeRegistry::new(ps, 100_000, HashMap::new());
+        let registry = NodeRegistry::new(Arc::clone(&ps), 100_000, HashMap::new());
         let archive_service = Arc::new(services::archive::ArchiveService::new(&settings));
         let temp_file_cache = Arc::new(
             TempFileCache::new(tempfile::TempDir::new().unwrap().keep(), 10 * 1024 * 1024).unwrap(),
@@ -140,6 +140,7 @@ mod tests {
             last_scan_report: Arc::new(std::sync::RwLock::new(None)),
             rebuild_guard: Arc::new(crate::services::rebuild_guard::RebuildGuard::new()),
             file_watcher: Arc::new(Mutex::new(None)),
+            path_security: ps,
         });
 
         Router::new()
@@ -231,7 +232,7 @@ mod tests {
         )]))
         .unwrap();
         let ps = Arc::new(PathSecurity::new(vec![root], false).unwrap());
-        let registry = NodeRegistry::new(ps, 100_000, HashMap::new());
+        let registry = NodeRegistry::new(Arc::clone(&ps), 100_000, HashMap::new());
         let archive_service = Arc::new(services::archive::ArchiveService::new(&settings));
         let temp_file_cache = Arc::new(
             TempFileCache::new(tempfile::TempDir::new().unwrap().keep(), 10 * 1024 * 1024).unwrap(),
@@ -267,6 +268,7 @@ mod tests {
             last_scan_report,
             rebuild_guard: Arc::new(crate::services::rebuild_guard::RebuildGuard::new()),
             file_watcher: Arc::new(Mutex::new(None)),
+            path_security: ps,
         });
         Router::new()
             .route("/api/health", get(health))
@@ -287,7 +289,7 @@ mod tests {
         )]))
         .unwrap();
         let ps = Arc::new(PathSecurity::new(vec![root], false).unwrap());
-        let registry = NodeRegistry::new(ps, 100_000, HashMap::new());
+        let registry = NodeRegistry::new(Arc::clone(&ps), 100_000, HashMap::new());
         let archive_service = Arc::new(services::archive::ArchiveService::new(&settings));
         let temp_file_cache = Arc::new(
             TempFileCache::new(tempfile::TempDir::new().unwrap().keep(), 10 * 1024 * 1024).unwrap(),
@@ -331,6 +333,7 @@ mod tests {
             last_scan_report,
             rebuild_guard: Arc::new(crate::services::rebuild_guard::RebuildGuard::new()),
             file_watcher: Arc::new(Mutex::new(None)),
+            path_security: ps,
         });
         Router::new()
             .route("/api/health", get(health))
@@ -637,6 +640,7 @@ mod tests {
             last_scan_report: Arc::new(std::sync::RwLock::new(None)),
             rebuild_guard: Arc::new(crate::services::rebuild_guard::RebuildGuard::new()),
             file_watcher: Arc::new(Mutex::new(None)),
+            path_security: ps,
         });
 
         (

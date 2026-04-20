@@ -90,7 +90,7 @@ mod tests {
         )]))
         .unwrap();
         let ps = Arc::new(PathSecurity::new(vec![root.to_path_buf()], false).unwrap());
-        let registry = NodeRegistry::new(ps, 100_000, mount_names);
+        let registry = NodeRegistry::new(Arc::clone(&ps), 100_000, mount_names);
         let archive_service = Arc::new(crate::services::archive::ArchiveService::new(&settings));
         let temp_file_cache = Arc::new(
             TempFileCache::new(tempfile::TempDir::new().unwrap().keep(), 10 * 1024 * 1024).unwrap(),
@@ -127,6 +127,7 @@ mod tests {
             last_scan_report: Arc::new(std::sync::RwLock::new(None)),
             rebuild_guard: Arc::new(crate::services::rebuild_guard::RebuildGuard::new()),
             file_watcher: Arc::new(std::sync::Mutex::new(None)),
+            path_security: ps,
         })
     }
 

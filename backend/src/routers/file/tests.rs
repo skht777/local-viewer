@@ -37,7 +37,7 @@ fn full_setup() -> (Router, Arc<AppState>, tempfile::TempDir) {
     .unwrap();
 
     let ps = Arc::new(PathSecurity::new(vec![root], false).unwrap());
-    let registry = NodeRegistry::new(ps, 100_000, HashMap::new());
+    let registry = NodeRegistry::new(Arc::clone(&ps), 100_000, HashMap::new());
     let archive_service = Arc::new(crate::services::archive::ArchiveService::new(&settings));
     let temp_file_cache = Arc::new(
         TempFileCache::new(tempfile::TempDir::new().unwrap().keep(), 10 * 1024 * 1024).unwrap(),
@@ -72,6 +72,7 @@ fn full_setup() -> (Router, Arc<AppState>, tempfile::TempDir) {
         last_scan_report: Arc::new(std::sync::RwLock::new(None)),
         rebuild_guard: Arc::new(crate::services::rebuild_guard::RebuildGuard::new()),
         file_watcher: Arc::new(Mutex::new(None)),
+        path_security: ps,
     });
 
     let app = Router::new()
@@ -113,7 +114,7 @@ fn create_archive_setup() -> (Router, Arc<AppState>, tempfile::TempDir) {
     .unwrap();
 
     let ps = Arc::new(PathSecurity::new(vec![root], false).unwrap());
-    let registry = NodeRegistry::new(ps, 100_000, HashMap::new());
+    let registry = NodeRegistry::new(Arc::clone(&ps), 100_000, HashMap::new());
     let archive_service = Arc::new(crate::services::archive::ArchiveService::new(&settings));
     let temp_file_cache = Arc::new(
         TempFileCache::new(tempfile::TempDir::new().unwrap().keep(), 10 * 1024 * 1024).unwrap(),
@@ -148,6 +149,7 @@ fn create_archive_setup() -> (Router, Arc<AppState>, tempfile::TempDir) {
         last_scan_report: Arc::new(std::sync::RwLock::new(None)),
         rebuild_guard: Arc::new(crate::services::rebuild_guard::RebuildGuard::new()),
         file_watcher: Arc::new(Mutex::new(None)),
+        path_security: ps,
     });
 
     let app = Router::new()

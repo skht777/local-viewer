@@ -161,6 +161,7 @@ pub(crate) fn build_state(
         last_scan_report,
         rebuild_guard,
         file_watcher,
+        path_security: Arc::clone(&path_security),
     });
 
     Ok((app_state, bg_context))

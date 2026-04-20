@@ -148,7 +148,7 @@ mod tests {
             )]))
             .unwrap();
             let ps = Arc::new(PathSecurity::new(vec![root.to_path_buf()], false).unwrap());
-            let mut registry = NodeRegistry::new(ps, 100_000, HashMap::new());
+            let mut registry = NodeRegistry::new(Arc::clone(&ps), 100_000, HashMap::new());
             let mut mount_id_map = HashMap::new();
             mount_id_map.insert("testmount".to_string(), root.to_path_buf());
             registry.set_mount_id_map(mount_id_map);
@@ -190,6 +190,7 @@ mod tests {
                 last_scan_report: Arc::new(std::sync::RwLock::new(None)),
                 rebuild_guard: Arc::new(crate::services::rebuild_guard::RebuildGuard::new()),
                 file_watcher: Arc::new(std::sync::Mutex::new(None)),
+                path_security: ps,
             })
         }
 
@@ -320,7 +321,7 @@ mod tests {
             )]))
             .unwrap();
             let ps = Arc::new(PathSecurity::new(vec![root.clone()], false).unwrap());
-            let mut registry = NodeRegistry::new(ps, 100_000, HashMap::new());
+            let mut registry = NodeRegistry::new(Arc::clone(&ps), 100_000, HashMap::new());
             let mut mount_id_map = HashMap::new();
             // mount_id invariant: 16 桁 lowercase hex（indexer::helpers::mount_scope_range 要件）
             mount_id_map.insert("deadbeefcafe0001".to_string(), root.clone());
@@ -362,6 +363,7 @@ mod tests {
                 last_scan_report: Arc::new(std::sync::RwLock::new(None)),
                 rebuild_guard: Arc::new(RebuildGuard::new()),
                 file_watcher: Arc::new(std::sync::Mutex::new(None)),
+                path_security: ps,
             });
             (state, dir, db_dir)
         }

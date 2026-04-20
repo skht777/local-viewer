@@ -19,6 +19,11 @@ pub(crate) mod models;
 pub(crate) mod mount_cleanup;
 #[allow(dead_code, reason = "Phase 5+ で save/add/remove を使用")]
 pub(crate) mod mount_config;
+#[allow(
+    dead_code,
+    reason = "Phase F の /api/mounts/reload ハンドラから使用開始"
+)]
+pub(crate) mod mount_hot_reload;
 #[allow(dead_code, reason = "Phase 6b で encode_sort_key を使用")]
 pub(crate) mod natural_sort;
 #[allow(dead_code, reason = "Phase 4 でアーカイブメソッドを使用")]

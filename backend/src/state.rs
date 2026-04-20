@@ -13,6 +13,7 @@ use crate::services::dir_index::DirIndex;
 use crate::services::file_watcher::FileWatcher;
 use crate::services::indexer::Indexer;
 use crate::services::node_registry::{NodeRegistry, PopulateStats};
+use crate::services::path_security::PathSecurity;
 use crate::services::rebuild_guard::RebuildGuard;
 use crate::services::scan_diagnostics::ScanDiagnostics;
 use crate::services::temp_file_cache::TempFileCache;
@@ -79,4 +80,11 @@ pub(crate) struct AppState {
     ///   （旧実装は `std::mem::forget` で同じ寿命を実現していたが、AppState に置くことで
     ///   hot reload からの lifecycle 操作を可能にする）
     pub file_watcher: Arc<Mutex<Option<FileWatcher>>>,
+    /// パス検証サービス（`NodeRegistry` / `FileWatcher` と同一 `Arc` を共有）
+    ///
+    /// 内部の `roots` / `root_entries` は `RwLock` で保護されており、hot reload 時に
+    /// `replace_roots` で atomic に差し替えられる。本フィールドは hot reload
+    /// サービスが直接参照するために保持する（NodeRegistry の Mutex を経由せず
+    /// 読み書きできる）
+    pub path_security: Arc<PathSecurity>,
 }
