@@ -6,11 +6,17 @@
 //!   を定義し、`AppState.last_scan_report` に格納される
 //! - `decide_fingerprint_action` は Step 4 の fingerprint 分岐を純粋関数として
 //!   切り出し、全 5 分岐を unit test で担保する
+//! - `finalize_scan_success` は bootstrap / rebuild 双方から呼ばれる共通
+//!   promote 経路: `all_ok` 時に readiness flag を立て、`last_scan_report`
+//!   を原子的に更新する
 
 use std::collections::BTreeMap;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use serde::Serialize;
 
+use crate::services::dir_index::DirIndex;
 use crate::services::parallel_walk::{WalkErrorKind, WalkReport};
 
 /// 起動時スキャン 1 回の診断結果
@@ -102,6 +108,36 @@ pub(crate) fn kind_label(kind: WalkErrorKind) -> &'static str {
         WalkErrorKind::ReadDir => "read_dir",
         WalkErrorKind::DirEntry => "dir_entry",
         WalkErrorKind::Metadata => "metadata",
+    }
+}
+
+/// scan 完了時の readiness promote + diagnostics 永続化
+///
+/// 起動時 scan（`bootstrap::background_tasks`）と rebuild API の双方から呼ぶ。
+/// 両経路で `/api/ready` を昇格させる際の手順を同一に保つため、
+/// - `all_ok=true` かつ `is_warm_start=false` → `DirIndex::mark_full_scan_done`
+/// - `all_ok=true` → `DirIndex::mark_ready` + `scan_complete=true`
+/// - `last_scan_report` は成否によらず常に最新値で書き込み（poison 時は warn + スキップ）
+pub(crate) fn finalize_scan_success(
+    dir_index: &DirIndex,
+    scan_complete: &AtomicBool,
+    last_scan_report: &std::sync::RwLock<Option<Arc<ScanDiagnostics>>>,
+    diagnostics: ScanDiagnostics,
+) {
+    if !diagnostics.is_warm_start && diagnostics.all_ok {
+        if let Err(e) = dir_index.mark_full_scan_done() {
+            tracing::error!("DirIndex::mark_full_scan_done 失敗: {e}");
+        }
+    }
+    if diagnostics.all_ok {
+        dir_index.mark_ready();
+        scan_complete.store(true, Ordering::Relaxed);
+    }
+    match last_scan_report.write() {
+        Ok(mut guard) => *guard = Some(Arc::new(diagnostics)),
+        Err(poisoned) => {
+            tracing::error!("last_scan_report poisoned (write): {poisoned}");
+        }
     }
 }
 

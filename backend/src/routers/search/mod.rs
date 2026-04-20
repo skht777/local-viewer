@@ -321,7 +321,8 @@ mod tests {
             let ps = Arc::new(PathSecurity::new(vec![root.clone()], false).unwrap());
             let mut registry = NodeRegistry::new(ps, 100_000, HashMap::new());
             let mut mount_id_map = HashMap::new();
-            mount_id_map.insert("testmount".to_string(), root.clone());
+            // mount_id invariant: 16 桁 lowercase hex（indexer::helpers::mount_scope_range 要件）
+            mount_id_map.insert("deadbeefcafe0001".to_string(), root.clone());
             registry.set_mount_id_map(mount_id_map);
             let archive_service = Arc::new(ArchiveService::new(&settings));
             let temp_file_cache = Arc::new(
@@ -418,6 +419,59 @@ mod tests {
                 .await
                 .unwrap();
             assert_eq!(resp.status(), StatusCode::ACCEPTED);
+        }
+
+        /// cold partial init (`scan_complete=false` 固定) 状態から rebuild を発火し、
+        /// 非同期 task 完了後に `/api/ready` 用の readiness flag が昇格することを確認
+        /// する（Phase C の主目的）。
+        ///
+        /// `tokio::task::spawn_blocking` を使う関係で `multi_thread` runtime が必要
+        #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+        async fn rebuildはcold_partial_init後にscan_completeとdir_index_readyを昇格する() {
+            let (state, _dir, _db_dir) = test_state();
+            // cold partial 状態を再現: scan_complete=false / dir_index.is_ready=false
+            state
+                .scan_complete
+                .store(false, std::sync::atomic::Ordering::Relaxed);
+            assert!(!state.dir_index.is_ready());
+
+            let resp = app(Arc::clone(&state))
+                .oneshot(
+                    Request::post("/api/index/rebuild")
+                        .body(Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(resp.status(), StatusCode::ACCEPTED);
+
+            // 非同期 task の完了を polling（合計最大 5 秒）
+            for _ in 0..50 {
+                if state
+                    .scan_complete
+                    .load(std::sync::atomic::Ordering::Relaxed)
+                    && state.dir_index.is_ready()
+                {
+                    break;
+                }
+                tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+            }
+
+            assert!(
+                state
+                    .scan_complete
+                    .load(std::sync::atomic::Ordering::Relaxed),
+                "rebuild 完了後に scan_complete が昇格されなかった"
+            );
+            assert!(
+                state.dir_index.is_ready(),
+                "rebuild 完了後に dir_index.is_ready が昇格されなかった"
+            );
+            // last_scan_report も rebuild diagnostics で更新されているはず
+            let report_opt = state.last_scan_report.read().unwrap().as_ref().cloned();
+            let report = report_opt.expect("rebuild 完了後に last_scan_report が None のまま");
+            assert!(report.all_ok);
+            assert!(!report.is_warm_start, "rebuild は cold 経路扱い");
         }
     }
 }

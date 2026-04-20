@@ -10,7 +10,6 @@
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::sync::atomic::Ordering;
 
 use crate::services;
 use crate::services::dir_index::DirIndex;
@@ -175,13 +174,7 @@ pub(crate) fn spawn_background_tasks(bg: BackgroundContext) {
             mount_results.iter().map(|(_, o, _)| *o).collect();
         let (cleanup_ok, scans_ok, all_ok) = aggregate_scan_readiness(cleanup_ok, &mount_outcomes);
 
-        if !is_warm_start && all_ok {
-            let _ = scan_dir_index.mark_full_scan_done();
-        }
-        if all_ok {
-            scan_dir_index.mark_ready();
-            bg.scan_complete.store(true, Ordering::Relaxed);
-        } else {
+        if !all_ok {
             tracing::warn!(
                 cleanup_ok,
                 scans_ok,
@@ -231,8 +224,8 @@ pub(crate) fn spawn_background_tasks(bg: BackgroundContext) {
             (true, true)
         };
 
-        // Step 5: ScanDiagnostics を 1 回で組み立て、last_scan_report に書き込む
-        //   （poison 時は tracing::error! + スキップ、liveness 契約を守る）
+        // Step 5: ScanDiagnostics を組み立て、readiness promote + last_scan_report 書き込みを
+        //   共通ヘルパ `finalize_scan_success` に委譲（rebuild 経路と同じ手順）
         let fingerprint_action =
             decide_fingerprint_action(all_ok, is_warm_start, save_ok, clear_ok);
         let diagnostics = build_scan_diagnostics(
@@ -243,12 +236,12 @@ pub(crate) fn spawn_background_tasks(bg: BackgroundContext) {
             fingerprint_action,
             mount_results,
         );
-        match bg.last_scan_report.write() {
-            Ok(mut guard) => *guard = Some(Arc::new(diagnostics)),
-            Err(poisoned) => {
-                tracing::error!("last_scan_report poisoned (write): {poisoned}");
-            }
-        }
+        services::scan_diagnostics::finalize_scan_success(
+            &scan_dir_index,
+            &bg.scan_complete,
+            &bg.last_scan_report,
+            diagnostics,
+        );
 
         (is_warm_start, all_ok)
     });
