@@ -128,6 +128,7 @@ pub(crate) fn build_state(
     }
 
     let scan_complete = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let last_scan_report = Arc::new(std::sync::RwLock::new(None));
 
     let bg_context = BackgroundContext {
         indexer: Arc::clone(&indexer),
@@ -136,6 +137,7 @@ pub(crate) fn build_state(
         mount_id_map,
         scan_workers: settings.scan_workers,
         scan_complete: Arc::clone(&scan_complete),
+        last_scan_report: Arc::clone(&last_scan_report),
     };
     let app_state = Arc::new(AppState {
         settings: Arc::new(settings),
@@ -152,7 +154,7 @@ pub(crate) fn build_state(
         last_rebuild: tokio::sync::Mutex::new(None),
         scan_complete,
         registry_populate_stats: Arc::new(populate_stats),
-        last_scan_report: Arc::new(std::sync::RwLock::new(None)),
+        last_scan_report,
     });
 
     Ok((app_state, bg_context))

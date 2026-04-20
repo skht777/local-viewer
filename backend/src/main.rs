@@ -214,6 +214,288 @@ mod tests {
         assert_eq!(response.status(), StatusCode::OK);
     }
 
+    // --- /api/health の last_scan diagnostics 回帰テスト ---
+
+    use crate::services::scan_diagnostics::{FingerprintAction, MountDiagnostic, ScanDiagnostics};
+
+    /// `last_scan_report` を事前に書き込んだ `Router` を作る
+    fn test_app_with_report(report: Option<ScanDiagnostics>) -> Router {
+        let dir = tempfile::TempDir::new().unwrap();
+        let root = std::fs::canonicalize(dir.path()).unwrap();
+        std::mem::forget(dir);
+        let settings = Settings::from_map(&HashMap::from([(
+            "MOUNT_BASE_DIR".to_string(),
+            root.to_string_lossy().into_owned(),
+        )]))
+        .unwrap();
+        let ps = Arc::new(PathSecurity::new(vec![root], false).unwrap());
+        let registry = NodeRegistry::new(ps, 100_000, HashMap::new());
+        let archive_service = Arc::new(services::archive::ArchiveService::new(&settings));
+        let temp_file_cache = Arc::new(
+            TempFileCache::new(tempfile::TempDir::new().unwrap().keep(), 10 * 1024 * 1024).unwrap(),
+        );
+        let thumbnail_service = Arc::new(ThumbnailService::new(Arc::clone(&temp_file_cache)));
+        let video_converter =
+            Arc::new(VideoConverter::new(Arc::clone(&temp_file_cache), &settings));
+        let thumbnail_warmer = Arc::new(ThumbnailWarmer::new(4));
+        let index_db = tempfile::NamedTempFile::new().unwrap();
+        let indexer = Arc::new(services::indexer::Indexer::new(
+            index_db.path().to_str().unwrap(),
+        ));
+        indexer.init_db().unwrap();
+        let dir_index_db = tempfile::NamedTempFile::new().unwrap();
+        let dir_index = Arc::new(DirIndex::new(dir_index_db.path().to_str().unwrap()));
+        dir_index.init_db().unwrap();
+        let last_scan_report = Arc::new(std::sync::RwLock::new(report.map(Arc::new)));
+        let app_state = Arc::new(AppState {
+            settings: Arc::new(settings),
+            node_registry: Arc::new(Mutex::new(registry)),
+            archive_service,
+            temp_file_cache,
+            thumbnail_service,
+            video_converter,
+            thumbnail_warmer,
+            thumb_semaphore: Arc::new(tokio::sync::Semaphore::new(8)),
+            archive_thumb_semaphore: Arc::new(tokio::sync::Semaphore::new(4)),
+            indexer,
+            dir_index,
+            last_rebuild: tokio::sync::Mutex::new(None),
+            scan_complete: Arc::new(std::sync::atomic::AtomicBool::new(true)),
+            registry_populate_stats: Arc::new(PopulateStats::default()),
+            last_scan_report,
+        });
+        Router::new()
+            .route("/api/health", get(health))
+            .with_state(app_state)
+    }
+
+    /// 事前に `RwLock` を poison 状態にした `Router` を作る
+    ///
+    /// `catch_unwind` で write guard を握ったまま panic させ、poison フラグを立てる。
+    /// liveness 契約 (/api/health は常時 200) の耐性を検証するため
+    fn test_app_with_poisoned_report() -> Router {
+        let dir = tempfile::TempDir::new().unwrap();
+        let root = std::fs::canonicalize(dir.path()).unwrap();
+        std::mem::forget(dir);
+        let settings = Settings::from_map(&HashMap::from([(
+            "MOUNT_BASE_DIR".to_string(),
+            root.to_string_lossy().into_owned(),
+        )]))
+        .unwrap();
+        let ps = Arc::new(PathSecurity::new(vec![root], false).unwrap());
+        let registry = NodeRegistry::new(ps, 100_000, HashMap::new());
+        let archive_service = Arc::new(services::archive::ArchiveService::new(&settings));
+        let temp_file_cache = Arc::new(
+            TempFileCache::new(tempfile::TempDir::new().unwrap().keep(), 10 * 1024 * 1024).unwrap(),
+        );
+        let thumbnail_service = Arc::new(ThumbnailService::new(Arc::clone(&temp_file_cache)));
+        let video_converter =
+            Arc::new(VideoConverter::new(Arc::clone(&temp_file_cache), &settings));
+        let thumbnail_warmer = Arc::new(ThumbnailWarmer::new(4));
+        let index_db = tempfile::NamedTempFile::new().unwrap();
+        let indexer = Arc::new(services::indexer::Indexer::new(
+            index_db.path().to_str().unwrap(),
+        ));
+        indexer.init_db().unwrap();
+        let dir_index_db = tempfile::NamedTempFile::new().unwrap();
+        let dir_index = Arc::new(DirIndex::new(dir_index_db.path().to_str().unwrap()));
+        dir_index.init_db().unwrap();
+        let last_scan_report: Arc<std::sync::RwLock<Option<Arc<ScanDiagnostics>>>> =
+            Arc::new(std::sync::RwLock::new(None));
+        // catch_unwind で poison 状態を作る
+        let poisoner = Arc::clone(&last_scan_report);
+        let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _guard = poisoner.write().unwrap();
+            panic!("intentional poison for test");
+        }));
+        assert!(last_scan_report.is_poisoned(), "RwLock should be poisoned");
+        let app_state = Arc::new(AppState {
+            settings: Arc::new(settings),
+            node_registry: Arc::new(Mutex::new(registry)),
+            archive_service,
+            temp_file_cache,
+            thumbnail_service,
+            video_converter,
+            thumbnail_warmer,
+            thumb_semaphore: Arc::new(tokio::sync::Semaphore::new(8)),
+            archive_thumb_semaphore: Arc::new(tokio::sync::Semaphore::new(4)),
+            indexer,
+            dir_index,
+            last_rebuild: tokio::sync::Mutex::new(None),
+            scan_complete: Arc::new(std::sync::atomic::AtomicBool::new(true)),
+            registry_populate_stats: Arc::new(PopulateStats::default()),
+            last_scan_report,
+        });
+        Router::new()
+            .route("/api/health", get(health))
+            .with_state(app_state)
+    }
+
+    async fn fetch_last_scan(app: Router) -> (StatusCode, serde_json::Value) {
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/api/health")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let status = response.status();
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        (status, json)
+    }
+
+    fn all_ok_report() -> ScanDiagnostics {
+        ScanDiagnostics {
+            completed_at_ms: 1_700_000_000_000,
+            is_warm_start: false,
+            cleanup_ok: true,
+            scans_ok: true,
+            all_ok: true,
+            fingerprint: FingerprintAction::Saved,
+            mounts: vec![MountDiagnostic {
+                mount_id: "0123456789abcdef".to_string(),
+                scan_ok: true,
+                dir_index_ok: true,
+                panicked: false,
+                walk: None,
+            }],
+        }
+    }
+
+    #[tokio::test]
+    async fn healthルートはlast_scan未書き込み時にlast_scan_nullを返す() {
+        let app = test_app_with_report(None);
+        let (status, json) = fetch_last_scan(app).await;
+        assert_eq!(status, StatusCode::OK);
+        assert!(
+            json.get("last_scan")
+                .is_some_and(serde_json::Value::is_null),
+            "last_scan は null (未完了 or panic): {json}"
+        );
+    }
+
+    #[tokio::test]
+    #[allow(
+        non_snake_case,
+        reason = "日本語テスト名で振る舞いを記述する規約 (07_testing.md)"
+    )]
+    async fn healthルートはall_ok時にScanDiagnosticsをJSON化して返す() {
+        let app = test_app_with_report(Some(all_ok_report()));
+        let (status, json) = fetch_last_scan(app).await;
+        assert_eq!(status, StatusCode::OK);
+        let last = json.get("last_scan").expect("last_scan 存在");
+        assert_eq!(last.get("cleanup_ok"), Some(&serde_json::json!(true)));
+        assert_eq!(last.get("scans_ok"), Some(&serde_json::json!(true)));
+        assert_eq!(last.get("all_ok"), Some(&serde_json::json!(true)));
+        assert_eq!(last.get("is_warm_start"), Some(&serde_json::json!(false)));
+        assert_eq!(last.get("fingerprint"), Some(&serde_json::json!("saved")));
+        let mounts = last.get("mounts").and_then(|v| v.as_array()).unwrap();
+        assert_eq!(mounts.len(), 1);
+        assert_eq!(
+            mounts[0].get("mount_id"),
+            Some(&serde_json::json!("0123456789abcdef"))
+        );
+    }
+
+    #[tokio::test]
+    async fn healthルートはcold_partial時にall_ok_falseとfingerprint_not_neededを返す() {
+        let report = ScanDiagnostics {
+            cleanup_ok: true,
+            scans_ok: false,
+            all_ok: false,
+            is_warm_start: false,
+            fingerprint: FingerprintAction::NotNeeded,
+            mounts: vec![MountDiagnostic {
+                mount_id: "0123456789abcdef".to_string(),
+                scan_ok: false,
+                dir_index_ok: true,
+                panicked: false,
+                walk: None,
+            }],
+            ..all_ok_report()
+        };
+        let app = test_app_with_report(Some(report));
+        let (status, json) = fetch_last_scan(app).await;
+        assert_eq!(status, StatusCode::OK);
+        let last = json.get("last_scan").unwrap();
+        assert_eq!(last.get("all_ok"), Some(&serde_json::json!(false)));
+        assert_eq!(last.get("scans_ok"), Some(&serde_json::json!(false)));
+        assert_eq!(
+            last.get("fingerprint"),
+            Some(&serde_json::json!("not_needed"))
+        );
+    }
+
+    #[tokio::test]
+    async fn healthルートはwarm_partial_cleared時にfingerprint_clearedを返す() {
+        let report = ScanDiagnostics {
+            cleanup_ok: true,
+            scans_ok: false,
+            all_ok: false,
+            is_warm_start: true,
+            fingerprint: FingerprintAction::Cleared,
+            mounts: vec![MountDiagnostic {
+                mount_id: "0123456789abcdef".to_string(),
+                scan_ok: true,
+                dir_index_ok: false,
+                panicked: false,
+                walk: None,
+            }],
+            ..all_ok_report()
+        };
+        let app = test_app_with_report(Some(report));
+        let (status, json) = fetch_last_scan(app).await;
+        assert_eq!(status, StatusCode::OK);
+        let last = json.get("last_scan").unwrap();
+        assert_eq!(last.get("is_warm_start"), Some(&serde_json::json!(true)));
+        assert_eq!(last.get("all_ok"), Some(&serde_json::json!(false)));
+        assert_eq!(last.get("fingerprint"), Some(&serde_json::json!("cleared")));
+    }
+
+    #[tokio::test]
+    async fn healthルートはwarm_partial_clear_failed時にfingerprint_clear_failedを返す() {
+        let report = ScanDiagnostics {
+            cleanup_ok: true,
+            scans_ok: false,
+            all_ok: false,
+            is_warm_start: true,
+            fingerprint: FingerprintAction::ClearFailed,
+            mounts: vec![MountDiagnostic {
+                mount_id: "0123456789abcdef".to_string(),
+                scan_ok: true,
+                dir_index_ok: false,
+                panicked: false,
+                walk: None,
+            }],
+            ..all_ok_report()
+        };
+        let app = test_app_with_report(Some(report));
+        let (status, json) = fetch_last_scan(app).await;
+        assert_eq!(status, StatusCode::OK);
+        let last = json.get("last_scan").unwrap();
+        assert_eq!(
+            last.get("fingerprint"),
+            Some(&serde_json::json!("clear_failed"))
+        );
+    }
+
+    #[tokio::test]
+    async fn healthルートはlast_scan_report_poison時にlast_scan_nullでpanicしない() {
+        let app = test_app_with_poisoned_report();
+        let (status, json) = fetch_last_scan(app).await;
+        assert_eq!(status, StatusCode::OK, "liveness 契約を守る");
+        assert!(
+            json.get("last_scan")
+                .is_some_and(serde_json::Value::is_null),
+            "poison 時は last_scan=null fallback: {json}"
+        );
+    }
+
     // --- 再起動後の deep link 回復（populate_registry 経路）回帰テスト ---
     //
     // 想定シナリオ: 前セッションで Indexer に永続化された {mount_id}/{rest} を元に、

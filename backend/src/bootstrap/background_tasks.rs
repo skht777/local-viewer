@@ -17,6 +17,9 @@ use crate::services::dir_index::DirIndex;
 use crate::services::indexer::{Indexer, WalkCallbackArgs};
 use crate::services::mount_cleanup::{enumerate_stale_mount_ids, perform_full_stale_cleanup};
 use crate::services::path_security::PathSecurity;
+use crate::services::scan_diagnostics::{
+    FingerprintAction, MountDiagnostic, ScanDiagnostics, WalkMetrics, decide_fingerprint_action,
+};
 
 use super::BackgroundContext;
 
@@ -130,7 +133,10 @@ pub(crate) fn spawn_background_tasks(bg: BackgroundContext) {
         };
 
         // Step 2: per-mount scan ループ
-        let mut mount_outcomes: Vec<Option<MountScanOutcome>> =
+        //   (mount_id, Option<MountScanOutcome>, Option<WalkMetrics>) を収集。
+        //   panic 時は outcome=None、warm start 時は walk=None（incremental_scan は
+        //   WalkReport を返さないため API 契約上常に null）
+        let mut mount_results: Vec<(String, Option<MountScanOutcome>, Option<WalkMetrics>)> =
             Vec::with_capacity(scan_mounts.len());
         for (mount_id, root) in scan_mounts {
             let indexer = Arc::clone(&bg.indexer);
@@ -151,19 +157,21 @@ pub(crate) fn spawn_background_tasks(bg: BackgroundContext) {
             })
             .await;
 
-            let outcome_opt = match result {
-                Ok(outcome) => Some(outcome),
+            let (outcome_opt, walk) = match result {
+                Ok((outcome, walk)) => (Some(outcome), walk),
                 Err(e) => {
                     tracing::error!("バックグラウンドスキャンタスクがパニック ({mount_id}): {e}");
-                    None
+                    (None, None)
                 }
             };
-            mount_outcomes.push(outcome_opt);
+            mount_results.push((mount_id, outcome_opt, walk));
         }
 
         // Step 3: readiness フラグの gate
         //   partial 時は mark_full_scan_done / mark_ready / scan_complete を
         //   すべてスキップし、/api/ready を 503 (cold) / 既存 warm 応答に留める
+        let mount_outcomes: Vec<Option<MountScanOutcome>> =
+            mount_results.iter().map(|(_, o, _)| *o).collect();
         let (cleanup_ok, scans_ok, all_ok) = aggregate_scan_readiness(cleanup_ok, &mount_outcomes);
 
         if !is_warm_start && all_ok {
@@ -182,33 +190,63 @@ pub(crate) fn spawn_background_tasks(bg: BackgroundContext) {
             );
         }
 
-        // Step 4: fingerprint 更新 or クリア
-        //   - 全成功: 現構成で fingerprint を保存
-        //   - warm partial: fingerprint をクリアして次回 cold start を強制
-        //       （incremental_scan の mtime 枝刈りで DirIndex 欠損が埋まらない問題の復旧経路）
-        //   - cold partial: fingerprint 更新を保留（次回起動で再試行）
-        if all_ok {
+        // Step 4: fingerprint 更新 or クリア + 最終アクションを捕捉
+        //   - 全成功: 現構成で fingerprint を保存 → Saved or SaveFailed
+        //   - warm partial: fingerprint をクリアして次回 cold start を強制 → Cleared or ClearFailed
+        //   - cold partial: fingerprint 更新を保留 → NotNeeded
+        let (save_ok, clear_ok) = if all_ok {
             let refs: Vec<&str> = fingerprint_mount_ids.iter().map(String::as_str).collect();
-            if let Err(e) = fingerprint_indexer.save_mount_fingerprint(&refs) {
-                tracing::error!("マウントフィンガープリント保存失敗: {e}");
-            }
+            let ok = match fingerprint_indexer.save_mount_fingerprint(&refs) {
+                Ok(()) => true,
+                Err(e) => {
+                    tracing::error!("マウントフィンガープリント保存失敗: {e}");
+                    false
+                }
+            };
+            (ok, true)
         } else if is_warm_start {
             // warm partial: 次回起動を cold start に落として fresh full scan で復旧させる
-            if let Err(e) = fingerprint_indexer.clear_mount_fingerprint() {
-                tracing::error!("warm partial 時の fingerprint クリア失敗: {e}");
-            } else {
-                tracing::warn!(
-                    cleanup_ok,
-                    scans_ok,
-                    "warm partial failure: fingerprint クリア、次回起動を cold start に落として復旧"
-                );
-            }
+            let ok = match fingerprint_indexer.clear_mount_fingerprint() {
+                Ok(()) => {
+                    tracing::warn!(
+                        cleanup_ok,
+                        scans_ok,
+                        "warm partial failure: fingerprint クリア、次回起動を cold start に落として復旧"
+                    );
+                    true
+                }
+                Err(e) => {
+                    tracing::error!("warm partial 時の fingerprint クリア失敗: {e}");
+                    false
+                }
+            };
+            (true, ok)
         } else {
             tracing::warn!(
                 cleanup_ok,
                 scans_ok,
                 "cold partial failure: fingerprint 更新を保留、再起動で再試行"
             );
+            (true, true)
+        };
+
+        // Step 5: ScanDiagnostics を 1 回で組み立て、last_scan_report に書き込む
+        //   （poison 時は tracing::error! + スキップ、liveness 契約を守る）
+        let fingerprint_action =
+            decide_fingerprint_action(all_ok, is_warm_start, save_ok, clear_ok);
+        let diagnostics = build_scan_diagnostics(
+            is_warm_start,
+            cleanup_ok,
+            scans_ok,
+            all_ok,
+            fingerprint_action,
+            mount_results,
+        );
+        match bg.last_scan_report.write() {
+            Ok(mut guard) => *guard = Some(Arc::new(diagnostics)),
+            Err(poisoned) => {
+                tracing::error!("last_scan_report poisoned (write): {poisoned}");
+            }
         }
 
         (is_warm_start, all_ok)
@@ -268,7 +306,9 @@ pub(crate) fn spawn_background_tasks(bg: BackgroundContext) {
 /// - `scan_ok` は `incremental_scan` / `scan_directory` の `Result` から
 /// - callback は内側スコープに閉じ込めて `bulk_opt` の可変借用を解放してから
 ///   `flush` で move out する（borrow-check 対応）
-/// - 返値 `MountScanOutcome { scan_ok, dir_index_ok }` を呼び出し側で集約
+/// - 返値: `(MountScanOutcome { scan_ok, dir_index_ok }, Option<WalkMetrics>)`
+///   - `WalkMetrics` は cold start (`scan_directory`) の `WalkReport` から変換して `Some`
+///   - warm start (`incremental_scan`) は `WalkReport` を返さないため常に `None`
 #[allow(
     clippy::too_many_arguments,
     reason = "scan 組み立てに必要な Arc/参照をまとめるため、現状の閾値超過を許容"
@@ -281,7 +321,7 @@ fn run_mount_scan(
     dir_index: &DirIndex,
     path_security: &PathSecurity,
     workers_per_mount: usize,
-) -> MountScanOutcome {
+) -> (MountScanOutcome, Option<WalkMetrics>) {
     let (mut bulk_opt, begin_bulk_ok) = match dir_index.begin_bulk() {
         Ok(b) => (Some(b), true),
         Err(e) => {
@@ -291,7 +331,12 @@ fn run_mount_scan(
     };
 
     let mut ingest_ok = true;
-    let scan_result = {
+    let mut walk_metrics: Option<WalkMetrics> = None;
+    // Ok 値はスキャン種別で異なる:
+    //   incremental_scan: Result<(usize, usize, usize), IndexerError>  (add/upd/del)
+    //   scan_directory:   Result<(usize, WalkReport), IndexerError>
+    // cold start のみ WalkReport を walk_metrics に保存。warm start は None 維持。
+    let scan_result: Result<(), crate::services::indexer::IndexerError> = {
         let mut callback = |args: WalkCallbackArgs| {
             if let Some(bulk) = bulk_opt.as_mut() {
                 if let Err(e) = bulk.ingest_walk_entry(&args) {
@@ -300,9 +345,6 @@ fn run_mount_scan(
                 }
             }
         };
-        // 成否のみ集約するため Ok 値は捨てる
-        //   incremental_scan: Result<usize, IndexerError>
-        //   scan_directory:   Result<(usize, WalkReport), IndexerError>
         if is_warm_start {
             indexer
                 .incremental_scan(
@@ -322,7 +364,9 @@ fn run_mount_scan(
                     workers_per_mount,
                     Some(&mut callback),
                 )
-                .map(|_| ())
+                .map(|(_, report)| {
+                    walk_metrics = Some(WalkMetrics::from(&report));
+                })
         }
     }; // ← ここで callback が drop し、bulk_opt と ingest_ok の借用解放
     let scan_ok = scan_result.is_ok();
@@ -349,9 +393,54 @@ fn run_mount_scan(
     };
 
     tracing::info!("スキャン完了: {mount_id}");
-    MountScanOutcome {
-        scan_ok,
-        dir_index_ok: begin_bulk_ok && ingest_ok && flush_ok,
+    (
+        MountScanOutcome {
+            scan_ok,
+            dir_index_ok: begin_bulk_ok && ingest_ok && flush_ok,
+        },
+        walk_metrics,
+    )
+}
+
+/// per-mount 結果から `ScanDiagnostics` を組み立てる（純粋関数、unit test seam）
+///
+/// - `mount_results` は `(mount_id, Option<MountScanOutcome>, Option<WalkMetrics>)`
+/// - `None` の `MountScanOutcome` は `panicked=true` として表現
+/// - `completed_at_ms` は現在時刻から `SystemTime` 経由で取得、UNIX epoch 前の
+///   場合 (clock skew) のみ 0
+#[allow(
+    clippy::fn_params_excessive_bools,
+    reason = "readiness gate の集計値 3 + warm フラグ = 4 軸は診断出力の意味的に分離されたフィールド"
+)]
+fn build_scan_diagnostics(
+    is_warm_start: bool,
+    cleanup_ok: bool,
+    scans_ok: bool,
+    all_ok: bool,
+    fingerprint: FingerprintAction,
+    mount_results: Vec<(String, Option<MountScanOutcome>, Option<WalkMetrics>)>,
+) -> ScanDiagnostics {
+    let completed_at_ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| u64::try_from(d.as_millis()).unwrap_or(u64::MAX));
+    let mounts = mount_results
+        .into_iter()
+        .map(|(mount_id, outcome, walk)| MountDiagnostic {
+            mount_id,
+            scan_ok: outcome.is_some_and(|o| o.scan_ok),
+            dir_index_ok: outcome.is_some_and(|o| o.dir_index_ok),
+            panicked: outcome.is_none(),
+            walk,
+        })
+        .collect();
+    ScanDiagnostics {
+        completed_at_ms,
+        is_warm_start,
+        cleanup_ok,
+        scans_ok,
+        all_ok,
+        fingerprint,
+        mounts,
     }
 }
 

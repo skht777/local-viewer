@@ -14,7 +14,7 @@ pub(crate) mod static_files;
 
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 
 use axum::Router;
 
@@ -22,6 +22,7 @@ use crate::config::Settings;
 use crate::services::dir_index::DirIndex;
 use crate::services::indexer::Indexer;
 use crate::services::path_security::PathSecurity;
+use crate::services::scan_diagnostics::ScanDiagnostics;
 
 #[cfg(test)]
 pub(crate) use api_router::{health, ready};
@@ -34,6 +35,8 @@ pub(crate) struct BackgroundContext {
     pub mount_id_map: HashMap<String, PathBuf>,
     pub scan_workers: usize,
     pub scan_complete: Arc<std::sync::atomic::AtomicBool>,
+    /// `AppState.last_scan_report` と同じ `Arc` を共有。scan 完了時に書き込む
+    pub last_scan_report: Arc<RwLock<Option<Arc<ScanDiagnostics>>>>,
 }
 
 /// サービス初期化 + ルーター構築

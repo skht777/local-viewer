@@ -15,6 +15,7 @@ use serde::Serialize;
 
 use crate::routers;
 use crate::services::node_registry::PopulateStats;
+use crate::services::scan_diagnostics::ScanDiagnostics;
 use crate::state::AppState;
 
 #[derive(Serialize)]
@@ -52,13 +53,27 @@ impl From<&PopulateStats> for RegistryPopulateStats {
 pub(crate) struct HealthResponseWithStats {
     pub status: String,
     pub registry_populate: RegistryPopulateStats,
+    /// 起動時スキャン診断。完了前 / panic / `RwLock` poison 時は `None`
+    pub last_scan: Option<ScanDiagnostics>,
 }
 
-/// `/api/health` — liveness + populate 統計
+/// `/api/health` — liveness + populate 統計 + 起動時スキャン診断
+///
+/// **liveness 契約**: `RwLock` poison を踏んでも panic せず `last_scan: null` で 200 を返す。
+/// lock 内は shallow clone (`Arc::clone`) のみで即解放し、deep clone は guard 解放後に行う
 pub(crate) async fn health(State(state): State<Arc<AppState>>) -> Json<HealthResponseWithStats> {
+    let last_scan_arc: Option<Arc<ScanDiagnostics>> = match state.last_scan_report.read() {
+        Ok(guard) => guard.as_ref().map(Arc::clone),
+        Err(poisoned) => {
+            tracing::error!("last_scan_report poisoned (read): {poisoned}");
+            None
+        }
+    }; // ← ここで read guard を drop
+    let last_scan = last_scan_arc.map(|arc| (*arc).clone());
     Json(HealthResponseWithStats {
         status: "ok".to_string(),
         registry_populate: RegistryPopulateStats::from(state.registry_populate_stats.as_ref()),
+        last_scan,
     })
 }
 
