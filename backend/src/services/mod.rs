@@ -27,6 +27,11 @@ pub(crate) mod node_registry;
 pub(crate) mod parallel_walk;
 #[allow(dead_code, reason = "Phase 4+ で追加メソッドを使用")]
 pub(crate) mod path_security;
+#[allow(
+    dead_code,
+    reason = "Phase B で background_tasks / api_router から使用"
+)]
+pub(crate) mod scan_diagnostics;
 pub(crate) mod search;
 pub(crate) mod security;
 #[allow(dead_code, reason = "Phase 5 のサムネイル・動画サービスで使用")]

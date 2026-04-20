@@ -3,7 +3,7 @@
 //! 全サービスを `Arc` で保持し、axum の `State` エクストラクタで各ハンドラに注入する。
 
 use std::sync::atomic::AtomicBool;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, RwLock};
 
 use tokio::time::Instant;
 
@@ -12,6 +12,7 @@ use crate::services::archive::ArchiveService;
 use crate::services::dir_index::DirIndex;
 use crate::services::indexer::Indexer;
 use crate::services::node_registry::{NodeRegistry, PopulateStats};
+use crate::services::scan_diagnostics::ScanDiagnostics;
 use crate::services::temp_file_cache::TempFileCache;
 use crate::services::thumbnail_service::ThumbnailService;
 use crate::services::thumbnail_warmer::ThumbnailWarmer;
@@ -55,4 +56,11 @@ pub(crate) struct AppState {
     /// - 再起動後の `node_id` deep link 回復状況を運用から確認するため `/api/health` に含める
     /// - 値は `build_app` で一度だけ設定され、以降 immutable
     pub registry_populate_stats: Arc<PopulateStats>,
+    /// 起動時スキャン 1 回の診断結果
+    ///
+    /// - partial init (`/api/ready=503`) の原因を `/api/health` 経由で識別可能にする
+    /// - `scan_handle` が完了時に `Some(..)` を書き込む。完了前 / panic 時は `None`
+    /// - `/api/health` は read/write 両側で poison を `tracing::error!` + fallback し、
+    ///   liveness 契約を守る
+    pub last_scan_report: Arc<RwLock<Option<Arc<ScanDiagnostics>>>>,
 }

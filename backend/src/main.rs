@@ -137,6 +137,7 @@ mod tests {
             last_rebuild: tokio::sync::Mutex::new(None),
             scan_complete: Arc::new(std::sync::atomic::AtomicBool::new(true)),
             registry_populate_stats: Arc::new(PopulateStats::default()),
+            last_scan_report: Arc::new(std::sync::RwLock::new(None)),
         });
 
         Router::new()
@@ -345,6 +346,7 @@ mod tests {
             last_rebuild: tokio::sync::Mutex::new(None),
             scan_complete: Arc::new(std::sync::atomic::AtomicBool::new(true)),
             registry_populate_stats: Arc::new(stats),
+            last_scan_report: Arc::new(std::sync::RwLock::new(None)),
         });
 
         (

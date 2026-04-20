@@ -62,6 +62,7 @@ fn test_state(
         last_rebuild: tokio::sync::Mutex::new(None),
         scan_complete: Arc::new(std::sync::atomic::AtomicBool::new(true)),
         registry_populate_stats: Arc::new(crate::services::node_registry::PopulateStats::default()),
+        last_scan_report: Arc::new(std::sync::RwLock::new(None)),
     })
 }
 

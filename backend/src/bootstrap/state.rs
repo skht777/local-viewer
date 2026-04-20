@@ -152,6 +152,7 @@ pub(crate) fn build_state(
         last_rebuild: tokio::sync::Mutex::new(None),
         scan_complete,
         registry_populate_stats: Arc::new(populate_stats),
+        last_scan_report: Arc::new(std::sync::RwLock::new(None)),
     });
 
     Ok((app_state, bg_context))
