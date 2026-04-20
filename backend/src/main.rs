@@ -1,9 +1,12 @@
 //! Local Content Viewer — Rust バックエンド エントリポイント
 //!
 //! ローカルディレクトリの画像・動画・PDF を閲覧する Web アプリのバックエンド。
-//! 起動時処理は `bootstrap` モジュールに委譲し、`main` は CLI パースと軸の起動のみに絞る。
+//! 起動時処理は `bootstrap` モジュールに委譲し、`main` は CLI パースと軸の起動、
+//! および graceful shutdown の調停のみに絞る。
 
 use std::net::SocketAddr;
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use clap::Parser;
 use tracing_subscriber::{EnvFilter, fmt, prelude::*};
@@ -18,6 +21,11 @@ mod state;
 
 use bootstrap::{background_tasks::spawn_background_tasks, build_app};
 use config::Settings;
+use services::file_watcher::FileWatcher;
+use services::rebuild_task::RebuildTaskHandle;
+
+/// `drain_long_tasks` の timeout（scan / rebuild の停止待機上限）
+const SHUTDOWN_DRAIN_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// CLI 引数
 #[derive(Parser, Debug)]
@@ -30,6 +38,114 @@ struct Cli {
     /// バインドアドレス
     #[arg(long, default_value = "127.0.0.1")]
     bind: String,
+}
+
+/// `FileWatcher` slot を取り出して停止する（冪等、poison 耐性あり）
+///
+/// - slot が `None`（scan 未完了 / hot reload 中で take 済 / 既に停止済）なら no-op
+/// - `FileWatcher::stop` は冪等のため二度呼んでも安全
+/// - `Mutex` が poison していても `into_inner` で recover（liveness 契約維持）
+fn shutdown_file_watcher(slot: &Arc<Mutex<Option<FileWatcher>>>) {
+    let mut guard = slot
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    if let Some(fw) = guard.take() {
+        fw.stop();
+        tracing::info!("FileWatcher: graceful shutdown 完了");
+    } else {
+        tracing::debug!("FileWatcher: 停止対象なし (scan 未完了 or 既停止)");
+    }
+}
+
+/// scan coordinator と rebuild task を `abort + timeout 付き await` で drain する
+///
+/// - 呼び出し前に `shutdown_token.cancel()` 済みが前提。scan/rebuild は協調
+///   キャンセルで早期 return しているため、ここでの `abort` は safety net
+/// - rebuild slot は wrapper task が先に `join.take()` している可能性があるため、
+///   `None` の場合は「既に drain 中 or 未開始」として skip
+/// - timeout 超過時は warn ログを出して次の処理に進む（FileWatcher 停止 + 終了）
+async fn drain_long_tasks(
+    scan_handle: tokio::task::JoinHandle<()>,
+    rebuild_task: &Arc<Mutex<Option<Arc<RebuildTaskHandle>>>>,
+    timeout: Duration,
+) {
+    // scan coordinator を abort + timeout
+    scan_handle.abort();
+    match tokio::time::timeout(timeout, scan_handle).await {
+        Ok(Ok(())) => tracing::info!("scan coordinator drained"),
+        Ok(Err(e)) if e.is_cancelled() => tracing::info!("scan coordinator aborted"),
+        Ok(Err(e)) => tracing::warn!("scan coordinator join error: {e}"),
+        Err(_) => tracing::warn!("scan coordinator drain timeout ({timeout:?} 超過)"),
+    }
+
+    // rebuild の JoinHandle を slot から奪う（wrapper が既に take 済なら None）
+    let rebuild_join = {
+        let slot = rebuild_task
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        slot.as_ref().and_then(|h| {
+            h.abort.abort();
+            h.join
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .take()
+        })
+    };
+
+    if let Some(join) = rebuild_join {
+        match tokio::time::timeout(timeout, join).await {
+            Ok(Ok(())) => tracing::info!("rebuild task drained"),
+            Ok(Err(e)) if e.is_cancelled() => tracing::info!("rebuild task aborted"),
+            Ok(Err(e)) => tracing::warn!("rebuild task join error: {e}"),
+            Err(_) => tracing::warn!("rebuild task drain timeout ({timeout:?} 超過)"),
+        }
+    } else {
+        tracing::debug!("rebuild task: drain 対象なし (未開始 or wrapper が take 済)");
+    }
+}
+
+/// SIGINT / SIGTERM のどちらか早い方が届くまで待機する
+///
+/// - Unix: `ctrl_c()` と `SIGTERM` を `tokio::select!` で監視
+/// - Windows: `ctrl_c()` のみ
+/// - 片方の初回 poll が `Err` → warn + 残り片方で継続
+/// - **両方失敗**: `tracing::error!` + `pending::<()>().await`（graceful shutdown
+///   不能、`SIGKILL` でのみ停止可能な縮退モード）
+///
+/// 事前 probe は tokio API の契約上不能（初回 poll 時登録）。本関数はランタイム
+/// 時の失敗検知に限定する。
+async fn wait_for_shutdown_signal() {
+    let ctrl_c = async {
+        match tokio::signal::ctrl_c().await {
+            Ok(()) => {
+                tracing::info!("SIGINT 受信、graceful shutdown 開始");
+            }
+            Err(e) => {
+                tracing::warn!("ctrl_c ハンドラ登録失敗: {e}");
+                std::future::pending::<()>().await;
+            }
+        }
+    };
+    #[cfg(unix)]
+    let terminate = async {
+        match tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()) {
+            Ok(mut s) => {
+                s.recv().await;
+                tracing::info!("SIGTERM 受信、graceful shutdown 開始");
+            }
+            Err(e) => {
+                tracing::warn!("SIGTERM ハンドラ登録失敗: {e}");
+                std::future::pending::<()>().await;
+            }
+        }
+    };
+    #[cfg(not(unix))]
+    let terminate = std::future::pending::<()>();
+
+    tokio::select! {
+        () = ctrl_c => {}
+        () = terminate => {}
+    }
 }
 
 #[tokio::main]
@@ -45,8 +161,13 @@ async fn main() -> anyhow::Result<()> {
     let settings = Settings::new().map_err(|e| anyhow::anyhow!("設定エラー: {e}"))?;
     let (app, bg) = build_app(settings)?;
 
-    // ウォームスタート判定 + バックグラウンドスキャン起動
-    spawn_background_tasks(bg);
+    // shutdown 時に使う Arc/CancellationToken を先に clone（bg は spawn で move されるため）
+    let file_watcher_slot = Arc::clone(&bg.file_watcher);
+    let rebuild_task_slot = Arc::clone(&bg.rebuild_task);
+    let shutdown_token = bg.shutdown_token.clone();
+
+    // ウォームスタート判定 + バックグラウンドスキャン起動（outer coordinator の JoinHandle を受領）
+    let scan_handle = spawn_background_tasks(bg);
 
     let addr: SocketAddr = format!("{}:{}", cli.bind, cli.port).parse()?;
     tracing::info!("サーバー起動: {addr}");
@@ -57,9 +178,66 @@ async fn main() -> anyhow::Result<()> {
         listener,
         app.into_make_service_with_connect_info::<SocketAddr>(),
     )
+    .with_graceful_shutdown({
+        let token = shutdown_token.clone();
+        async move {
+            wait_for_shutdown_signal().await;
+            token.cancel();
+            tracing::info!("graceful shutdown 開始: shutdown_token cancel");
+        }
+    })
     .await?;
 
+    tracing::info!("サーバー停止受付、長寿命タスクを drain します");
+    drain_long_tasks(scan_handle, &rebuild_task_slot, SHUTDOWN_DRAIN_TIMEOUT).await;
+    shutdown_file_watcher(&file_watcher_slot);
+    tracing::info!("サーバー終了");
+
     Ok(())
+}
+
+#[cfg(test)]
+#[allow(
+    non_snake_case,
+    reason = "日本語テスト名で振る舞いを記述する規約 (07_testing.md)"
+)]
+mod shutdown_tests {
+    use std::sync::{Arc, Mutex};
+
+    use super::shutdown_file_watcher;
+    use crate::services::file_watcher::FileWatcher;
+
+    #[test]
+    fn shutdown_file_watcherはNoneスロットで何もしない() {
+        let slot: Arc<Mutex<Option<FileWatcher>>> = Arc::new(Mutex::new(None));
+        shutdown_file_watcher(&slot);
+        assert!(slot.lock().unwrap().is_none());
+    }
+
+    #[test]
+    fn shutdown_file_watcherは二度呼んでも安全() {
+        let slot: Arc<Mutex<Option<FileWatcher>>> = Arc::new(Mutex::new(None));
+        shutdown_file_watcher(&slot);
+        shutdown_file_watcher(&slot);
+        assert!(slot.lock().unwrap().is_none());
+    }
+
+    #[test]
+    fn shutdown_file_watcherはpoison_lockでもpanicせず停止する() {
+        let slot: Arc<Mutex<Option<FileWatcher>>> = Arc::new(Mutex::new(None));
+        let poisoner = Arc::clone(&slot);
+        let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _g = poisoner.lock().unwrap();
+            panic!("intentional poison for test");
+        }));
+        assert!(slot.is_poisoned());
+        // into_inner で recover、panic しない
+        shutdown_file_watcher(&slot);
+    }
+
+    // 生きた FileWatcher を使う統合テストは mount_hot_reload::tests で既に
+    // slot.take() → stop() → replace() パターンが網羅されているため、
+    // ここでは冪等・poison 耐性に限定する
 }
 
 #[cfg(test)]

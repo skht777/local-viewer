@@ -146,6 +146,7 @@ pub(crate) fn build_state(
         rebuild_guard: Arc::clone(&rebuild_guard),
         file_watcher: Arc::clone(&file_watcher),
         shutdown_token: shutdown_token.clone(),
+        rebuild_task: Arc::clone(&rebuild_task),
     };
     let app_state = Arc::new(AppState {
         settings: Arc::new(settings),

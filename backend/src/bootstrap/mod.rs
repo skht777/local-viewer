@@ -24,6 +24,7 @@ use crate::services::file_watcher::FileWatcher;
 use crate::services::indexer::Indexer;
 use crate::services::path_security::PathSecurity;
 use crate::services::rebuild_guard::RebuildGuard;
+use crate::services::rebuild_task::RebuildTaskHandle;
 use crate::services::scan_diagnostics::ScanDiagnostics;
 
 #[cfg(test)]
@@ -47,11 +48,9 @@ pub(crate) struct BackgroundContext {
     ///
     /// - scan 経路が協調キャンセルを観測するために使用
     /// - `FileWatcher` late-install 抑止にも使用
-    #[allow(
-        dead_code,
-        reason = "graceful shutdown の協調キャンセルで次コミットから使用"
-    )]
     pub shutdown_token: tokio_util::sync::CancellationToken,
+    /// `AppState.rebuild_task` と同じ `Arc` を共有（`main` 側の drain に渡すため）
+    pub rebuild_task: Arc<std::sync::Mutex<Option<Arc<RebuildTaskHandle>>>>,
 }
 
 /// サービス初期化 + ルーター構築

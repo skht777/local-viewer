@@ -45,7 +45,7 @@ impl MountScanOutcome {
     clippy::needless_pass_by_value,
     reason = "スキャン起動の分岐ロジックは一箇所にまとめる、Arc フィールドを spawn に移動するため所有権が必要"
 )]
-pub(crate) fn spawn_background_tasks(bg: BackgroundContext) {
+pub(crate) fn spawn_background_tasks(bg: BackgroundContext) -> tokio::task::JoinHandle<()> {
     let mount_ids: Vec<String> = bg.mount_id_map.keys().cloned().collect();
     let mount_id_refs: Vec<&str> = mount_ids.iter().map(String::as_str).collect();
 
@@ -99,8 +99,9 @@ pub(crate) fn spawn_background_tasks(bg: BackgroundContext) {
     let watcher_dir_index = Arc::clone(&bg.dir_index);
     let watcher_rebuild_guard = Arc::clone(&bg.rebuild_guard);
     let watcher_slot = Arc::clone(&bg.file_watcher);
-    // shutdown_token を scan_handle 内で使う用に clone（bg は move される）
+    // shutdown_token を scan_handle 内と install task 内でそれぞれ使うため clone
     let shutdown_token_for_scan = bg.shutdown_token.clone();
+    let shutdown_token_for_install = bg.shutdown_token.clone();
     let watcher_mounts: Vec<(String, PathBuf)> = bg
         .mount_id_map
         .iter()
@@ -256,46 +257,55 @@ pub(crate) fn spawn_background_tasks(bg: BackgroundContext) {
         (is_warm_start, all_ok)
     });
 
-    // スキャン完了後に FileWatcher を起動
+    // スキャン完了後に FileWatcher を起動する外側 coordinator task
     //   - 全成功 or warm partial: 起動（warm partial は fingerprint クリア済で
     //     次回 cold start で復旧するが、稼働中は既存 entries で応答 + 増分追従）
     //   - cold partial: 起動中止（再起動での復旧に一本化、DB 状態を静的に保つ）
     //   - panic: 起動中止（partial init 防止）
+    //
+    // shutdown_token が cancel されているときは install を skip（late-install 抑止、
+    // graceful shutdown 中に FileWatcher が起動しないよう保証）
+    //
+    // **戻り値**: 本関数は外側の coordinator task の JoinHandle<()> を返す。
+    // drain_long_tasks はこれを `abort + timeout 付き await` して scan + install
+    // の全ライフサイクル終了を保証する
     tokio::spawn(async move {
         match scan_handle.await {
             Ok((is_warm_start, all_ok)) => {
                 let should_start_watcher = all_ok || is_warm_start;
-                if should_start_watcher {
-                    tracing::info!(all_ok, is_warm_start, "FileWatcher を起動");
-
-                    let file_watcher = services::file_watcher::FileWatcher::new(
-                        watcher_indexer,
-                        watcher_path_security,
-                        watcher_dir_index,
-                        watcher_mounts,
-                        watcher_rebuild_guard,
-                    );
-                    if let Err(e) = file_watcher.start() {
-                        tracing::error!("FileWatcher 起動失敗: {e}");
-                    }
-                    // FileWatcher を AppState の slot に保存（旧実装の std::mem::forget
-                    // 相当。hot reload からは take() → stop() → replace() で差し替え
-                    // 可能。通常動作では drop されずアプリ終了まで存続する）
-                    //
-                    // slot poison 時は watcher を保存せずに drop に任せる。
-                    // FileWatcher::Drop 相当は無いが notify::Watcher は Drop で
-                    // OS 監視を解除するため動作上の副作用は最小限で済む。
-                    let mut slot = watcher_slot
-                        .lock()
-                        .unwrap_or_else(std::sync::PoisonError::into_inner);
-                    *slot = Some(file_watcher);
-                } else {
+                if !should_start_watcher {
                     tracing::warn!(
                         all_ok,
                         is_warm_start,
                         "cold start partial failure: FileWatcher 起動を中止、再起動で復旧"
                     );
+                    return;
                 }
+                if shutdown_token_for_install.is_cancelled() {
+                    tracing::info!("shutdown 中のため FileWatcher を install しない");
+                    return;
+                }
+                tracing::info!(all_ok, is_warm_start, "FileWatcher を起動");
+
+                let file_watcher = services::file_watcher::FileWatcher::new(
+                    watcher_indexer,
+                    watcher_path_security,
+                    watcher_dir_index,
+                    watcher_mounts,
+                    watcher_rebuild_guard,
+                );
+                if let Err(e) = file_watcher.start() {
+                    tracing::error!("FileWatcher 起動失敗: {e}");
+                }
+                // FileWatcher を AppState の slot に保存（旧実装の std::mem::forget
+                // 相当。hot reload からは take() → stop() → replace() で差し替え
+                // 可能。通常動作では drop されずアプリ終了 / shutdown まで存続する）
+                //
+                // slot poison 時は watcher を保存せずに drop に任せる。
+                let mut slot = watcher_slot
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner);
+                *slot = Some(file_watcher);
             }
             Err(e) => {
                 // partial init 防止: FileWatcher を起動せず、scan_complete も false のまま
@@ -308,7 +318,7 @@ pub(crate) fn spawn_background_tasks(bg: BackgroundContext) {
                 );
             }
         }
-    });
+    })
 }
 
 /// 1 マウント分のスキャンを実行する。**本関数は `spawn_blocking` 内で呼ぶ**。
