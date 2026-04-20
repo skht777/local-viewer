@@ -73,6 +73,9 @@ fn full_setup() -> (Router, Arc<AppState>, tempfile::TempDir) {
         rebuild_guard: Arc::new(crate::services::rebuild_guard::RebuildGuard::new()),
         file_watcher: Arc::new(Mutex::new(None)),
         path_security: ps,
+        shutdown_token: tokio_util::sync::CancellationToken::new(),
+        rebuild_generation: Arc::new(std::sync::atomic::AtomicU64::new(0)),
+        rebuild_task: Arc::new(std::sync::Mutex::new(None)),
     });
 
     let app = Router::new()
@@ -150,6 +153,9 @@ fn create_archive_setup() -> (Router, Arc<AppState>, tempfile::TempDir) {
         rebuild_guard: Arc::new(crate::services::rebuild_guard::RebuildGuard::new()),
         file_watcher: Arc::new(Mutex::new(None)),
         path_security: ps,
+        shutdown_token: tokio_util::sync::CancellationToken::new(),
+        rebuild_generation: Arc::new(std::sync::atomic::AtomicU64::new(0)),
+        rebuild_task: Arc::new(std::sync::Mutex::new(None)),
     });
 
     let app = Router::new()

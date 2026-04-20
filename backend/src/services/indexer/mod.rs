@@ -43,6 +43,12 @@ pub(crate) enum IndexerError {
     Sqlite(#[from] rusqlite::Error),
     #[error("{0}")]
     Other(String),
+    /// `shutdown_token` による協調キャンセル
+    ///
+    /// - `parallel_walk` / `batch_insert` / mount ループで cancel 検知時に返る
+    /// - 呼び出し側は readiness マークや fingerprint 更新を skip すべき
+    #[error("scan cancelled due to shutdown")]
+    Cancelled,
 }
 
 /// 検索インデックスに登録するエントリ

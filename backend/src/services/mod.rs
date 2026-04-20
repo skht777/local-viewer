@@ -37,6 +37,8 @@ pub(crate) mod path_security;
     reason = "Phase B の rebuild / Phase F の mount reload から使用開始"
 )]
 pub(crate) mod rebuild_guard;
+#[allow(dead_code, reason = "graceful shutdown の rebuild_task 追跡で使用開始")]
+pub(crate) mod rebuild_task;
 #[allow(
     dead_code,
     reason = "Phase B で background_tasks / api_router から使用"

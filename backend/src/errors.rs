@@ -102,6 +102,11 @@ pub(crate) enum AppError {
     #[allow(dead_code, reason = "Phase 6a の search ルーターで使用")]
     #[error("{0}")]
     RateLimited(String),
+
+    /// shutdown 進行中（長寿命処理が協調キャンセル対応中）
+    #[allow(dead_code, reason = "Phase F の mount_hot_reload で使用開始")]
+    #[error("{0}")]
+    ShutdownInProgress(String),
 }
 
 impl AppError {
@@ -147,6 +152,9 @@ impl IntoResponse for AppError {
             Self::InvalidQuery(_) => (StatusCode::UNPROCESSABLE_ENTITY, "INVALID_QUERY"),
             Self::RebuildInProgress(_) => (StatusCode::CONFLICT, "REBUILD_IN_PROGRESS"),
             Self::RateLimited(_) => (StatusCode::TOO_MANY_REQUESTS, "RATE_LIMITED"),
+            Self::ShutdownInProgress(_) => {
+                (StatusCode::SERVICE_UNAVAILABLE, "SHUTDOWN_IN_PROGRESS")
+            }
         };
 
         let body = ErrorResponse {
@@ -262,6 +270,12 @@ mod tests {
 
     async fn rate_limited_handler() -> Result<String, AppError> {
         Err(AppError::RateLimited("レート制限に達しました".to_string()))
+    }
+
+    async fn shutdown_in_progress_handler() -> Result<String, AppError> {
+        Err(AppError::ShutdownInProgress(
+            "shutdown 中のため処理を受け付けません".to_string(),
+        ))
     }
 
     async fn call(app: Router, uri: &str) -> (StatusCode, String) {
@@ -415,6 +429,15 @@ mod tests {
         let (status, body) = call(app, "/test").await;
         assert_eq!(status, StatusCode::TOO_MANY_REQUESTS);
         assert!(body.contains("RATE_LIMITED"));
+    }
+
+    #[tokio::test]
+    async fn shutdown_in_progress_errorが503とshutdown_in_progressを返す() {
+        let app = Router::new().route("/test", get(shutdown_in_progress_handler));
+        let (status, body) = call(app, "/test").await;
+        assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
+        assert!(body.contains("SHUTDOWN_IN_PROGRESS"));
+        assert!(body.contains("shutdown 中"));
     }
 
     #[test]

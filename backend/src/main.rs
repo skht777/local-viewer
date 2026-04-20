@@ -146,6 +146,9 @@ mod tests {
             rebuild_guard: Arc::new(crate::services::rebuild_guard::RebuildGuard::new()),
             file_watcher: Arc::new(Mutex::new(None)),
             path_security: ps,
+            shutdown_token: tokio_util::sync::CancellationToken::new(),
+            rebuild_generation: Arc::new(std::sync::atomic::AtomicU64::new(0)),
+            rebuild_task: Arc::new(std::sync::Mutex::new(None)),
         });
 
         Router::new()
@@ -274,6 +277,9 @@ mod tests {
             rebuild_guard: Arc::new(crate::services::rebuild_guard::RebuildGuard::new()),
             file_watcher: Arc::new(Mutex::new(None)),
             path_security: ps,
+            shutdown_token: tokio_util::sync::CancellationToken::new(),
+            rebuild_generation: Arc::new(std::sync::atomic::AtomicU64::new(0)),
+            rebuild_task: Arc::new(std::sync::Mutex::new(None)),
         });
         Router::new()
             .route("/api/health", get(health))
@@ -339,6 +345,9 @@ mod tests {
             rebuild_guard: Arc::new(crate::services::rebuild_guard::RebuildGuard::new()),
             file_watcher: Arc::new(Mutex::new(None)),
             path_security: ps,
+            shutdown_token: tokio_util::sync::CancellationToken::new(),
+            rebuild_generation: Arc::new(std::sync::atomic::AtomicU64::new(0)),
+            rebuild_task: Arc::new(std::sync::Mutex::new(None)),
         });
         Router::new()
             .route("/api/health", get(health))
@@ -646,6 +655,9 @@ mod tests {
             rebuild_guard: Arc::new(crate::services::rebuild_guard::RebuildGuard::new()),
             file_watcher: Arc::new(Mutex::new(None)),
             path_security: ps,
+            shutdown_token: tokio_util::sync::CancellationToken::new(),
+            rebuild_generation: Arc::new(std::sync::atomic::AtomicU64::new(0)),
+            rebuild_task: Arc::new(std::sync::Mutex::new(None)),
         });
 
         (

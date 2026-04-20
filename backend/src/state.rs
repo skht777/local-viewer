@@ -2,10 +2,11 @@
 //!
 //! 全サービスを `Arc` で保持し、axum の `State` エクストラクタで各ハンドラに注入する。
 
-use std::sync::atomic::AtomicBool;
+use std::sync::atomic::{AtomicBool, AtomicU64};
 use std::sync::{Arc, Mutex, RwLock};
 
 use tokio::time::Instant;
+use tokio_util::sync::CancellationToken;
 
 use crate::config::Settings;
 use crate::services::archive::ArchiveService;
@@ -15,6 +16,7 @@ use crate::services::indexer::Indexer;
 use crate::services::node_registry::{NodeRegistry, PopulateStats};
 use crate::services::path_security::PathSecurity;
 use crate::services::rebuild_guard::RebuildGuard;
+use crate::services::rebuild_task::RebuildTaskHandle;
 use crate::services::scan_diagnostics::ScanDiagnostics;
 use crate::services::temp_file_cache::TempFileCache;
 use crate::services::thumbnail_service::ThumbnailService;
@@ -87,4 +89,24 @@ pub(crate) struct AppState {
     /// サービスが直接参照するために保持する（NodeRegistry の Mutex を経由せず
     /// 読み書きできる）
     pub path_security: Arc<PathSecurity>,
+    /// graceful shutdown 用の協調キャンセルトークン
+    ///
+    /// - `main` が SIGINT / SIGTERM 受信時に `cancel()` を呼ぶ
+    /// - scan / rebuild / `mount_hot_reload` / `parallel_walk` / `batch_insert` の各経路が
+    ///   `is_cancelled()` を見て早期 return する
+    /// - `FileWatcher` late-install 抑止にも使用（scan 完了後 install の前に check）
+    pub shutdown_token: CancellationToken,
+    /// rebuild 登録世代カウンタ
+    ///
+    /// - `rebuild_task` slot 更新時に `fetch_add(1, SeqCst)` で採番
+    /// - wrapper task が self-clear する際に `slot.generation == my_gen` を判定し、
+    ///   次の rebuild が登録済みなら自分の slot ではないと判断して touch しない
+    pub rebuild_generation: Arc<AtomicU64>,
+    /// 実行中 rebuild タスクの追跡ハンドル
+    ///
+    /// - rebuild spawn 時に `Some(Arc<RebuildTaskHandle>)` をセット
+    /// - wrapper task が `inner.await` 完了後、generation 一致時のみ `None` に戻す
+    /// - shutdown 時は `drain_long_tasks` が `handle.join.lock().take()` で
+    ///   `JoinHandle` を奪って timeout 付きで `await`
+    pub rebuild_task: Arc<Mutex<Option<Arc<RebuildTaskHandle>>>>,
 }
