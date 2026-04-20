@@ -10,6 +10,7 @@ use tokio::time::Instant;
 use crate::config::Settings;
 use crate::services::archive::ArchiveService;
 use crate::services::dir_index::DirIndex;
+use crate::services::file_watcher::FileWatcher;
 use crate::services::indexer::Indexer;
 use crate::services::node_registry::{NodeRegistry, PopulateStats};
 use crate::services::rebuild_guard::RebuildGuard;
@@ -70,4 +71,12 @@ pub(crate) struct AppState {
     /// - `try_acquire` で 1 者のみ成功、RAII ハンドル Drop で自動解放（panic 安全）
     /// - `FileWatcher` flush 抑止の判定にも使用（`is_held()`）
     pub rebuild_guard: Arc<RebuildGuard>,
+    /// 起動後の `FileWatcher` インスタンス所有権
+    ///
+    /// - スキャン完了後に `Some(..)` が書き込まれる（`bootstrap/background_tasks.rs`）
+    /// - hot reload は `take()` → `stop()` → 新 `FileWatcher` を `replace()` で差し替え
+    /// - `Drop` はアプリ終了時 / hot reload 時のみ発火。通常動作中は起動時 leak 相当
+    ///   （旧実装は `std::mem::forget` で同じ寿命を実現していたが、AppState に置くことで
+    ///   hot reload からの lifecycle 操作を可能にする）
+    pub file_watcher: Arc<Mutex<Option<FileWatcher>>>,
 }

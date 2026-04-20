@@ -20,6 +20,7 @@ use axum::Router;
 
 use crate::config::Settings;
 use crate::services::dir_index::DirIndex;
+use crate::services::file_watcher::FileWatcher;
 use crate::services::indexer::Indexer;
 use crate::services::path_security::PathSecurity;
 use crate::services::rebuild_guard::RebuildGuard;
@@ -40,6 +41,8 @@ pub(crate) struct BackgroundContext {
     pub last_scan_report: Arc<RwLock<Option<Arc<ScanDiagnostics>>>>,
     /// `AppState.rebuild_guard` と同じ `Arc` を共有。`FileWatcher` の flush 延期判定に使用
     pub rebuild_guard: Arc<RebuildGuard>,
+    /// `AppState.file_watcher` と同じ `Arc` を共有。scan 完了時に `FileWatcher` を保持する slot
+    pub file_watcher: Arc<std::sync::Mutex<Option<FileWatcher>>>,
 }
 
 /// サービス初期化 + ルーター構築

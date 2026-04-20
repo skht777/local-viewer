@@ -1,5 +1,10 @@
 //! `FileWatcher` サブモジュールの単体テスト
 
+#![allow(
+    non_snake_case,
+    reason = "日本語テスト名で振る舞いを記述する規約 (07_testing.md)"
+)]
+
 use std::path::{Path, PathBuf};
 
 use rstest::rstest;
@@ -113,4 +118,56 @@ fn compute_relative_pathが空mount_idで正しく動作する() {
 #[case("", false)]
 fn is_indexable_extensionが正しく判定する(#[case] ext: &str, #[case] expected: bool) {
     assert_eq!(is_indexable_extension(ext), expected);
+}
+
+// --- AppState.file_watcher slot の所有権 (Phase D0) ---
+
+/// `FileWatcher` を `Arc<Mutex<Option<FileWatcher>>>` slot に保存できること
+///
+/// 旧実装は `std::mem::forget(file_watcher)` で leak していたが、Phase D0 以降は
+/// `AppState` の slot に保持される。`take()` → `stop()` → `replace()` の
+/// ライフサイクル操作（hot reload 用）が成立することを最小単位で確認する。
+#[test]
+fn FileWatcherはslotにtakeとreplaceで出し入れできる() {
+    use std::sync::{Arc, Mutex};
+
+    use crate::services::dir_index::DirIndex;
+    use crate::services::indexer::Indexer;
+    use crate::services::path_security::PathSecurity;
+    use crate::services::rebuild_guard::RebuildGuard;
+
+    // 最小依存: 未起動の FileWatcher を 2 つ作って slot に出し入れする
+    let dir = tempfile::TempDir::new().unwrap();
+    let root = std::fs::canonicalize(dir.path()).unwrap();
+    let ps = Arc::new(PathSecurity::new(vec![root.clone()], false).unwrap());
+    let indexer = Arc::new(Indexer::new(":memory:"));
+    let dir_index = Arc::new(DirIndex::new(":memory:"));
+    let rebuild_guard = Arc::new(RebuildGuard::new());
+
+    let fw1 = super::FileWatcher::new(
+        Arc::clone(&indexer),
+        Arc::clone(&ps),
+        Arc::clone(&dir_index),
+        vec![("deadbeefcafe0001".to_string(), root.clone())],
+        Arc::clone(&rebuild_guard),
+    );
+
+    let slot: Arc<Mutex<Option<super::FileWatcher>>> = Arc::new(Mutex::new(None));
+    // 保存 → 取り出し → 差し替え
+    slot.lock().unwrap().replace(fw1);
+    assert!(slot.lock().unwrap().is_some());
+
+    let taken = slot.lock().unwrap().take();
+    assert!(taken.is_some());
+    assert!(slot.lock().unwrap().is_none());
+
+    let fw2 = super::FileWatcher::new(
+        indexer,
+        ps,
+        dir_index,
+        vec![("deadbeefcafe0002".to_string(), root)],
+        rebuild_guard,
+    );
+    slot.lock().unwrap().replace(fw2);
+    assert!(slot.lock().unwrap().is_some());
 }

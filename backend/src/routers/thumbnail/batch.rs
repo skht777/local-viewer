@@ -531,6 +531,7 @@ mod tests {
             ),
             last_scan_report: Arc::new(std::sync::RwLock::new(None)),
             rebuild_guard: Arc::new(crate::services::rebuild_guard::RebuildGuard::new()),
+            file_watcher: Arc::new(std::sync::Mutex::new(None)),
         });
 
         let app = Router::new()

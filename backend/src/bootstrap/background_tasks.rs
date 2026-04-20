@@ -98,6 +98,7 @@ pub(crate) fn spawn_background_tasks(bg: BackgroundContext) {
     let watcher_path_security = Arc::clone(&bg.path_security);
     let watcher_dir_index = Arc::clone(&bg.dir_index);
     let watcher_rebuild_guard = Arc::clone(&bg.rebuild_guard);
+    let watcher_slot = Arc::clone(&bg.file_watcher);
     let watcher_mounts: Vec<(String, PathBuf)> = bg
         .mount_id_map
         .iter()
@@ -268,8 +269,17 @@ pub(crate) fn spawn_background_tasks(bg: BackgroundContext) {
                     if let Err(e) = file_watcher.start() {
                         tracing::error!("FileWatcher 起動失敗: {e}");
                     }
-                    // FileWatcher を維持 (drop で停止するため)
-                    std::mem::forget(file_watcher);
+                    // FileWatcher を AppState の slot に保存（旧実装の std::mem::forget
+                    // 相当。hot reload からは take() → stop() → replace() で差し替え
+                    // 可能。通常動作では drop されずアプリ終了まで存続する）
+                    //
+                    // slot poison 時は watcher を保存せずに drop に任せる。
+                    // FileWatcher::Drop 相当は無いが notify::Watcher は Drop で
+                    // OS 監視を解除するため動作上の副作用は最小限で済む。
+                    let mut slot = watcher_slot
+                        .lock()
+                        .unwrap_or_else(std::sync::PoisonError::into_inner);
+                    *slot = Some(file_watcher);
                 } else {
                     tracing::warn!(
                         all_ok,

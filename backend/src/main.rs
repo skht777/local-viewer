@@ -139,6 +139,7 @@ mod tests {
             registry_populate_stats: Arc::new(PopulateStats::default()),
             last_scan_report: Arc::new(std::sync::RwLock::new(None)),
             rebuild_guard: Arc::new(crate::services::rebuild_guard::RebuildGuard::new()),
+            file_watcher: Arc::new(Mutex::new(None)),
         });
 
         Router::new()
@@ -265,6 +266,7 @@ mod tests {
             registry_populate_stats: Arc::new(PopulateStats::default()),
             last_scan_report,
             rebuild_guard: Arc::new(crate::services::rebuild_guard::RebuildGuard::new()),
+            file_watcher: Arc::new(Mutex::new(None)),
         });
         Router::new()
             .route("/api/health", get(health))
@@ -328,6 +330,7 @@ mod tests {
             registry_populate_stats: Arc::new(PopulateStats::default()),
             last_scan_report,
             rebuild_guard: Arc::new(crate::services::rebuild_guard::RebuildGuard::new()),
+            file_watcher: Arc::new(Mutex::new(None)),
         });
         Router::new()
             .route("/api/health", get(health))
@@ -633,6 +636,7 @@ mod tests {
             registry_populate_stats: Arc::new(stats),
             last_scan_report: Arc::new(std::sync::RwLock::new(None)),
             rebuild_guard: Arc::new(crate::services::rebuild_guard::RebuildGuard::new()),
+            file_watcher: Arc::new(Mutex::new(None)),
         });
 
         (
