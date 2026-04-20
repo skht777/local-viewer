@@ -12,6 +12,7 @@ use crate::services::archive::ArchiveService;
 use crate::services::dir_index::DirIndex;
 use crate::services::indexer::Indexer;
 use crate::services::node_registry::{NodeRegistry, PopulateStats};
+use crate::services::rebuild_guard::RebuildGuard;
 use crate::services::scan_diagnostics::ScanDiagnostics;
 use crate::services::temp_file_cache::TempFileCache;
 use crate::services::thumbnail_service::ThumbnailService;
@@ -63,4 +64,10 @@ pub(crate) struct AppState {
     /// - `/api/health` は read/write 両側で poison を `tracing::error!` + fallback し、
     ///   liveness 契約を守る
     pub last_scan_report: Arc<RwLock<Option<Arc<ScanDiagnostics>>>>,
+    /// rebuild / hot reload 全体排他 guard
+    ///
+    /// - `POST /api/index/rebuild` と `POST /api/mounts/reload` の同時実行を防ぐ
+    /// - `try_acquire` で 1 者のみ成功、RAII ハンドル Drop で自動解放（panic 安全）
+    /// - `FileWatcher` flush 抑止の判定にも使用（`is_held()`）
+    pub rebuild_guard: Arc<RebuildGuard>,
 }

@@ -155,6 +155,7 @@ pub(crate) fn build_state(
         scan_complete,
         registry_populate_stats: Arc::new(populate_stats),
         last_scan_report,
+        rebuild_guard: Arc::new(services::rebuild_guard::RebuildGuard::new()),
     });
 
     Ok((app_state, bg_context))

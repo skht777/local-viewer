@@ -70,6 +70,7 @@ fn full_setup() -> (Router, Arc<AppState>, tempfile::TempDir) {
         scan_complete: Arc::new(std::sync::atomic::AtomicBool::new(true)),
         registry_populate_stats: Arc::new(crate::services::node_registry::PopulateStats::default()),
         last_scan_report: Arc::new(std::sync::RwLock::new(None)),
+        rebuild_guard: Arc::new(crate::services::rebuild_guard::RebuildGuard::new()),
     });
 
     let app = Router::new()
@@ -144,6 +145,7 @@ fn create_archive_setup() -> (Router, Arc<AppState>, tempfile::TempDir) {
         scan_complete: Arc::new(std::sync::atomic::AtomicBool::new(true)),
         registry_populate_stats: Arc::new(crate::services::node_registry::PopulateStats::default()),
         last_scan_report: Arc::new(std::sync::RwLock::new(None)),
+        rebuild_guard: Arc::new(crate::services::rebuild_guard::RebuildGuard::new()),
     });
 
     let app = Router::new()
