@@ -74,7 +74,6 @@ pub(crate) struct Indexer {
     db_path: String,
     is_ready: AtomicBool,
     is_stale: AtomicBool,
-    is_rebuilding: AtomicBool,
 }
 
 impl Indexer {
@@ -84,7 +83,6 @@ impl Indexer {
             db_path: db_path.to_owned(),
             is_ready: AtomicBool::new(false),
             is_stale: AtomicBool::new(false),
-            is_rebuilding: AtomicBool::new(false),
         }
     }
 
@@ -266,11 +264,6 @@ impl Indexer {
     /// インデックスが古い (再構築が必要) かどうか
     pub(crate) fn is_stale(&self) -> bool {
         self.is_stale.load(Ordering::Relaxed)
-    }
-
-    /// インデックス再構築中かどうか
-    pub(crate) fn is_rebuilding(&self) -> bool {
-        self.is_rebuilding.load(Ordering::Relaxed)
     }
 
     /// ウォームスタートを示す状態にする

@@ -22,6 +22,7 @@ use crate::config::Settings;
 use crate::services::dir_index::DirIndex;
 use crate::services::indexer::Indexer;
 use crate::services::path_security::PathSecurity;
+use crate::services::rebuild_guard::RebuildGuard;
 use crate::services::scan_diagnostics::ScanDiagnostics;
 
 #[cfg(test)]
@@ -37,6 +38,8 @@ pub(crate) struct BackgroundContext {
     pub scan_complete: Arc<std::sync::atomic::AtomicBool>,
     /// `AppState.last_scan_report` と同じ `Arc` を共有。scan 完了時に書き込む
     pub last_scan_report: Arc<RwLock<Option<Arc<ScanDiagnostics>>>>,
+    /// `AppState.rebuild_guard` と同じ `Arc` を共有。`FileWatcher` の flush 延期判定に使用
+    pub rebuild_guard: Arc<RebuildGuard>,
 }
 
 /// サービス初期化 + ルーター構築

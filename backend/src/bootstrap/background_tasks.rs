@@ -98,6 +98,7 @@ pub(crate) fn spawn_background_tasks(bg: BackgroundContext) {
     let watcher_indexer = Arc::clone(&bg.indexer);
     let watcher_path_security = Arc::clone(&bg.path_security);
     let watcher_dir_index = Arc::clone(&bg.dir_index);
+    let watcher_rebuild_guard = Arc::clone(&bg.rebuild_guard);
     let watcher_mounts: Vec<(String, PathBuf)> = bg
         .mount_id_map
         .iter()
@@ -269,6 +270,7 @@ pub(crate) fn spawn_background_tasks(bg: BackgroundContext) {
                         watcher_path_security,
                         watcher_dir_index,
                         watcher_mounts,
+                        watcher_rebuild_guard,
                     );
                     if let Err(e) = file_watcher.start() {
                         tracing::error!("FileWatcher 起動失敗: {e}");

@@ -277,4 +277,147 @@ mod tests {
             assert_eq!(json["results"].as_array().unwrap().len(), 0);
         }
     }
+
+    // --- POST /api/index/rebuild の排他制御テスト (Phase B) ---
+    //
+    // rebuild_guard による 409 返却と RAII release の統合検証。
+    #[allow(
+        non_snake_case,
+        reason = "日本語テスト名で振る舞いを記述する規約 (07_testing.md)"
+    )]
+    mod rebuild_exclusion {
+        use std::collections::HashMap;
+        use std::sync::{Arc, Mutex};
+
+        use axum::Router;
+        use axum::body::Body;
+        use axum::http::{Request, StatusCode};
+        use axum::routing::post;
+        use tempfile::TempDir;
+        use tower::ServiceExt;
+
+        use crate::config::Settings;
+        use crate::routers::search::rebuild_index;
+        use crate::services::archive::ArchiveService;
+        use crate::services::dir_index::DirIndex;
+        use crate::services::indexer::Indexer;
+        use crate::services::node_registry::NodeRegistry;
+        use crate::services::path_security::PathSecurity;
+        use crate::services::rebuild_guard::RebuildGuard;
+        use crate::services::temp_file_cache::TempFileCache;
+        use crate::services::thumbnail_service::ThumbnailService;
+        use crate::services::thumbnail_warmer::ThumbnailWarmer;
+        use crate::services::video_converter::VideoConverter;
+        use crate::state::AppState;
+
+        fn test_state() -> (Arc<AppState>, TempDir, TempDir) {
+            let dir = TempDir::new().unwrap();
+            let root = std::fs::canonicalize(dir.path()).unwrap();
+            let settings = Settings::from_map(&HashMap::from([(
+                "MOUNT_BASE_DIR".to_string(),
+                root.to_string_lossy().into_owned(),
+            )]))
+            .unwrap();
+            let ps = Arc::new(PathSecurity::new(vec![root.clone()], false).unwrap());
+            let mut registry = NodeRegistry::new(ps, 100_000, HashMap::new());
+            let mut mount_id_map = HashMap::new();
+            mount_id_map.insert("testmount".to_string(), root.clone());
+            registry.set_mount_id_map(mount_id_map);
+            let archive_service = Arc::new(ArchiveService::new(&settings));
+            let temp_file_cache = Arc::new(
+                TempFileCache::new(TempDir::new().unwrap().keep(), 10 * 1024 * 1024).unwrap(),
+            );
+            let thumbnail_service = Arc::new(ThumbnailService::new(Arc::clone(&temp_file_cache)));
+            let video_converter =
+                Arc::new(VideoConverter::new(Arc::clone(&temp_file_cache), &settings));
+            let thumbnail_warmer = Arc::new(ThumbnailWarmer::new(4));
+            let db_dir = TempDir::new().unwrap();
+            let indexer = Arc::new(Indexer::new(
+                db_dir.path().join("index.db").to_str().unwrap(),
+            ));
+            indexer.init_db().unwrap();
+            let dir_index = Arc::new(DirIndex::new(
+                db_dir.path().join("dir.db").to_str().unwrap(),
+            ));
+            dir_index.init_db().unwrap();
+            let state = Arc::new(AppState {
+                settings: Arc::new(settings),
+                node_registry: Arc::new(Mutex::new(registry)),
+                archive_service,
+                temp_file_cache,
+                thumbnail_service,
+                video_converter,
+                thumbnail_warmer,
+                thumb_semaphore: Arc::new(tokio::sync::Semaphore::new(8)),
+                archive_thumb_semaphore: Arc::new(tokio::sync::Semaphore::new(4)),
+                indexer,
+                dir_index,
+                last_rebuild: tokio::sync::Mutex::new(None),
+                scan_complete: Arc::new(std::sync::atomic::AtomicBool::new(true)),
+                registry_populate_stats: Arc::new(
+                    crate::services::node_registry::PopulateStats::default(),
+                ),
+                last_scan_report: Arc::new(std::sync::RwLock::new(None)),
+                rebuild_guard: Arc::new(RebuildGuard::new()),
+            });
+            (state, dir, db_dir)
+        }
+
+        fn app(state: Arc<AppState>) -> Router {
+            Router::new()
+                .route("/api/index/rebuild", post(rebuild_index))
+                .with_state(state)
+        }
+
+        #[tokio::test]
+        async fn rebuildは初回POSTで202を返す() {
+            let (state, _dir, _db_dir) = test_state();
+            let resp = app(state)
+                .oneshot(
+                    Request::post("/api/index/rebuild")
+                        .body(Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(resp.status(), StatusCode::ACCEPTED);
+        }
+
+        #[tokio::test]
+        async fn rebuild中の再POSTは409を返す() {
+            let (state, _dir, _db_dir) = test_state();
+            // guard を事前に取得して rebuild 実行中の状態を再現
+            let _held = state
+                .rebuild_guard
+                .try_acquire()
+                .expect("初期は未取得のため成功");
+            let resp = app(Arc::clone(&state))
+                .oneshot(
+                    Request::post("/api/index/rebuild")
+                        .body(Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(resp.status(), StatusCode::CONFLICT);
+        }
+
+        #[tokio::test]
+        async fn rebuild_guard_releaseで再POSTが202を返す() {
+            let (state, _dir, _db_dir) = test_state();
+            {
+                let _held = state.rebuild_guard.try_acquire().unwrap();
+                // スコープ抜けで Drop → release
+            }
+            let resp = app(Arc::clone(&state))
+                .oneshot(
+                    Request::post("/api/index/rebuild")
+                        .body(Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(resp.status(), StatusCode::ACCEPTED);
+        }
+    }
 }

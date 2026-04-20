@@ -5,24 +5,54 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, UNIX_EPOCH};
 
-use tracing::debug;
+use tracing::{debug, warn};
 
+use super::WATCHER_PENDING_SOFT_CAP;
 use super::path_utils::compute_relative_path;
 use crate::services::dir_index::DirIndex;
 use crate::services::extensions::classify_for_index;
 use crate::services::indexer::{IndexEntry, Indexer};
 use crate::services::path_security::PathSecurity;
+use crate::services::rebuild_guard::RebuildGuard;
 
 /// 1 秒間隔で pending イベントを取り出し、`Indexer` + `DirIndex` に反映する
+///
+/// - `rebuild_guard.is_held()` の間は flush を延期し、pending を維持したまま次 tick へ
+/// - ただし pending が `WATCHER_PENDING_SOFT_CAP` を超えた場合は
+///   `DirIndex::mark_warm_start()` で整合回復を予約し pending を drain する
+///   （rebuild 完了後の warm-start 経路で再スキャンされ、DB 上の乖離は解消）
 pub(super) async fn flush_worker_loop(
     pending: Arc<std::sync::Mutex<HashMap<String, String>>>,
     indexer: Arc<Indexer>,
     path_security: Arc<PathSecurity>,
     dir_index: Arc<DirIndex>,
     mounts: Vec<(String, PathBuf)>,
+    rebuild_guard: Arc<RebuildGuard>,
 ) {
     loop {
         tokio::time::sleep(Duration::from_secs(1)).await;
+
+        // rebuild / mount reload 中は flush を延期。ただし pending 蓄積が soft cap を
+        // 超えたら DirIndex を stale 化して drain、メモリ footgun を防ぐ
+        if rebuild_guard.is_held() {
+            let pending_len = pending
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .len();
+            if pending_len > WATCHER_PENDING_SOFT_CAP {
+                warn!(
+                    pending = pending_len,
+                    cap = WATCHER_PENDING_SOFT_CAP,
+                    "FileWatcher: rebuild 中の pending が soft cap 超過、DirIndex 整合回復を予約して drain"
+                );
+                dir_index.mark_warm_start();
+                let mut guard = pending
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner);
+                guard.clear();
+            }
+            continue;
+        }
 
         // pending を一括取得
         let events = {

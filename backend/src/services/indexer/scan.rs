@@ -248,8 +248,6 @@ impl Indexer {
             ));
         }
 
-        self.is_rebuilding.store(true, Ordering::Relaxed);
-
         // scan_directory のコールバックで seen（走査で見えた相対パス）を収集
         let seen: RefCell<HashSet<String>> = RefCell::new(HashSet::new());
         let mut on_walk_entry = |args: WalkCallbackArgs| {
@@ -280,13 +278,7 @@ impl Indexer {
             Some(&mut on_walk_entry),
         );
 
-        let (count, walk_report) = match scan_result {
-            Ok(r) => r,
-            Err(e) => {
-                self.is_rebuilding.store(false, Ordering::Relaxed);
-                return Err(e);
-            }
-        };
+        let (count, walk_report) = scan_result?;
 
         // ハイブリッド閾値判定で stale 行 (seen に含まれない自マウント行) の削除を判断
         // rebuild は UPSERT エラーを個別集計しないため upsert_errors=0 固定
@@ -303,8 +295,6 @@ impl Indexer {
             let seen_set = seen.into_inner();
             let _deleted = delete_unseen(&conn, &seen_set, mount_id)?;
         }
-
-        self.is_rebuilding.store(false, Ordering::Relaxed);
 
         Ok(count)
     }

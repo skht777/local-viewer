@@ -734,8 +734,8 @@ fn rebuildでインデックスを再構築する() {
     assert_eq!(count, 3);
     assert_eq!(env.indexer.entry_count().unwrap(), 3);
 
-    // is_rebuilding は完了後 false
-    assert!(!env.indexer.is_rebuilding());
+    // Indexer 内部で排他フラグは持たなくなったが ready フラグは維持される
+    // （rebuild 全体排他は AppState.rebuild_guard に移動、Phase B）
     assert!(env.indexer.is_ready());
 }
 

@@ -29,6 +29,15 @@ use tracing::{info, warn};
 use crate::services::dir_index::DirIndex;
 use crate::services::indexer::Indexer;
 use crate::services::path_security::PathSecurity;
+use crate::services::rebuild_guard::RebuildGuard;
+
+/// `pending` キューの soft cap
+///
+/// rebuild / mount reload 中は flush を延期するが、medium 規模 rebuild は
+/// 数分走るため pending が無制限に蓄積するとメモリ footgun になる。
+/// この上限を超えた場合は `DirIndex::mark_warm_start()` で整合回復を予約し
+/// pending を drain する。rebuild 完了後の warm-start 経路で再スキャンされる。
+pub(crate) const WATCHER_PENDING_SOFT_CAP: usize = 10_000;
 
 /// ファイル監視エラー
 #[derive(Debug, thiserror::Error)]
@@ -51,6 +60,8 @@ pub(crate) struct FileWatcher {
     mounts: Vec<(String, PathBuf)>,
     pending: Arc<std::sync::Mutex<HashMap<String, String>>>,
     is_running: AtomicBool,
+    /// rebuild / mount reload 中の flush 延期を判定するための共有 guard
+    rebuild_guard: Arc<RebuildGuard>,
     /// watcher ハンドル (stop 時に drop)
     watcher: std::sync::Mutex<Option<RecommendedWatcher>>,
     /// flush ワーカーの `JoinHandle` (stop 時に abort)
@@ -64,6 +75,7 @@ impl FileWatcher {
         path_security: Arc<PathSecurity>,
         dir_index: Arc<DirIndex>,
         mounts: Vec<(String, PathBuf)>,
+        rebuild_guard: Arc<RebuildGuard>,
     ) -> Self {
         Self {
             indexer,
@@ -72,6 +84,7 @@ impl FileWatcher {
             mounts,
             pending: Arc::new(std::sync::Mutex::new(HashMap::new())),
             is_running: AtomicBool::new(false),
+            rebuild_guard,
             watcher: std::sync::Mutex::new(None),
             flush_handle: std::sync::Mutex::new(None),
         }
@@ -138,6 +151,7 @@ impl FileWatcher {
         let flush_path_security = Arc::clone(&self.path_security);
         let flush_dir_index = Arc::clone(&self.dir_index);
         let flush_mounts: Vec<(String, PathBuf)> = self.mounts.clone();
+        let flush_rebuild_guard = Arc::clone(&self.rebuild_guard);
 
         // flush ワーカーは JoinHandle の abort で停止する方式
         let handle = tokio::spawn(worker::flush_worker_loop(
@@ -146,6 +160,7 @@ impl FileWatcher {
             flush_path_security,
             flush_dir_index,
             flush_mounts,
+            flush_rebuild_guard,
         ));
 
         // flush ハンドルを保存

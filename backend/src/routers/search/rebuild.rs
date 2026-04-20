@@ -1,6 +1,7 @@
 //! `POST /api/index/rebuild` ハンドラ
 //!
-//! レート制限と同時実行チェックを通過後、バックグラウンドでリビルドを開始する。
+//! 順序: `rebuild_guard.try_acquire()` → `rate_limiter.peek()` → 本処理 → `commit_now()`。
+//! guard は RAII で `tokio::spawn` 内 task に move、task panic でも Drop で解放される。
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -11,7 +12,7 @@ use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 
 use crate::errors::AppError;
-use crate::services::search::rebuild_rate_limiter::try_start_rebuild;
+use crate::services::search::rebuild_rate_limiter;
 use crate::state::AppState;
 
 use super::RebuildResponse;
@@ -19,27 +20,29 @@ use super::RebuildResponse;
 /// `POST /api/index/rebuild`
 ///
 /// インデックスの全件リビルドをバックグラウンドで開始する。
-/// 同時実行制御 + レート制限付き。
+/// rebuild / mount reload 間の全体排他 + レート制限付き。
 pub(crate) async fn rebuild_index(
     State(state): State<Arc<AppState>>,
 ) -> Result<Response, AppError> {
-    // リビルド実行中チェック
-    if state.indexer.is_rebuilding() {
+    // 1. guard 取得（rebuild / mount reload 間の全体排他）
+    let Some(guard) = state.rebuild_guard.try_acquire() else {
         return Err(AppError::RebuildInProgress(
-            "リビルドが実行中です".to_string(),
+            "リビルド / マウントリロードが実行中です".to_string(),
         ));
-    }
+    };
 
-    // レート制限チェック
-    try_start_rebuild(
+    // 2. レート制限の read-only チェック（last_rebuild は更新しない）
+    //    失敗時は guard が Drop されて 429 を返す
+    rebuild_rate_limiter::peek(
         &state.last_rebuild,
         state.settings.rebuild_rate_limit_seconds,
     )
     .await?;
 
-    // バックグラウンドでリビルドを実行
+    // 3. 本処理: バックグラウンドでリビルドを実行
     let indexer = Arc::clone(&state.indexer);
     let registry = Arc::clone(&state.node_registry);
+    let state_for_commit = Arc::clone(&state);
 
     // mount_id_map からリビルド対象のルートを収集
     let mount_entries: Vec<(String, PathBuf)> = {
@@ -55,6 +58,10 @@ pub(crate) async fn rebuild_index(
     };
 
     tokio::spawn(async move {
+        // guard を task 内でバインド（Drop は task 終了時 or panic 時）
+        let _guard = guard;
+        let mut all_success = true;
+
         for (mount_id, root) in &mount_entries {
             let indexer_ref = Arc::clone(&indexer);
             let registry_ref = Arc::clone(&registry);
@@ -80,16 +87,23 @@ pub(crate) async fn rebuild_index(
                     );
                 }
                 Ok(Err(e)) => {
+                    all_success = false;
                     tracing::error!(
                         "インデックスリビルドエラー: mount_id={mount_id_for_log}, error={e}"
                     );
                 }
                 Err(e) => {
+                    all_success = false;
                     tracing::error!(
                         "リビルドタスク実行エラー: mount_id={mount_id_for_log}, error={e}"
                     );
                 }
             }
+        }
+
+        // 本処理成功時のみ last_rebuild を commit（失敗時はレート制限消費せず再試行可）
+        if all_success {
+            rebuild_rate_limiter::commit_now(&state_for_commit.last_rebuild).await;
         }
     });
 
