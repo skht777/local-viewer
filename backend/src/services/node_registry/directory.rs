@@ -99,7 +99,7 @@ impl NodeRegistry {
 
     /// 全マウントルートを `EntryMeta` として返す
     pub(crate) fn list_mount_roots(&mut self) -> Vec<EntryMeta> {
-        let roots: Vec<PathBuf> = self.path_security.root_dirs().to_vec();
+        let roots: Vec<PathBuf> = self.path_security.root_dirs();
         roots
             .into_iter()
             .filter_map(|root| {

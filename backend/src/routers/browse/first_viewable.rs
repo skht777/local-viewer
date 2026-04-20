@@ -195,10 +195,7 @@ fn try_first_viewable_from_index(
     current_id: &str,
 ) -> Option<FirstViewableResponse> {
     let parent_key = reg.compute_parent_path_key(path)?;
-    let root = reg
-        .path_security()
-        .find_root_for(path)
-        .map(std::path::Path::to_path_buf)?;
+    let root = reg.path_security().find_root_for(path)?;
 
     for kind in ["archive", "pdf", "image"] {
         if let Ok(Some(de)) = dir_index.first_entry_by_kind(&parent_key, kind) {

@@ -145,10 +145,7 @@ fn try_sibling_from_index(
     sort: SortOrder,
 ) -> Option<SiblingResponse> {
     let parent_key = reg.compute_parent_path_key(parent_path)?;
-    let root = reg
-        .path_security()
-        .find_root_for(parent_path)
-        .map(std::path::Path::to_path_buf)?;
+    let root = reg.path_security().find_root_for(parent_path)?;
 
     // current node_id からファイル名と is_dir を取得
     let current_path = reg.resolve(current_node_id).ok()?;
@@ -189,10 +186,7 @@ fn try_siblings_from_index(
     sort: SortOrder,
 ) -> Option<SiblingsResponse> {
     let parent_key = reg.compute_parent_path_key(parent_path)?;
-    let root = reg
-        .path_security()
-        .find_root_for(parent_path)
-        .map(std::path::Path::to_path_buf)?;
+    let root = reg.path_security().find_root_for(parent_path)?;
 
     let current_path = reg.resolve(current_node_id).ok()?;
     let current_name = current_path.file_name()?.to_string_lossy().into_owned();

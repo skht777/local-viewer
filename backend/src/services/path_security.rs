@@ -4,21 +4,63 @@
 //! - `canonicalize()` 後に許可ルートディレクトリ配下であることを検証
 //! - symlink はデフォルトで追跡しない
 //! - 不正アクセスは `AppError::PathSecurity` を送出
+//!
+//! `roots` / `root_entries` は `RwLock` で保護される（Phase D1）。
+//! これは mount hot reload 時に `replace_roots` で差し替え可能にするため。
+//! 読み取りが支配的な hot path（`validate` / `find_root_for`）では `read()` で
+//! 短時間ロックを取り、所有権の乖離なく既存 `Arc<PathSecurity>` 保持者にも
+//! 最新状態を反映する。
 
 use std::path::{Path, PathBuf};
+use std::sync::RwLock;
 
 use crate::errors::AppError;
 
 /// パスの安全性を検証するサービス
 ///
-/// - `roots`: 許可されたルートディレクトリのリスト
-/// - `is_allow_symlinks`: symlink 追跡の許可フラグ
+/// - `roots`: 許可されたルートディレクトリのリスト（`RwLock` で保護）
+/// - `root_entries`: 文字列比較用キャッシュ（`RwLock` で保護）
+/// - `is_allow_symlinks`: symlink 追跡の許可フラグ（起動時固定、不変）
 #[derive(Debug)]
 pub(crate) struct PathSecurity {
-    roots: Vec<PathBuf>,
+    roots: RwLock<Vec<PathBuf>>,
     // 文字列比較用キャッシュ (root_str, root_prefix, root)
-    root_entries: Vec<(String, String, PathBuf)>,
+    root_entries: RwLock<Vec<RootEntry>>,
     is_allow_symlinks: bool,
+}
+
+/// `root_entries` の内部表現（`root_str`, `root_prefix`, root）
+type RootEntry = (String, String, PathBuf);
+
+/// 新規ルート群の canonicalize と `root_entries` 生成を行う共通処理
+///
+/// `new` / `replace_roots` で共有する。
+fn canonicalize_and_build_entries(
+    root_dirs: Vec<PathBuf>,
+) -> Result<(Vec<PathBuf>, Vec<RootEntry>), AppError> {
+    if root_dirs.is_empty() {
+        return Err(AppError::path_security("root_dirs は少なくとも1つ必要です"));
+    }
+
+    let roots: Vec<PathBuf> = root_dirs
+        .into_iter()
+        .map(|r| {
+            std::fs::canonicalize(&r).map_err(|_| {
+                AppError::path_security(format!("ルートディレクトリの解決に失敗: {}", r.display()))
+            })
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+
+    let root_entries = roots
+        .iter()
+        .map(|r| {
+            let s = r.to_string_lossy().into_owned();
+            let prefix = format!("{s}{}", std::path::MAIN_SEPARATOR);
+            (s, prefix, r.clone())
+        })
+        .collect();
+
+    Ok((roots, root_entries))
 }
 
 impl PathSecurity {
@@ -26,46 +68,31 @@ impl PathSecurity {
     ///
     /// 最低 1 つのルートが必要。各ルートは `canonicalize()` で正規化される。
     pub(crate) fn new(root_dirs: Vec<PathBuf>, is_allow_symlinks: bool) -> Result<Self, AppError> {
-        if root_dirs.is_empty() {
-            return Err(AppError::path_security("root_dirs は少なくとも1つ必要です"));
-        }
-
-        let roots: Vec<PathBuf> = root_dirs
-            .into_iter()
-            .map(|r| {
-                std::fs::canonicalize(&r).map_err(|_| {
-                    AppError::path_security(format!(
-                        "ルートディレクトリの解決に失敗: {}",
-                        r.display()
-                    ))
-                })
-            })
-            .collect::<Result<Vec<_>, _>>()?;
-
-        let root_entries = roots
-            .iter()
-            .map(|r| {
-                let s = r.to_string_lossy().into_owned();
-                let prefix = format!("{s}{}", std::path::MAIN_SEPARATOR);
-                (s, prefix, r.clone())
-            })
-            .collect();
-
+        let (roots, root_entries) = canonicalize_and_build_entries(root_dirs)?;
         Ok(Self {
-            roots,
-            root_entries,
+            roots: RwLock::new(roots),
+            root_entries: RwLock::new(root_entries),
             is_allow_symlinks,
         })
     }
 
-    /// 全許可ルートディレクトリを返す
-    pub(crate) fn root_dirs(&self) -> &[PathBuf] {
-        &self.roots
+    /// 全許可ルートディレクトリを返す（owned clone）
+    ///
+    /// Phase D1 の内部可変化に伴い、借用から owned コピーに変更。呼び出し元
+    /// （`NodeRegistry` 等）は頻度が低いため clone コストは無視できる。
+    pub(crate) fn root_dirs(&self) -> Vec<PathBuf> {
+        self.roots
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone()
     }
 
-    /// 文字列比較用キャッシュ (`root_str`, `root_prefix`, root) を返す
-    pub(crate) fn root_entries(&self) -> &[(String, String, PathBuf)] {
-        &self.root_entries
+    /// 文字列比較用キャッシュ (`root_str`, `root_prefix`, root) を返す（owned clone）
+    pub(crate) fn root_entries(&self) -> Vec<RootEntry> {
+        self.root_entries
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone()
     }
 
     /// symlink 追跡が許可されているかを返す
@@ -73,15 +100,49 @@ impl PathSecurity {
         self.is_allow_symlinks
     }
 
+    /// マウント hot reload 時に許可ルートを差し替える
+    ///
+    /// - 新 roots を `canonicalize` して取得（失敗なら既存値を維持して Err）
+    /// - `roots` / `root_entries` を write lock で atomic に差し替え
+    /// - 既存 `Arc<PathSecurity>` 保持者（`NodeRegistry` / `FileWatcher`）も
+    ///   次回読み取りから新 roots を反映する
+    pub(crate) fn replace_roots(&self, new_root_dirs: Vec<PathBuf>) -> Result<(), AppError> {
+        let (new_roots, new_entries) = canonicalize_and_build_entries(new_root_dirs)?;
+        // 先に roots、次に root_entries の順で書き込む。read 側は roots か root_entries のどちらか
+        // 片方だけを見る経路が無いため、一瞬の不整合で誤判定は起きない（どちらも同じ集合の異なる
+        // 表現）。deadlock 回避のため同時に 2 つの write lock を保持しないよう 1 つずつ取得・解放する。
+        {
+            let mut guard = self
+                .roots
+                .write()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            *guard = new_roots;
+        }
+        {
+            let mut guard = self
+                .root_entries
+                .write()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            *guard = new_entries;
+        }
+        Ok(())
+    }
+
     /// パスが属するルートディレクトリを返す
     ///
     /// どのルートにも属さなければ `None`。
     /// `resolved` は `canonicalize()` 済みであること。
-    pub(crate) fn find_root_for(&self, resolved: &Path) -> Option<&Path> {
+    ///
+    /// 戻り値は owned `PathBuf`（内部 `RwLock` の guard を解放してから返すため）。
+    pub(crate) fn find_root_for(&self, resolved: &Path) -> Option<PathBuf> {
         let s = resolved.to_string_lossy();
-        for (root_str, root_prefix, root) in &self.root_entries {
+        let guard = self
+            .root_entries
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        for (root_str, root_prefix, root) in guard.iter() {
             if *s == *root_str || s.starts_with(root_prefix.as_str()) {
-                return Some(root);
+                return Some(root.clone());
             }
         }
         None
@@ -135,7 +196,16 @@ impl PathSecurity {
             }
         }
 
-        let mut joined = self.roots[0].clone();
+        let mut joined = {
+            let guard = self
+                .roots
+                .read()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            guard
+                .first()
+                .cloned()
+                .ok_or_else(|| AppError::path_security("root_dirs が空です"))?
+        };
         for part in parts {
             joined = joined.join(part);
         }
@@ -199,7 +269,11 @@ impl PathSecurity {
     /// `resolved` パスが許可ルートのいずれか配下にあるか判定する
     fn is_under_root(&self, resolved: &Path) -> bool {
         let s = resolved.to_string_lossy();
-        for (root_str, root_prefix, _) in &self.root_entries {
+        let guard = self
+            .root_entries
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        for (root_str, root_prefix, _) in guard.iter() {
             if *s == *root_str || s.starts_with(root_prefix.as_str()) {
                 return true;
             }
@@ -235,7 +309,7 @@ impl PathSecurity {
         // raw パスからルートを除去して相対パスを取得
         // ルートは canonicalize 済みなので、raw パスと一致しない場合がある
         // 全ルートの raw パス/canonical パスで strip_prefix を試行
-        let rel = if let Ok(r) = abs_path.strip_prefix(root) {
+        let rel = if let Ok(r) = abs_path.strip_prefix(&root) {
             r.to_path_buf()
         } else {
             // root_dirs のいずれかの元パスで strip_prefix を試行
@@ -244,7 +318,7 @@ impl PathSecurity {
         };
 
         // 各要素を順にチェック
-        let mut current = root.to_path_buf();
+        let mut current = root.clone();
         for part in rel.components() {
             current = current.join(part);
             if current
@@ -326,6 +400,10 @@ fn resolve_path(path: &Path) -> Result<PathBuf, AppError> {
 }
 
 #[cfg(test)]
+#[allow(
+    non_snake_case,
+    reason = "日本語テスト名で振る舞いを記述する規約 (07_testing.md)"
+)]
 mod tests {
     use super::*;
 
@@ -668,5 +746,51 @@ mod tests {
     fn 空のルートリストでエラー() {
         let err = PathSecurity::new(vec![], false).unwrap_err();
         assert!(err.to_string().contains("少なくとも1つ"));
+    }
+
+    // --- replace_roots (Phase D1) ---
+
+    #[test]
+    fn replace_rootsで新ルートに差し替えられる() {
+        let env = MultiTestEnv::new();
+        let sec = env.security();
+        // 最初は root_a / root_b 両方とも通る
+        assert!(sec.validate(&env.root_a.join("file_a.txt")).is_ok());
+        assert!(sec.validate(&env.root_b.join("file_b.txt")).is_ok());
+
+        // root_b のみに差し替え
+        sec.replace_roots(vec![env.root_b.clone()]).unwrap();
+
+        // root_a は拒否、root_b は継続許可
+        assert!(sec.validate(&env.root_a.join("file_a.txt")).is_err());
+        assert!(sec.validate(&env.root_b.join("file_b.txt")).is_ok());
+    }
+
+    #[test]
+    fn replace_rootsは既存Arc保持者にも新状態を反映する() {
+        use std::sync::Arc;
+
+        let env = MultiTestEnv::new();
+        let sec = Arc::new(PathSecurity::new(vec![env.root_a.clone()], false).unwrap());
+        // 保持者 (NodeRegistry / FileWatcher 相当) を clone
+        let held = Arc::clone(&sec);
+        assert!(held.validate(&env.root_a.join("file_a.txt")).is_ok());
+
+        // 別ルートに差し替え（外部 PathSecurity から呼ぶ）
+        sec.replace_roots(vec![env.root_b.clone()]).unwrap();
+
+        // Arc 保持者経由でも新ルートが反映される
+        assert!(held.validate(&env.root_a.join("file_a.txt")).is_err());
+        assert!(held.validate(&env.root_b.join("file_b.txt")).is_ok());
+    }
+
+    #[test]
+    fn replace_rootsは空リストでエラー() {
+        let env = TestEnv::new();
+        let sec = env.security();
+        let err = sec.replace_roots(vec![]).unwrap_err();
+        assert!(err.to_string().contains("少なくとも1つ"));
+        // 既存状態は維持
+        assert!(sec.validate(&env.root.join("subdir")).is_ok());
     }
 }

@@ -60,7 +60,7 @@ impl NodeRegistry {
         archive_registry_max_entries: usize,
         mount_names: HashMap<PathBuf, String>,
     ) -> Self {
-        let root_entries = path_security.root_entries().to_vec();
+        let root_entries = path_security.root_entries();
 
         // `NODE_SECRET` は `cursor_hmac::get_secret()` 経由で取得し、
         // 未設定時の panic 契約（`09_security`）を単一点に集約する
@@ -92,6 +92,67 @@ impl NodeRegistry {
         &self.mount_id_map
     }
 
+    /// 指定 `mount_id` 配下の登録を一括削除する（mount hot reload 用）
+    ///
+    /// - `mount_id_map` から entry を削除
+    /// - `path_to_id` / `id_to_path` のうち該当 root 配下のエントリを削除
+    /// - `mount_names` も該当 root をキーとして持つなら削除
+    /// - アーカイブエントリ LRU は対象 root 配下の `archive_path` を持つものを無効化
+    ///
+    /// 無効な `mount_id`（未登録）が渡された場合は no-op（idempotent）。
+    pub(crate) fn remove_mount(&mut self, mount_id: &str) {
+        let Some(root) = self.mount_id_map.remove(mount_id) else {
+            return;
+        };
+        let root_key = root.to_string_lossy().into_owned();
+        let root_prefix = format!("{root_key}{}", std::path::MAIN_SEPARATOR);
+
+        // path_to_id / id_to_path から対象 root 配下を削除
+        let keys_to_remove: Vec<String> = self
+            .path_to_id
+            .keys()
+            .filter(|k| **k == root_key || k.starts_with(root_prefix.as_str()))
+            .cloned()
+            .collect();
+        for key in &keys_to_remove {
+            if let Some(node_id) = self.path_to_id.remove(key) {
+                self.id_to_path.remove(&node_id);
+            }
+        }
+
+        // mount_names
+        self.mount_names.remove(&root);
+
+        // アーカイブエントリ: composite_key 内に root パスが含まれるため、
+        // 該当 root 配下のアーカイブを参照するエントリを除去
+        let arc_keys_to_remove: Vec<String> = self
+            .archive_entry_to_id
+            .keys()
+            .filter(|k| {
+                k.contains(&format!("arc::{root_key}"))
+                    || k.contains(&format!("arc::{}{}", root_key, std::path::MAIN_SEPARATOR))
+            })
+            .cloned()
+            .collect();
+        for key in &arc_keys_to_remove {
+            if let Some(node_id) = self.archive_entry_to_id.remove(key) {
+                self.id_to_archive_entry.remove(&node_id);
+                self.id_to_composite_key.remove(&node_id);
+                if let Some(pos) = self.archive_order.iter().position(|x| *x == node_id) {
+                    self.archive_order.remove(pos);
+                }
+            }
+        }
+    }
+
+    /// `PathSecurity::replace_roots` 後に `root_entries` キャッシュを再構築する
+    ///
+    /// `register_resolved` の root ガードで使う内部キャッシュが `PathSecurity` の
+    /// 現在値と乖離するのを防ぐ。hot reload の末尾で呼ぶ。
+    pub(crate) fn rebuild_root_entries_cache(&mut self) {
+        self.root_entries = self.path_security.root_entries();
+    }
+
     /// パスの `parent_path_key` (`DirIndex` 用) を計算する
     ///
     /// `"{mount_id}/{relative}"` 形式。ルート直下の場合は `mount_id` のみ。
@@ -116,7 +177,7 @@ impl NodeRegistry {
         secret: &[u8],
         mount_names: HashMap<PathBuf, String>,
     ) -> Self {
-        let root_entries = path_security.root_entries().to_vec();
+        let root_entries = path_security.root_entries();
 
         Self {
             path_security,
@@ -160,7 +221,7 @@ impl NodeRegistry {
             ))
         })?;
         let relative = path
-            .strip_prefix(root)
+            .strip_prefix(&root)
             .map_err(|_| AppError::path_security("相対パスの取得に失敗"))?;
         let hmac_input = format!(
             "{root}::{relative}",
@@ -262,7 +323,6 @@ impl NodeRegistry {
         let Some(root) = self.path_security.find_root_for(&resolved) else {
             return vec![];
         };
-        let root = root.to_path_buf();
         if resolved == root {
             return vec![];
         }
@@ -335,7 +395,7 @@ impl NodeRegistry {
             .find_root_for(&resolved)
             .ok_or_else(|| AppError::path_security("アーカイブがどのルートにも属しません"))?;
         let rel = resolved
-            .strip_prefix(root)
+            .strip_prefix(&root)
             .map_err(|_| AppError::path_security("相対パスの取得に失敗"))?;
         let hmac_input = format!(
             "arc::{root}::{rel}::{entry_name}",
@@ -441,7 +501,6 @@ impl NodeRegistry {
         let Some(root) = self.path_security.find_root_for(resolved) else {
             return vec![];
         };
-        let root = root.to_path_buf();
         if *resolved == root {
             return vec![];
         }

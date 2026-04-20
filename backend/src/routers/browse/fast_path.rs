@@ -49,7 +49,7 @@ pub(super) fn try_dir_index_browse_split(
         let reg = registry.lock().expect("NodeRegistry Mutex poisoned");
         let ps = reg.path_security();
         let parent_key = reg.compute_parent_path_key(path)?;
-        let root = ps.find_root_for(path).map(std::path::Path::to_path_buf)?;
+        let root = ps.find_root_for(path)?;
         let allow_symlinks = ps.is_allow_symlinks();
         let cursor_path = cursor.and_then(|c| {
             let decoded = browse_cursor::decode_cursor(c, sort).ok()?;

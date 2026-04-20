@@ -1,3 +1,8 @@
+#![allow(
+    non_snake_case,
+    reason = "日本語テスト名で振る舞いを記述する規約 (07_testing.md)"
+)]
+
 use super::scan::{PageOptions, scan_child_meta};
 use super::*;
 
@@ -538,4 +543,40 @@ fn get_ancestors_from_resolvedがget_ancestorsと同じ結果を返す() {
     let anc1 = reg1.get_ancestors(&subdir);
     let anc2 = reg2.get_ancestors_from_resolved(&subdir);
     assert_eq!(anc1, anc2);
+}
+
+// --- remove_mount (Phase D1) ---
+
+#[test]
+fn NodeRegistryはremove_mount後に該当node_idを登録から除去する() {
+    let env = TestEnv::new();
+    let mut reg = env.registry();
+    let mut mount_id_map = HashMap::new();
+    let mount_id = "deadbeefcafe0001".to_string();
+    mount_id_map.insert(mount_id.clone(), env.root.clone());
+    reg.set_mount_id_map(mount_id_map);
+
+    // 登録
+    let file_id = reg.register(&env.root.join("file.txt")).unwrap();
+    let sub_id = reg.register(&env.root.join("subdir/nested.txt")).unwrap();
+    assert!(reg.resolve(&file_id).is_ok());
+    assert!(reg.resolve(&sub_id).is_ok());
+    assert!(reg.mount_id_map().contains_key(&mount_id));
+
+    // 削除
+    reg.remove_mount(&mount_id);
+
+    // 該当 mount 配下の node_id が解決不能に
+    assert!(reg.resolve(&file_id).is_err());
+    assert!(reg.resolve(&sub_id).is_err());
+    // mount_id_map からも消える
+    assert!(!reg.mount_id_map().contains_key(&mount_id));
+}
+
+#[test]
+fn NodeRegistryはremove_mount_未登録idでnoop() {
+    let env = TestEnv::new();
+    let mut reg = env.registry();
+    // 未登録の mount_id を削除しても panic しない
+    reg.remove_mount("nonexistent_id");
 }
