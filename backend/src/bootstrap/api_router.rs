@@ -111,6 +111,10 @@ pub(crate) fn build_api_router(app_state: Arc<AppState>) -> Router {
         .route("/api/ready", get(ready))
         .route("/api/mounts", get(routers::mounts::list_mounts))
         .route(
+            "/api/mounts/reload",
+            axum::routing::post(routers::mounts::reload_mounts_handler),
+        )
+        .route(
             "/api/browse/{node_id}",
             get(routers::browse::browse_directory),
         )

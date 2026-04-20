@@ -52,7 +52,12 @@ async fn main() -> anyhow::Result<()> {
     tracing::info!("サーバー起動: {addr}");
 
     let listener = tokio::net::TcpListener::bind(addr).await?;
-    axum::serve(listener, app).await?;
+    // ConnectInfo<SocketAddr> を抽出可能にする（`/api/mounts/reload` の loopback 判定で使用）
+    axum::serve(
+        listener,
+        app.into_make_service_with_connect_info::<SocketAddr>(),
+    )
+    .await?;
 
     Ok(())
 }
