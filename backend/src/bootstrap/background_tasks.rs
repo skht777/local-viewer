@@ -8,14 +8,45 @@
 //! - `scan_handle` panic 時は `FileWatcher` 起動を中止し `scan_complete=false`
 //!   のまま維持（partial init 防止）
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use crate::services;
+use crate::services::dir_index::DirIndex;
+use crate::services::indexer::{Indexer, WalkCallbackArgs};
 use crate::services::mount_cleanup::{enumerate_stale_mount_ids, perform_stale_cleanup};
+use crate::services::path_security::PathSecurity;
 
 use super::BackgroundContext;
+
+/// 1 マウント分のスキャン結果
+///
+/// - `scan_ok`: `incremental_scan` / `scan_directory` が `Ok` を返したか
+/// - `dir_index_ok`: `DirIndex` への書き込み経路 (`begin_bulk` + `ingest` + `flush`) が
+///   すべて成功したか
+///
+/// Phase C1 では**本 struct は集約のみで使用し、Step 3/4 の分岐には使わない**
+/// （振る舞い不変）。Phase C2 で readiness / fingerprint ガードに統合する。
+#[derive(Debug, Clone, Copy, Default)]
+#[allow(
+    dead_code,
+    reason = "Phase C1 では集約のみ。Phase C2 で readiness gate に統合"
+)]
+pub(super) struct MountScanOutcome {
+    pub(super) scan_ok: bool,
+    pub(super) dir_index_ok: bool,
+}
+
+impl MountScanOutcome {
+    #[allow(
+        dead_code,
+        reason = "Phase C1 では aggregate_scan_readiness 内のみで使用、Phase C2 で本番経路にも使う"
+    )]
+    pub(super) fn is_ok(self) -> bool {
+        self.scan_ok && self.dir_index_ok
+    }
+}
 
 /// ウォームスタート判定 + バックグラウンドスキャンを起動する
 #[allow(
@@ -50,7 +81,7 @@ pub(crate) fn spawn_background_tasks(bg: BackgroundContext) {
     } else {
         enumerate_stale_mount_ids(&bg.indexer, &mount_id_refs)
     };
-    drop(mount_id_refs); // 以降で使わないので早期 drop
+    drop(mount_id_refs);
     if !stale_mount_ids.is_empty() {
         tracing::info!(
             stale_count = stale_mount_ids.len(),
@@ -109,78 +140,43 @@ pub(crate) fn spawn_background_tasks(bg: BackgroundContext) {
             }
         }
 
-        // Step 2: 既存の per-mount scan ループ
+        // Step 2: per-mount scan ループ
+        // 各 mount の outcome を集約する（Phase C1 では集約のみ、
+        // Phase C2 で readiness/fingerprint gate に使う）
+        let mut mount_outcomes: Vec<Option<MountScanOutcome>> =
+            Vec::with_capacity(scan_mounts.len());
         for (mount_id, root) in scan_mounts {
             let indexer = Arc::clone(&bg.indexer);
             let dir_index = Arc::clone(&bg.dir_index);
             let path_security = Arc::clone(&bg.path_security);
+            let mount_id_owned = mount_id.clone();
 
             let result = tokio::task::spawn_blocking(move || {
-                if is_warm_start {
-                    // 差分スキャン + DirIndex コールバック
-                    let mut bulk = match dir_index.begin_bulk() {
-                        Ok(b) => Some(b),
-                        Err(e) => {
-                            tracing::warn!("DirIndex begin_bulk 失敗 ({mount_id}): {e}");
-                            None
-                        }
-                    };
-                    let result = indexer.incremental_scan(
-                        &root,
-                        &path_security,
-                        &mount_id,
-                        workers_per_mount,
-                        Some(&mut |args| {
-                            if let Some(bulk) = bulk.as_mut() {
-                                let _ = bulk.ingest_walk_entry(&args);
-                            }
-                        }),
-                    );
-                    if let Some(mut bulk) = bulk {
-                        if let Err(e) = bulk.flush() {
-                            tracing::warn!("DirIndex flush 失敗 ({mount_id}): {e}");
-                        }
-                    }
-                    if let Err(e) = &result {
-                        tracing::error!("Incremental scan 失敗 ({mount_id}): {e}");
-                    }
-                } else {
-                    // フルスキャン + DirIndex コールバック
-                    let mut bulk = match dir_index.begin_bulk() {
-                        Ok(b) => Some(b),
-                        Err(e) => {
-                            tracing::warn!("DirIndex begin_bulk 失敗 ({mount_id}): {e}");
-                            None
-                        }
-                    };
-                    let result = indexer.scan_directory(
-                        &root,
-                        &path_security,
-                        &mount_id,
-                        workers_per_mount,
-                        Some(&mut |args| {
-                            if let Some(bulk) = bulk.as_mut() {
-                                let _ = bulk.ingest_walk_entry(&args);
-                            }
-                        }),
-                    );
-                    if let Some(mut bulk) = bulk {
-                        if let Err(e) = bulk.flush() {
-                            tracing::warn!("DirIndex flush 失敗 ({mount_id}): {e}");
-                        }
-                    }
-                    if let Err(e) = &result {
-                        tracing::error!("Full scan 失敗 ({mount_id}): {e}");
-                    }
-                }
-                tracing::info!("スキャン完了: {mount_id}");
+                run_mount_scan(
+                    is_warm_start,
+                    &mount_id_owned,
+                    &root,
+                    &indexer,
+                    &dir_index,
+                    &path_security,
+                    workers_per_mount,
+                )
             })
             .await;
 
-            if let Err(e) = result {
-                tracing::error!("バックグラウンドスキャンタスクがパニック: {e}");
-            }
+            let outcome_opt = match result {
+                Ok(outcome) => Some(outcome),
+                Err(e) => {
+                    tracing::error!("バックグラウンドスキャンタスクがパニック ({mount_id}): {e}");
+                    None
+                }
+            };
+            mount_outcomes.push(outcome_opt);
         }
+
+        // Phase C1: mount_outcomes は集約のみで使用しない
+        // （Phase C2 で mark_ready / mark_full_scan_done / fingerprint gate に統合）
+        let _ = &mount_outcomes;
 
         // Step 3: 全マウントスキャン完了後にフラグを設定
         if !is_warm_start {
@@ -234,4 +230,179 @@ pub(crate) fn spawn_background_tasks(bg: BackgroundContext) {
             }
         }
     });
+}
+
+/// 1 マウント分のスキャンを実行する。**本関数は `spawn_blocking` 内で呼ぶ**。
+///
+/// - `DirIndex` の `begin_bulk` → `ingest_walk_entry` (walk callback) → `flush` の
+///   各失敗を個別に補足し、`dir_index_ok` フラグへ反映する
+///   （従来の `let _ = bulk.ingest_walk_entry(..)` の握りつぶしを廃止、
+///   失敗時は warn ログを追加で出力する）
+/// - `scan_ok` は `incremental_scan` / `scan_directory` の `Result` から
+/// - callback は内側スコープに閉じ込めて `bulk_opt` の可変借用を解放してから
+///   `flush` で move out する（borrow-check 対応）
+/// - 返値 `MountScanOutcome { scan_ok, dir_index_ok }` を呼び出し側で集約
+#[allow(
+    clippy::too_many_arguments,
+    reason = "scan 組み立てに必要な Arc/参照をまとめるため、現状の閾値超過を許容"
+)]
+fn run_mount_scan(
+    is_warm_start: bool,
+    mount_id: &str,
+    root: &Path,
+    indexer: &Indexer,
+    dir_index: &DirIndex,
+    path_security: &PathSecurity,
+    workers_per_mount: usize,
+) -> MountScanOutcome {
+    let (mut bulk_opt, begin_bulk_ok) = match dir_index.begin_bulk() {
+        Ok(b) => (Some(b), true),
+        Err(e) => {
+            tracing::warn!("DirIndex begin_bulk 失敗 ({mount_id}): {e}");
+            (None, false)
+        }
+    };
+
+    let mut ingest_ok = true;
+    let scan_result = {
+        let mut callback = |args: WalkCallbackArgs| {
+            if let Some(bulk) = bulk_opt.as_mut() {
+                if let Err(e) = bulk.ingest_walk_entry(&args) {
+                    tracing::warn!("DirIndex ingest 失敗 ({mount_id}): {e}");
+                    ingest_ok = false;
+                }
+            }
+        };
+        // 成否のみ集約するため Ok 値は捨てる
+        //   incremental_scan: Result<usize, IndexerError>
+        //   scan_directory:   Result<(usize, WalkReport), IndexerError>
+        if is_warm_start {
+            indexer
+                .incremental_scan(
+                    root,
+                    path_security,
+                    mount_id,
+                    workers_per_mount,
+                    Some(&mut callback),
+                )
+                .map(|_| ())
+        } else {
+            indexer
+                .scan_directory(
+                    root,
+                    path_security,
+                    mount_id,
+                    workers_per_mount,
+                    Some(&mut callback),
+                )
+                .map(|_| ())
+        }
+    }; // ← ここで callback が drop し、bulk_opt と ingest_ok の借用解放
+    let scan_ok = scan_result.is_ok();
+    if let Err(e) = &scan_result {
+        let label = if is_warm_start {
+            "Incremental scan"
+        } else {
+            "Full scan"
+        };
+        tracing::error!("{label} 失敗 ({mount_id}): {e}");
+    }
+
+    let flush_ok = if let Some(mut bulk) = bulk_opt {
+        match bulk.flush() {
+            Ok(()) => true,
+            Err(e) => {
+                tracing::warn!("DirIndex flush 失敗 ({mount_id}): {e}");
+                false
+            }
+        }
+    } else {
+        // begin_bulk 失敗時は flush が実行されないので false 扱い
+        false
+    };
+
+    tracing::info!("スキャン完了: {mount_id}");
+    MountScanOutcome {
+        scan_ok,
+        dir_index_ok: begin_bulk_ok && ingest_ok && flush_ok,
+    }
+}
+
+/// 集約ロジックの純粋関数版（unit test 用の seam）
+///
+/// - `cleanup_ok`: Step 1 の stale cleanup 全成功可否
+/// - `outcomes`: 各マウントの `MountScanOutcome`（`spawn_blocking` が panic した場合は `None`）
+/// - 返値: `(cleanup_ok, scans_ok, all_ok)` タプル
+/// - **空配列セマンティクス**: `outcomes.len() == 0` は「スキャン対象 0 件 = no-op success」
+///   として `scans_ok == true` を返す
+#[allow(
+    dead_code,
+    reason = "Phase C1 では unit test のみで使用、Phase C2 で本番経路に統合"
+)]
+pub(super) fn aggregate_scan_readiness(
+    cleanup_ok: bool,
+    outcomes: &[Option<MountScanOutcome>],
+) -> (bool, bool, bool) {
+    let scans_ok = outcomes
+        .iter()
+        .all(|o| o.is_some_and(MountScanOutcome::is_ok));
+    let all_ok = cleanup_ok && scans_ok;
+    (cleanup_ok, scans_ok, all_ok)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn ok_outcome() -> MountScanOutcome {
+        MountScanOutcome {
+            scan_ok: true,
+            dir_index_ok: true,
+        }
+    }
+
+    #[test]
+    fn aggregate_scan_readinessは全成功でtrueを返す() {
+        let outcomes = vec![Some(ok_outcome()), Some(ok_outcome())];
+        let (cleanup, scans, all) = aggregate_scan_readiness(true, &outcomes);
+        assert!(cleanup && scans && all);
+    }
+
+    #[test]
+    fn aggregate_scan_readinessはcleanup失敗でall_ok_falseになる() {
+        let outcomes = vec![Some(ok_outcome())];
+        let (cleanup, scans, all) = aggregate_scan_readiness(false, &outcomes);
+        assert!(!cleanup);
+        assert!(scans);
+        assert!(!all);
+    }
+
+    #[test]
+    fn aggregate_scan_readinessはpanic含有でscans_ok_falseになる() {
+        let outcomes = vec![Some(ok_outcome()), None];
+        let (cleanup, scans, all) = aggregate_scan_readiness(true, &outcomes);
+        assert!(cleanup);
+        assert!(!scans);
+        assert!(!all);
+    }
+
+    #[test]
+    fn aggregate_scan_readinessはdir_index_ok_falseでscans_ok_falseになる() {
+        let outcomes = vec![Some(MountScanOutcome {
+            scan_ok: true,
+            dir_index_ok: false,
+        })];
+        let (_, scans, all) = aggregate_scan_readiness(true, &outcomes);
+        assert!(!scans);
+        assert!(!all);
+    }
+
+    #[test]
+    fn aggregate_scan_readinessはmount0件でno_op_successになる() {
+        // 空 outcomes → scans_ok=true (vacuous)
+        // mount_id_map が空のケースは既存動作通り warning ログ済みなので
+        // ここで false にしても情報価値はない
+        let (cleanup, scans, all) = aggregate_scan_readiness(true, &[]);
+        assert!(cleanup && scans && all);
+    }
 }
