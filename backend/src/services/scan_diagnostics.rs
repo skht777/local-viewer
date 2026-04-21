@@ -26,10 +26,16 @@ use crate::services::parallel_walk::{WalkErrorKind, WalkReport};
 /// - `cleanup_ok` / `scans_ok` / `all_ok`: readiness gate の 3 値
 /// - `fingerprint`: 起動時 fingerprint 操作の結果 (NotNeeded/Saved/Cleared/ClearFailed/SaveFailed)
 /// - `mounts`: 各マウントの成否。cold start のみ `walk` が `Some`
+/// - `cancelled`: いずれかの mount で **per-mount scan/rebuild** が
+///   `IndexerError::Cancelled` により途中終了した、または per-mount ループ
+///   先頭 break で shutdown を検知した場合 true。起動時 stale cleanup の cancel
+///   （`perform_full_stale_cleanup` は `bool` のみ返す）は本フィールドでは
+///   追跡しない。cleanup の cancel は `cleanup_ok = false` で表現され、
+///   本フィールドとは独立
 #[derive(Debug, Clone, Serialize)]
 #[allow(
     clippy::struct_excessive_bools,
-    reason = "readiness gate の 3 値 + is_warm_start は起動時診断の 4 軸で semantic 的に分離されたフィールド"
+    reason = "readiness gate の 3 値 + is_warm_start + cancelled は起動時診断の独立軸で semantic 的に分離"
 )]
 pub(crate) struct ScanDiagnostics {
     pub completed_at_ms: u64,
@@ -37,6 +43,7 @@ pub(crate) struct ScanDiagnostics {
     pub cleanup_ok: bool,
     pub scans_ok: bool,
     pub all_ok: bool,
+    pub cancelled: bool,
     pub fingerprint: FingerprintAction,
     pub mounts: Vec<MountDiagnostic>,
 }
@@ -62,12 +69,18 @@ pub(crate) enum FingerprintAction {
 ///
 /// - `panicked`: `spawn_blocking` が panic して outcome が `None` だった場合 true
 /// - `walk`: cold start のみ収集。**warm start (incremental) では常に `None`** (API 契約)
+/// - `cancelled`: 当該 mount の scan/rebuild が `IndexerError::Cancelled` を返したか
 #[derive(Debug, Clone, Serialize)]
+#[allow(
+    clippy::struct_excessive_bools,
+    reason = "per-mount 診断の 4 軸 (scan_ok / dir_index_ok / panicked / cancelled) は独立した失敗軸で semantic 的に分離"
+)]
 pub(crate) struct MountDiagnostic {
     pub mount_id: String,
     pub scan_ok: bool,
     pub dir_index_ok: bool,
     pub panicked: bool,
+    pub cancelled: bool,
     pub walk: Option<WalkMetrics>,
 }
 
@@ -272,5 +285,29 @@ mod tests {
             decide_fingerprint_action(false, false, false, false),
             FingerprintAction::NotNeeded
         );
+    }
+
+    #[test]
+    fn ScanDiagnosticsのJSONにcancelledフィールドが含まれる() {
+        let diag = ScanDiagnostics {
+            completed_at_ms: 1,
+            is_warm_start: false,
+            cleanup_ok: true,
+            scans_ok: false,
+            all_ok: false,
+            cancelled: true,
+            fingerprint: FingerprintAction::NotNeeded,
+            mounts: vec![MountDiagnostic {
+                mount_id: "aaaaaaaaaaaaaaaa".to_string(),
+                scan_ok: false,
+                dir_index_ok: false,
+                panicked: false,
+                cancelled: true,
+                walk: None,
+            }],
+        };
+        let json = serde_json::to_value(&diag).expect("serialize");
+        assert_eq!(json["cancelled"], serde_json::json!(true));
+        assert_eq!(json["mounts"][0]["cancelled"], serde_json::json!(true));
     }
 }

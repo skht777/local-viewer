@@ -79,6 +79,8 @@ pub(crate) async fn rebuild_index(
         let _guard = guard;
         let mut all_success = true;
         let mut mount_diagnostics: Vec<MountDiagnostic> = Vec::with_capacity(mount_entries.len());
+        // ループ先頭 break 経路の shutdown を取りこぼさないため、run 全体で追跡する
+        let mut was_cancelled = false;
 
         for (mount_id, root) in &mount_entries {
             // mount ループ先頭で shutdown 検知 → 残 mount を skip
@@ -87,6 +89,7 @@ pub(crate) async fn rebuild_index(
                     "rebuild: shutdown_token cancel を検知、残 mount を skip ({mount_id})"
                 );
                 all_success = false;
+                was_cancelled = true;
                 break;
             }
 
@@ -109,26 +112,31 @@ pub(crate) async fn rebuild_index(
             })
             .await;
 
-            let (scan_ok, panicked) = match result {
+            let (scan_ok, panicked, mount_cancelled) = match result {
                 Ok(Ok(count)) => {
                     tracing::info!(
                         "インデックスリビルド完了: mount_id={mount_id_for_log}, entries={count}"
                     );
-                    (true, false)
+                    (true, false, false)
+                }
+                Ok(Err(crate::services::indexer::IndexerError::Cancelled)) => {
+                    all_success = false;
+                    tracing::info!("rebuild cancelled due to shutdown: {mount_id_for_log}");
+                    (false, false, true)
                 }
                 Ok(Err(e)) => {
                     all_success = false;
                     tracing::error!(
                         "インデックスリビルドエラー: mount_id={mount_id_for_log}, error={e}"
                     );
-                    (false, false)
+                    (false, false, false)
                 }
                 Err(e) => {
                     all_success = false;
                     tracing::error!(
                         "リビルドタスク実行エラー: mount_id={mount_id_for_log}, error={e}"
                     );
-                    (false, true)
+                    (false, true, false)
                 }
             };
 
@@ -138,6 +146,7 @@ pub(crate) async fn rebuild_index(
                 // rebuild は DirIndex を触らず scan 成否が全てを決めるため同値扱い
                 dir_index_ok: scan_ok,
                 panicked,
+                cancelled: mount_cancelled,
                 // rebuild 経路は WalkReport を集計しないため walk metrics は常に None
                 walk: None,
             });
@@ -172,6 +181,8 @@ pub(crate) async fn rebuild_index(
         let completed_at_ms = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map_or(0, |d| d.as_millis() as u64);
+        // run-level was_cancelled + per-mount cancelled の or で集約
+        let cancelled = was_cancelled || mount_diagnostics.iter().any(|m| m.cancelled);
         let diagnostics = ScanDiagnostics {
             completed_at_ms,
             // rebuild は cold start 相当のフルスキャンで動作（warm ではない）
@@ -179,6 +190,7 @@ pub(crate) async fn rebuild_index(
             cleanup_ok: true,
             scans_ok: all_success,
             all_ok: all_success,
+            cancelled,
             fingerprint: fingerprint_action,
             mounts: mount_diagnostics,
         };

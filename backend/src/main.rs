@@ -551,12 +551,14 @@ mod tests {
             cleanup_ok: true,
             scans_ok: true,
             all_ok: true,
+            cancelled: false,
             fingerprint: FingerprintAction::Saved,
             mounts: vec![MountDiagnostic {
                 mount_id: "0123456789abcdef".to_string(),
                 scan_ok: true,
                 dir_index_ok: true,
                 panicked: false,
+                cancelled: false,
                 walk: None,
             }],
         }
@@ -610,6 +612,7 @@ mod tests {
                 scan_ok: false,
                 dir_index_ok: true,
                 panicked: false,
+                cancelled: false,
                 walk: None,
             }],
             ..all_ok_report()
@@ -639,6 +642,7 @@ mod tests {
                 scan_ok: true,
                 dir_index_ok: false,
                 panicked: false,
+                cancelled: false,
                 walk: None,
             }],
             ..all_ok_report()
@@ -665,6 +669,7 @@ mod tests {
                 scan_ok: true,
                 dir_index_ok: false,
                 panicked: false,
+                cancelled: false,
                 walk: None,
             }],
             ..all_ok_report()

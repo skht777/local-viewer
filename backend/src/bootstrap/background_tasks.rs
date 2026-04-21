@@ -27,10 +27,13 @@ use super::BackgroundContext;
 /// - `scan_ok`: `incremental_scan` / `scan_directory` が `Ok` を返したか
 /// - `dir_index_ok`: `DirIndex` への書き込み経路 (`begin_bulk` + `ingest` + `flush`) が
 ///   すべて成功したか
+/// - `cancelled`: per-mount scan が `IndexerError::Cancelled` を返した場合 true
+///   (`scan_ok` / `dir_index_ok` は false のまま)
 #[derive(Debug, Clone, Copy, Default)]
 pub(super) struct MountScanOutcome {
     pub(super) scan_ok: bool,
     pub(super) dir_index_ok: bool,
+    pub(super) cancelled: bool,
 }
 
 impl MountScanOutcome {
@@ -149,10 +152,13 @@ pub(crate) fn spawn_background_tasks(bg: BackgroundContext) -> tokio::task::Join
         //   WalkReport を返さないため API 契約上常に null）
         let mut mount_results: Vec<(String, Option<MountScanOutcome>, Option<WalkMetrics>)> =
             Vec::with_capacity(scan_mounts.len());
+        // ループ先頭 break 経路の shutdown を取りこぼさないため、run 全体で追跡する
+        let mut was_cancelled = false;
         for (mount_id, root) in scan_mounts {
             // mount ループ先頭で shutdown 検知 → 残 mount を skip
             if shutdown_token_for_scan.is_cancelled() {
                 tracing::info!("scan: shutdown_token cancel を検知、残 mount を skip ({mount_id})");
+                was_cancelled = true;
                 break;
             }
 
@@ -253,6 +259,7 @@ pub(crate) fn spawn_background_tasks(bg: BackgroundContext) -> tokio::task::Join
             cleanup_ok,
             scans_ok,
             all_ok,
+            was_cancelled,
             fingerprint_action,
             mount_results,
         );
@@ -406,6 +413,10 @@ fn run_mount_scan(
         }
     }; // ← ここで callback が drop し、bulk_opt と ingest_ok の借用解放
     let scan_ok = scan_result.is_ok();
+    let cancelled_hit = matches!(
+        &scan_result,
+        Err(crate::services::indexer::IndexerError::Cancelled)
+    );
     if let Err(e) = &scan_result {
         let label = if is_warm_start {
             "Incremental scan"
@@ -433,6 +444,7 @@ fn run_mount_scan(
         MountScanOutcome {
             scan_ok,
             dir_index_ok: begin_bulk_ok && ingest_ok && flush_ok,
+            cancelled: cancelled_hit,
         },
         walk_metrics,
     )
@@ -448,33 +460,42 @@ fn run_mount_scan(
     clippy::fn_params_excessive_bools,
     reason = "readiness gate の集計値 3 + warm フラグ = 4 軸は診断出力の意味的に分離されたフィールド"
 )]
+#[allow(
+    clippy::too_many_arguments,
+    reason = "scan 集約時に保持する状態 (warm フラグ + readiness gate 3 + was_cancelled + fingerprint + mount_results) を unit test から個別に注入するため引数列を維持"
+)]
 fn build_scan_diagnostics(
     is_warm_start: bool,
     cleanup_ok: bool,
     scans_ok: bool,
     all_ok: bool,
+    was_cancelled: bool,
     fingerprint: FingerprintAction,
     mount_results: Vec<(String, Option<MountScanOutcome>, Option<WalkMetrics>)>,
 ) -> ScanDiagnostics {
     let completed_at_ms = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map_or(0, |d| u64::try_from(d.as_millis()).unwrap_or(u64::MAX));
-    let mounts = mount_results
+    let mounts: Vec<MountDiagnostic> = mount_results
         .into_iter()
         .map(|(mount_id, outcome, walk)| MountDiagnostic {
             mount_id,
             scan_ok: outcome.is_some_and(|o| o.scan_ok),
             dir_index_ok: outcome.is_some_and(|o| o.dir_index_ok),
             panicked: outcome.is_none(),
+            cancelled: outcome.is_some_and(|o| o.cancelled),
             walk,
         })
         .collect();
+    // run-level was_cancelled (ループ先頭 break 経路) と per-mount Err(Cancelled) の or 集約
+    let cancelled = was_cancelled || mounts.iter().any(|m| m.cancelled);
     ScanDiagnostics {
         completed_at_ms,
         is_warm_start,
         cleanup_ok,
         scans_ok,
         all_ok,
+        cancelled,
         fingerprint,
         mounts,
     }
@@ -499,6 +520,10 @@ pub(super) fn aggregate_scan_readiness(
 }
 
 #[cfg(test)]
+#[allow(
+    non_snake_case,
+    reason = "日本語テスト名で MountDiagnostic を PascalCase 残存（規約 07_testing.md）"
+)]
 mod tests {
     use super::*;
 
@@ -506,6 +531,7 @@ mod tests {
         MountScanOutcome {
             scan_ok: true,
             dir_index_ok: true,
+            cancelled: false,
         }
     }
 
@@ -539,6 +565,7 @@ mod tests {
         let outcomes = vec![Some(MountScanOutcome {
             scan_ok: true,
             dir_index_ok: false,
+            cancelled: false,
         })];
         let (_, scans, all) = aggregate_scan_readiness(true, &outcomes);
         assert!(!scans);
@@ -552,5 +579,88 @@ mod tests {
         // ここで false にしても情報価値はない
         let (cleanup, scans, all) = aggregate_scan_readiness(true, &[]);
         assert!(cleanup && scans && all);
+    }
+
+    fn cancelled_outcome() -> MountScanOutcome {
+        MountScanOutcome {
+            scan_ok: false,
+            dir_index_ok: false,
+            cancelled: true,
+        }
+    }
+
+    #[test]
+    fn build_scan_diagnosticsはper_mount_cancelledをMountDiagnosticに転写する() {
+        let results = vec![(
+            "aaaaaaaaaaaaaaaa".to_string(),
+            Some(cancelled_outcome()),
+            None,
+        )];
+        let diag = build_scan_diagnostics(
+            false,
+            true,
+            false,
+            false,
+            false,
+            FingerprintAction::NotNeeded,
+            results,
+        );
+        assert!(diag.cancelled, "mounts[0].cancelled の any 集約で true");
+        assert_eq!(diag.mounts.len(), 1);
+        assert!(diag.mounts[0].cancelled);
+    }
+
+    #[test]
+    fn build_scan_diagnosticsは全mount正常でcancelled_falseを保つ() {
+        let results = vec![("aaaaaaaaaaaaaaaa".to_string(), Some(ok_outcome()), None)];
+        let diag = build_scan_diagnostics(
+            false,
+            true,
+            true,
+            true,
+            false,
+            FingerprintAction::Saved,
+            results,
+        );
+        assert!(!diag.cancelled);
+        assert!(!diag.mounts[0].cancelled);
+    }
+
+    #[test]
+    fn build_scan_diagnosticsは初mount前break経路でもcancelled_trueを返す() {
+        // 空 mounts で was_cancelled=true → ScanDiagnostics.cancelled=true
+        // (ループ先頭 break で mount が 1 件も処理されなかった場合を再現)
+        let diag = build_scan_diagnostics(
+            false,
+            true,
+            true, // vacuous
+            false,
+            true, // was_cancelled
+            FingerprintAction::NotNeeded,
+            vec![],
+        );
+        assert!(diag.cancelled);
+        assert!(diag.mounts.is_empty());
+    }
+
+    #[test]
+    fn build_scan_diagnosticsは途中break経路でもcancelled_trueを返す() {
+        // 正常完了した mount だけ mount_results に載り、残 mount は未処理
+        // (ループ先頭 break 経路)
+        let results = vec![("aaaaaaaaaaaaaaaa".to_string(), Some(ok_outcome()), None)];
+        let diag = build_scan_diagnostics(
+            false,
+            true,
+            false,
+            false,
+            true, // was_cancelled
+            FingerprintAction::NotNeeded,
+            results,
+        );
+        assert!(diag.cancelled, "was_cancelled だけで true になるべき");
+        assert!(
+            !diag.mounts[0].cancelled,
+            "正常完了 mount は cancelled=false のまま"
+        );
     }
 }
