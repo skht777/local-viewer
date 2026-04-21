@@ -43,6 +43,12 @@ pub(crate) enum DirIndexError {
     Other(String),
 }
 
+impl From<crate::services::path_keys::PathKeyError> for DirIndexError {
+    fn from(err: crate::services::path_keys::PathKeyError) -> Self {
+        Self::Other(err.to_string())
+    }
+}
+
 /// ディレクトリエントリ
 #[derive(Debug)]
 pub(crate) struct DirEntry {

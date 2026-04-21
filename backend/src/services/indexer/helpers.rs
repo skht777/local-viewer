@@ -11,6 +11,7 @@ use rusqlite::{Connection, params};
 
 use crate::services::extensions::classify_for_index;
 use crate::services::parallel_walk::WalkEntry;
+use crate::services::path_keys::mount_scope_range;
 
 use super::{IndexEntry, IndexerError, WalkCallbackArgs};
 
@@ -403,43 +404,6 @@ fn upsert_entry(
 }
 
 // --- データ読み込み ---
-
-/// `mount_id` 配下の entries を range scan するための `(lo, hi)` を返す
-///
-/// - **invariant**: `mount_id` は lowercase hex 16 桁 (`[0-9a-f]{16}`) を想定
-///   （HMAC-SHA256 先頭 16 桁で生成される前提、`node_registry::build_mount_id` と整合）
-/// - `entries.relative_path` の collation 既定 (BINARY) での range scan を前提に
-///   lexicographic な範囲 `[lo, hi)` を返す
-/// - `/` (ASCII 0x2F) の次の文字 `0` (0x30) で終端を閉じる
-///   （`mount_id` に `/` `0` より小さい文字が含まれないことが invariant で保証される）
-/// - invariant 違反 (空 / 長さ不一致 / 非 hex) は `IndexerError::Other` で reject
-///   することで、`mount1/photos` 等のネスト prefix 経路との混同を防ぐ
-pub(crate) fn mount_scope_range(mount_id: &str) -> Result<(String, String), IndexerError> {
-    fn is_valid(id: &str) -> bool {
-        id.len() == 16 && id.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
-    }
-    if !is_valid(mount_id) {
-        return Err(IndexerError::Other(format!(
-            "mount_id invariant 違反 (lowercase hex 16 桁): len={}",
-            mount_id.len()
-        )));
-    }
-    Ok((format!("{mount_id}/"), format!("{mount_id}0")))
-}
-
-/// search の `scope_prefix` 用の range `(lo, hi)` を返す
-///
-/// - 入力: ワイルドカード非含みの literal prefix。末尾 `/` を含めない生の prefix
-///   を想定（例: `mount1/photos`, `mount/dir_100%`）
-/// - `(lo, hi)` = `(format!("{prefix}/"), format!("{prefix}0"))`
-///   - ASCII 順で `/` (0x2F) の次は `0` (0x30)、`{prefix}/` 以降のすべての
-///     キーはこの半開区間に収まる（`{prefix}0` は `{prefix}/...` よりも大きい）
-/// - `mount_scope_range` と違い、この関数は invariant を課さない
-///   （`mount_id` 専用ではないため）
-/// - `%` `_` `\` を含む literal prefix でも escape 不要で range に乗る
-pub(super) fn prefix_scope_range(prefix: &str) -> (String, String) {
-    (format!("{prefix}/"), format!("{prefix}0"))
-}
 
 /// 既存エントリの (`relative_path`, `mtime_ns`) を `BTreeMap` に読み込む
 ///

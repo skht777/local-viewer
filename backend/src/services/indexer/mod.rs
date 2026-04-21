@@ -13,8 +13,8 @@ mod scan;
 
 pub(crate) use helpers::SearchHit;
 // DirIndex など他 service から `{mount_id}/` の range scan キーを組み立てるための
-// 再エクスポート。invariant (16 桁 lowercase hex) は helpers 側で強制。
-pub(crate) use helpers::mount_scope_range;
+// 再エクスポート。invariant (16 桁 lowercase hex) は `path_keys` 側で強制。
+pub(crate) use crate::services::path_keys::mount_scope_range;
 
 /// 検索パラメータ
 pub(crate) struct SearchParams<'a> {
@@ -49,6 +49,12 @@ pub(crate) enum IndexerError {
     /// - 呼び出し側は readiness マークや fingerprint 更新を skip すべき
     #[error("scan cancelled due to shutdown")]
     Cancelled,
+}
+
+impl From<crate::services::path_keys::PathKeyError> for IndexerError {
+    fn from(err: crate::services::path_keys::PathKeyError) -> Self {
+        Self::Other(err.to_string())
+    }
 }
 
 /// 検索インデックスに登録するエントリ
@@ -191,7 +197,9 @@ impl Indexer {
         let fetch_limit = params.limit + 1;
 
         // scope_prefix を range `(lo, hi)` に変換（BINARY range scan で SEARCH USING INDEX）
-        let scope_range = params.scope_prefix.map(helpers::prefix_scope_range);
+        let scope_range = params
+            .scope_prefix
+            .map(crate::services::path_keys::prefix_scope_range);
 
         let mut hits = search_combined(
             &conn,

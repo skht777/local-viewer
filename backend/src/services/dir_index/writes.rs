@@ -7,8 +7,9 @@
 
 use rusqlite::{Connection, params};
 
-use crate::services::indexer::{WalkCallbackArgs, mount_scope_range};
+use crate::services::indexer::WalkCallbackArgs;
 use crate::services::natural_sort::encode_sort_key;
+use crate::services::path_keys::mount_scope_range;
 
 use super::sort_queries::{build_parent_path, classify_kind};
 use super::{BATCH_SIZE, BulkInserter, DirIndex, DirIndexError};
@@ -118,8 +119,7 @@ impl DirIndex {
     /// - 返値: 削除した `dir_entries` の行数
     pub(crate) fn delete_mount_entries(&self, mount_id: &str) -> Result<usize, DirIndexError> {
         // invariant 検証のためだけに mount_scope_range を呼ぶ（hi も再利用）
-        let (_, hi) = mount_scope_range(mount_id)
-            .map_err(|e| DirIndexError::Other(format!("mount_id invariant 違反: {e}")))?;
+        let (_, hi) = mount_scope_range(mount_id)?;
         let lo = mount_id.to_owned();
         let conn = self.connect()?;
         let tx = conn.unchecked_transaction()?;

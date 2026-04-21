@@ -38,7 +38,7 @@ use std::time::{Duration, Instant};
 
 use rusqlite::{Connection, params};
 
-use super::{Indexer, SearchParams, helpers};
+use super::{Indexer, SearchParams};
 
 // --- 乱数 (再現性のため内製 LCG) ---
 
@@ -290,7 +290,7 @@ fn run_scenario(config: &ScenarioConfig) {
     );
 
     // EXPLAIN QUERY PLAN 出力
-    let (scope_lo, scope_hi) = helpers::prefix_scope_range(config.mount_ids[0]);
+    let (scope_lo, scope_hi) = crate::services::path_keys::prefix_scope_range(config.mount_ids[0]);
     let like_pattern = "%ab%";
     eprintln!("\n  --- EXPLAIN QUERY PLAN (2-char LIKE fallback) ---");
     let sql_no_scope = "SELECT relative_path, name, kind, size_bytes FROM entries WHERE 1=1 AND (name LIKE ?1 ESCAPE '\\' OR relative_path LIKE ?1 ESCAPE '\\') LIMIT ?2 OFFSET ?3";

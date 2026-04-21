@@ -30,6 +30,11 @@ pub(crate) mod natural_sort;
 pub(crate) mod node_registry;
 #[allow(dead_code, reason = "Phase 6a の Indexer スキャンで使用")]
 pub(crate) mod parallel_walk;
+#[allow(
+    dead_code,
+    reason = "indexer / dir_index 双方から参照される path key ヘルパー"
+)]
+pub(crate) mod path_keys;
 #[allow(dead_code, reason = "Phase 4+ で追加メソッドを使用")]
 pub(crate) mod path_security;
 #[allow(
