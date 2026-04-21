@@ -1,6 +1,6 @@
 //! rebuild 実行中タスクの追跡ハンドル
 //!
-//! - `AppState.rebuild_task: Arc<Mutex<Option<Arc<RebuildTaskHandle>>>>` に格納
+//! - `AppState.shutdown.rebuild_task: Arc<Mutex<Option<Arc<RebuildTaskHandle>>>>` に格納
 //! - `generation` で「自分が入れた slot だけ clear」する race 回避を実現
 //! - `abort` で即座にキャンセル可能（`JoinHandle::abort_handle` 経由）
 //! - `join` は drain 側が `take()` で奪って `await` する。wrapper task が

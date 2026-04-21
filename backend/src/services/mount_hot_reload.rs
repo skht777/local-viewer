@@ -60,7 +60,7 @@ pub(crate) async fn reload_mounts(
     new_config: MountConfig,
 ) -> Result<MountReloadResult, AppError> {
     // Step 0: shutdown 中なら即時 503 を返す（冒頭 check）
-    if state.shutdown_token.is_cancelled() {
+    if state.shutdown.token.is_cancelled() {
         return Err(AppError::ShutdownInProgress(
             "shutdown 中のため mounts reload を拒否".to_string(),
         ));
@@ -117,7 +117,7 @@ pub(crate) async fn reload_mounts(
         let dir_index = Arc::clone(&state.dir_index);
         let ids_for_task = removed_ids.clone();
         // `shutdown_token` を clone して `spawn_blocking` 内で参照可能にする
-        let cancel_token = state.shutdown_token.clone();
+        let cancel_token = state.shutdown.token.clone();
         match tokio::task::spawn_blocking(move || {
             let cancelled_fn = || cancel_token.is_cancelled();
             perform_full_stale_cleanup(&ids_for_task, &indexer, &dir_index, &cancelled_fn)
@@ -134,7 +134,7 @@ pub(crate) async fn reload_mounts(
 
     // cleanup 直後の check: cleanup 中に cancel された場合は 503 に寄せる
     //   （cleanup が部分成功でも成功扱いを避ける、shutdown を観測から明示）
-    if state.shutdown_token.is_cancelled() {
+    if state.shutdown.token.is_cancelled() {
         return Err(AppError::ShutdownInProgress(
             "shutdown 中に mounts reload の stale cleanup が中断された".to_string(),
         ));
@@ -182,7 +182,7 @@ pub(crate) async fn reload_mounts(
 
     // watcher 再起動前の check: shutdown 中なら新 watcher を起動せず 503 を返す
     //   （late-install 抑止、main の drain_long_tasks と競合しない）
-    if state.shutdown_token.is_cancelled() {
+    if state.shutdown.token.is_cancelled() {
         return Err(AppError::ShutdownInProgress(
             "shutdown 中のため FileWatcher 再起動を抑止".to_string(),
         ));
@@ -350,9 +350,7 @@ mod tests {
             rebuild_guard: Arc::new(RebuildGuard::new()),
             file_watcher: Arc::new(Mutex::new(None)),
             path_security: ps,
-            shutdown_token: tokio_util::sync::CancellationToken::new(),
-            rebuild_generation: Arc::new(std::sync::atomic::AtomicU64::new(0)),
-            rebuild_task: Arc::new(std::sync::Mutex::new(None)),
+            shutdown: crate::state::ShutdownFields::fresh(),
         });
 
         Env {
@@ -434,7 +432,7 @@ mod tests {
     async fn reload_mountsはshutdown_token_cancel時にShutdownInProgressを返す() {
         let env = setup_two_mounts();
         // shutdown_token を先に cancel
-        env.state.shutdown_token.cancel();
+        env.state.shutdown.token.cancel();
 
         let new_config = config_with_mounts(&env, &[(MOUNT_A, "a")]);
         let result = reload_mounts(Arc::clone(&env.state), new_config).await;

@@ -67,9 +67,12 @@ pub(crate) async fn rebuild_index(
     };
 
     // shutdown_token を spawn_blocking 内の cancelled 判定に渡すため clone
-    let shutdown_token_for_rebuild = state.shutdown_token.clone();
+    let shutdown_token_for_rebuild = state.shutdown.token.clone();
     // rebuild_task slot の自己解除に使う generation を採番
-    let my_gen = state.rebuild_generation.fetch_add(1, Ordering::SeqCst);
+    let my_gen = state
+        .shutdown
+        .rebuild_generation
+        .fetch_add(1, Ordering::SeqCst);
 
     let inner = tokio::spawn(async move {
         // guard を task 内でバインド（Drop は task 終了時 or panic 時）
@@ -203,6 +206,7 @@ pub(crate) async fn rebuild_index(
             reason = "Mutex poison は致命的エラー、パニックが適切"
         )]
         let mut slot = state
+            .shutdown
             .rebuild_task
             .lock()
             .expect("rebuild_task Mutex poisoned");
@@ -231,6 +235,7 @@ pub(crate) async fn rebuild_index(
             reason = "Mutex poison は致命的エラー、パニックが適切"
         )]
         let mut slot = task_state
+            .shutdown
             .rebuild_task
             .lock()
             .expect("rebuild_task Mutex poisoned");

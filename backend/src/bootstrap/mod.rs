@@ -44,12 +44,12 @@ pub(crate) struct BackgroundContext {
     pub rebuild_guard: Arc<RebuildGuard>,
     /// `AppState.file_watcher` と同じ `Arc` を共有。scan 完了時に `FileWatcher` を保持する slot
     pub file_watcher: Arc<std::sync::Mutex<Option<FileWatcher>>>,
-    /// `AppState.shutdown_token` と同じ `CancellationToken` を共有
+    /// `AppState.shutdown.token` と同じ `CancellationToken` を共有
     ///
     /// - scan 経路が協調キャンセルを観測するために使用
     /// - `FileWatcher` late-install 抑止にも使用
     pub shutdown_token: tokio_util::sync::CancellationToken,
-    /// `AppState.rebuild_task` と同じ `Arc` を共有（`main` 側の drain に渡すため）
+    /// `AppState.shutdown.rebuild_task` と同じ `Arc` を共有（`main` 側の drain に渡すため）
     pub rebuild_task: Arc<std::sync::Mutex<Option<Arc<RebuildTaskHandle>>>>,
 }
 

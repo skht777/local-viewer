@@ -23,6 +23,36 @@ use crate::services::thumbnail_service::ThumbnailService;
 use crate::services::thumbnail_warmer::ThumbnailWarmer;
 use crate::services::video_converter::VideoConverter;
 
+/// graceful shutdown 関連の共有フィールド
+///
+/// - `token`: `main` が SIGINT / SIGTERM で `cancel()` を呼ぶ協調キャンセルトークン。
+///   scan / rebuild / `mount_hot_reload` / `parallel_walk` / `batch_insert` の各経路が
+///   `is_cancelled()` を見て早期 return する。`FileWatcher` late-install 抑止にも使用
+/// - `rebuild_generation`: rebuild slot 登録時に `fetch_add(1, SeqCst)` で採番。
+///   wrapper task が自 slot かを判別するため
+/// - `rebuild_task`: 実行中 rebuild の追跡ハンドル。shutdown 時は
+///   `drain_long_tasks` が `join.lock().take()` で `JoinHandle` を奪って await
+///
+/// shutdown 系フィールドを追加する場合は本 struct に追加し `fresh()` を更新するだけでよい。
+/// 14 箇所の `AppState { .. }` リテラルはそのまま `shutdown: ShutdownFields::fresh()` を
+/// 保持し続けるため、追従コストが生じない。
+pub(crate) struct ShutdownFields {
+    pub token: CancellationToken,
+    pub rebuild_generation: Arc<AtomicU64>,
+    pub rebuild_task: Arc<Mutex<Option<Arc<RebuildTaskHandle>>>>,
+}
+
+impl ShutdownFields {
+    /// 全フィールド未発火・未登録で初期化する（bootstrap / テスト共通）
+    pub(crate) fn fresh() -> Self {
+        Self {
+            token: CancellationToken::new(),
+            rebuild_generation: Arc::new(AtomicU64::new(0)),
+            rebuild_task: Arc::new(Mutex::new(None)),
+        }
+    }
+}
+
 /// アプリケーション共有状態
 ///
 /// - `settings`: 環境変数ベースの設定 (不変)
@@ -89,24 +119,41 @@ pub(crate) struct AppState {
     /// サービスが直接参照するために保持する（NodeRegistry の Mutex を経由せず
     /// 読み書きできる）
     pub path_security: Arc<PathSecurity>,
-    /// graceful shutdown 用の協調キャンセルトークン
+    /// graceful shutdown 関連の 3 フィールドをネスト化した struct
     ///
-    /// - `main` が SIGINT / SIGTERM 受信時に `cancel()` を呼ぶ
-    /// - scan / rebuild / `mount_hot_reload` / `parallel_walk` / `batch_insert` の各経路が
-    ///   `is_cancelled()` を見て早期 return する
-    /// - `FileWatcher` late-install 抑止にも使用（scan 完了後 install の前に check）
-    pub shutdown_token: CancellationToken,
-    /// rebuild 登録世代カウンタ
-    ///
-    /// - `rebuild_task` slot 更新時に `fetch_add(1, SeqCst)` で採番
-    /// - wrapper task が self-clear する際に `slot.generation == my_gen` を判定し、
-    ///   次の rebuild が登録済みなら自分の slot ではないと判断して touch しない
-    pub rebuild_generation: Arc<AtomicU64>,
-    /// 実行中 rebuild タスクの追跡ハンドル
-    ///
-    /// - rebuild spawn 時に `Some(Arc<RebuildTaskHandle>)` をセット
-    /// - wrapper task が `inner.await` 完了後、generation 一致時のみ `None` に戻す
-    /// - shutdown 時は `drain_long_tasks` が `handle.join.lock().take()` で
-    ///   `JoinHandle` を奪って timeout 付きで `await`
-    pub rebuild_task: Arc<Mutex<Option<Arc<RebuildTaskHandle>>>>,
+    /// `shutdown.token` / `shutdown.rebuild_generation` / `shutdown.rebuild_task` で参照する。
+    /// 個別初期化のコピペを避けるため `ShutdownFields::fresh()` を使う
+    pub shutdown: ShutdownFields,
+}
+
+#[cfg(test)]
+#[allow(
+    non_snake_case,
+    reason = "日本語テスト名の可読性のため ShutdownFields を PascalCase 残存"
+)]
+mod tests {
+    use super::*;
+    use std::sync::atomic::Ordering;
+
+    #[test]
+    fn ShutdownFields_freshはcancelされていないtokenを返す() {
+        let shutdown = ShutdownFields::fresh();
+        assert!(!shutdown.token.is_cancelled());
+    }
+
+    #[test]
+    fn ShutdownFields_freshはgenerationが0で始まる() {
+        let shutdown = ShutdownFields::fresh();
+        assert_eq!(shutdown.rebuild_generation.load(Ordering::Acquire), 0);
+    }
+
+    #[test]
+    fn ShutdownFields_freshはrebuild_taskがNoneで始まる() {
+        let shutdown = ShutdownFields::fresh();
+        let slot = shutdown
+            .rebuild_task
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        assert!(slot.is_none());
+    }
 }

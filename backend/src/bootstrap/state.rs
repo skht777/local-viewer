@@ -131,9 +131,8 @@ pub(crate) fn build_state(
     let last_scan_report = Arc::new(std::sync::RwLock::new(None));
     let rebuild_guard = Arc::new(services::rebuild_guard::RebuildGuard::new());
     let file_watcher = Arc::new(Mutex::new(None));
-    let shutdown_token = tokio_util::sync::CancellationToken::new();
-    let rebuild_generation = Arc::new(std::sync::atomic::AtomicU64::new(0));
-    let rebuild_task = Arc::new(Mutex::new(None));
+    // shutdown 系 3 フィールドを先に確保し、BackgroundContext / AppState 双方で共有する
+    let shutdown = crate::state::ShutdownFields::fresh();
 
     let bg_context = BackgroundContext {
         indexer: Arc::clone(&indexer),
@@ -145,8 +144,8 @@ pub(crate) fn build_state(
         last_scan_report: Arc::clone(&last_scan_report),
         rebuild_guard: Arc::clone(&rebuild_guard),
         file_watcher: Arc::clone(&file_watcher),
-        shutdown_token: shutdown_token.clone(),
-        rebuild_task: Arc::clone(&rebuild_task),
+        shutdown_token: shutdown.token.clone(),
+        rebuild_task: Arc::clone(&shutdown.rebuild_task),
     };
     let app_state = Arc::new(AppState {
         settings: Arc::new(settings),
@@ -167,9 +166,7 @@ pub(crate) fn build_state(
         rebuild_guard,
         file_watcher,
         path_security: Arc::clone(&path_security),
-        shutdown_token,
-        rebuild_generation,
-        rebuild_task,
+        shutdown,
     });
 
     Ok((app_state, bg_context))
