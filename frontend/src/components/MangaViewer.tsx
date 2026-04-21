@@ -83,11 +83,16 @@ export function MangaViewer({
     scrollSpeed,
   });
 
-  // currentIndex を URL に同期
+  // currentIndex を URL に同期（debounce 200ms）
+  // 初期マウント時の virtualizer 再計測・画像遅延ロードで起きるスクロール位置の揺らぎが
+  // 毎フレームの setSearchParams 連鎖を誘発し React の update depth 制限（#185）を超える
+  // ケースがあるため、揺らぎを吸収してから URL に反映する
   useEffect(() => {
-    if (mangaScroll.currentIndex !== currentIndex) {
+    if (mangaScroll.currentIndex === currentIndex) return;
+    const timer = setTimeout(() => {
       onIndexChange(mangaScroll.currentIndex);
-    }
+    }, 200);
+    return () => clearTimeout(timer);
   }, [mangaScroll.currentIndex, currentIndex, onIndexChange]);
 
   // 初期表示で currentIndex の位置にスクロール（モード切替時の位置引き継ぎ）
@@ -212,10 +217,13 @@ export function MangaViewer({
         </div>
 
         {/* 仮想スクロール画像リスト */}
+        {/* scrollbar-gutter: stable でスクロールバー分を常時確保し、 */}
+        {/* 画像ロード中の総高さ変化 → スクロールバー出現/消滅 → 画像幅変動 → */}
+        {/* 総高さ変動の無限フィードバック（React #185）を防ぐ */}
         <div
           ref={scrollRef}
           data-testid="manga-scroll-area"
-          className="flex-1 overflow-auto"
+          className="flex-1 overflow-y-scroll"
           onMouseMove={resetCursorTimer}
         >
           <div
@@ -227,13 +235,18 @@ export function MangaViewer({
           >
             {virtualizer.getVirtualItems().map((virtualRow) => {
               const entry = images[virtualRow.index];
+              // min-height に virtualRow.size（初回は estimateSize、以降は実測）を設定し、
+              // 画像ロード前の wrapper 高さを estimate で固定。画像ロード後は natural height
+              // がそれを上回れば単方向に伸びるのみでオシレーションしない。
+              // これと overflow-y-scroll の併用で Virtualizer の measureElement → onChange
+              // → rerender 無限ループ（React #185）を防ぐ。
               return (
                 <div
                   key={entry.node_id}
                   ref={virtualizer.measureElement}
                   data-index={virtualRow.index}
                   className="absolute left-0 w-full"
-                  style={{ top: `${virtualRow.start}px` }}
+                  style={{ top: `${virtualRow.start}px`, minHeight: `${virtualRow.size}px` }}
                 >
                   <img
                     src={`/api/file/${entry.node_id}`}
