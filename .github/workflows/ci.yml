@@ -134,6 +134,8 @@ jobs:
           mkdir -p e2e/fixtures/test-data/empty
           echo '{"version":2,"mounts":[{"mount_id":"ci-smoke","name":"test","slug":".","host_path":"/mnt-host"}]}' > config/mounts.json
           printf 'services:\n  viewer:\n    volumes:\n      - ./e2e/fixtures/test-data:/mnt-host\n' > docker-compose.ci.yml
+          # NODE_SECRET は 09_security.md より本番/通常運用で必須。CI では毎回ランダム生成して export
+          echo "NODE_SECRET=$(openssl rand -hex 32)" >> "$GITHUB_ENV"
       - run: docker compose -f docker-compose.yml -f docker-compose.ci.yml up -d
       - name: Health check
         run: curl -f --retry 15 --retry-delay 3 --retry-all-errors http://localhost:8000/api/health
