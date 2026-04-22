@@ -16,6 +16,9 @@ describe("CgToolbar", () => {
     onToggleFullscreen: vi.fn(),
     onGoTo: vi.fn(),
     onClose: vi.fn(),
+    onPrevSet: vi.fn(),
+    onNextSet: vi.fn(),
+    isSetJumpDisabled: false,
   };
 
   test("フィット切替ボタンが表示される", () => {
@@ -100,5 +103,56 @@ describe("CgToolbar", () => {
 
     rerender(<CgToolbar {...defaultProps} spreadMode="spread-offset" />);
     expect(btn).toHaveAttribute("title", "見開き+1 表示 (Q)");
+  });
+
+  test("前のセットボタンに data-testid=cg-prev-set-btn と aria-label がある", () => {
+    render(<CgToolbar {...defaultProps} />);
+    const btn = screen.getByTestId("cg-prev-set-btn");
+    expect(btn).toBeInTheDocument();
+    expect(btn).toHaveAttribute("aria-label", "前のセットへ");
+  });
+
+  test("次のセットボタンに data-testid=cg-next-set-btn と aria-label がある", () => {
+    render(<CgToolbar {...defaultProps} />);
+    const btn = screen.getByTestId("cg-next-set-btn");
+    expect(btn).toBeInTheDocument();
+    expect(btn).toHaveAttribute("aria-label", "次のセットへ");
+  });
+
+  test("前のセットボタンクリックで onPrevSet が呼ばれる", async () => {
+    const onPrevSet = vi.fn();
+    render(<CgToolbar {...defaultProps} onPrevSet={onPrevSet} />);
+    await userEvent.click(screen.getByTestId("cg-prev-set-btn"));
+    expect(onPrevSet).toHaveBeenCalledOnce();
+  });
+
+  test("次のセットボタンクリックで onNextSet が呼ばれる", async () => {
+    const onNextSet = vi.fn();
+    render(<CgToolbar {...defaultProps} onNextSet={onNextSet} />);
+    await userEvent.click(screen.getByTestId("cg-next-set-btn"));
+    expect(onNextSet).toHaveBeenCalledOnce();
+  });
+
+  test("isSetJumpDisabled=true のときセット間ジャンプボタンが disabled になる", () => {
+    render(<CgToolbar {...defaultProps} isSetJumpDisabled={true} />);
+    expect(screen.getByTestId("cg-prev-set-btn")).toBeDisabled();
+    expect(screen.getByTestId("cg-next-set-btn")).toBeDisabled();
+  });
+
+  test("isSetJumpDisabled=true のときクリックしても onPrevSet / onNextSet は呼ばれない", async () => {
+    const onPrevSet = vi.fn();
+    const onNextSet = vi.fn();
+    render(
+      <CgToolbar
+        {...defaultProps}
+        onPrevSet={onPrevSet}
+        onNextSet={onNextSet}
+        isSetJumpDisabled={true}
+      />,
+    );
+    await userEvent.click(screen.getByTestId("cg-prev-set-btn"));
+    await userEvent.click(screen.getByTestId("cg-next-set-btn"));
+    expect(onPrevSet).not.toHaveBeenCalled();
+    expect(onNextSet).not.toHaveBeenCalled();
   });
 });

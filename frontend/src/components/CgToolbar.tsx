@@ -21,7 +21,16 @@ interface CgToolbarProps {
   onToggleFullscreen: () => void;
   onGoTo: (index: number) => void;
   onClose: () => void;
+  onPrevSet: () => void;
+  onNextSet: () => void;
+  isSetJumpDisabled: boolean;
 }
+
+// セット間ジャンプボタンの共通スタイル
+// 既存の非アクティブボタンに disabled:* を足しただけ（@theme トークン寄せ）
+const setJumpBtnClass =
+  "rounded px-3 py-1.5 text-sm text-gray-300 hover:bg-surface-raised " +
+  "disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent";
 
 // 見開きモードの表示ラベル
 function spreadLabel(mode: SpreadMode): string {
@@ -62,6 +71,9 @@ export function CgToolbar({
   onToggleFullscreen,
   onGoTo,
   onClose,
+  onPrevSet,
+  onNextSet,
+  isSetJumpDisabled,
 }: CgToolbarProps) {
   return (
     <div className="flex items-center bg-black/50 backdrop-blur-md px-4 py-2.5">
@@ -115,13 +127,37 @@ export function CgToolbar({
         </select>
       </div>
 
-      {/* 中央: ページカウンター */}
-      <span
-        data-testid="page-counter"
-        className="flex-1 truncate text-center text-sm font-mono tabular-nums text-gray-300"
-      >
-        {formatPageLabel(setName, currentPage, totalCount, currentPageEnd)}
-      </span>
+      {/* 中央: 前セット + ページカウンター + 次セット */}
+      <div className="flex flex-1 items-center justify-center gap-2">
+        <button
+          type="button"
+          onClick={onPrevSet}
+          disabled={isSetJumpDisabled}
+          className={setJumpBtnClass}
+          aria-label="前のセットへ"
+          title="前のセット (Z / PageUp)"
+          data-testid="cg-prev-set-btn"
+        >
+          ⏪
+        </button>
+        <span
+          data-testid="page-counter"
+          className="max-w-[60%] truncate text-center text-sm font-mono tabular-nums text-gray-300"
+        >
+          {formatPageLabel(setName, currentPage, totalCount, currentPageEnd)}
+        </span>
+        <button
+          type="button"
+          onClick={onNextSet}
+          disabled={isSetJumpDisabled}
+          className={setJumpBtnClass}
+          aria-label="次のセットへ"
+          title="次のセット (X / PageDown)"
+          data-testid="cg-next-set-btn"
+        >
+          ⏩
+        </button>
+      </div>
 
       {/* 右: フルスクリーン + 閉じる */}
       <div className="flex items-center gap-3">

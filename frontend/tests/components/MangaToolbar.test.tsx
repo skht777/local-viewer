@@ -7,6 +7,7 @@ const defaultProps = {
   totalCount: 10,
   zoomLevel: 100,
   scrollSpeed: 1.0,
+  setName: "test-set",
   onScrollToImage: vi.fn(),
   onZoomIn: vi.fn(),
   onZoomOut: vi.fn(),
@@ -14,6 +15,9 @@ const defaultProps = {
   onScrollSpeedChange: vi.fn(),
   onToggleFullscreen: vi.fn(),
   onClose: vi.fn(),
+  onPrevSet: vi.fn(),
+  onNextSet: vi.fn(),
+  isSetJumpDisabled: false,
 };
 
 describe("MangaToolbar", () => {
@@ -70,5 +74,56 @@ describe("MangaToolbar", () => {
   test("スクロール速度に data-testid=manga-scroll-speed-label がある", () => {
     render(<MangaToolbar {...defaultProps} scrollSpeed={1.5} />);
     expect(screen.getByTestId("manga-scroll-speed-label")).toHaveTextContent("1.5x");
+  });
+
+  test("前のセットボタンに data-testid=manga-prev-set-btn と aria-label がある", () => {
+    render(<MangaToolbar {...defaultProps} />);
+    const btn = screen.getByTestId("manga-prev-set-btn");
+    expect(btn).toBeInTheDocument();
+    expect(btn).toHaveAttribute("aria-label", "前のセットへ");
+  });
+
+  test("次のセットボタンに data-testid=manga-next-set-btn と aria-label がある", () => {
+    render(<MangaToolbar {...defaultProps} />);
+    const btn = screen.getByTestId("manga-next-set-btn");
+    expect(btn).toBeInTheDocument();
+    expect(btn).toHaveAttribute("aria-label", "次のセットへ");
+  });
+
+  test("前のセットボタンクリックで onPrevSet が呼ばれる", async () => {
+    const onPrevSet = vi.fn();
+    render(<MangaToolbar {...defaultProps} onPrevSet={onPrevSet} />);
+    await userEvent.click(screen.getByTestId("manga-prev-set-btn"));
+    expect(onPrevSet).toHaveBeenCalledOnce();
+  });
+
+  test("次のセットボタンクリックで onNextSet が呼ばれる", async () => {
+    const onNextSet = vi.fn();
+    render(<MangaToolbar {...defaultProps} onNextSet={onNextSet} />);
+    await userEvent.click(screen.getByTestId("manga-next-set-btn"));
+    expect(onNextSet).toHaveBeenCalledOnce();
+  });
+
+  test("isSetJumpDisabled=true のときセット間ジャンプボタンが disabled になる", () => {
+    render(<MangaToolbar {...defaultProps} isSetJumpDisabled={true} />);
+    expect(screen.getByTestId("manga-prev-set-btn")).toBeDisabled();
+    expect(screen.getByTestId("manga-next-set-btn")).toBeDisabled();
+  });
+
+  test("isSetJumpDisabled=true のときクリックしても onPrevSet / onNextSet は呼ばれない", async () => {
+    const onPrevSet = vi.fn();
+    const onNextSet = vi.fn();
+    render(
+      <MangaToolbar
+        {...defaultProps}
+        onPrevSet={onPrevSet}
+        onNextSet={onNextSet}
+        isSetJumpDisabled={true}
+      />,
+    );
+    await userEvent.click(screen.getByTestId("manga-prev-set-btn"));
+    await userEvent.click(screen.getByTestId("manga-next-set-btn"));
+    expect(onPrevSet).not.toHaveBeenCalled();
+    expect(onNextSet).not.toHaveBeenCalled();
   });
 });
