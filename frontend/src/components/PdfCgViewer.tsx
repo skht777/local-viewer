@@ -53,6 +53,7 @@ export function PdfCgViewer({
   const spreadMode = useViewerStore((s) => s.spreadMode);
   const setFitMode = useViewerStore((s) => s.setFitMode);
   const cycleSpreadMode = useViewerStore((s) => s.cycleSpreadMode);
+  const viewerTransitionId = useViewerStore((s) => s.viewerTransitionId);
   const { toggleFullscreen } = useFullscreen();
 
   // PDF ドキュメント読み込み
@@ -271,6 +272,9 @@ export function PdfCgViewer({
             onToggleFullscreen={toggleFullscreen}
             onGoTo={nav.goTo}
             onClose={onClose}
+            onPrevSet={setJump.goPrevSet}
+            onNextSet={setJump.goNextSet}
+            isSetJumpDisabled={setJump.prompt != null || viewerTransitionId > 0}
           />
         </div>
 

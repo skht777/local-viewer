@@ -53,6 +53,7 @@ export function PdfMangaViewer({
   const zoomOut = useViewerStore((s) => s.zoomOut);
   const scrollSpeed = useViewerStore((s) => s.scrollSpeed);
   const setScrollSpeed = useViewerStore((s) => s.setScrollSpeed);
+  const viewerTransitionId = useViewerStore((s) => s.viewerTransitionId);
   const { toggleFullscreen } = useFullscreen();
 
   // PDF ドキュメント読み込み
@@ -251,6 +252,9 @@ export function PdfMangaViewer({
             onScrollSpeedChange={setScrollSpeed}
             onToggleFullscreen={toggleFullscreen}
             onClose={onClose}
+            onPrevSet={setJump.goPrevSet}
+            onNextSet={setJump.goNextSet}
+            isSetJumpDisabled={setJump.prompt != null || viewerTransitionId > 0}
           />
         </div>
 
