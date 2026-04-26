@@ -3,16 +3,20 @@
 // - isViewerOpen: CgViewer / MangaViewer (画像)
 // - ブラウズモード: BrowseHeader + ViewerTabs + DirectoryTree + FileBrowser/VideoFeed
 // - PDF クリック → openPdfViewer で PDF ビューワーを開く
+// - データ取得・タブ自動切替・ソート操作・フォーカスエリアは個別 hooks へ委譲
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
+import { useCallback, useMemo, useRef } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
-import { browseInfiniteOptions } from "../hooks/api/browseQueries";
-import { compareEntryName } from "../utils/sortEntries";
 import { mountListOptions } from "../hooks/api/mountQueries";
+import { useBrowseInfiniteData } from "../hooks/useBrowseInfiniteData";
+import { useBrowseSortHandlers } from "../hooks/useBrowseSortHandlers";
+import { useBrowseTabAutoSwitch } from "../hooks/useBrowseTabAutoSwitch";
+import { useBrowseTabAvailability } from "../hooks/useBrowseTabAvailability";
+import { useFocusAreaSwitcher } from "../hooks/useFocusAreaSwitcher";
 import { useOpenViewerFromEntry } from "../hooks/useOpenViewerFromEntry";
+import { useViewerImages } from "../hooks/useViewerImages";
 import { useViewerParams } from "../hooks/useViewerParams";
-import type { ViewerTab } from "../hooks/useViewerParams";
 import { useViewerStore } from "../stores/viewerStore";
 import { BrowseHeader } from "../components/BrowseHeader";
 import { BrowsePageViewerSwitch } from "../components/BrowsePageViewerSwitch";
@@ -21,20 +25,11 @@ import { FileBrowser } from "../components/FileBrowser";
 import { VideoFeed } from "../components/VideoFeed";
 import { ViewerTabs } from "../components/ViewerTabs";
 
-// ソート方向反転マップ
-const SORT_FLIP = {
-  "name-asc": "name-desc",
-  "name-desc": "name-asc",
-  "date-asc": "date-desc",
-  "date-desc": "date-asc",
-} as const;
-
 export default function BrowsePage() {
   const { nodeId } = useParams<{ nodeId: string }>();
   const navigate = useNavigate();
   const isSidebarOpen = useViewerStore((s) => s.isSidebarOpen);
   const viewerTransitionId = useViewerStore((s) => s.viewerTransitionId);
-  const endViewerTransition = useViewerStore((s) => s.endViewerTransition);
   const {
     params,
     setTab,
@@ -63,77 +58,21 @@ export default function BrowsePage() {
   const selectedNodeId = searchParams.get("select") ?? undefined;
 
   // ファイルブラウザー ↔ ツリーのフォーカスエリア管理
-  const [focusArea, setFocusArea] = useState<"browser" | "tree">("browser");
   const treeRef = useRef<HTMLElement>(null);
+  const { focusArea, handleFocusTree, handleFocusBrowser } = useFocusAreaSwitcher({
+    treeRef,
+    nodeId,
+  });
 
-  // 現在のディレクトリのデータ (ページネーション対応)
-  const {
-    data: infiniteData,
-    isLoading,
-    hasNextPage,
-    fetchNextPage,
-    isFetchingNextPage,
-    isError,
-  } = useInfiniteQuery(browseInfiniteOptions(nodeId, params.sort));
-
-  // 全ページの entries を結合し、メタデータは先頭ページから取得
-  const data = useMemo(() => {
-    if (!infiniteData?.pages?.length) {
-      return undefined;
-    }
-    const [first] = infiniteData.pages;
-    const allEntries = infiniteData.pages.flatMap((p) => p.entries);
-    return {
-      ...first,
-      entries: allEntries,
-    };
-  }, [infiniteData]);
-
-  // セットジャンプのトランジション完了: データ到着でクリア
-  useEffect(() => {
-    if (viewerTransitionId > 0 && data && !isLoading) {
-      endViewerTransition(viewerTransitionId);
-    }
-  }, [viewerTransitionId, data, isLoading, endViewerTransition]);
+  // 現在のディレクトリのデータ (ページネーション対応 + viewerTransitionId 終了)
+  const { data, isLoading, hasNextPage, fetchNextPage, isFetchingNextPage, isError } =
+    useBrowseInfiniteData(nodeId, params.sort);
 
   // マウントポイント一覧 (ツリー用)
   const { data: mountData } = useQuery(mountListOptions());
 
-  // タブ自動切替: 現在のタブが空なら最適なタブに切替
-  // 優先順位: filesets > images > videos
-  // 現在タブにコンテンツがあればそのまま維持
-  useEffect(() => {
-    if (!data || isLoading) {
-      return;
-    }
-
-    const hasFilesets = data.entries.some(
-      (e) => e.kind === "directory" || e.kind === "archive" || e.kind === "pdf",
-    );
-    const hasImages = data.entries.some((e) => e.kind === "image");
-    const hasVideos = data.entries.some((e) => e.kind === "video");
-
-    // 現在のタブにコンテンツがあればそのまま
-    if (params.tab === "filesets" && hasFilesets) {
-      return;
-    }
-    if (params.tab === "images" && hasImages) {
-      return;
-    }
-    if (params.tab === "videos" && hasVideos) {
-      return;
-    }
-
-    // 現在のタブが空 → 最適なタブに自動切替
-    // すべて空の場合は現在タブに留まる
-    if (hasFilesets) {
-      setTab("filesets");
-    } else if (hasImages) {
-      setTab("images");
-    } else if (hasVideos) {
-      setTab("videos");
-    }
-  }, [data, isLoading, params.tab, setTab]);
+  // タブ自動切替
+  useBrowseTabAutoSwitch({ data, isLoading, currentTab: params.tab, setTab });
 
   // MountEntry → BrowseEntry に変換してツリーに渡す
   const rootEntries = useMemo(
@@ -157,34 +96,8 @@ export default function BrowsePage() {
     [data?.ancestors],
   );
 
-  // 現在のディレクトリ内の画像エントリ（ブラウズソート順）
-  const images = useMemo(
-    () => (data?.entries ?? []).filter((e) => e.kind === "image"),
-    [data?.entries],
-  );
-
-  // ビューワー用: ブラウズのソート順に関わらず名前昇順で表示
-  const viewerImages = useMemo(() => images.toSorted(compareEntryName), [images]);
-
-  // ブラウズ順インデックス → ビューワー順インデックスの変換マップ
-  const viewerIndexMap = useMemo(() => {
-    const map = new Map<string, number>();
-    viewerImages.forEach((img, idx) => map.set(img.node_id, idx));
-    return map;
-  }, [viewerImages]);
-
-  // FileBrowser からのブラウズ順インデックスをビューワー順に変換して開く
-  const openViewerNameSorted = useCallback(
-    (browseIndex: number) => {
-      const img = images[browseIndex];
-      if (!img) {
-        return;
-      }
-      const viewerIdx = viewerIndexMap.get(img.node_id) ?? 0;
-      openViewer(viewerIdx);
-    },
-    [images, viewerIndexMap, openViewer],
-  );
+  // 画像配列とビューワー起動関連の派生値
+  const { images, viewerImages, openViewerNameSorted } = useViewerImages(data?.entries, openViewer);
 
   // 動画エントリ（VideoFeed の表示対象）
   const videos = useMemo(
@@ -192,44 +105,16 @@ export default function BrowsePage() {
     [data?.entries],
   );
 
-  // コンテンツのないタブを disabled にする
-  // 全て空の場合は filesets のみ有効（デフォルトタブ）
-  const disabledTabs = useMemo(() => {
-    if (!data) {
-      return new Set<ViewerTab>();
-    }
-    const disabled = new Set<ViewerTab>();
-    const hasFilesets = data.entries.some(
-      (e) => e.kind === "directory" || e.kind === "archive" || e.kind === "pdf",
-    );
-    if (!hasFilesets) {
-      disabled.add("filesets");
-    }
-    if (images.length === 0) {
-      disabled.add("images");
-    }
-    if (videos.length === 0) {
-      disabled.add("videos");
-    }
-    if (disabled.size === 3) {
-      disabled.delete("filesets");
-    }
-    return disabled;
-  }, [data, images.length, videos.length]);
+  // タブ可用性（コンテンツのないタブを disabled）
+  const disabledTabs = useBrowseTabAvailability({ data, images, videos });
 
-  // ソートトグルロジック（名前/更新日）
-  const handleSortName = useCallback(() => {
-    setSort(params.sort.startsWith("name") ? SORT_FLIP[params.sort] : "name-asc");
-  }, [params.sort, setSort]);
-
-  const handleSortDate = useCallback(() => {
-    setSort(params.sort.startsWith("date") ? SORT_FLIP[params.sort] : "date-desc");
-  }, [params.sort, setSort]);
-
-  // モード切替（CG ↔ マンガ）
-  const handleToggleMode = useCallback(() => {
-    setMode(params.mode === "cg" ? "manga" : "cg");
-  }, [params.mode, setMode]);
+  // ソート/モードトグル
+  const { handleSortName, handleSortDate, handleToggleMode } = useBrowseSortHandlers({
+    sort: params.sort,
+    mode: params.mode,
+    setSort,
+    setMode,
+  });
 
   // ブラウズ間遷移の共通 callback
   // - 自分自身（現在 nodeId）への navigate は抑制し history 重複を防ぐ
@@ -250,21 +135,6 @@ export default function BrowsePage() {
       navigateBrowse(data.parent_node_id, buildBrowseSearch());
     }
   }, [data?.parent_node_id, navigateBrowse, buildBrowseSearch]);
-
-  // ツリーにフォーカス移動（現在のディレクトリのノードにフォーカス）
-  const handleFocusTree = useCallback(() => {
-    setFocusArea("tree");
-    const activeNode = treeRef.current?.querySelector<HTMLElement>(`[data-node-id="${nodeId}"]`);
-    const fallback = treeRef.current?.querySelector<HTMLElement>("[data-testid^='tree-node-']");
-    (activeNode ?? fallback)?.focus();
-  }, [nodeId]);
-
-  // ブラウザーにフォーカス移動（ツリーから呼ばれる）
-  const handleFocusBrowser = useCallback(() => {
-    setFocusArea("browser");
-    const selectedCard = document.querySelector<HTMLElement>("[aria-current='true']");
-    selectedCard?.focus();
-  }, []);
 
   // ビューワー (PDF / 画像 / トランジション) を先に判定し、該当する場合はそれを返す
   const viewerSwitch = (
