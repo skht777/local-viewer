@@ -8,14 +8,13 @@
 import { useCallback, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
-import { apiFetch } from "./api/apiClient";
-import { browseInfiniteOptions, browseNodeOptions, fetchAllBrowsePages } from "./api/browseQueries";
-import { findNextSet, findPrevSet, resolveTopLevelDir, shouldConfirm } from "./useSetNavigation";
+import { browseInfiniteOptions, fetchAllBrowsePages } from "./api/browseQueries";
+import { resolveTopLevelDir, shouldConfirm } from "./useSetNavigation";
+import { useFindSiblingRecursive } from "./useFindSiblingRecursive";
 import type { SortOrder, ViewerMode } from "./useViewerParams";
-import type { AncestorEntry, BrowseEntry, BrowseResponse, SiblingResponse } from "../types/api";
+import type { AncestorEntry, BrowseEntry } from "../types/api";
 import { useViewerStore } from "../stores/viewerStore";
 import { resolveFirstViewable } from "../utils/resolveFirstViewable";
-import { sortEntries } from "../utils/sortEntries";
 
 interface UseSetJumpProps {
   currentNodeId: string | null;
@@ -33,14 +32,6 @@ interface Prompt {
   extraConfirmKeys?: string[];
 }
 
-// 再帰探索の結果
-interface SearchResult {
-  target: BrowseEntry;
-  levelsUp: number;
-  searchDirData: BrowseResponse;
-  sourceTopDir: string | null;
-}
-
 interface UseSetJumpReturn {
   goNextSet: () => void;
   goPrevSet: () => void;
@@ -50,11 +41,6 @@ interface UseSetJumpReturn {
   dismissPrompt: () => void;
 }
 
-const MAX_DEPTH = 10;
-
-// 受入: 計画外の新規違反。findSiblingRecursive 系の再帰探索 + navigate ロジック
-// を hooks 抽出すると useSiblingPrefetch.ts と相互依存が増えるため別タスクで対応。
-// oxlint-disable-next-line max-lines-per-function
 export function useSetJump({
   currentNodeId,
   parentNodeId,
@@ -174,97 +160,12 @@ export function useSetJump({
     ],
   );
 
-  // 再帰的に親を辿って兄弟セットを探索
-  // 受入: 計画外の新規違反。useSiblingPrefetch と類似の探索ステートマシンで、
-  // 同様の 4 ヘルパ分割が望ましいが別タスクで対応する。
-  const findSiblingRecursive = useCallback(
-    // oxlint-disable-next-line max-statements
-    async (direction: "next" | "prev"): Promise<SearchResult | null> => {
-      let currentChildId = currentNodeId;
-      let currentParentId = parentNodeId;
-      let levelsUp = 0;
-      let sourceTopDir: string | null = null;
-      let isSourceResolved = false;
-      const visited = new Set<string>();
-
-      // parentNodeId が null の場合、ancestors[0] (マウントルート) を使用
-      if (!currentParentId) {
-        if (ancestors.length === 0 || !currentNodeId) {
-          return null;
-        }
-        currentParentId = ancestors[0].node_id;
-      }
-
-      const finder = direction === "next" ? findNextSet : findPrevSet;
-
-      while (currentParentId && levelsUp < MAX_DEPTH) {
-        if (visited.has(currentParentId)) {
-          break;
-        }
-        visited.add(currentParentId);
-
-        // sibling API を優先試行 (1 クエリで次/前セットを取得)
-        let sibling: BrowseEntry | null = null;
-        let parentData: BrowseResponse | null = null;
-        if (currentChildId) {
-          try {
-            const resp = await apiFetch<SiblingResponse>(
-              `/api/browse/${currentParentId}/sibling?current=${currentChildId}&direction=${direction}&sort=${sort}`,
-            );
-            sibling = resp.entry;
-          } catch {
-            // API 失敗時はフォールバック
-          }
-        }
-
-        // sibling API で見つからなかった or 失敗 → フォールバック: 全件取得
-        if (!parentData) {
-          parentData = await queryClient.fetchQuery(browseNodeOptions(currentParentId, sort));
-        }
-        if (!currentChildId) {
-          break;
-        }
-
-        if (!sibling) {
-          const sorted = sortEntries(parentData.entries, sort);
-          sibling = finder(sorted, currentChildId);
-        }
-
-        // ソースの topDir を level 0 で算出
-        if (!isSourceResolved) {
-          const targetChildId = currentChildId;
-          const sourceEntry = parentData.entries.find(
-            (e: BrowseEntry) => e.node_id === targetChildId,
-          );
-          if (sourceEntry) {
-            sourceTopDir = resolveTopLevelDir(
-              parentData.ancestors,
-              parentData.current_node_id,
-              sourceEntry,
-            );
-          }
-          isSourceResolved = true;
-        }
-
-        if (sibling) {
-          return { target: sibling, levelsUp, searchDirData: parentData, sourceTopDir };
-        }
-
-        // 兄弟なし → 上に登る
-        levelsUp++;
-        currentChildId = parentData.current_node_id;
-        currentParentId = parentData.parent_node_id;
-
-        // parent_node_id が null → ancestors から mount root を取得
-        if (!currentParentId && parentData.ancestors.length > 0) {
-          currentParentId = parentData.ancestors[0].node_id;
-        }
-      }
-
-      return null;
-    },
-    [currentNodeId, parentNodeId, ancestors, sort, queryClient],
-  );
+  const findSiblingRecursive = useFindSiblingRecursive({
+    currentNodeId,
+    parentNodeId,
+    ancestors,
+    sort,
+  });
 
   // PageDown/X: 条件付き確認で次のセットへ（トランジション中は無効化）
   const goNextSet = useCallback(async () => {
