@@ -44,7 +44,10 @@ test.describe("キーボード — CG モード", () => {
     await openCgInPictures(page);
     await page.keyboard.press("ArrowRight");
     await expect(page).toHaveURL(/index=1/);
-    // URL 更新の waitForURL で十分 (waitForTimeout 禁止: 10_e2e_testing)
+    // 連続キー入力前に page-counter 反映まで待つ
+    // (URL 更新だけでは useCgNavigation のクロージャ再バインドが間に合わず
+    //  ArrowLeft が古い prevStart=null のクロージャに届くため flaky になる)
+    await expect(page.getByTestId("page-counter")).toHaveText(/2\s*\/\s*\d+/);
     await page.keyboard.press("ArrowLeft");
     await expect(page).toHaveURL(/index=0/);
   });
