@@ -31,6 +31,15 @@ impl ThumbnailWarmer {
     /// fire-and-forget で非同期タスクを起動する。
     /// 依存方向: `ThumbnailWarmer` → `ThumbnailService` / `VideoConverter` / `ArchiveService`
     /// (router 関数は呼ばない)
+    ///
+    /// 対象は 2 系統:
+    /// 1. Image / Archive / Pdf / Video エントリ自体
+    /// 2. Directory エントリの `preview_node_ids`（カードプレビュー用画像）
+    ///
+    /// 2 の経路は `preview_node_ids` を opaque な `node_id` 文字列としてのみ扱い、
+    /// パスの組み立てや FS access は行わない。実 FS access は
+    /// `warm_one_thumbnail_inner` 内側の `NodeRegistry::resolve` 経由のみ
+    /// （`path_security` の経路を変えない）。
     pub(crate) fn warm(&self, entries: &[EntryMeta], state: &Arc<AppState>) {
         let mut scheduled = 0_usize;
         let mut skipped_cached = 0_usize;
@@ -45,6 +54,7 @@ impl ThumbnailWarmer {
             })
             .count();
 
+        // 1. Image / Archive / Pdf / Video エントリ自体
         for entry in entries {
             // サムネイル対象の種別のみ
             if !matches!(
@@ -69,46 +79,22 @@ impl ThumbnailWarmer {
                 }
             }
 
-            // pending チェック + 追加
-            {
-                let mut pending = self
-                    .pending
-                    .lock()
-                    .unwrap_or_else(std::sync::PoisonError::into_inner);
-                if pending.contains(&entry.node_id) {
-                    skipped_pending += 1;
-                    continue;
-                }
-                pending.insert(entry.node_id.clone());
+            match self.try_schedule(&entry.node_id, state) {
+                ScheduleResult::Scheduled => scheduled += 1,
+                ScheduleResult::SkippedPending => skipped_pending += 1,
             }
-            scheduled += 1;
+        }
 
-            let sem = Arc::clone(&self.semaphore);
-            let pending = Arc::clone(&self.pending);
-            let state = Arc::clone(state);
-            let nid = entry.node_id.clone();
-
-            tokio::spawn(async move {
-                // Semaphore で同時実行数制限
-                let Ok(_permit) = sem.acquire().await else {
-                    pending
-                        .lock()
-                        .unwrap_or_else(std::sync::PoisonError::into_inner)
-                        .remove(&nid);
-                    return;
-                };
-
-                // サムネイル生成 (CPU バウンド → spawn_blocking)
-                let _ = tokio::task::spawn_blocking(move || {
-                    warm_one_thumbnail(&state, &nid);
-                    // 完了後に pending から除去
-                    pending
-                        .lock()
-                        .unwrap_or_else(std::sync::PoisonError::into_inner)
-                        .remove(&nid);
-                })
-                .await;
-            });
+        // 2. Directory エントリの preview_node_ids
+        // preview の実 mtime は呼び出し側で持っていない（EntryMeta はディレクトリの mtime）。
+        // そのため早期 cache 確認はスキップし、warm_one_thumbnail_inner 内部の
+        // 解決経路（NodeRegistry → ThumbnailService.generate_*）に任せる。
+        // InflightLocks が cache hit / 重複生成を吸収するため、追加コストは小さい。
+        for preview_nid in collect_preview_node_ids(entries) {
+            match self.try_schedule(preview_nid, state) {
+                ScheduleResult::Scheduled => scheduled += 1,
+                ScheduleResult::SkippedPending => skipped_pending += 1,
+            }
         }
 
         tracing::info!(
@@ -120,6 +106,93 @@ impl ThumbnailWarmer {
             "thumbnail.warmer scheduled"
         );
     }
+
+    /// 単一 `node_id` を pending に登録し、warm タスクを spawn する
+    ///
+    /// pending に既に存在する場合は `SkippedPending` を返す。
+    fn try_schedule(&self, node_id: &str, state: &Arc<AppState>) -> ScheduleResult {
+        if !self.try_register_pending(node_id) {
+            return ScheduleResult::SkippedPending;
+        }
+
+        let sem = Arc::clone(&self.semaphore);
+        let pending = Arc::clone(&self.pending);
+        let state = Arc::clone(state);
+        let nid = node_id.to_string();
+
+        tokio::spawn(async move {
+            // Semaphore で同時実行数制限
+            let Ok(_permit) = sem.acquire().await else {
+                pending
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner)
+                    .remove(&nid);
+                return;
+            };
+
+            // サムネイル生成 (CPU バウンド → spawn_blocking)
+            let _ = tokio::task::spawn_blocking(move || {
+                warm_one_thumbnail(&state, &nid);
+                // 完了後に pending から除去
+                pending
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner)
+                    .remove(&nid);
+            })
+            .await;
+        });
+
+        ScheduleResult::Scheduled
+    }
+
+    /// `node_id` を pending セットに登録する（純粋同期、テスト容易性のため独立化）
+    ///
+    /// 戻り値: 新規登録なら `true`、既に存在していたら `false`
+    fn try_register_pending(&self, node_id: &str) -> bool {
+        let mut pending = self
+            .pending
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if pending.contains(node_id) {
+            return false;
+        }
+        pending.insert(node_id.to_string());
+        true
+    }
+
+    /// 現在の pending 件数（テスト用）
+    #[cfg(test)]
+    fn pending_count(&self) -> usize {
+        self.pending
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .len()
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+enum ScheduleResult {
+    Scheduled,
+    SkippedPending,
+}
+
+/// directory entry 群から `preview_node_ids` を順序保持で連結する（dedup なし）
+///
+/// 呼び出し側で pending dedup する前提のため、重複もそのまま返す。
+fn collect_preview_node_ids(entries: &[EntryMeta]) -> Vec<&str> {
+    let mut result = Vec::new();
+    for entry in entries {
+        if entry.kind != EntryKind::Directory {
+            continue;
+        }
+        let Some(preview_ids) = entry.preview_node_ids.as_ref() else {
+            continue;
+        };
+        for nid in preview_ids {
+            result.push(nid.as_str());
+        }
+    }
+    result
 }
 
 /// 1 エントリのサムネイルを生成する (sync、`spawn_blocking` 内)
@@ -251,4 +324,85 @@ fn ext_lower(name: &str) -> String {
         .map_or(String::new(), |e| {
             format!(".{}", e.to_string_lossy().to_lowercase())
         })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn dir_entry(node_id: &str, preview_ids: Option<Vec<&str>>) -> EntryMeta {
+        EntryMeta {
+            node_id: node_id.to_string(),
+            name: format!("dir-{node_id}"),
+            kind: EntryKind::Directory,
+            size_bytes: None,
+            mime_type: None,
+            child_count: Some(3),
+            modified_at: None,
+            mtime_ns: None,
+            preview_node_ids: preview_ids.map(|v| v.into_iter().map(String::from).collect()),
+        }
+    }
+
+    fn image_entry(node_id: &str) -> EntryMeta {
+        EntryMeta {
+            node_id: node_id.to_string(),
+            name: format!("{node_id}.jpg"),
+            kind: EntryKind::Image,
+            size_bytes: Some(1000),
+            mime_type: Some("image/jpeg".to_string()),
+            child_count: None,
+            modified_at: None,
+            mtime_ns: None,
+            preview_node_ids: None,
+        }
+    }
+
+    #[test]
+    fn collect_preview_node_idsがdirectoryのpreview_idsを順序保持で返す() {
+        let entries = vec![
+            image_entry("img1"),
+            dir_entry("dir1", Some(vec!["p1", "p2"])),
+            dir_entry("dir2", None),
+            dir_entry("dir3", Some(vec!["p3"])),
+            image_entry("img2"),
+        ];
+        let preview_ids = collect_preview_node_ids(&entries);
+        assert_eq!(preview_ids, vec!["p1", "p2", "p3"]);
+    }
+
+    #[test]
+    fn collect_preview_node_idsは重複idも保持する() {
+        // 複数 directory が同じ preview を持つケース。dedup は呼び出し側 try_register_pending の責務
+        let entries = vec![
+            dir_entry("dir1", Some(vec!["shared", "p1"])),
+            dir_entry("dir2", Some(vec!["shared", "p2"])),
+        ];
+        let preview_ids = collect_preview_node_ids(&entries);
+        assert_eq!(preview_ids, vec!["shared", "p1", "shared", "p2"]);
+    }
+
+    #[test]
+    fn try_register_pendingが新規登録でtrueを返す() {
+        let warmer = ThumbnailWarmer::new(4);
+        assert!(warmer.try_register_pending("n1"));
+        assert_eq!(warmer.pending_count(), 1);
+    }
+
+    #[test]
+    fn try_register_pendingが重複でfalseを返しpending件数が増えない() {
+        let warmer = ThumbnailWarmer::new(4);
+        assert!(warmer.try_register_pending("n1"));
+        assert!(!warmer.try_register_pending("n1"));
+        assert_eq!(warmer.pending_count(), 1);
+    }
+
+    #[test]
+    fn 異なるnode_idは独立にpending登録できる() {
+        let warmer = ThumbnailWarmer::new(4);
+        assert!(warmer.try_register_pending("n1"));
+        assert!(warmer.try_register_pending("n2"));
+        assert!(warmer.try_register_pending("n3"));
+        assert_eq!(warmer.pending_count(), 3);
+    }
 }
