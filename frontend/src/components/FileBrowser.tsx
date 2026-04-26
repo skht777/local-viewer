@@ -4,16 +4,18 @@
 // - キーボード: 矢印/WASDでグリッド移動、g/Enter進入、Space開く等
 // - sort に応じてエントリをソート（name-asc/desc, date-asc/desc）
 // - tab に応じてエントリをフィルタ
+// - 選択 / アクション / キーボード / グリッド描画は分割した hooks / 子コンポーネントへ委譲
 
-import type { KeyboardEvent } from "react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useMemo } from "react";
 import { useBatchThumbnails } from "../hooks/api/thumbnailQueries";
-import { useBrowseKeyboard } from "../hooks/useBrowseKeyboard";
+import { useFileBrowserActions } from "../hooks/useFileBrowserActions";
 import { useFileBrowserInfiniteScroll } from "../hooks/useFileBrowserInfiniteScroll";
+import { useFileBrowserKeyboardBindings } from "../hooks/useFileBrowserKeyboardBindings";
+import { useFileBrowserSelection } from "../hooks/useFileBrowserSelection";
 import { useVirtualGrid } from "../hooks/useVirtualGrid";
 import type { SortOrder, ViewerTab } from "../hooks/useViewerParams";
 import type { BrowseEntry } from "../types/api";
-import { FileCard } from "./FileCard";
+import { FileBrowserGrid } from "./FileBrowserGrid";
 
 interface FileBrowserProps {
   entries: BrowseEntry[];
@@ -63,6 +65,26 @@ function filterByTab(entries: BrowseEntry[], tab: ViewerTab, sort: SortOrder): B
   }
 }
 
+// バッチサムネイル対象 node_id 群を生成
+// 本体カード（image/archive/video）→ ディレクトリのプレビュー画像 の順で並べ、
+// バッチ API の上限に達しても本体側を優先して取得する
+function buildThumbnailNodeIds(filtered: BrowseEntry[]): string[] {
+  const ids: string[] = [];
+  for (const e of filtered) {
+    if (e.kind === "image" || e.kind === "archive" || e.kind === "video") {
+      ids.push(e.node_id);
+    }
+  }
+  for (const e of filtered) {
+    if (e.kind === "directory" && e.preview_node_ids) {
+      for (const pid of e.preview_node_ids) {
+        ids.push(pid);
+      }
+    }
+  }
+  return ids;
+}
+
 export function FileBrowser({
   entries,
   isLoading,
@@ -95,25 +117,8 @@ export function FileBrowser({
     return map;
   }, [filtered]);
 
-  // バッチサムネイル: カードサムネイル + ディレクトリプレビューの node_ids を収集
-  // 本体カードを先にし、バッチ API の件数上限でも優先的に取得されるようにする
-  const thumbnailNodeIds = useMemo(() => {
-    const ids: string[] = [];
-    for (const e of filtered) {
-      if (e.kind === "image" || e.kind === "archive" || e.kind === "video") {
-        ids.push(e.node_id);
-      }
-    }
-    // ディレクトリのプレビュー画像 node_ids を後ろに追加
-    for (const e of filtered) {
-      if (e.kind === "directory" && e.preview_node_ids) {
-        for (const pid of e.preview_node_ids) {
-          ids.push(pid);
-        }
-      }
-    }
-    return ids;
-  }, [filtered]);
+  const thumbnailNodeIds = useMemo(() => buildThumbnailNodeIds(filtered), [filtered]);
+
   // 無限スクロール: センチネル要素の IntersectionObserver
   const { sentinelRef } = useFileBrowserInfiniteScroll({
     hasMore,
@@ -131,167 +136,44 @@ export function FileBrowser({
     scrollToItem,
     getColumnCount,
     measureElement,
-  } = useVirtualGrid({
-    itemCount: filtered.length,
-    enabled: !isLoading && filtered.length > 0,
-  });
+  } = useVirtualGrid({ itemCount: filtered.length, enabled: !isLoading && filtered.length > 0 });
 
   const { thumbnails: batchThumbnails } = useBatchThumbnails(thumbnailNodeIds);
 
-  // エントリ変更時（ナビゲーション・タブ切替）に先頭カードへ focus
-  const firstCardRef = useRef<HTMLDivElement>(null);
-  const firstEntryId = filtered[0]?.node_id ?? null;
+  const {
+    effectiveSelectedId,
+    firstCardRef,
+    setLocalSelectedId,
+    handleSelect,
+    handleKeyDown,
+    handleMainClick,
+  } = useFileBrowserSelection({ filtered, selectedNodeId });
 
-  // ローカル選択状態（クリック選択が優先、なければ URL ?select= or 先頭カード）
-  const [localSelectedId, setLocalSelectedId] = useState<string | null>(null);
-  const effectiveSelectedId = localSelectedId ?? selectedNodeId ?? firstEntryId;
+  const { handleAction, getOpenHandler, getEnterHandler, handleOpen } = useFileBrowserActions({
+    indexMap,
+    onNavigate,
+    onImageClick,
+    onPdfClick,
+    onOpenViewer,
+  });
 
-  // entries 変更時にローカル選択をリセット
-  useEffect(() => {
-    setLocalSelectedId(null);
-  }, [firstEntryId]);
-
-  useEffect(() => {
-    if (firstEntryId) {
-      firstCardRef.current?.focus();
-    }
-  }, [firstEntryId]);
-
-  // シングルクリック: カード選択
-  const handleSelect = useCallback((entry: BrowseEntry) => {
-    setLocalSelectedId(entry.node_id);
-  }, []);
-
-  // ダブルクリック / Enter / g: アクション実行（進入/ビューワー起動）
-  const handleAction = useCallback(
-    (entry: BrowseEntry) => {
-      if (entry.kind === "archive") {
-        onNavigate(entry.node_id, { tab: "images" });
-      } else if (entry.kind === "directory") {
-        onNavigate(entry.node_id);
-      } else if (entry.kind === "pdf") {
-        onPdfClick?.(entry.node_id);
-      } else if (entry.kind === "image" && onImageClick) {
-        const imageIndex = indexMap.get(entry.node_id) ?? -1;
-        if (imageIndex >= 0) {
-          onImageClick(imageIndex);
-        }
-      }
-    },
-    [indexMap, onNavigate, onPdfClick, onImageClick],
-  );
-
-  // オーバーレイ「▶ 開く」/ Space: kind に応じて適切なアクションを呼び分け
-  const handleOpen = useCallback(
-    (entry: BrowseEntry) => {
-      if (entry.kind === "directory" || entry.kind === "archive") {
-        onOpenViewer?.(entry.node_id);
-      } else if (entry.kind === "image" && onImageClick) {
-        const imageIndex = indexMap.get(entry.node_id) ?? -1;
-        if (imageIndex >= 0) {
-          onImageClick(imageIndex);
-        }
-      } else if (entry.kind === "pdf") {
-        onPdfClick?.(entry.node_id);
-      }
-    },
-    [indexMap, onOpenViewer, onImageClick, onPdfClick],
-  );
-
-  // オーバーレイ「→ 進入」: directory/archive のナビゲーション
-  const handleEnter = useCallback(
-    (entry: BrowseEntry) => {
-      if (entry.kind === "archive") {
-        onNavigate(entry.node_id, { tab: "images" });
-      } else if (entry.kind === "directory") {
-        onNavigate(entry.node_id);
-      }
-    },
-    [onNavigate],
-  );
-
-  // キーボード移動: delta 分だけ選択を移動し、仮想スクロールで可視化
-  const handleMove = useCallback(
-    (delta: number) => {
-      const currentIndex = indexMap.get(effectiveSelectedId ?? "") ?? -1;
-      const newIndex = currentIndex + delta;
-      if (newIndex < 0 || newIndex >= filtered.length) {
-        return;
-      }
-      const target = filtered[newIndex];
-      setLocalSelectedId(target.node_id);
-      // 仮想スクロールで対象行を可視領域に移動
-      scrollToItem(newIndex);
-      // DOM 更新後にフォーカスを移動
-      requestAnimationFrame(() => {
-        const el = document.querySelector<HTMLElement>(
-          `[data-testid="file-card-${target.node_id}"]`,
-        );
-        el?.focus({ preventScroll: true });
-      });
-    },
-    [filtered, indexMap, effectiveSelectedId, scrollToItem],
-  );
-
-  useBrowseKeyboard(
-    {
-      move: handleMove,
-      action: () => {
-        const entry = filtered.find((e) => e.node_id === effectiveSelectedId);
-        if (entry) {
-          handleAction(entry);
-        }
-      },
-      open: () => {
-        const entry = filtered.find((e) => e.node_id === effectiveSelectedId);
-        if (entry) {
-          handleOpen(entry);
-        }
-      },
-      goParent: onGoParent ?? (() => {}),
-      focusTree: onFocusTree ?? (() => {}),
-      toggleMode: onToggleMode ?? (() => {}),
-      sortName: onSortName ?? (() => {}),
-      sortDate: onSortDate ?? (() => {}),
-      tabChange: onTabChange ?? (() => {}),
-      getColumnCount,
-    },
+  useFileBrowserKeyboardBindings({
+    filtered,
+    indexMap,
+    effectiveSelectedId,
+    scrollToItem,
+    setLocalSelectedId,
+    handleAction,
+    handleOpen,
+    getColumnCount,
     keyboardEnabled,
-  );
-
-  // Escape で選択解除
-  const handleKeyDown = (e: KeyboardEvent) => {
-    if (e.key === "Escape") {
-      setLocalSelectedId(null);
-    }
-  };
-
-  // カード外クリックで選択解除
-  const handleMainClick = (e: React.MouseEvent) => {
-    if (e.target === e.currentTarget) {
-      setLocalSelectedId(null);
-    }
-  };
-
-  // entry の kind に応じてオーバーレイの onOpen / onEnter コールバックを決定
-  const getOpenHandler = (entry: BrowseEntry) => {
-    if (
-      entry.kind === "directory" ||
-      entry.kind === "archive" ||
-      entry.kind === "image" ||
-      entry.kind === "pdf"
-    ) {
-      return handleOpen;
-    }
-    return undefined;
-  };
-
-  const getEnterHandler = (entry: BrowseEntry) => {
-    if (entry.kind === "directory" || entry.kind === "archive") {
-      return handleEnter;
-    }
-    return undefined;
-  };
+    onGoParent,
+    onFocusTree,
+    onToggleMode,
+    onSortName,
+    onSortDate,
+    onTabChange,
+  });
 
   return (
     <main
@@ -308,77 +190,22 @@ export function FileBrowser({
         </div>
       )}
 
-      {!isLoading &&
-        filtered.length > 0 &&
-        (() => {
-          const virtualItems = virtualizer.getVirtualItems();
-          // 仮想化が有効（スクロールコンテナにサイズがある場合）
-          if (virtualItems.length > 0) {
-            return (
-              /* 仮想スクロールの動的値は Tailwind で表現不可のためインラインスタイル使用 */
-              <div style={{ height: virtualizer.getTotalSize() }} className="relative">
-                {virtualItems.map((virtualRow) => {
-                  const { start, end } = getRowItems(virtualRow.index);
-                  return (
-                    <div
-                      key={virtualRow.key}
-                      data-index={virtualRow.index}
-                      ref={measureElement}
-                      style={{
-                        position: "absolute",
-                        top: 0,
-                        transform: `translateY(${virtualRow.start}px)`,
-                        width: "100%",
-                      }}
-                    >
-                      <div
-                        className="grid gap-4"
-                        style={{ gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))` }}
-                      >
-                        {filtered.slice(start, end).map((entry, i) => {
-                          const itemIndex = start + i;
-                          return (
-                            <FileCard
-                              key={entry.node_id}
-                              ref={itemIndex === 0 ? firstCardRef : undefined}
-                              entry={entry}
-                              onSelect={handleSelect}
-                              onDoubleClick={handleAction}
-                              onOpen={getOpenHandler(entry)}
-                              onEnter={getEnterHandler(entry)}
-                              isSelected={entry.node_id === effectiveSelectedId}
-                              batchThumbnailUrl={batchThumbnails.get(entry.node_id)}
-                              batchThumbnails={batchThumbnails}
-                            />
-                          );
-                        })}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            );
-          }
-          // フォールバック: 仮想化が無効 (テスト環境等スクロールコンテナのサイズが不明)
-          return (
-            <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
-              {filtered.map((entry, index) => (
-                <FileCard
-                  key={entry.node_id}
-                  ref={index === 0 ? firstCardRef : undefined}
-                  entry={entry}
-                  onSelect={handleSelect}
-                  onDoubleClick={handleAction}
-                  onOpen={getOpenHandler(entry)}
-                  onEnter={getEnterHandler(entry)}
-                  isSelected={entry.node_id === effectiveSelectedId}
-                  batchThumbnailUrl={batchThumbnails.get(entry.node_id)}
-                  batchThumbnails={batchThumbnails}
-                />
-              ))}
-            </div>
-          );
-        })()}
+      {!isLoading && filtered.length > 0 && (
+        <FileBrowserGrid
+          filtered={filtered}
+          effectiveSelectedId={effectiveSelectedId}
+          batchThumbnails={batchThumbnails}
+          firstCardRef={firstCardRef}
+          virtualizer={virtualizer}
+          columns={columns}
+          getRowItems={getRowItems}
+          measureElement={measureElement}
+          onSelect={handleSelect}
+          onDoubleClick={handleAction}
+          getOpenHandler={getOpenHandler}
+          getEnterHandler={getEnterHandler}
+        />
+      )}
 
       {/* 無限スクロール: センチネル + ローディング/エラー表示 */}
       {hasMore && (
