@@ -39,7 +39,7 @@ export function usePdfRenderCache(maxBytes = DEFAULT_MAX_BYTES): PdfRenderCache 
     (targetBytes: number) => {
       const entries = entriesRef.current;
       // lastAccess が小さい順にソート
-      const sorted = [...entries.values()].sort((a, b) => a.lastAccess - b.lastAccess);
+      const sorted = [...entries.values()].toSorted((a, b) => a.lastAccess - b.lastAccess);
       for (const entry of sorted) {
         if (totalBytesRef.current + targetBytes <= maxBytes) break;
         entry.bitmap.close();

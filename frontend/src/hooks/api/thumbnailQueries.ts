@@ -93,7 +93,7 @@ export function useBatchThumbnails(nodeIds: string[]): {
   // queryKey にはソート済み ID を使用 → タブ切替でチャンク境界が変わってもキャッシュヒット
   const chunkResults = useQueries({
     queries: chunks.map((chunk) => ({
-      queryKey: ["thumbnails", "batch", [...chunk].sort().join(",")],
+      queryKey: ["thumbnails", "batch", chunk.toSorted().join(",")],
       queryFn: async () => {
         const resp = await apiPost<BatchResponse>("/api/thumbnails/batch", {
           node_ids: chunk,

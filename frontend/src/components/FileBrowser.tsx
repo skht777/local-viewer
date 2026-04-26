@@ -48,7 +48,7 @@ function filterByTab(entries: BrowseEntry[], tab: ViewerTab, sort: SortOrder): B
       );
       // date ソート時はソート済み順序を尊重し、サブソートをスキップ
       if (sort.startsWith("date")) return filesets;
-      return filesets.sort((a, b) => {
+      return filesets.toSorted((a, b) => {
         const aIsDir = a.kind === "directory" ? 1 : 0;
         const bIsDir = b.kind === "directory" ? 1 : 0;
         return aIsDir - bIsDir;

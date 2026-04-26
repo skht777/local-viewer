@@ -153,7 +153,7 @@ export default function BrowsePage() {
   );
 
   // ビューワー用: ブラウズのソート順に関わらず名前昇順で表示
-  const viewerImages = useMemo(() => [...images].sort(compareEntryName), [images]);
+  const viewerImages = useMemo(() => images.toSorted(compareEntryName), [images]);
 
   // ブラウズ順インデックス → ビューワー順インデックスの変換マップ
   const viewerIndexMap = useMemo(() => {

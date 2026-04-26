@@ -20,7 +20,7 @@ function compareByName(a: BrowseEntry, b: BrowseEntry): number {
 }
 
 export function sortEntries(entries: BrowseEntry[], sort: SortOrder): BrowseEntry[] {
-  return [...entries].sort((a, b) => {
+  return entries.toSorted((a, b) => {
     if (sort === "name-asc") return compareByName(a, b);
     if (sort === "name-desc") {
       // ディレクトリ優先を維持しつつ名前のみ降順 (バックエンドと一致)

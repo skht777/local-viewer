@@ -231,7 +231,7 @@ export function CgViewer({
           onClick={handleImageClick}
           onMouseMove={resetCursorTimer}
         >
-          {displayIndices.map((idx, position) => {
+          {displayIndices.map((idx) => {
             const img = images[idx];
             if (!img) return null;
             // fitMode "height" 時のみ h-full を付与（パーセンテージ基準の確立）
@@ -239,7 +239,7 @@ export function CgViewer({
             const needsFullHeight = fitMode === "height";
             return (
               <div
-                key={`page-${position}`}
+                key={img.node_id}
                 className={
                   displayIndices.length > 1
                     ? `flex min-w-0 flex-1 my-auto justify-center${needsFullHeight ? " h-full" : ""}`
