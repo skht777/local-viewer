@@ -162,7 +162,7 @@ impl ThumbnailWarmer {
 
     /// 現在の pending 件数（テスト用）
     #[cfg(test)]
-    fn pending_count(&self) -> usize {
+    pub(crate) fn pending_count(&self) -> usize {
         self.pending
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)

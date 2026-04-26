@@ -403,6 +403,8 @@ pub(crate) async fn browse_directory(
     let sort = query.sort;
     let limit = query.limit;
     let cursor = query.cursor.clone();
+    // ページネーション付き 1 ページ目のみ warm 対象（cursor / limit が move される前にフラグ化）
+    let should_warm = limit.is_some() && cursor.is_none();
 
     // Step 1: node_id 解決 + アーカイブ判定 (短ロック)
     let registry = Arc::clone(&state.node_registry);
@@ -549,8 +551,14 @@ pub(crate) async fn browse_directory(
             .into_response());
     }
 
-    // プリウォーム: サムネイルをバックグラウンドで事前生成
-    state.thumbnail_warmer.warm(&response.entries, &state);
+    // プリウォーム: ページネーション付き 1 ページ目のみ実施
+    // - cursor 付き (2 ページ目以降): viewer prefetch の追加ページのため warm 不要
+    // - limit 無し: 内部探索 (browseNodeOptions) で UI 表示しないため warm 不要
+    // - これにより `fetchAllBrowsePages` の追加ページや兄弟探索が誤って全件サムネイル生成を
+    //   走らせるリグレッションを抑止する
+    if should_warm {
+        state.thumbnail_warmer.warm(&response.entries, &state);
+    }
 
     // JSON レスポンス + `ETag` + Cache-Control ヘッダ
     Ok((
