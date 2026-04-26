@@ -25,7 +25,7 @@ use crate::state::AppState;
 pub(super) fn compute_thumb_etag(mtime_ns: u128, node_id: &str) -> String {
     let raw = format!("thumb:{mtime_ns}:{node_id}");
     let digest = Md5::digest(raw.as_bytes());
-    format!("\"{digest:x}\"")
+    format!("\"{}\"", hex::encode(digest))
 }
 
 /// ファイルの `mtime_ns` を取得する
@@ -105,12 +105,11 @@ pub(crate) async fn serve_thumbnail(
     }?;
 
     // If-None-Match チェック
-    if let Some(if_none_match) = headers.get(header::IF_NONE_MATCH) {
-        if let Ok(val) = if_none_match.to_str() {
-            if val == result.etag {
-                return Ok(StatusCode::NOT_MODIFIED.into_response());
-            }
-        }
+    if let Some(if_none_match) = headers.get(header::IF_NONE_MATCH)
+        && let Ok(val) = if_none_match.to_str()
+        && val == result.etag
+    {
+        return Ok(StatusCode::NOT_MODIFIED.into_response());
     }
 
     // Cache-Control ヘッダ

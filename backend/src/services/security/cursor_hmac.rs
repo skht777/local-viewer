@@ -8,7 +8,7 @@
 //! 未設定または空文字の場合は起動時に panic する。テストビルドのみ
 //! 固定フォールバック値を許容する。
 
-use hmac::{Hmac, Mac};
+use hmac::{Hmac, KeyInit, Mac};
 use sha2::Sha256;
 
 type HmacSha256 = Hmac<Sha256>;

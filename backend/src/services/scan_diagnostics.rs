@@ -137,10 +137,11 @@ pub(crate) fn finalize_scan_success(
     last_scan_report: &std::sync::RwLock<Option<Arc<ScanDiagnostics>>>,
     diagnostics: ScanDiagnostics,
 ) {
-    if !diagnostics.is_warm_start && diagnostics.all_ok {
-        if let Err(e) = dir_index.mark_full_scan_done() {
-            tracing::error!("DirIndex::mark_full_scan_done 失敗: {e}");
-        }
+    if !diagnostics.is_warm_start
+        && diagnostics.all_ok
+        && let Err(e) = dir_index.mark_full_scan_done()
+    {
+        tracing::error!("DirIndex::mark_full_scan_done 失敗: {e}");
     }
     if diagnostics.all_ok {
         dir_index.mark_ready();

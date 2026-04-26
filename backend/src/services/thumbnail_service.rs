@@ -213,7 +213,7 @@ impl ThumbnailService {
         use md5::{Digest, Md5};
         let input = format!("thumb:{mtime_ns}:{node_id}:{}", self.default_width);
         let hash = Md5::digest(input.as_bytes());
-        format!("{hash:x}")
+        hex::encode(hash)
     }
 
     /// キャッシュにエントリが存在するか確認する (warmer 用)

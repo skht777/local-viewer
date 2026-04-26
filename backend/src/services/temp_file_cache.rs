@@ -162,11 +162,11 @@ impl TempFileCache {
 
         // eviction: 合計サイズ超過時に最古エントリを削除
         while inner.current_bytes + size > inner.max_size_bytes && !inner.order.is_empty() {
-            if let Some(evict_key) = inner.order.pop_front() {
-                if let Some((evict_path, evict_size)) = inner.entries.remove(&evict_key) {
-                    inner.current_bytes = inner.current_bytes.saturating_sub(evict_size);
-                    let _ = fs::remove_file(&evict_path);
-                }
+            if let Some(evict_key) = inner.order.pop_front()
+                && let Some((evict_path, evict_size)) = inner.entries.remove(&evict_key)
+            {
+                inner.current_bytes = inner.current_bytes.saturating_sub(evict_size);
+                let _ = fs::remove_file(&evict_path);
             }
         }
 

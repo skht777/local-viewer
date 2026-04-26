@@ -96,18 +96,18 @@ pub(super) fn process_event(
 
     // 親ディレクトリの parent_key を計算して dirty 化
     // remove/rename-from では対象パスが既に存在しないため、存在する親ディレクトリから計算
-    if let Some(parent) = path.parent() {
-        if let Some(parent_key) = compute_relative_path(parent, mounts) {
-            dir_index.mark_dir_dirty(&parent_key);
-        }
+    if let Some(parent) = path.parent()
+        && let Some(parent_key) = compute_relative_path(parent, mounts)
+    {
+        dir_index.mark_dir_dirty(&parent_key);
     }
 
     if action == "remove" {
         // 削除: 相対パスを計算して remove_entry
-        if let Some(rel) = compute_relative_path(path, mounts) {
-            if let Err(e) = indexer.remove_entry(&rel) {
-                debug!("remove_entry 失敗: {e} (path: {path_str})");
-            }
+        if let Some(rel) = compute_relative_path(path, mounts)
+            && let Err(e) = indexer.remove_entry(&rel)
+        {
+            debug!("remove_entry 失敗: {e} (path: {path_str})");
         }
         return;
     }

@@ -198,13 +198,13 @@ fn try_first_viewable_from_index(
     let root = reg.path_security().find_root_for(path)?;
 
     for kind in ["archive", "pdf", "image"] {
-        if let Ok(Some(de)) = dir_index.first_entry_by_kind(&parent_key, kind) {
-            if let Some(meta) = dir_entry_to_entry_meta(&de, &root, &parent_key, reg) {
-                return Some(FirstViewableResponse {
-                    entry: Some(meta),
-                    parent_node_id: Some(current_id.to_string()),
-                });
-            }
+        if let Ok(Some(de)) = dir_index.first_entry_by_kind(&parent_key, kind)
+            && let Some(meta) = dir_entry_to_entry_meta(&de, &root, &parent_key, reg)
+        {
+            return Some(FirstViewableResponse {
+                entry: Some(meta),
+                parent_node_id: Some(current_id.to_string()),
+            });
         }
     }
     // 閲覧対象なし — DirIndex ではディレクトリ再帰降下を行わない (フォールバックに任せる)

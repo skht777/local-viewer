@@ -111,10 +111,10 @@ impl BulkInserter {
 impl Drop for BulkInserter {
     fn drop(&mut self) {
         // 残りのエントリをフラッシュ (エラーはログのみ)
-        if !self.pending_entries.is_empty() || !self.pending_meta.is_empty() {
-            if let Err(e) = self.flush() {
-                tracing::error!("BulkInserter drop 時のフラッシュ失敗: {e}");
-            }
+        if (!self.pending_entries.is_empty() || !self.pending_meta.is_empty())
+            && let Err(e) = self.flush()
+        {
+            tracing::error!("BulkInserter drop 時のフラッシュ失敗: {e}");
         }
     }
 }

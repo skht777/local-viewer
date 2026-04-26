@@ -50,13 +50,13 @@ pub(crate) async fn search(
     }
 
     // kind バリデーション
-    if let Some(ref kind) = query.kind {
-        if !VALID_KINDS.contains(&kind.as_str()) {
-            return Err(AppError::InvalidQuery(format!(
-                "無効な kind です: {kind} (有効値: {})",
-                VALID_KINDS.join(", ")
-            )));
-        }
+    if let Some(ref kind) = query.kind
+        && !VALID_KINDS.contains(&kind.as_str())
+    {
+        return Err(AppError::InvalidQuery(format!(
+            "無効な kind です: {kind} (有効値: {})",
+            VALID_KINDS.join(", ")
+        )));
     }
 
     // sort バリデーション → SearchOrder

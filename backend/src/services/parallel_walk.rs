@@ -171,10 +171,10 @@ fn scan_one(
                 let child_path = dir_path.join(&name);
 
                 // セキュリティ検証 (stat 前)
-                if let Some(validator) = path_validator {
-                    if !validator(&child_path) {
-                        continue;
-                    }
+                if let Some(validator) = path_validator
+                    && !validator(&child_path)
+                {
+                    continue;
                 }
 
                 let meta = match entry.metadata() {

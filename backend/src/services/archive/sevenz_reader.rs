@@ -336,10 +336,10 @@ fn find_first_image_from_slt_output(output: &str) -> Option<ArchiveEntry> {
     }
 
     // 末尾ブロック (最終行が空行でない場合)
-    if !current.is_empty() {
-        if let Some(entry) = try_build_image_entry(&current) {
-            return Some(entry);
-        }
+    if !current.is_empty()
+        && let Some(entry) = try_build_image_entry(&current)
+    {
+        return Some(entry);
     }
 
     None

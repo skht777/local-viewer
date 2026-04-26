@@ -202,7 +202,7 @@ fn make_remux_cache_key(source: &Path, mtime_ns: u128) -> String {
     use md5::{Digest, Md5};
     let input = format!("{}:{mtime_ns}:remux", source.display());
     let hash = Md5::digest(input.as_bytes());
-    format!("{hash:x}")
+    hex::encode(hash)
 }
 
 #[cfg(test)]

@@ -40,7 +40,7 @@ fn compute_archive_entry_meta(
         .map_or(0, |d| d.as_nanos());
     let raw = format!("{mtime_ns}:{entry_name}");
     let digest = Md5::digest(raw.as_bytes());
-    let etag = format!("{digest:x}");
+    let etag = hex::encode(digest);
     let etag_quoted = format!("\"{etag}\"");
     Ok(ArchiveEntryMeta {
         etag,
@@ -66,7 +66,7 @@ fn make_archive_temp_cache_key(
 ) -> String {
     let raw = format!("{}:{mtime_ns}:{entry_name}", archive_path.display());
     let digest = Md5::digest(raw.as_bytes());
-    format!("{digest:x}")
+    hex::encode(digest)
 }
 
 /// アーカイブエントリを配信する
@@ -93,16 +93,15 @@ pub(crate) async fn serve_archive_entry(
     .map_err(|e| AppError::path_security(format!("タスク実行失敗: {e}")))??;
 
     // If-None-Match → 304
-    if let Some(if_none_match) = headers.get(header::IF_NONE_MATCH) {
-        if let Ok(val) = if_none_match.to_str() {
-            if val.trim_matches('"') == meta.etag {
-                return Ok((
-                    StatusCode::NOT_MODIFIED,
-                    [(header::ETAG, meta.etag_quoted.clone())],
-                )
-                    .into_response());
-            }
-        }
+    if let Some(if_none_match) = headers.get(header::IF_NONE_MATCH)
+        && let Ok(val) = if_none_match.to_str()
+        && val.trim_matches('"') == meta.etag
+    {
+        return Ok((
+            StatusCode::NOT_MODIFIED,
+            [(header::ETAG, meta.etag_quoted.clone())],
+        )
+            .into_response());
     }
 
     let ext = extensions::extract_extension(entry_name).to_ascii_lowercase();

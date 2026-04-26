@@ -366,12 +366,11 @@ fn resolve_path(path: &Path) -> Result<PathBuf, AppError> {
 
     // 親ディレクトリが存在すれば canonicalize + ファイル名 append
     // (symlink 解決済みのルートと一致するようにするため)
-    if let Some(parent) = path.parent() {
-        if let Ok(canonical_parent) = std::fs::canonicalize(parent) {
-            if let Some(file_name) = path.file_name() {
-                return Ok(canonical_parent.join(file_name));
-            }
-        }
+    if let Some(parent) = path.parent()
+        && let Ok(canonical_parent) = std::fs::canonicalize(parent)
+        && let Some(file_name) = path.file_name()
+    {
+        return Ok(canonical_parent.join(file_name));
     }
 
     // 親も存在しない場合は手動で正規化 (traversal 検出用)

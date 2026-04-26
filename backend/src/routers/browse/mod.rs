@@ -127,7 +127,7 @@ pub(super) fn compute_etag(entries: &[EntryMeta]) -> String {
         );
         hasher.update(fragment.as_bytes());
     }
-    format!("{:x}", hasher.finalize())
+    hex::encode(hasher.finalize())
 }
 
 // --- DirEntry → EntryMeta 変換ヘルパー ---
@@ -207,13 +207,13 @@ pub(crate) async fn browse_directory(
     headers: HeaderMap,
 ) -> Result<Response, AppError> {
     // limit のバリデーション (1..=500)
-    if let Some(limit) = query.limit {
-        if limit == 0 || limit > MAX_LIMIT {
-            tracing::warn!(limit, max = MAX_LIMIT, "不正な limit パラメータ");
-            return Err(AppError::InvalidCursor(format!(
-                "limit は 1 以上 {MAX_LIMIT} 以下で指定してください"
-            )));
-        }
+    if let Some(limit) = query.limit
+        && (limit == 0 || limit > MAX_LIMIT)
+    {
+        tracing::warn!(limit, max = MAX_LIMIT, "不正な limit パラメータ");
+        return Err(AppError::InvalidCursor(format!(
+            "limit は 1 以上 {MAX_LIMIT} 以下で指定してください"
+        )));
     }
 
     let sort = query.sort;
@@ -279,8 +279,9 @@ pub(crate) async fn browse_directory(
             // DirIndex 高速パス: ready かつディレクトリのとき常に試行
             // limit = None (全件要求) にも対応 (SQLite `LIMIT -1`)
             // Phase 0 (短ロック) → Phase 1 (ロックなし) → Phase 2 (短ロック)
-            if is_dir_index_ready && path.is_dir() {
-                if let Some(result) = fast_path::try_dir_index_browse_split(
+            if is_dir_index_ready
+                && path.is_dir()
+                && let Some(result) = fast_path::try_dir_index_browse_split(
                     &registry,
                     &dir_index,
                     &path,
@@ -289,9 +290,9 @@ pub(crate) async fn browse_directory(
                     limit,
                     cursor.as_deref(),
                     state_label,
-                ) {
-                    return Ok(result);
-                }
+                )
+            {
+                return Ok(result);
             }
 
             // fallback 前に parent_key と dirty 世代を取得（self-healing 用）
@@ -327,29 +328,29 @@ pub(crate) async fn browse_directory(
             );
 
             // fallback 成功後に DirIndex を自己修復 (mtime 更新 + dirty 解除)
-            if result.is_ok() {
-                if let Some(ref pk) = parent_key_for_heal {
-                    // 現在の FS mtime で DirIndex を更新
-                    if let Some(mtime_ns) = std::fs::metadata(&path)
-                        .ok()
-                        .and_then(|m| m.modified().ok())
-                        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
-                        .map(|d| {
-                            #[allow(
-                                clippy::cast_possible_wrap,
-                                reason = "UNIX タイムスタンプは i64 範囲内"
-                            )]
-                            let ns = d.as_nanos() as i64;
-                            ns
-                        })
-                    {
-                        let _ = dir_index.set_dir_mtime(pk, mtime_ns);
-                    }
-                    // dirty 世代が一致する場合のみ dirty を解除
-                    // （スキャン中に FileWatcher が再 dirty 化した場合は世代が進んでいるので解除されない）
-                    if let Some(dg) = dirty_generation {
-                        dir_index.clear_dir_dirty_if_match(pk, dg);
-                    }
+            if result.is_ok()
+                && let Some(ref pk) = parent_key_for_heal
+            {
+                // 現在の FS mtime で DirIndex を更新
+                if let Some(mtime_ns) = std::fs::metadata(&path)
+                    .ok()
+                    .and_then(|m| m.modified().ok())
+                    .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                    .map(|d| {
+                        #[allow(
+                            clippy::cast_possible_wrap,
+                            reason = "UNIX タイムスタンプは i64 範囲内"
+                        )]
+                        let ns = d.as_nanos() as i64;
+                        ns
+                    })
+                {
+                    let _ = dir_index.set_dir_mtime(pk, mtime_ns);
+                }
+                // dirty 世代が一致する場合のみ dirty を解除
+                // （スキャン中に FileWatcher が再 dirty 化した場合は世代が進んでいるので解除されない）
+                if let Some(dg) = dirty_generation {
+                    dir_index.clear_dir_dirty_if_match(pk, dg);
                 }
             }
 
@@ -360,19 +361,18 @@ pub(crate) async fn browse_directory(
     };
 
     // `ETag` 比較 → 304 Not Modified
-    if let Some(if_none_match) = headers.get("if-none-match") {
-        if let Ok(value) = if_none_match.to_str() {
-            if value == etag {
-                return Ok((
-                    StatusCode::NOT_MODIFIED,
-                    [
-                        ("etag", etag.as_str()),
-                        ("cache-control", "private, no-cache"),
-                    ],
-                )
-                    .into_response());
-            }
-        }
+    if let Some(if_none_match) = headers.get("if-none-match")
+        && let Ok(value) = if_none_match.to_str()
+        && value == etag
+    {
+        return Ok((
+            StatusCode::NOT_MODIFIED,
+            [
+                ("etag", etag.as_str()),
+                ("cache-control", "private, no-cache"),
+            ],
+        )
+            .into_response());
     }
 
     // プリウォーム: サムネイルをバックグラウンドで事前生成

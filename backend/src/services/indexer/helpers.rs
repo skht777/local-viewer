@@ -252,38 +252,38 @@ pub(super) fn prune_unchanged_dir(
     let relative_path = make_relative_prefix(ctx.mount_id, &dir_relative);
     let dir_key = relative_path.strip_suffix('/').unwrap_or(&relative_path);
 
-    if let Some(&stored_mtime) = ctx.dir_mtimes.get(dir_key) {
-        if stored_mtime == mtime_ns {
-            // 子ディレクトリを持つ場合は枝刈りしない
-            // (Unix mtime は直接の子のみ反映し、子孫の変更を検出するには再帰走査が必要)
-            if ctx.has_subdirs.contains(dir_key) {
-                return true;
-            }
-            // リーフディレクトリ: mtime 未変更 → 配下の既存エントリを全て seen に追加して枝刈り
-            // BTreeMap::range で O(log n + k) のプレフィックスマッチ (k = マッチ数)
-            let mut seen_mut = ctx.seen.borrow_mut();
-            if dir_key.is_empty() {
-                // ルートディレクトリ: 全エントリが対象
-                for key in ctx.existing.keys() {
-                    seen_mut.insert(key.clone());
-                }
-            } else {
-                // dir_key 自体を seen に追加
-                seen_mut.insert(dir_key.to_string());
-                // "dir_key/" で始まるエントリを range で取得
-                let prefix = format!("{dir_key}/");
-                // prefix の次の境界値を計算 (最後のバイトをインクリメント)
-                let mut end = prefix.clone().into_bytes();
-                if let Some(last) = end.last_mut() {
-                    *last += 1;
-                }
-                let end_str = String::from_utf8(end).unwrap_or_default();
-                for (key, _) in ctx.existing.range(prefix..end_str) {
-                    seen_mut.insert(key.clone());
-                }
-            }
-            return false;
+    if let Some(&stored_mtime) = ctx.dir_mtimes.get(dir_key)
+        && stored_mtime == mtime_ns
+    {
+        // 子ディレクトリを持つ場合は枝刈りしない
+        // (Unix mtime は直接の子のみ反映し、子孫の変更を検出するには再帰走査が必要)
+        if ctx.has_subdirs.contains(dir_key) {
+            return true;
         }
+        // リーフディレクトリ: mtime 未変更 → 配下の既存エントリを全て seen に追加して枝刈り
+        // BTreeMap::range で O(log n + k) のプレフィックスマッチ (k = マッチ数)
+        let mut seen_mut = ctx.seen.borrow_mut();
+        if dir_key.is_empty() {
+            // ルートディレクトリ: 全エントリが対象
+            for key in ctx.existing.keys() {
+                seen_mut.insert(key.clone());
+            }
+        } else {
+            // dir_key 自体を seen に追加
+            seen_mut.insert(dir_key.to_string());
+            // "dir_key/" で始まるエントリを range で取得
+            let prefix = format!("{dir_key}/");
+            // prefix の次の境界値を計算 (最後のバイトをインクリメント)
+            let mut end = prefix.clone().into_bytes();
+            if let Some(last) = end.last_mut() {
+                *last += 1;
+            }
+            let end_str = String::from_utf8(end).unwrap_or_default();
+            for (key, _) in ctx.existing.range(prefix..end_str) {
+                seen_mut.insert(key.clone());
+            }
+        }
+        return false;
     }
     true
 }

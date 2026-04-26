@@ -379,11 +379,11 @@ fn run_mount_scan(
     // cold start のみ WalkReport を walk_metrics に保存。warm start は None 維持。
     let scan_result: Result<(), crate::services::indexer::IndexerError> = {
         let mut callback = |args: WalkCallbackArgs| {
-            if let Some(bulk) = bulk_opt.as_mut() {
-                if let Err(e) = bulk.ingest_walk_entry(&args) {
-                    tracing::warn!("DirIndex ingest 失敗 ({mount_id}): {e}");
-                    ingest_ok = false;
-                }
+            if let Some(bulk) = bulk_opt.as_mut()
+                && let Err(e) = bulk.ingest_walk_entry(&args)
+            {
+                tracing::warn!("DirIndex ingest 失敗 ({mount_id}): {e}");
+                ingest_ok = false;
             }
         };
         if is_warm_start {

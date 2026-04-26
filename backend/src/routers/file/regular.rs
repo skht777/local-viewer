@@ -32,7 +32,7 @@ pub(super) fn compute_file_etag(metadata: &std::fs::Metadata, file_name: &str) -
     let size = metadata.len();
     let raw = format!("{mtime_ns}:{size}:{file_name}");
     let digest = Md5::digest(raw.as_bytes());
-    format!("{digest:x}")
+    hex::encode(digest)
 }
 
 /// 通常ファイルを配信する (`ETag` + Range + `ServeFile`)
@@ -68,16 +68,15 @@ pub(super) async fn serve_regular_file(
     let etag_quoted = format!("\"{etag}\"");
 
     // If-None-Match → 304 Not Modified
-    if let Some(if_none_match) = original_headers.get(header::IF_NONE_MATCH) {
-        if let Ok(val) = if_none_match.to_str() {
-            if val.trim_matches('"') == etag {
-                return Ok((
-                    StatusCode::NOT_MODIFIED,
-                    [(header::ETAG, etag_quoted.clone())],
-                )
-                    .into_response());
-            }
-        }
+    if let Some(if_none_match) = original_headers.get(header::IF_NONE_MATCH)
+        && let Ok(val) = if_none_match.to_str()
+        && val.trim_matches('"') == etag
+    {
+        return Ok((
+            StatusCode::NOT_MODIFIED,
+            [(header::ETAG, etag_quoted.clone())],
+        )
+            .into_response());
     }
 
     // MKV remux: ブラウザ非対応コンテナを MP4 に変換して配信
