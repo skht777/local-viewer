@@ -283,11 +283,3 @@ impl DirIndex {
         self.reader()?.get_dir_mtime(path)
     }
 }
-
-// ===================================================================
-// BulkInserter
-// ===================================================================
-
-/// バッチ挿入用のエントリ行
-/// `(parent_path, name, kind, sort_key, size_bytes, mtime_ns)`
-pub(super) type PendingEntry = (String, String, String, String, Option<i64>, i64);

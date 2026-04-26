@@ -14,7 +14,7 @@ use crate::services::natural_sort::encode_sort_key;
 use crate::services::path_keys::mount_scope_range;
 
 use super::sort_queries::{build_parent_path, classify_kind};
-use super::{BATCH_SIZE, BulkInserter, DirIndex, DirIndexError};
+use super::{BulkInserter, DirIndex, DirIndexError};
 
 /// `canonicalize_parent_in_tx` の戻り値（観測ログ向け）
 #[derive(Debug, Default, Clone, Copy)]
@@ -223,57 +223,37 @@ pub(crate) fn canonicalize_parent_in_tx(
 }
 
 impl DirIndex {
-    /// `parallel_walk` の `WalkCallbackArgs` を受け取り `DirIndex` に格納する
+    /// `parallel_walk` の `WalkCallbackArgs` を受け取り `DirIndex` に格納する (full snapshot API)
     ///
     /// - `walk_entry_path` を `root_dir` からの相対パスに変換し `mount_id` をプレフィックス
-    /// - サブディレクトリ: `kind="directory"`, `size_bytes=None`
-    /// - ファイル: `kind` を拡張子から判定 (全種別を格納)
+    /// - 1 tx で `canonicalize_parent_in_tx` を呼ぶため、`entries` + `dir_meta` が原子的に
+    ///   更新される (旧実装の「`entries` commit 後に `dir_meta` を別 execute」分割を解消)
+    /// - `args.is_complete == false` のときは早期 return + WARN (`cascade` skip、既存行保持)
+    /// - `CorruptPersistentName` を受けたら **そのまま `Err` を呼び出し側に伝播**
+    ///   (リカバリは call site で `recover_from_corrupt_persistent_name` を呼ぶ)
     pub(crate) fn ingest_walk_entry(&self, args: &WalkCallbackArgs) -> Result<(), DirIndexError> {
+        if !args.is_complete {
+            tracing::warn!(
+                mount_id = %args.mount_id,
+                walk_entry_path = %args.walk_entry_path,
+                "is_complete=false の WalkEntry を skip (DirIndex 既存行を保持)"
+            );
+            return Ok(());
+        }
+
         let conn = self.connect()?;
         let parent_path = build_parent_path(args);
 
         let tx = conn.unchecked_transaction()?;
-        {
-            let mut stmt = tx.prepare_cached(
-                "INSERT OR REPLACE INTO dir_entries \
-                     (parent_path, name, kind, sort_key, size_bytes, mtime_ns) \
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-            )?;
-
-            // サブディレクトリを登録
-            for (name, mtime_ns) in &args.subdirs {
-                let sort_key = encode_sort_key(name);
-                stmt.execute(params![
-                    parent_path,
-                    name,
-                    "directory",
-                    sort_key,
-                    Option::<i64>::None,
-                    mtime_ns,
-                ])?;
-            }
-
-            // ファイルを登録 (全種別)
-            for (name, size_bytes, mtime_ns) in &args.files {
-                let kind = classify_kind(name);
-                let sort_key = encode_sort_key(name);
-                stmt.execute(params![
-                    parent_path,
-                    name,
-                    kind,
-                    sort_key,
-                    size_bytes,
-                    mtime_ns
-                ])?;
-            }
-        }
-        tx.commit()?;
-
-        // ディレクトリ mtime を記録
-        conn.execute(
-            "INSERT OR REPLACE INTO dir_meta (path, mtime_ns) VALUES (?1, ?2)",
-            params![parent_path, args.dir_mtime_ns],
+        canonicalize_parent_in_tx(
+            &tx,
+            &args.mount_id,
+            &parent_path,
+            args.dir_mtime_ns,
+            &args.subdirs,
+            &args.files,
         )?;
+        tx.commit()?;
 
         Ok(())
     }
@@ -345,7 +325,7 @@ impl DirIndex {
 
     /// バルク挿入用の `BulkInserter` を生成する
     ///
-    /// 単一接続 + `synchronous=OFF` + バッチ INSERT で高速に格納する。
+    /// 単一接続 + `synchronous=OFF` で高速に格納する。
     /// `DirIndex` はキャッシュ DB のため、中断時のデータ損失は許容。
     pub(crate) fn begin_bulk(&self) -> Result<BulkInserter, DirIndexError> {
         let conn = Connection::open(&self.db_path)?;
@@ -356,10 +336,6 @@ impl DirIndex {
              PRAGMA cache_size=-16384;\
              PRAGMA temp_store=MEMORY;",
         )?;
-        Ok(BulkInserter {
-            conn,
-            pending_entries: Vec::with_capacity(BATCH_SIZE),
-            pending_meta: Vec::with_capacity(64),
-        })
+        Ok(BulkInserter::new(conn))
     }
 }
