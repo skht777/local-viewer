@@ -9,7 +9,9 @@ import type { BrowseEntry } from "../../src/types/api";
 
 // resolveFirstViewable をモック
 const mockResolveFirstViewable =
-  vi.fn<(nodeId: string, queryClient: QueryClient, sort: string) => Promise<ResolvedTarget | null>>();
+  vi.fn<
+    (nodeId: string, queryClient: QueryClient, sort: string) => Promise<ResolvedTarget | null>
+  >();
 vi.mock("../../src/utils/resolveFirstViewable", () => ({
   resolveFirstViewable: (...args: [string, QueryClient, string]) =>
     mockResolveFirstViewable(...args),

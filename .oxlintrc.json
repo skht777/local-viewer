@@ -1,5 +1,6 @@
 {
   "$schema": "https://raw.githubusercontent.com/nicolo-ribaudo/oxlint-config-schema/refs/heads/main/schema.json",
+  "ignorePatterns": ["**/dist/**", "**/node_modules/**", "**/build/**"],
   "plugins": ["react", "typescript", "import", "unicorn", "promise", "oxc"],
   "categories": {
     "correctness": "error",

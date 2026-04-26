@@ -13,7 +13,7 @@
     "oxlint": "^1.61.0"
   },
   "lint-staged": {
-    "frontend/src/**/*.{ts,tsx}": [
+    "frontend/**/*.{ts,tsx}": [
       "oxlint",
       "oxfmt --write"
     ],

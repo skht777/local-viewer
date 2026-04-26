@@ -44,8 +44,8 @@ cd backend && cargo check
 # Lint（Rust バックエンド）
 cd backend && cargo clippy --all-targets --all-features -- -D warnings && cargo fmt --check
 
-# Lint（フロントエンド）
-npx oxlint frontend/src/ && npx oxfmt --check frontend/src/
+# Lint（フロントエンド、tests と vite.config.ts も対象）
+npx oxlint frontend/ && npx oxfmt --check --ignore-path .gitignore frontend/
 
 # Test（Rust バックエンド）
 cd backend && cargo test

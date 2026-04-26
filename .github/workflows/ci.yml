@@ -53,9 +53,9 @@ jobs:
       - run: npm ci
       - run: cd frontend && npm ci
 
-      # Frontend lint
-      - run: npx oxlint frontend/src/
-      - run: npx oxfmt --check frontend/src/
+      # Frontend lint (tests と vite.config.ts も対象)
+      - run: npx oxlint frontend/
+      - run: npx oxfmt --check --ignore-path .gitignore frontend/
 
       # Frontend type check (tests を含む)
       - run: cd frontend && npm run typecheck

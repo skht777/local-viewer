@@ -8,6 +8,7 @@ export default defineConfig({
   plugins: [
     react(),
     tailwindcss(),
+    // oxlint-disable-next-line new-cap -- VitePWA は vite-plugin-pwa の公式エクスポート関数（ファクトリ）
     VitePWA({
       registerType: "autoUpdate",
       workbox: {
@@ -20,7 +21,8 @@ export default defineConfig({
               cacheName: "thumbnails",
               expiration: {
                 maxEntries: 2000,
-                maxAgeSeconds: 30 * 24 * 60 * 60, // 30日
+                // 30日
+                maxAgeSeconds: 30 * 24 * 60 * 60,
               },
               cacheableResponse: { statuses: [0, 200] },
             },
