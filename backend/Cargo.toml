@@ -103,9 +103,10 @@ unsafe_code = "forbid"
 unreachable_pub = "warn"
 
 [lints.clippy]
-# pedantic / nursery グループ (priority -1 で個別 allow を優先)
+# pedantic グループ (priority -1 で個別 allow を優先)
+# nursery は redundant_pub_crate / missing_const_for_fn 等が既存構造と
+# 大量に衝突するため有効化しない
 pedantic = { level = "warn", priority = -1 }
-nursery = { level = "warn", priority = -1 }
 
 # pedantic から除外 (false positive が多い / プロジェクト方針に合わない)
 missing_errors_doc = "allow"
@@ -117,25 +118,17 @@ cast_possible_truncation = "allow"
 cast_sign_loss = "allow"
 cast_precision_loss = "allow"
 
-# nursery から除外 (false positive 多発 / リファクタ強要)
-option_if_let_else = "allow"
-or_fun_call = "allow"
-significant_drop_tightening = "allow"
-cognitive_complexity = "allow"
-
 # restriction から cherry-pick (本番コードに残すべきでないもの)
+# panic / mem_forget / unwrap_in_result はテスト用シミュレーションや
+# NODE_SECRET 必須化など意図的使用があるため有効化しない
 dbg_macro = "deny"
 todo = "deny"
 unimplemented = "deny"
 print_stdout = "deny"
 print_stderr = "deny"
 exit = "deny"
-mem_forget = "deny"
 unwrap_used = "warn"
 expect_used = "warn"
-panic = "warn"
-unwrap_in_result = "warn"
-string_to_string = "warn"
 lossy_float_literal = "warn"
 allow_attributes_without_reason = "warn"
 clone_on_ref_ptr = "warn"
