@@ -9,9 +9,15 @@ import { useVirtualizer } from "@tanstack/react-virtual";
 // Tailwind breakpoints: md=768, lg=1024, xl=1280
 // grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5
 function getColumnCount(width: number): number {
-  if (width >= 1280) return 5;
-  if (width >= 1024) return 4;
-  if (width >= 768) return 3;
+  if (width >= 1280) {
+    return 5;
+  }
+  if (width >= 1024) {
+    return 4;
+  }
+  if (width >= 768) {
+    return 3;
+  }
   return 2;
 }
 
@@ -35,11 +41,13 @@ export function useVirtualGrid({
   // ResizeObserver でコンテナ幅を監視
   useEffect(() => {
     const el = scrollRef.current;
-    if (!el || !enabled) return;
+    if (!el || !enabled) {
+      return;
+    }
 
     const observer = new ResizeObserver((entries) => {
       for (const entry of entries) {
-        const width = entry.contentRect.width;
+        const { width } = entry.contentRect;
         setColumns(getColumnCount(width));
       }
     });

@@ -147,9 +147,11 @@ export function CgViewer({
     // タイトル + ページ番号を 3 秒トースト表示（見開き時は "3-4 / 12" 形式）
     showTitle: () => {
       const indices = nav.displayIndices;
-      if (indices.length === 0) return;
+      if (indices.length === 0) {
+        return;
+      }
       const first = indices[0] + 1;
-      const last = indices[indices.length - 1] + 1;
+      const last = indices.at(-1) + 1;
       const end = indices.length > 1 ? last : undefined;
       showToast(formatPageLabel(setName, first, images.length, end), 3000);
     },
@@ -191,11 +193,13 @@ export function CgViewer({
   );
 
   const { displayIndices } = nav;
-  if (displayIndices.length === 0) return null;
+  if (displayIndices.length === 0) {
+    return null;
+  }
 
   // ページカウンター: 見開き時は "3-4 / 12" 形式
   const firstDisplay = displayIndices[0] + 1;
-  const lastDisplay = displayIndices[displayIndices.length - 1] + 1;
+  const lastDisplay = displayIndices.at(-1) + 1;
   const currentEnd = displayIndices.length > 1 ? lastDisplay : undefined;
 
   return (
@@ -241,15 +245,20 @@ export function CgViewer({
           onClick={handleImageClick}
           onMouseMove={resetCursorTimer}
         >
-          {displayIndices.map((idx) => {
+          {displayIndices.map((idx, position) => {
             const img = images[idx];
-            if (!img) return null;
+            if (!img) {
+              return null;
+            }
             // fitMode "height" 時のみ h-full を付与（パーセンテージ基準の確立）
             // "width" / "original" では外すことで画像が親を超えた際にスクロール可能にする
             const needsFullHeight = fitMode === "height";
+            // 表示位置 (page-0 / page-1) を key にして React に DOM を再利用させ、
+            // src 切替時の unmount/mount による空白フレーム（ちらつき）を回避する
             return (
               <div
-                key={img.node_id}
+                // oxlint-disable-next-line react/no-array-index-key
+                key={`page-${position}`}
                 className={
                   displayIndices.length > 1
                     ? `flex min-w-0 flex-1 my-auto justify-center${needsFullHeight ? " h-full" : ""}`

@@ -72,8 +72,12 @@ export function useSetJump({
   const buildSearch = useCallback(
     (params: Record<string, string>): string => {
       const sp = new URLSearchParams(params);
-      if (mode === "manga") sp.set("mode", "manga");
-      if (sort !== "name-asc") sp.set("sort", sort);
+      if (mode === "manga") {
+        sp.set("mode", "manga");
+      }
+      if (sort !== "name-asc") {
+        sp.set("sort", sort);
+      }
       return `?${sp}`;
     },
     [mode, sort],
@@ -157,14 +161,18 @@ export function useSetJump({
 
       // parentNodeId が null の場合、ancestors[0] (マウントルート) を使用
       if (!currentParentId) {
-        if (ancestors.length === 0 || !currentNodeId) return null;
+        if (ancestors.length === 0 || !currentNodeId) {
+          return null;
+        }
         currentParentId = ancestors[0].node_id;
       }
 
       const finder = direction === "next" ? findNextSet : findPrevSet;
 
       while (currentParentId && levelsUp < MAX_DEPTH) {
-        if (visited.has(currentParentId)) break;
+        if (visited.has(currentParentId)) {
+          break;
+        }
         visited.add(currentParentId);
 
         // sibling API を優先試行 (1 クエリで次/前セットを取得)
@@ -185,7 +193,9 @@ export function useSetJump({
         if (!parentData) {
           parentData = await queryClient.fetchQuery(browseNodeOptions(currentParentId, sort));
         }
-        if (!currentChildId) break;
+        if (!currentChildId) {
+          break;
+        }
 
         if (!sibling) {
           const sorted = sortEntries(parentData.entries, sort);
@@ -229,7 +239,9 @@ export function useSetJump({
 
   // PageDown/X: 条件付き確認で次のセットへ（トランジション中は無効化）
   const goNextSet = useCallback(async () => {
-    if (viewerTransitionId > 0) return;
+    if (viewerTransitionId > 0) {
+      return;
+    }
     const result = await findSiblingRecursive("next");
     if (!result) {
       onBoundary?.("最後のセットです");
@@ -259,7 +271,9 @@ export function useSetJump({
 
   // PageUp/Z: 条件付き確認で前のセットへ（トランジション中は無効化）
   const goPrevSet = useCallback(async () => {
-    if (viewerTransitionId > 0) return;
+    if (viewerTransitionId > 0) {
+      return;
+    }
     const result = await findSiblingRecursive("prev");
     if (!result) {
       onBoundary?.("最初のセットです");
@@ -289,16 +303,24 @@ export function useSetJump({
 
   // Shift+X: 確認なしで次のセットへ（トランジション中は無効化）
   const goNextSetParent = useCallback(async () => {
-    if (viewerTransitionId > 0) return;
+    if (viewerTransitionId > 0) {
+      return;
+    }
     const result = await findSiblingRecursive("next");
-    if (result) navigateToTarget(result.target, result.searchDirData.current_node_id);
+    if (result) {
+      navigateToTarget(result.target, result.searchDirData.current_node_id);
+    }
   }, [findSiblingRecursive, navigateToTarget, viewerTransitionId]);
 
   // Shift+Z: 確認なしで前のセットへ（トランジション中は無効化）
   const goPrevSetParent = useCallback(async () => {
-    if (viewerTransitionId > 0) return;
+    if (viewerTransitionId > 0) {
+      return;
+    }
     const result = await findSiblingRecursive("prev");
-    if (result) navigateToTarget(result.target, result.searchDirData.current_node_id);
+    if (result) {
+      navigateToTarget(result.target, result.searchDirData.current_node_id);
+    }
   }, [findSiblingRecursive, navigateToTarget, viewerTransitionId]);
 
   return { goNextSet, goPrevSet, goNextSetParent, goPrevSetParent, prompt, dismissPrompt };

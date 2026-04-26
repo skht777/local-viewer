@@ -84,6 +84,7 @@ function TreeNode({ entry, depth, activeNodeId, ancestorNodeIds, onNavigate }: T
     }
   };
   // アンマウント時にタイマーをクリア (pointerLeave 未発火のまま消える場合のリーク防止)
+  // oxlint-disable-next-line arrow-body-style
   useEffect(() => {
     return () => {
       if (hoverTimerRef.current) clearTimeout(hoverTimerRef.current);
@@ -144,8 +145,10 @@ function TreeNode({ entry, depth, activeNodeId, ancestorNodeIds, onNavigate }: T
 
 // ツリー内の可視ボタンを DOM 順序で取得
 function getVisibleButtons(container: HTMLElement | null): HTMLButtonElement[] {
-  if (!container) return [];
-  return Array.from(container.querySelectorAll<HTMLButtonElement>("[data-node-id]"));
+  if (!container) {
+    return [];
+  }
+  return [...container.querySelectorAll<HTMLButtonElement>("[data-node-id]")];
 }
 
 // 現在フォーカスされているボタンのインデックスを取得
@@ -173,26 +176,34 @@ export function DirectoryTree({
 
   // treeRef からコンテナ要素を取得するヘルパー
   const getContainer = useCallback((): HTMLElement | null => {
-    if (typeof treeRef === "function") return null;
+    if (typeof treeRef === "function") {
+      return null;
+    }
     return treeRef?.current ?? null;
   }, [treeRef]);
 
   const moveDown = useCallback(() => {
     const buttons = getVisibleButtons(getContainer());
     const idx = getFocusedIndex(buttons);
-    if (idx < buttons.length - 1) buttons[idx + 1].focus();
+    if (idx < buttons.length - 1) {
+      buttons[idx + 1].focus();
+    }
   }, [getContainer]);
 
   const moveUp = useCallback(() => {
     const buttons = getVisibleButtons(getContainer());
     const idx = getFocusedIndex(buttons);
-    if (idx > 0) buttons[idx - 1].focus();
+    if (idx > 0) {
+      buttons[idx - 1].focus();
+    }
   }, [getContainer]);
 
   const expand = useCallback(() => {
     const focused = document.activeElement as HTMLButtonElement;
     const nodeId = focused?.dataset?.nodeId;
-    if (!nodeId) return;
+    if (!nodeId) {
+      return;
+    }
     const treeItem = focused.closest("[role='treeitem']");
     const isExpanded = treeItem?.getAttribute("aria-expanded") === "true";
     if (!isExpanded) {
@@ -209,7 +220,9 @@ export function DirectoryTree({
   const collapse = useCallback(() => {
     const focused = document.activeElement as HTMLButtonElement;
     const nodeId = focused?.dataset?.nodeId;
-    if (!nodeId) return;
+    if (!nodeId) {
+      return;
+    }
     const treeItem = focused.closest("[role='treeitem']");
     const isExpanded = treeItem?.getAttribute("aria-expanded") === "true";
     if (isExpanded) {
@@ -242,7 +255,7 @@ export function DirectoryTree({
 
   const goLast = useCallback(() => {
     const buttons = getVisibleButtons(getContainer());
-    buttons[buttons.length - 1]?.focus();
+    buttons.at(-1)?.focus();
   }, [getContainer]);
 
   useTreeKeyboard(

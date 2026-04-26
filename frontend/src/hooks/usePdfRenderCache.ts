@@ -29,7 +29,9 @@ export function usePdfRenderCache(maxBytes = DEFAULT_MAX_BYTES): PdfRenderCache 
 
   const get = useCallback((key: string): ImageBitmap | undefined => {
     const entry = entriesRef.current.get(key);
-    if (!entry) return undefined;
+    if (!entry) {
+      return undefined;
+    }
     // LRU 更新
     entry.lastAccess = ++accessCounterRef.current;
     return entry.bitmap;
@@ -41,7 +43,9 @@ export function usePdfRenderCache(maxBytes = DEFAULT_MAX_BYTES): PdfRenderCache 
       // lastAccess が小さい順にソート
       const sorted = [...entries.values()].toSorted((a, b) => a.lastAccess - b.lastAccess);
       for (const entry of sorted) {
-        if (totalBytesRef.current + targetBytes <= maxBytes) break;
+        if (totalBytesRef.current + targetBytes <= maxBytes) {
+          break;
+        }
         entry.bitmap.close();
         entries.delete(entry.key);
         totalBytesRef.current -= entry.bytes;

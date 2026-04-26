@@ -28,9 +28,13 @@ export function VideoCard({ entry, initialTime, onTimeUpdate }: VideoCardProps) 
 
   // timeupdate を約 1 秒間隔でスロットリングして親に通知
   const handleTimeUpdate = () => {
-    if (!videoRef.current || !onTimeUpdate) return;
+    if (!videoRef.current || !onTimeUpdate) {
+      return;
+    }
     const now = Date.now();
-    if (now - lastReportRef.current < 1000) return;
+    if (now - lastReportRef.current < 1000) {
+      return;
+    }
     lastReportRef.current = now;
     onTimeUpdate(entry.node_id, videoRef.current.currentTime);
   };

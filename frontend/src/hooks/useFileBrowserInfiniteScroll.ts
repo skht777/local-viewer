@@ -31,9 +31,13 @@ export function useFileBrowserInfiniteScroll({
   const sentinelRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (!hasMore || !onLoadMore) return;
+    if (!hasMore || !onLoadMore) {
+      return;
+    }
     const el = sentinelRef.current;
-    if (!el) return;
+    if (!el) {
+      return;
+    }
     const observer = new IntersectionObserver(
       ([entry]) => {
         if (entry.isIntersecting && !isLoadingMore && !isError) {

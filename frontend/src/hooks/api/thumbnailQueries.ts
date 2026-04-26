@@ -28,7 +28,9 @@ export function computeStableChunks(ids: string[], size: number, prev: ChunkStat
 
   // 無限スクロール (追加のみ) → 既存チャンク維持 + 新規チャンク追加
   const newIds = ids.filter((id) => !prev.idSet.has(id));
-  if (newIds.length === 0) return prev;
+  if (newIds.length === 0) {
+    return prev;
+  }
   return {
     chunks: [...prev.chunks, ...splitIntoChunks(newIds, size)],
     idSet: currentSet,
@@ -52,7 +54,7 @@ const BATCH_SIZE = 100;
 // base64 → Blob URL 変換
 function base64ToBlobUrl(base64: string): string {
   const binary = atob(base64);
-  const bytes = Uint8Array.from(binary, (c) => c.charCodeAt(0));
+  const bytes = Uint8Array.from(binary, (c) => c.codePointAt(0));
   const blob = new Blob([bytes], { type: "image/jpeg" });
   return URL.createObjectURL(blob);
 }
@@ -111,7 +113,9 @@ export function useBatchThumbnails(nodeIds: string[]): {
   // Blob URL の差分管理 (共通 ID は再利用、不要分のみ revoke)
   const prevUrlsRef = useRef(new Map<string, string>());
   const urlMap = useMemo(() => {
-    if (rawData.size === 0) return new Map<string, string>();
+    if (rawData.size === 0) {
+      return new Map<string, string>();
+    }
 
     const newMap = new Map<string, string>();
     // rawData にある ID: 既存 URL 再利用 or 新規作成
@@ -134,6 +138,7 @@ export function useBatchThumbnails(nodeIds: string[]): {
   }, [rawData]);
 
   // アンマウント時に全 Blob URL を解放
+  // oxlint-disable-next-line arrow-body-style
   useEffect(() => {
     return () => {
       for (const url of prevUrlsRef.current.values()) {

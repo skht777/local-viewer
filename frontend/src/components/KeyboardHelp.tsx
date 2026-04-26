@@ -76,7 +76,9 @@ export function KeyboardHelp({ shortcuts, onClose }: KeyboardHelpProps) {
       data-testid="keyboard-help-overlay"
       className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70"
       onClick={(e) => {
-        if (e.target === e.currentTarget) onClose();
+        if (e.target === e.currentTarget) {
+          onClose();
+        }
       }}
     >
       <div className="max-h-[80vh] w-full max-w-md overflow-y-auto rounded-xl bg-surface-card p-6 shadow-xl">

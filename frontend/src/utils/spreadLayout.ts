@@ -36,7 +36,7 @@ export function computeSpreadGroup(
     // 偶数始点に正規化
     const base = clamped - (clamped % 2);
     const indices = base + 1 < totalCount ? [base, base + 1] : [base];
-    const lastIdx = indices[indices.length - 1];
+    const lastIdx = indices.at(-1);
     return {
       indices,
       nextStart: lastIdx + 1 < totalCount ? lastIdx + 1 : null,
@@ -48,7 +48,7 @@ export function computeSpreadGroup(
   if (clamped === 0) {
     return {
       indices: [0],
-      nextStart: 1 < totalCount ? 1 : null,
+      nextStart: totalCount > 1 ? 1 : null,
       prevStart: null,
     };
   }
@@ -58,7 +58,7 @@ export function computeSpreadGroup(
   const adjusted = clamped - 1;
   const base = 1 + adjusted - (adjusted % 2);
   const indices = base + 1 < totalCount ? [base, base + 1] : [base];
-  const lastIdx = indices[indices.length - 1];
+  const lastIdx = indices.at(-1);
   return {
     indices,
     nextStart: lastIdx + 1 < totalCount ? lastIdx + 1 : null,

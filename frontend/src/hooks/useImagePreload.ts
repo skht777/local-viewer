@@ -8,9 +8,13 @@ import type { BrowseEntry } from "../types/api";
 export function useImagePreload(images: BrowseEntry[], currentIndex: number, range = 2): void {
   useEffect(() => {
     for (let offset = -range; offset <= range; offset++) {
-      if (offset === 0) continue;
+      if (offset === 0) {
+        continue;
+      }
       const idx = currentIndex + offset;
-      if (idx < 0 || idx >= images.length) continue;
+      if (idx < 0 || idx >= images.length) {
+        continue;
+      }
       const img = new Image();
       img.src = `/api/file/${images[idx].node_id}`;
     }

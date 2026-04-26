@@ -45,7 +45,9 @@ export async function resolveFirstViewable(
     const data = await queryClient.fetchQuery(browseNodeOptions(currentNodeId, sort));
     const sorted = sortEntries(data.entries, sort);
     const first = selectFirstViewable(sorted);
-    if (!first) return null;
+    if (!first) {
+      return null;
+    }
 
     if (first.kind === "directory") {
       currentNodeId = first.node_id;

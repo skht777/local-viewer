@@ -47,7 +47,9 @@ function filterByTab(entries: BrowseEntry[], tab: ViewerTab, sort: SortOrder): B
         (e) => e.kind === "directory" || e.kind === "archive" || e.kind === "pdf",
       );
       // date ソート時はソート済み順序を尊重し、サブソートをスキップ
-      if (sort.startsWith("date")) return filesets;
+      if (sort.startsWith("date")) {
+        return filesets;
+      }
       return filesets.toSorted((a, b) => {
         const aIsDir = a.kind === "directory" ? 1 : 0;
         const bIsDir = b.kind === "directory" ? 1 : 0;
@@ -171,7 +173,9 @@ export function FileBrowser({
         onPdfClick?.(entry.node_id);
       } else if (entry.kind === "image" && onImageClick) {
         const imageIndex = indexMap.get(entry.node_id) ?? -1;
-        if (imageIndex >= 0) onImageClick(imageIndex);
+        if (imageIndex >= 0) {
+          onImageClick(imageIndex);
+        }
       }
     },
     [indexMap, onNavigate, onPdfClick, onImageClick],
@@ -184,7 +188,9 @@ export function FileBrowser({
         onOpenViewer?.(entry.node_id);
       } else if (entry.kind === "image" && onImageClick) {
         const imageIndex = indexMap.get(entry.node_id) ?? -1;
-        if (imageIndex >= 0) onImageClick(imageIndex);
+        if (imageIndex >= 0) {
+          onImageClick(imageIndex);
+        }
       } else if (entry.kind === "pdf") {
         onPdfClick?.(entry.node_id);
       }
@@ -209,7 +215,9 @@ export function FileBrowser({
     (delta: number) => {
       const currentIndex = indexMap.get(effectiveSelectedId ?? "") ?? -1;
       const newIndex = currentIndex + delta;
-      if (newIndex < 0 || newIndex >= filtered.length) return;
+      if (newIndex < 0 || newIndex >= filtered.length) {
+        return;
+      }
       const target = filtered[newIndex];
       setLocalSelectedId(target.node_id);
       // 仮想スクロールで対象行を可視領域に移動
@@ -230,11 +238,15 @@ export function FileBrowser({
       move: handleMove,
       action: () => {
         const entry = filtered.find((e) => e.node_id === effectiveSelectedId);
-        if (entry) handleAction(entry);
+        if (entry) {
+          handleAction(entry);
+        }
       },
       open: () => {
         const entry = filtered.find((e) => e.node_id === effectiveSelectedId);
-        if (entry) handleOpen(entry);
+        if (entry) {
+          handleOpen(entry);
+        }
       },
       goParent: onGoParent ?? (() => {}),
       focusTree: onFocusTree ?? (() => {}),

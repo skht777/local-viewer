@@ -8,7 +8,7 @@ import App from "./App";
 // Service Worker 登録 (本番ビルドのみ有効)
 registerSW({ immediate: true });
 
-createRoot(document.getElementById("root")!).render(
+createRoot(document.querySelector("#root")!).render(
   <StrictMode>
     <BrowserRouter>
       <App />

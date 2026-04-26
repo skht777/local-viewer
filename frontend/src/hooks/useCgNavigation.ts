@@ -33,11 +33,15 @@ export function useCgNavigation(
   const canGoPrev = group.prevStart !== null;
 
   const goNext = useCallback(() => {
-    if (group.nextStart !== null) setIndex(group.nextStart);
+    if (group.nextStart !== null) {
+      setIndex(group.nextStart);
+    }
   }, [group.nextStart, setIndex]);
 
   const goPrev = useCallback(() => {
-    if (group.prevStart !== null) setIndex(group.prevStart);
+    if (group.prevStart !== null) {
+      setIndex(group.prevStart);
+    }
   }, [group.prevStart, setIndex]);
 
   const goFirst = useCallback(() => {

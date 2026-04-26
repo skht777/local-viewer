@@ -90,7 +90,9 @@ export function PdfMangaViewer({
 
   // pageSizes 取得完了時に measure を再実行
   useEffect(() => {
-    if (pageSizesReady) virtualizer.measure();
+    if (pageSizesReady) {
+      virtualizer.measure();
+    }
   }, [pageSizesReady, virtualizer]);
 
   // スクロール位置からのページ検出
@@ -189,10 +191,14 @@ export function PdfMangaViewer({
   const cursorTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
   // カーソルオートハイドをリセット（スライダー操作時にも呼ばれる）
   const resetCursorTimer = useCallback(() => {
-    if (scrollRef.current) scrollRef.current.style.cursor = "";
+    if (scrollRef.current) {
+      scrollRef.current.style.cursor = "";
+    }
     clearTimeout(cursorTimerRef.current);
     cursorTimerRef.current = setTimeout(() => {
-      if (scrollRef.current) scrollRef.current.style.cursor = "none";
+      if (scrollRef.current) {
+        scrollRef.current.style.cursor = "none";
+      }
     }, 1000);
   }, []);
 
@@ -228,7 +234,9 @@ export function PdfMangaViewer({
     );
   }
 
-  if (!document) return null;
+  if (!document) {
+    return null;
+  }
 
   return (
     <div data-testid="pdf-manga-viewer" className="fixed inset-0 z-50 flex bg-black">

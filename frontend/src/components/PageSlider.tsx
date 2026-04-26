@@ -47,12 +47,12 @@ export function PageSlider({
   const inputRef = useRef<HTMLInputElement>(null);
 
   // 初回表示ヒント: セッション内で初回のみ2秒間スライダーを表示
-  const [isHintVisible, setIsHintVisible] = useState(() => {
-    return !sessionStorage.getItem(HINT_KEY);
-  });
+  const [isHintVisible, setIsHintVisible] = useState(() => !sessionStorage.getItem(HINT_KEY));
 
   useEffect(() => {
-    if (!isHintVisible) return;
+    if (!isHintVisible) {
+      return;
+    }
     sessionStorage.setItem(HINT_KEY, "1");
     const timer = setTimeout(() => setIsHintVisible(false), 2000);
     return () => clearTimeout(timer);
@@ -61,7 +61,9 @@ export function PageSlider({
   // コンテナに pointermove/pointerleave リスナーを設定
   useEffect(() => {
     const container = containerRef.current;
-    if (!container) return;
+    if (!container) {
+      return;
+    }
 
     const handlePointerMove = (e: PointerEvent) => {
       const rect = container.getBoundingClientRect();
@@ -108,13 +110,17 @@ export function PageSlider({
     document.addEventListener("pointerup", onUp);
   }, [onSliderActivity]);
 
-  if (totalCount <= 1) return null;
+  if (totalCount <= 1) {
+    return null;
+  }
 
   const isVisible = isTouchDevice || isNearBottom || isFocused || isHintVisible || isHovering;
 
   // サム位置の計算（inputの幅に対する割合で算出）
   const thumbPosition = (() => {
-    if (!inputRef.current || totalCount <= 1) return 0;
+    if (!inputRef.current || totalCount <= 1) {
+      return 0;
+    }
     const ratio = currentIndex / (totalCount - 1);
     return ratio * inputRef.current.offsetWidth;
   })();

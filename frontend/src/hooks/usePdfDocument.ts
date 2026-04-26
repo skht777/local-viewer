@@ -48,9 +48,9 @@ export function usePdfDocument(fileUrl: string): UsePdfDocumentReturn {
         setDocument(pdf);
         setIsLoading(false);
       },
-      (err: unknown) => {
+      (loadError: unknown) => {
         if (cancelled) return;
-        setError(err instanceof Error ? err : new Error(String(err)));
+        setError(loadError instanceof Error ? loadError : new Error(String(loadError)));
         setIsLoading(false);
       },
     );
@@ -63,6 +63,7 @@ export function usePdfDocument(fileUrl: string): UsePdfDocumentReturn {
   }, [fileUrl]);
 
   // unmount 時に残った document を破棄
+  // oxlint-disable-next-line arrow-body-style
   useEffect(() => {
     return () => {
       documentRef.current?.destroy();

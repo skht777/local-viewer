@@ -28,7 +28,9 @@ export function useDebouncedValue<T>(
     const isEqual = equalityFn
       ? equalityFn(lastEmittedRef.current, value)
       : Object.is(lastEmittedRef.current, value);
-    if (isEqual) return;
+    if (isEqual) {
+      return;
+    }
 
     const timer = setTimeout(() => {
       lastEmittedRef.current = value;
@@ -46,10 +48,16 @@ export function useDebouncedValue<T>(
  * 再デバウンスを回避できる。
  */
 export function areNodeIdsEqual(a: string[], b: string[]): boolean {
-  if (a === b) return true;
-  if (a.length !== b.length) return false;
+  if (a === b) {
+    return true;
+  }
+  if (a.length !== b.length) {
+    return false;
+  }
   for (let i = 0; i < a.length; i += 1) {
-    if (a[i] !== b[i]) return false;
+    if (a[i] !== b[i]) {
+      return false;
+    }
   }
   return true;
 }

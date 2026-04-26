@@ -36,11 +36,15 @@ export function useMangaScroll({
 
   // スクロール位置からビューポート中央の画像 index を検出
   useEffect(() => {
-    if (!scrollElement) return;
+    if (!scrollElement) {
+      return;
+    }
 
     const handleScroll = () => {
       // プログラムスクロール中は URL 同期をスキップ
-      if (isProgrammaticScroll.current) return;
+      if (isProgrammaticScroll.current) {
+        return;
+      }
 
       cancelAnimationFrame(rafId.current);
       rafId.current = requestAnimationFrame(() => {
@@ -54,7 +58,7 @@ export function useMangaScroll({
         }
         // フォールバック: 最後の表示アイテム
         if (items.length > 0) {
-          setCurrentIndex(items[items.length - 1].index);
+          setCurrentIndex(items.at(-1).index);
         }
       });
     };
@@ -93,7 +97,9 @@ export function useMangaScroll({
   // Home: DOM scrollTop=0 で即座にジャンプ
   const scrollToTop = useCallback(() => {
     programmaticScrollTo(0, () => {
-      if (scrollElement) scrollElement.scrollTop = 0;
+      if (scrollElement) {
+        scrollElement.scrollTop = 0;
+      }
     });
   }, [scrollElement, programmaticScrollTo]);
 

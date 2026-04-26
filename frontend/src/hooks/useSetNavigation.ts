@@ -29,7 +29,9 @@ export function findPrevSet(siblings: BrowseEntry[], currentNodeId: string): Bro
   const candidates = siblings.filter(isSetCandidate);
   const currentIdx = candidates.findIndex((e) => e.node_id === currentNodeId);
 
-  if (currentIdx <= 0) return null;
+  if (currentIdx <= 0) {
+    return null;
+  }
 
   return candidates[currentIdx - 1] ?? null;
 }
@@ -43,8 +45,12 @@ export function resolveTopLevelDir(
   searchDirNodeId: string | null,
   entry: BrowseEntry,
 ): string | null {
-  if (ancestors.length >= 2) return ancestors[1].node_id;
-  if (ancestors.length === 1) return searchDirNodeId;
+  if (ancestors.length >= 2) {
+    return ancestors[1].node_id;
+  }
+  if (ancestors.length === 1) {
+    return searchDirNodeId;
+  }
   return entry.kind === "directory" ? entry.node_id : null;
 }
 
@@ -56,7 +62,11 @@ export function shouldConfirm(
   sourceTopDir: string | null,
   targetTopDir: string | null,
 ): boolean {
-  if (levelsUp >= 2) return true;
-  if (sourceTopDir !== targetTopDir) return true;
+  if (levelsUp >= 2) {
+    return true;
+  }
+  if (sourceTopDir !== targetTopDir) {
+    return true;
+  }
   return false;
 }

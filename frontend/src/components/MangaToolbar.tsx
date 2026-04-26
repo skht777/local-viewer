@@ -101,7 +101,7 @@ export function MangaToolbar({
         <input
           type="range"
           min={0.5}
-          max={3.0}
+          max={3}
           step={0.5}
           value={scrollSpeed}
           onChange={(e) => onScrollSpeedChange(Number(e.target.value))}

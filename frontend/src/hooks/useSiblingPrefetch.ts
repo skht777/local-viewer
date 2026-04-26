@@ -35,11 +35,15 @@ async function prefetchSiblingTarget(
   queryClient: ReturnType<typeof useQueryClient>,
   cancelled: () => boolean,
 ): Promise<void> {
-  if (sibling.kind !== "directory" && sibling.kind !== "archive") return;
+  if (sibling.kind !== "directory" && sibling.kind !== "archive") {
+    return;
+  }
 
   try {
     await queryClient.prefetchInfiniteQuery(browseInfiniteOptions(sibling.node_id, sort));
-    if (cancelled()) return;
+    if (cancelled()) {
+      return;
+    }
     const cached = queryClient.getQueryData(browseInfiniteOptions(sibling.node_id, sort).queryKey);
     const entries = cached?.pages?.[0]?.entries ?? [];
     const images = entries.filter((e) => e.kind === "image");
@@ -62,11 +66,15 @@ export function useSiblingPrefetch({
   const queryClient = useQueryClient();
 
   useEffect(() => {
-    if (!currentNodeId) return;
+    if (!currentNodeId) {
+      return;
+    }
 
     // 同一コンテキストで既にプリフェッチ済みならスキップ
     const prefetchKey = `${currentNodeId}:${parentNodeId}:${sort}`;
-    if (prefetchedKeys.has(prefetchKey)) return;
+    if (prefetchedKeys.has(prefetchKey)) {
+      return;
+    }
 
     let cancelled = false;
     const isCancelled = () => cancelled;
@@ -79,7 +87,9 @@ export function useSiblingPrefetch({
 
       // parentNodeId が null の場合、ancestors[0] (マウントルート) を使用
       if (!currentParentId) {
-        if (ancestors.length === 0 || !currentNodeId) return;
+        if (ancestors.length === 0 || !currentNodeId) {
+          return;
+        }
         currentParentId = ancestors[0].node_id;
       }
 
@@ -88,8 +98,12 @@ export function useSiblingPrefetch({
       let needNext = true;
 
       while (currentParentId && levelsUp < MAX_DEPTH && (needPrev || needNext)) {
-        if (cancelled) return;
-        if (visited.has(currentParentId)) break;
+        if (cancelled) {
+          return;
+        }
+        if (visited.has(currentParentId)) {
+          break;
+        }
         visited.add(currentParentId);
 
         // combined siblings API で prev+next を一括取得
@@ -101,8 +115,12 @@ export function useSiblingPrefetch({
             const resp = await apiFetch<SiblingsResponse>(
               `/api/browse/${currentParentId}/siblings?current=${currentChildId}&sort=${sort}`,
             );
-            if (needPrev) prevSibling = resp.prev;
-            if (needNext) nextSibling = resp.next;
+            if (needPrev) {
+              prevSibling = resp.prev;
+            }
+            if (needNext) {
+              nextSibling = resp.next;
+            }
           } catch {
             // フォールバック: 親ディレクトリの全件取得でクライアント側探索
           }
@@ -116,7 +134,9 @@ export function useSiblingPrefetch({
           } catch {
             return;
           }
-          if (!currentChildId || cancelled) return;
+          if (!currentChildId || cancelled) {
+            return;
+          }
 
           if (needPrev && !prevSibling) {
             prevSibling = findPrevSet(parentData.entries, currentChildId);
@@ -162,7 +182,9 @@ export function useSiblingPrefetch({
 
     prefetchBothDirections().then(() => {
       if (!cancelled) {
-        if (prefetchedKeys.size >= PREFETCHED_KEYS_MAX) prefetchedKeys.clear();
+        if (prefetchedKeys.size >= PREFETCHED_KEYS_MAX) {
+          prefetchedKeys.clear();
+        }
         prefetchedKeys.add(prefetchKey);
       }
     });

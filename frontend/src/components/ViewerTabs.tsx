@@ -45,7 +45,9 @@ export function ViewerTabs({
 
   // クリック時: アクティブキー再クリック → 反転、別キー → デフォルト方向
   const handleSortClick = (key: "name" | "date") => {
-    if (!onSortChange) return;
+    if (!onSortChange) {
+      return;
+    }
     if (key === activeKey) {
       onSortChange(SORT_FLIP[sort]);
     } else {

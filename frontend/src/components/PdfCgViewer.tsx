@@ -148,9 +148,11 @@ export function PdfCgViewer({
     // タイトル + ページ番号を 3 秒トースト表示（見開き時は "3-4 / 12" 形式）
     showTitle: () => {
       const indices = nav.displayIndices;
-      if (indices.length === 0) return;
+      if (indices.length === 0) {
+        return;
+      }
       const first = indices[0] + 1;
-      const last = indices[indices.length - 1] + 1;
+      const last = indices.at(-1) + 1;
       const end = indices.length > 1 ? last : undefined;
       showToast(formatPageLabel(pdfName, first, pageCount, end), 3000);
     },
@@ -161,10 +163,14 @@ export function PdfCgViewer({
   const imageAreaRef = useRef<HTMLDivElement>(null);
   // カーソルオートハイドをリセット（スライダー操作時にも呼ばれる）
   const resetCursorTimer = useCallback(() => {
-    if (imageAreaRef.current) imageAreaRef.current.style.cursor = "";
+    if (imageAreaRef.current) {
+      imageAreaRef.current.style.cursor = "";
+    }
     clearTimeout(cursorTimerRef.current);
     cursorTimerRef.current = setTimeout(() => {
-      if (imageAreaRef.current) imageAreaRef.current.style.cursor = "none";
+      if (imageAreaRef.current) {
+        imageAreaRef.current.style.cursor = "none";
+      }
     }, 1000);
   }, []);
 
@@ -173,8 +179,11 @@ export function PdfCgViewer({
     (e: React.MouseEvent<HTMLDivElement>) => {
       const rect = e.currentTarget.getBoundingClientRect();
       const mid = rect.left + rect.width / 2;
-      if (e.clientX > mid) handleGoNext();
-      else handleGoPrev();
+      if (e.clientX > mid) {
+        handleGoNext();
+      } else {
+        handleGoPrev();
+      }
     },
     [handleGoNext, handleGoPrev],
   );
@@ -188,7 +197,9 @@ export function PdfCgViewer({
     resizeObserverRef.current?.disconnect();
 
     (imageAreaRef as React.MutableRefObject<HTMLDivElement | null>).current = node;
-    if (!node) return;
+    if (!node) {
+      return;
+    }
 
     // 初期サイズ
     const w = node.clientWidth || 800;
@@ -198,10 +209,14 @@ export function PdfCgViewer({
     // ResizeObserver で動的追従
     resizeObserverRef.current = new ResizeObserver((entries) => {
       const entry = entries[0];
-      if (!entry) return;
+      if (!entry) {
+        return;
+      }
       const { width, height } = entry.contentRect;
       setContainerSize((prev) => {
-        if (prev.width === width && prev.height === height) return prev;
+        if (prev.width === width && prev.height === height) {
+          return prev;
+        }
         return { width, height };
       });
     });
@@ -209,6 +224,7 @@ export function PdfCgViewer({
   }, []);
 
   // ResizeObserver クリーンアップ
+  // oxlint-disable-next-line arrow-body-style
   useEffect(() => {
     return () => resizeObserverRef.current?.disconnect();
   }, []);
@@ -220,7 +236,7 @@ export function PdfCgViewer({
 
   // ページカウンター: 見開き時は "3-4 / 12" 形式
   const firstDisplay = displayIndices.length > 0 ? displayIndices[0] + 1 : 1;
-  const lastDisplay = displayIndices.length > 0 ? displayIndices[displayIndices.length - 1] + 1 : 1;
+  const lastDisplay = displayIndices.length > 0 ? displayIndices.at(-1) + 1 : 1;
   const currentEnd = displayIndices.length > 1 ? lastDisplay : undefined;
 
   // ローディング表示
@@ -252,7 +268,9 @@ export function PdfCgViewer({
     );
   }
 
-  if (!document) return null;
+  if (!document) {
+    return null;
+  }
 
   return (
     <div data-testid="pdf-cg-viewer" className="fixed inset-0 z-50 flex bg-black">

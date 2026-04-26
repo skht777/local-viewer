@@ -69,7 +69,9 @@ export const useViewerStore = create<ViewerState>()(
       endViewerTransition: (id) =>
         set((state) => {
           // stale な遷移完了は無視
-          if (state.viewerTransitionId !== id) return state;
+          if (state.viewerTransitionId !== id) {
+            return state;
+          }
           return { viewerTransitionId: 0 };
         }),
 
@@ -79,11 +81,11 @@ export const useViewerStore = create<ViewerState>()(
 
       isSidebarOpen: true,
 
-      scrollSpeed: 1.0,
+      scrollSpeed: 1,
 
       setFitMode: (mode) => set({ fitMode: mode }),
 
-      setScrollSpeed: (speed) => set({ scrollSpeed: Math.max(0.5, Math.min(3.0, speed)) }),
+      setScrollSpeed: (speed) => set({ scrollSpeed: Math.max(0.5, Math.min(3, speed)) }),
 
       setSidebarOpen: (isOpen) => set({ isSidebarOpen: isOpen }),
 

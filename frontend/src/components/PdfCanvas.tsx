@@ -12,7 +12,7 @@ import { TextLayer } from "../lib/pdfjs";
 import type { FitMode } from "../stores/viewerStore";
 import type { PdfRenderCache } from "../hooks/usePdfRenderCache";
 
-const MAX_SCALE = 4.0;
+const MAX_SCALE = 4;
 const RENDER_TIMEOUT_MS = 15_000;
 
 interface PdfCanvasProps {
@@ -85,7 +85,7 @@ export function PdfCanvas({
           break;
         case "original":
         default:
-          scale = 1.0;
+          scale = 1;
           break;
       }
 
@@ -135,7 +135,9 @@ export function PdfCanvas({
       // 描画タイムアウト
       timeoutId = setTimeout(() => {
         renderTask?.cancel();
-        if (!cancelled) setRenderError(true);
+        if (!cancelled) {
+          setRenderError(true);
+        }
       }, RENDER_TIMEOUT_MS);
 
       renderTask.promise
@@ -154,13 +156,15 @@ export function PdfCanvas({
           if (!cancelled && enableTextLayer && textLayerRef.current) {
             await renderTextLayerOverlay(page, textLayerRef.current, scale, cssWidth, cssHeight);
           }
-          if (!cancelled) onRenderComplete?.();
+          if (!cancelled) {
+            onRenderComplete?.();
+          }
         })
-        .catch((err: { name?: string }) => {
+        .catch((error: { name?: string }) => {
           clearTimeout(timeoutId);
-          if (err?.name !== "RenderingCancelledException") {
+          if (error?.name !== "RenderingCancelledException") {
             // eslint-disable-next-line no-console
-            console.error("PDF render error:", err);
+            console.error("PDF render error:", error);
           }
         })
         .finally(() => {

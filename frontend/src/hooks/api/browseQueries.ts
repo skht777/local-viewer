@@ -10,7 +10,7 @@ import { apiFetch } from "./apiClient";
 export function browseNodeOptions(nodeId: string | undefined, sort?: SortOrder) {
   const sortParam = sort && sort !== "name-asc" ? `?sort=${sort}` : "";
   return queryOptions({
-    enabled: !!nodeId,
+    enabled: Boolean(nodeId),
     queryFn: () => apiFetch<BrowseResponse>(`/api/browse/${nodeId}${sortParam}`),
     queryKey: ["browse", nodeId, sort ?? "name-asc"],
   });
@@ -21,7 +21,7 @@ const PAGE_SIZE = 100;
 
 export function browseInfiniteOptions(nodeId: string | undefined, sort: SortOrder) {
   return infiniteQueryOptions({
-    enabled: !!nodeId,
+    enabled: Boolean(nodeId),
     getNextPageParam: (lastPage: BrowseResponse) => lastPage.next_cursor ?? undefined,
     initialPageParam: undefined as string | undefined,
     queryFn: async ({ pageParam }) => {
@@ -29,7 +29,9 @@ export function browseInfiniteOptions(nodeId: string | undefined, sort: SortOrde
         limit: String(PAGE_SIZE),
         sort,
       });
-      if (pageParam) params.set("cursor", pageParam);
+      if (pageParam) {
+        params.set("cursor", pageParam);
+      }
       return apiFetch<BrowseResponse>(`/api/browse/${nodeId}?${params.toString()}`);
     },
     queryKey: ["browse-infinite", nodeId, sort],
@@ -113,9 +115,15 @@ export function searchInfiniteOptions({ q, scope, kind, sort }: SearchInfinitePa
         limit: String(SEARCH_PAGE_SIZE),
         offset: String(pageParam ?? 0),
       });
-      if (normKind !== "all") params.set("kind", normKind);
-      if (normScope) params.set("scope", normScope);
-      if (normSort !== "relevance") params.set("sort", normSort);
+      if (normKind !== "all") {
+        params.set("kind", normKind);
+      }
+      if (normScope) {
+        params.set("scope", normScope);
+      }
+      if (normSort !== "relevance") {
+        params.set("sort", normSort);
+      }
       return apiFetch<SearchResponse>(`/api/search?${params.toString()}`);
     },
     queryKey: ["search-infinite", normQ, normScope, normKind, normSort] as const,

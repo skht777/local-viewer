@@ -90,7 +90,9 @@ export function MangaViewer({
   // 毎フレームの setSearchParams 連鎖を誘発し React の update depth 制限（#185）を超える
   // ケースがあるため、揺らぎを吸収してから URL に反映する
   useEffect(() => {
-    if (mangaScroll.currentIndex === currentIndex) return;
+    if (mangaScroll.currentIndex === currentIndex) {
+      return;
+    }
     const timer = setTimeout(() => {
       onIndexChange(mangaScroll.currentIndex);
     }, 200);

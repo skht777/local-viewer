@@ -35,7 +35,9 @@ export function useToolbarAutoHide(): UseToolbarAutoHideReturn {
   }, []);
 
   useEffect(() => {
-    if (isTouch || !container) return;
+    if (isTouch || !container) {
+      return;
+    }
 
     const handlePointerMove = (e: PointerEvent) => {
       const rect = container.getBoundingClientRect();

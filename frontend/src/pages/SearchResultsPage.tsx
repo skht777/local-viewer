@@ -19,7 +19,7 @@ import type { ViewerTab } from "../utils/viewerNavigation";
 import { compareEntryName } from "../utils/sortEntries";
 import { searchResultToBrowseEntry } from "../utils/searchResultToBrowseEntry";
 
-const VALID_SEARCH_SORTS: Set<string> = new Set([
+const VALID_SEARCH_SORTS = new Set<string>([
   "relevance",
   "name-asc",
   "name-desc",
@@ -27,7 +27,7 @@ const VALID_SEARCH_SORTS: Set<string> = new Set([
   "date-desc",
 ]);
 
-const VALID_KINDS: Set<string> = new Set(["directory", "image", "video", "pdf", "archive"]);
+const VALID_KINDS = new Set<string>(["directory", "image", "video", "pdf", "archive"]);
 
 // kind フィルタは FileBrowser のタブと別管理（検索 API の kind パラメータに直結）
 // "all" が ViewerTabs と紐づかないため、シンプルなセレクタとして実装する
@@ -79,7 +79,9 @@ export default function SearchResultsPage() {
 
   // 検索結果を BrowseEntry に変換
   const allEntries: BrowseEntry[] = useMemo(() => {
-    if (!searchData?.pages?.length) return [];
+    if (!searchData?.pages?.length) {
+      return [];
+    }
     return searchData.pages.flatMap((p) => p.results.map(searchResultToBrowseEntry));
   }, [searchData]);
 
@@ -115,7 +117,9 @@ export default function SearchResultsPage() {
   const handleImageClick = useCallback(
     (browseIndex: number) => {
       const img = filteredImages[browseIndex];
-      if (!img) return;
+      if (!img) {
+        return;
+      }
       const viewerIdx = viewerIndexMap.get(img.node_id) ?? 0;
       // useViewerParams.openViewer は computeOrigin で /search を検出
       // ここでは setIndex + tab=images を直接設定する代わりに openViewer 相当を呼ぶ
@@ -157,8 +161,11 @@ export default function SearchResultsPage() {
       setSearchParams(
         (prev) => {
           const next = new URLSearchParams(prev);
-          if (newKind) next.set("kind", newKind);
-          else next.delete("kind");
+          if (newKind) {
+            next.set("kind", newKind);
+          } else {
+            next.delete("kind");
+          }
           // viewer 関連はリセット
           next.delete("index");
           next.delete("pdf");
@@ -178,8 +185,11 @@ export default function SearchResultsPage() {
       setSearchParams(
         (prev) => {
           const next = new URLSearchParams(prev);
-          if (newSort === "relevance") next.delete("sort");
-          else next.set("sort", newSort);
+          if (newSort === "relevance") {
+            next.delete("sort");
+          } else {
+            next.set("sort", newSort);
+          }
           return next;
         },
         { replace: true },

@@ -50,7 +50,9 @@ export function usePdfPageSizes(document: PDFDocumentProxy | null): UsePdfPageSi
             }),
           ),
         );
-        if (cancelledRef.current) return;
+        if (cancelledRef.current) {
+          return;
+        }
         sizes.push(...batch);
         // UI スレッドに譲る (最終バッチ以外)
         if (end < numPages) {

@@ -22,7 +22,9 @@ export function usePdfThumbnail(nodeId: string, enabled: boolean): PdfThumbnailR
   const urlRef = useRef<string | null>(null);
 
   useEffect(() => {
-    if (!enabled) return;
+    if (!enabled) {
+      return;
+    }
 
     let cancelled = false;
     let pdfDoc: PDFDocumentProxy | null = null;
@@ -34,10 +36,14 @@ export function usePdfThumbnail(nodeId: string, enabled: boolean): PdfThumbnailR
       try {
         const loadingTask = getDocument({ url: `/api/file/${nodeId}` });
         pdfDoc = await loadingTask.promise;
-        if (cancelled) return;
+        if (cancelled) {
+          return;
+        }
 
         const page = await pdfDoc.getPage(1);
-        if (cancelled) return;
+        if (cancelled) {
+          return;
+        }
 
         // 300px 幅に収まるスケールを計算
         const unscaledViewport = page.getViewport({ scale: 1 });
@@ -49,24 +55,34 @@ export function usePdfThumbnail(nodeId: string, enabled: boolean): PdfThumbnailR
         canvas.width = viewport.width;
         canvas.height = viewport.height;
         const ctx = canvas.getContext("2d");
-        if (!ctx) throw new Error("Canvas 2D context not available");
+        if (!ctx) {
+          throw new Error("Canvas 2D context not available");
+        }
 
         await page.render({ canvasContext: ctx, viewport, canvas }).promise;
-        if (cancelled) return;
+        if (cancelled) {
+          return;
+        }
 
         // Canvas → blob → URL
         const blob = await new Promise<Blob | null>((resolve) =>
           canvas.toBlob(resolve, "image/jpeg", 0.8),
         );
-        if (cancelled || !blob) return;
+        if (cancelled || !blob) {
+          return;
+        }
 
         const blobUrl = URL.createObjectURL(blob);
         urlRef.current = blobUrl;
         setUrl(blobUrl);
       } catch {
-        if (!cancelled) setHasError(true);
+        if (!cancelled) {
+          setHasError(true);
+        }
       } finally {
-        if (!cancelled) setIsLoading(false);
+        if (!cancelled) {
+          setIsLoading(false);
+        }
         pdfDoc?.destroy();
       }
     };

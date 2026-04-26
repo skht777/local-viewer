@@ -20,7 +20,9 @@ export function mergeThumbnailQueryResults(
 ): Map<string, string> {
   const merged = new Map<string, string>();
   for (const result of chunkResults) {
-    if (!result.data) continue;
+    if (!result.data) {
+      continue;
+    }
     for (const [id, thumb] of Object.entries(result.data.thumbnails)) {
       if (thumb.data) {
         merged.set(id, thumb.data);

@@ -11,7 +11,8 @@ import { browseInfiniteOptions } from "../hooks/api/browseQueries";
 import { compareEntryName } from "../utils/sortEntries";
 import { mountListOptions } from "../hooks/api/mountQueries";
 import { useOpenViewerFromEntry } from "../hooks/useOpenViewerFromEntry";
-import { useViewerParams, type ViewerTab } from "../hooks/useViewerParams";
+import { useViewerParams } from "../hooks/useViewerParams";
+import type { ViewerTab } from "../hooks/useViewerParams";
 import { useViewerStore } from "../stores/viewerStore";
 import { BrowseHeader } from "../components/BrowseHeader";
 import { BrowsePageViewerSwitch } from "../components/BrowsePageViewerSwitch";
@@ -77,7 +78,9 @@ export default function BrowsePage() {
 
   // 全ページの entries を結合し、メタデータは先頭ページから取得
   const data = useMemo(() => {
-    if (!infiniteData?.pages?.length) return undefined;
+    if (!infiniteData?.pages?.length) {
+      return undefined;
+    }
     const first = infiniteData.pages[0];
     const allEntries = infiniteData.pages.flatMap((p) => p.entries);
     return {
@@ -100,7 +103,9 @@ export default function BrowsePage() {
   // 優先順位: filesets > images > videos
   // 現在タブにコンテンツがあればそのまま維持
   useEffect(() => {
-    if (!data || isLoading) return;
+    if (!data || isLoading) {
+      return;
+    }
 
     const hasFilesets = data.entries.some(
       (e) => e.kind === "directory" || e.kind === "archive" || e.kind === "pdf",
@@ -109,9 +114,15 @@ export default function BrowsePage() {
     const hasVideos = data.entries.some((e) => e.kind === "video");
 
     // 現在のタブにコンテンツがあればそのまま
-    if (params.tab === "filesets" && hasFilesets) return;
-    if (params.tab === "images" && hasImages) return;
-    if (params.tab === "videos" && hasVideos) return;
+    if (params.tab === "filesets" && hasFilesets) {
+      return;
+    }
+    if (params.tab === "images" && hasImages) {
+      return;
+    }
+    if (params.tab === "videos" && hasVideos) {
+      return;
+    }
 
     // 現在のタブが空 → 最適なタブに自動切替
     // すべて空の場合は現在タブに留まる
@@ -166,7 +177,9 @@ export default function BrowsePage() {
   const openViewerNameSorted = useCallback(
     (browseIndex: number) => {
       const img = images[browseIndex];
-      if (!img) return;
+      if (!img) {
+        return;
+      }
       const viewerIdx = viewerIndexMap.get(img.node_id) ?? 0;
       openViewer(viewerIdx);
     },
@@ -182,15 +195,25 @@ export default function BrowsePage() {
   // コンテンツのないタブを disabled にする
   // 全て空の場合は filesets のみ有効（デフォルトタブ）
   const disabledTabs = useMemo(() => {
-    if (!data) return new Set<ViewerTab>();
+    if (!data) {
+      return new Set<ViewerTab>();
+    }
     const disabled = new Set<ViewerTab>();
     const hasFilesets = data.entries.some(
       (e) => e.kind === "directory" || e.kind === "archive" || e.kind === "pdf",
     );
-    if (!hasFilesets) disabled.add("filesets");
-    if (images.length === 0) disabled.add("images");
-    if (videos.length === 0) disabled.add("videos");
-    if (disabled.size === 3) disabled.delete("filesets");
+    if (!hasFilesets) {
+      disabled.add("filesets");
+    }
+    if (images.length === 0) {
+      disabled.add("images");
+    }
+    if (videos.length === 0) {
+      disabled.add("videos");
+    }
+    if (disabled.size === 3) {
+      disabled.delete("filesets");
+    }
     return disabled;
   }, [data, images.length, videos.length]);
 
@@ -213,7 +236,9 @@ export default function BrowsePage() {
   // - search は呼び出し側で構築する（mode/sort/tab を保持するため）
   const navigateBrowse = useCallback(
     (targetNodeId: string, search: string) => {
-      if (targetNodeId === nodeId) return;
+      if (targetNodeId === nodeId) {
+        return;
+      }
       navigate(`/browse/${targetNodeId}${search}`);
     },
     [navigate, nodeId],
