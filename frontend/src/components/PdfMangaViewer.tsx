@@ -8,6 +8,7 @@ import { useVirtualizer } from "@tanstack/react-virtual";
 import type { AncestorEntry } from "../types/api";
 import type { SortOrder, ViewerMode } from "../hooks/useViewerParams";
 import { useViewerStore } from "../stores/viewerStore";
+import { useCursorAutoHide } from "../hooks/useCursorAutoHide";
 import { useFullscreen } from "../hooks/useFullscreen";
 import { useMangaScroll } from "../hooks/useMangaScroll";
 import { useMangaKeyboard } from "../hooks/useMangaKeyboard";
@@ -188,20 +189,8 @@ export function PdfMangaViewer({
       showToast(formatPageLabel(pdfName, mangaScroll.currentIndex + 1, pageCount), 3000),
   });
 
-  // カーソルオートハイド
-  const cursorTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
-  // カーソルオートハイドをリセット（スライダー操作時にも呼ばれる）
-  const resetCursorTimer = useCallback(() => {
-    if (scrollRef.current) {
-      scrollRef.current.style.cursor = "";
-    }
-    clearTimeout(cursorTimerRef.current);
-    cursorTimerRef.current = setTimeout(() => {
-      if (scrollRef.current) {
-        scrollRef.current.style.cursor = "none";
-      }
-    }, 1000);
-  }, []);
+  // カーソルオートハイド（1秒 idle で消す）
+  const { resetCursorTimer } = useCursorAutoHide(scrollRef);
 
   // 画像幅
   const imageWidth = `${zoomLevel}%`;

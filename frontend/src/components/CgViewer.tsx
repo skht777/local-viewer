@@ -9,6 +9,7 @@
 import { useCallback, useRef, useState } from "react";
 import type { AncestorEntry, BrowseEntry } from "../types/api";
 import { useViewerStore } from "../stores/viewerStore";
+import { useCursorAutoHide } from "../hooks/useCursorAutoHide";
 import { useFullscreen } from "../hooks/useFullscreen";
 import { useCgNavigation } from "../hooks/useCgNavigation";
 import { useCgKeyboard } from "../hooks/useCgKeyboard";
@@ -161,22 +162,9 @@ export function CgViewer({
 
   const { isToolbarVisible, isTouch, containerCallbackRef } = useToolbarAutoHide();
 
-  // カーソルオートハイド
-  const cursorTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
+  // カーソルオートハイド（1秒 idle で消す）
   const imageAreaRef = useRef<HTMLDivElement>(null);
-
-  // カーソルオートハイドをリセット（スライダー操作時にも呼ばれる）
-  const resetCursorTimer = useCallback(() => {
-    if (imageAreaRef.current) {
-      imageAreaRef.current.style.cursor = "";
-    }
-    clearTimeout(cursorTimerRef.current);
-    cursorTimerRef.current = setTimeout(() => {
-      if (imageAreaRef.current) {
-        imageAreaRef.current.style.cursor = "none";
-      }
-    }, 1000);
-  }, []);
+  const { resetCursorTimer } = useCursorAutoHide(imageAreaRef);
 
   // 画像クリックでページ送り（画面中央分割: 右半分→次、左半分→前）
   const handleImageClick = useCallback(

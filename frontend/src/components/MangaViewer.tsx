@@ -10,6 +10,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import type { AncestorEntry, BrowseEntry } from "../types/api";
 import { useViewerStore } from "../stores/viewerStore";
+import { useCursorAutoHide } from "../hooks/useCursorAutoHide";
 import { useFullscreen } from "../hooks/useFullscreen";
 import { useMangaScroll } from "../hooks/useMangaScroll";
 import { useMangaKeyboard } from "../hooks/useMangaKeyboard";
@@ -176,20 +177,8 @@ export function MangaViewer({
       showToast(formatPageLabel(setName, mangaScroll.currentIndex + 1, images.length), 3000),
   });
 
-  // カーソルオートハイド
-  const cursorTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
-  // カーソルオートハイドをリセット（スライダー操作時にも呼ばれる）
-  const resetCursorTimer = useCallback(() => {
-    if (scrollRef.current) {
-      scrollRef.current.style.cursor = "";
-    }
-    clearTimeout(cursorTimerRef.current);
-    cursorTimerRef.current = setTimeout(() => {
-      if (scrollRef.current) {
-        scrollRef.current.style.cursor = "none";
-      }
-    }, 1000);
-  }, []);
+  // カーソルオートハイド（1秒 idle で消す）
+  const { resetCursorTimer } = useCursorAutoHide(scrollRef);
 
   // 画像幅（コンテナ幅 * zoomLevel / 100）
   const imageWidth = `${zoomLevel}%`;
