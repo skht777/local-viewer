@@ -26,8 +26,13 @@ paths:
 - Custom hooks prefixed with `use`
 - Keyboard shortcuts via react-hotkeys-hook with focus context scoping
 - Disable hotkeys when input/search bar is focused
-- ビューワー起動（ディレクトリ/アーカイブ/▶開く/Space 経由）は `useOpenViewerFromEntry` フック経由で行う。ページ側で `navigate()` を直接呼ばない（`setViewerOrigin` / `startViewerTransition` / `prefetchInfiniteQuery` / `replace: true` を内包）
-- 履歴モデル: 開く系はすべて `{ replace: true }`、閉じる系は `navigate(-1)` + `viewerOrigin` フォールバック、セットジャンプも replace
+- ビューワー起動（ディレクトリ/アーカイブ/▶開く/Space 経由）は `useOpenViewerFromEntry` フック経由で行う。ページ側で `navigate()` を直接呼ばない（`setViewerOrigin` / `startViewerTransition` / `prefetchInfiniteQuery` / push 遷移を内包）
+- 履歴モデル:
+  - **viewer 起動経路は push**（`useOpenViewerFromEntry` / `useViewerParams.openViewer` / `useViewerParams.openPdfViewer` / `SearchBar` の PDF 検索結果クリック）。ブラウザバックで open 直前の URL に戻れることを保証
+  - **close は現状維持**: `viewerOrigin` あれば `navigate(originUrl, { replace: true })` で起点復帰、無ければ `setSearchParams(buildCloseImageSearch)` で search 削除（deep link fallback）
+  - **セットジャンプは replace 維持**: `useSetJump` の navigate は `{ replace: true }` のまま、履歴を汚染しない
+  - **ブラウズ間 navigate は自身重複を抑制**: `BrowsePage` の `navigateBrowse` callback で `targetNodeId === nodeId` を早期 return、ツリー/パンくず往復で history が膨らむのを防ぐ
+  - **viewer 起動でない検索結果遷移**: `SearchBar` の image/video 結果は scope ありで `viewerOrigin` 設定 + replace（既存挙動）、scope なしで push
 
 ## Styling
 - Tailwind CSS v4 utility classes exclusively

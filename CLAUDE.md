@@ -84,7 +84,7 @@ cd e2e && npx playwright test --ui   # UI モード
 - `frontend/src/index.css` — Tailwind v4 `@theme` カスタムトークン定義
 - `frontend/src/hooks/api/browseQueries.ts` — TanStack Query（browseNodeOptions, browseInfiniteOptions, searchOptions。`scope` 引数で配下検索）
 - `frontend/src/hooks/api/thumbnailQueries.ts` — バッチサムネイルフック（useBatchThumbnails）
-- `frontend/src/hooks/useOpenViewerFromEntry.ts` — ▶開く/Space 経路のビューワー起動（起点復帰 + トランジション + prefetch + replace）
+- `frontend/src/hooks/useOpenViewerFromEntry.ts` — ▶開く/Space 経路のビューワー起動（起点復帰 + トランジション + prefetch + push）
 - `frontend/src/stores/viewerStore.ts` — `viewerOrigin` / `viewerTransitionId` は `partialize` で persist 除外
 - `.env.example` — Docker ボリューム/ポート/リソース設定テンプレート
 - `e2e/playwright.config.ts` — E2E テスト設定
@@ -94,7 +94,7 @@ cd e2e && npx playwright test --ui   # UI モード
 - **Tailwind v4** — `tailwind.config.js` や `postcss.config.js` は不要、`@tailwindcss/vite` プラグインを使用
 - **node_id 不透明ID** — API はクライアントに実ファイルパスを公開しない。生成時にルートパスを含めて複数マウントポイント間の衝突を回避
 - **デフォルト 127.0.0.1 バインド** — LAN アクセスには `.env` で `BIND_HOST=0.0.0.0` を明示指定
-- **ビューワー履歴モデル** — 開く系はすべて `{ replace: true }`（`openViewer` / `openPdfViewer` / `useOpenViewerFromEntry` / セットジャンプ）。閉じる系は `navigate(-1)` + `viewerOrigin` フォールバック。ブラウザバック 1 クリックで前のページに戻れることを保証
+- **ビューワー履歴モデル** — viewer 起動経路（`useOpenViewerFromEntry` / `useViewerParams.openViewer` / `useViewerParams.openPdfViewer` / `SearchBar` の PDF）はすべて push。close は現状維持（`viewerOrigin` あれば origin に navigate replace、無ければ `setSearchParams(buildCloseImageSearch)` で search 削除）。セットジャンプは `{ replace: true }` 維持（履歴汚染を避ける）。ブラウズ間 navigate（ツリー/パンくず/カード/上へ）は push のまま、`navigateBrowse` で同一 nodeId への遷移を早期 return で抑制。これによりブラウザバックと B キー閉じが同じ呼び出し元 URL に戻ることを保証
 - **ビューワー閉じキー** — `B`（Esc はヘルプ/NavigationPrompt/フルスクリーン解除のみ）
 - **ビューワー画像表示順** — 常に名前昇順固定（ブラウズソート順と独立、`compareEntryName` で統一）。セット間ジャンプの兄弟探索はブラウズソート順を維持
 - **スコープ検索** — BrowsePage の SearchBar はスコープトグルあり（ON: 配下検索、OFF: 全体）。TopPage はトグル非表示。バックエンドは `NodeRegistry::resolve` + `PathSecurity::validate_existing` + `is_dir` 検証必須
