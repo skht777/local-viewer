@@ -1,69 +1,25 @@
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor } from "@testing-library/react";
+import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import type { ReactElement } from "react";
 import { FileBrowser } from "../../src/components/FileBrowser";
 import type { BrowseEntry } from "../../src/types/api";
-
-const testQueryClient = new QueryClient({
-  defaultOptions: { queries: { retry: false } },
-});
-
-function renderWithQuery(ui: ReactElement) {
-  return render(<QueryClientProvider client={testQueryClient}>{ui}</QueryClientProvider>);
-}
+import {
+  installMockIntersectionObserver,
+  makeArchiveEntry,
+  makeDirectoryEntry,
+  makeImageEntry,
+  makePdfEntry,
+  mockEntries,
+  renderFileBrowser,
+} from "./__helpers__/fileBrowserTestHelpers";
 
 vi.mock("../../src/lib/pdfjs", () => ({
   getDocument: vi.fn(),
   GlobalWorkerOptions: { workerSrc: "" },
 }));
 
-const mockEntries: BrowseEntry[] = [
-  {
-    node_id: "dir1",
-    name: "photos",
-    kind: "directory",
-    size_bytes: null,
-    mime_type: null,
-    child_count: 10,
-    modified_at: 1_700_000_000,
-    preview_node_ids: null,
-  },
-  {
-    node_id: "file1",
-    name: "image.jpg",
-    kind: "image",
-    size_bytes: 2048,
-    mime_type: "image/jpeg",
-    child_count: null,
-    modified_at: 1_700_000_100,
-    preview_node_ids: null,
-  },
-  {
-    node_id: "file2",
-    name: "movie.mp4",
-    kind: "video",
-    size_bytes: 10_240,
-    mime_type: "video/mp4",
-    child_count: null,
-    modified_at: 1_700_000_200,
-    preview_node_ids: null,
-  },
-  {
-    node_id: "file3",
-    name: "doc.pdf",
-    kind: "pdf",
-    size_bytes: 4096,
-    mime_type: "application/pdf",
-    child_count: null,
-    modified_at: 1_700_000_300,
-    preview_node_ids: null,
-  },
-];
-
 describe("FileBrowser", () => {
   test("filesetsタブでディレクトリとPDFが表示される", () => {
-    renderWithQuery(
+    renderFileBrowser(
       <FileBrowser
         entries={mockEntries}
         isLoading={false}
@@ -79,7 +35,7 @@ describe("FileBrowser", () => {
   });
 
   test("imagesタブで画像のみ表示される", () => {
-    renderWithQuery(
+    renderFileBrowser(
       <FileBrowser
         entries={mockEntries}
         isLoading={false}
@@ -94,7 +50,7 @@ describe("FileBrowser", () => {
   });
 
   test("videosタブで動画のみ表示される", () => {
-    renderWithQuery(
+    renderFileBrowser(
       <FileBrowser
         entries={mockEntries}
         isLoading={false}
@@ -109,7 +65,7 @@ describe("FileBrowser", () => {
   });
 
   test("ローディング中にメッセージが表示される", () => {
-    renderWithQuery(
+    renderFileBrowser(
       <FileBrowser
         entries={[]}
         isLoading={true}
@@ -122,7 +78,7 @@ describe("FileBrowser", () => {
   });
 
   test("フィルタ後0件で空状態メッセージが表示される", () => {
-    renderWithQuery(
+    renderFileBrowser(
       <FileBrowser
         entries={mockEntries}
         isLoading={false}
@@ -133,7 +89,7 @@ describe("FileBrowser", () => {
     );
     // videos タブには movie.mp4 があるので空にはならない
     // 空の entries で確認
-    const { unmount } = renderWithQuery(
+    const { unmount } = renderFileBrowser(
       <FileBrowser
         entries={[]}
         isLoading={false}
@@ -150,38 +106,21 @@ describe("FileBrowser", () => {
 
   test("filesetsタブでarchive/PDFがディレクトリより先に表示される", () => {
     const entries: BrowseEntry[] = [
-      {
+      makeDirectoryEntry({
         node_id: "d1",
         name: "aaa_dir",
-        kind: "directory",
-        size_bytes: null,
-        mime_type: null,
         child_count: 5,
         modified_at: 1_700_000_000,
-        preview_node_ids: null,
-      },
-      {
+      }),
+      makeArchiveEntry({
         node_id: "a1",
         name: "bbb.zip",
-        kind: "archive",
         size_bytes: 500,
-        mime_type: "application/zip",
-        child_count: null,
         modified_at: 1_700_000_100,
-        preview_node_ids: null,
-      },
-      {
-        node_id: "p1",
-        name: "ccc.pdf",
-        kind: "pdf",
-        size_bytes: 300,
-        mime_type: "application/pdf",
-        child_count: null,
-        modified_at: 1_700_000_200,
-        preview_node_ids: null,
-      },
+      }),
+      makePdfEntry({ node_id: "p1", name: "ccc.pdf", size_bytes: 300, modified_at: 1_700_000_200 }),
     ];
-    renderWithQuery(
+    renderFileBrowser(
       <FileBrowser
         entries={entries}
         isLoading={false}
@@ -203,7 +142,7 @@ describe("FileBrowser", () => {
   // --- オートフォーカス ---
 
   test("entriesが渡された時に最初のFileCardにfocusされる", async () => {
-    renderWithQuery(
+    renderFileBrowser(
       <FileBrowser
         entries={mockEntries}
         isLoading={false}
@@ -218,7 +157,7 @@ describe("FileBrowser", () => {
   });
 
   test("entriesが空の場合focusされない", () => {
-    renderWithQuery(
+    renderFileBrowser(
       <FileBrowser
         entries={[]}
         isLoading={false}
@@ -232,39 +171,17 @@ describe("FileBrowser", () => {
 
   test("画像ダブルクリック時に onImageClick がフィルタ済みインデックスで呼ばれる", async () => {
     const entries: BrowseEntry[] = [
-      {
+      makeDirectoryEntry({
         node_id: "d1",
         name: "dir",
-        kind: "directory",
-        size_bytes: null,
-        mime_type: null,
         child_count: 5,
         modified_at: 1_700_000_000,
-        preview_node_ids: null,
-      },
-      {
-        node_id: "i1",
-        name: "a.jpg",
-        kind: "image",
-        size_bytes: 100,
-        mime_type: "image/jpeg",
-        child_count: null,
-        modified_at: 1_700_000_100,
-        preview_node_ids: null,
-      },
-      {
-        node_id: "i2",
-        name: "b.jpg",
-        kind: "image",
-        size_bytes: 200,
-        mime_type: "image/jpeg",
-        child_count: null,
-        modified_at: 1_700_000_200,
-        preview_node_ids: null,
-      },
+      }),
+      makeImageEntry({ node_id: "i1", name: "a.jpg", size_bytes: 100, modified_at: 1_700_000_100 }),
+      makeImageEntry({ node_id: "i2", name: "b.jpg", size_bytes: 200, modified_at: 1_700_000_200 }),
     ];
     const onImageClick = vi.fn();
-    renderWithQuery(
+    renderFileBrowser(
       <FileBrowser
         entries={entries}
         isLoading={false}
@@ -284,38 +201,11 @@ describe("FileBrowser", () => {
   test("sort=date-descでサーバーソート済みの降順が維持される", () => {
     // サーバーサイドソート済み: 日付降順
     const entries: BrowseEntry[] = [
-      {
-        node_id: "i2",
-        name: "new.jpg",
-        kind: "image",
-        size_bytes: 100,
-        mime_type: "image/jpeg",
-        child_count: null,
-        modified_at: 3000,
-        preview_node_ids: null,
-      },
-      {
-        node_id: "i3",
-        name: "mid.jpg",
-        kind: "image",
-        size_bytes: 100,
-        mime_type: "image/jpeg",
-        child_count: null,
-        modified_at: 2000,
-        preview_node_ids: null,
-      },
-      {
-        node_id: "i1",
-        name: "old.jpg",
-        kind: "image",
-        size_bytes: 100,
-        mime_type: "image/jpeg",
-        child_count: null,
-        modified_at: 1000,
-        preview_node_ids: null,
-      },
+      makeImageEntry({ node_id: "i2", name: "new.jpg", modified_at: 3000 }),
+      makeImageEntry({ node_id: "i3", name: "mid.jpg", modified_at: 2000 }),
+      makeImageEntry({ node_id: "i1", name: "old.jpg", modified_at: 1000 }),
     ];
-    renderWithQuery(
+    renderFileBrowser(
       <FileBrowser
         entries={entries}
         isLoading={false}
@@ -334,28 +224,10 @@ describe("FileBrowser", () => {
   test("sort=date-ascでサーバーソート済みの昇順が維持される", () => {
     // サーバーサイドソート済み: 日付昇順
     const entries: BrowseEntry[] = [
-      {
-        node_id: "i2",
-        name: "old.jpg",
-        kind: "image",
-        size_bytes: 100,
-        mime_type: "image/jpeg",
-        child_count: null,
-        modified_at: 1000,
-        preview_node_ids: null,
-      },
-      {
-        node_id: "i1",
-        name: "new.jpg",
-        kind: "image",
-        size_bytes: 100,
-        mime_type: "image/jpeg",
-        child_count: null,
-        modified_at: 3000,
-        preview_node_ids: null,
-      },
+      makeImageEntry({ node_id: "i2", name: "old.jpg", modified_at: 1000 }),
+      makeImageEntry({ node_id: "i1", name: "new.jpg", modified_at: 3000 }),
     ];
-    renderWithQuery(
+    renderFileBrowser(
       <FileBrowser
         entries={entries}
         isLoading={false}
@@ -372,28 +244,10 @@ describe("FileBrowser", () => {
   test("sort=name-descでサーバーソート済みの名前降順が維持される", () => {
     // サーバーサイドソート済み: 名前降順
     const entries: BrowseEntry[] = [
-      {
-        node_id: "i2",
-        name: "beta.jpg",
-        kind: "image",
-        size_bytes: 100,
-        mime_type: "image/jpeg",
-        child_count: null,
-        modified_at: 2000,
-        preview_node_ids: null,
-      },
-      {
-        node_id: "i1",
-        name: "alpha.jpg",
-        kind: "image",
-        size_bytes: 100,
-        mime_type: "image/jpeg",
-        child_count: null,
-        modified_at: 1000,
-        preview_node_ids: null,
-      },
+      makeImageEntry({ node_id: "i2", name: "beta.jpg", modified_at: 2000 }),
+      makeImageEntry({ node_id: "i1", name: "alpha.jpg", modified_at: 1000 }),
     ];
-    renderWithQuery(
+    renderFileBrowser(
       <FileBrowser
         entries={entries}
         isLoading={false}
@@ -409,28 +263,10 @@ describe("FileBrowser", () => {
 
   test("sort=name-ascでディレクトリ優先の名前順が維持される", () => {
     const entries: BrowseEntry[] = [
-      {
-        node_id: "f1",
-        name: "aaa.pdf",
-        kind: "pdf",
-        size_bytes: 100,
-        mime_type: "application/pdf",
-        child_count: null,
-        modified_at: 1000,
-        preview_node_ids: null,
-      },
-      {
-        node_id: "d1",
-        name: "bbb_dir",
-        kind: "directory",
-        size_bytes: null,
-        mime_type: null,
-        child_count: 5,
-        modified_at: 2000,
-        preview_node_ids: null,
-      },
+      makePdfEntry({ node_id: "f1", name: "aaa.pdf", size_bytes: 100, modified_at: 1000 }),
+      makeDirectoryEntry({ node_id: "d1", name: "bbb_dir", child_count: 5, modified_at: 2000 }),
     ];
-    renderWithQuery(
+    renderFileBrowser(
       <FileBrowser
         entries={entries}
         isLoading={false}
@@ -450,7 +286,7 @@ describe("FileBrowser", () => {
   // --- オートセレクト ---
 
   test("selectedNodeIdが未指定の場合、先頭のFileCardがselected状態になる", () => {
-    renderWithQuery(
+    renderFileBrowser(
       <FileBrowser
         entries={mockEntries}
         isLoading={false}
@@ -465,7 +301,7 @@ describe("FileBrowser", () => {
   });
 
   test("selectedNodeIdが指定されている場合はそちらが優先される", () => {
-    renderWithQuery(
+    renderFileBrowser(
       <FileBrowser
         entries={mockEntries}
         isLoading={false}
@@ -482,28 +318,10 @@ describe("FileBrowser", () => {
   test("sort=date-descでサーバーソート済みのnullエントリが最後に維持される", () => {
     // サーバーサイドソート済み: 日付降順、null は末尾
     const entries: BrowseEntry[] = [
-      {
-        node_id: "i2",
-        name: "has-date.jpg",
-        kind: "image",
-        size_bytes: 100,
-        mime_type: "image/jpeg",
-        child_count: null,
-        modified_at: 1000,
-        preview_node_ids: null,
-      },
-      {
-        node_id: "i1",
-        name: "no-date.jpg",
-        kind: "image",
-        size_bytes: 100,
-        mime_type: "image/jpeg",
-        child_count: null,
-        modified_at: null,
-        preview_node_ids: null,
-      },
+      makeImageEntry({ node_id: "i2", name: "has-date.jpg", modified_at: 1000 }),
+      makeImageEntry({ node_id: "i1", name: "no-date.jpg", modified_at: null }),
     ];
-    renderWithQuery(
+    renderFileBrowser(
       <FileBrowser
         entries={entries}
         isLoading={false}
@@ -522,7 +340,7 @@ describe("FileBrowser", () => {
 
 describe("FileBrowser 選択・ダブルクリック・オーバーレイ", () => {
   test("シングルクリックでカードが選択状態になる", async () => {
-    renderWithQuery(
+    renderFileBrowser(
       <FileBrowser
         entries={mockEntries}
         isLoading={false}
@@ -537,7 +355,7 @@ describe("FileBrowser 選択・ダブルクリック・オーバーレイ", () =
 
   test("ダブルクリックでディレクトリにonNavigateが呼ばれる", async () => {
     const onNavigate = vi.fn();
-    renderWithQuery(
+    renderFileBrowser(
       <FileBrowser
         entries={mockEntries}
         isLoading={false}
@@ -552,7 +370,7 @@ describe("FileBrowser 選択・ダブルクリック・オーバーレイ", () =
 
   test("ダブルクリックで画像にonImageClickが呼ばれる", async () => {
     const onImageClick = vi.fn();
-    renderWithQuery(
+    renderFileBrowser(
       <FileBrowser
         entries={mockEntries}
         isLoading={false}
@@ -567,7 +385,7 @@ describe("FileBrowser 選択・ダブルクリック・オーバーレイ", () =
   });
 
   test("選択中にEscapeで選択解除される", async () => {
-    renderWithQuery(
+    renderFileBrowser(
       <FileBrowser
         entries={mockEntries}
         isLoading={false}
@@ -587,7 +405,7 @@ describe("FileBrowser 選択・ダブルクリック・オーバーレイ", () =
   });
 
   test("カード外クリックで選択解除される", async () => {
-    renderWithQuery(
+    renderFileBrowser(
       <FileBrowser
         entries={mockEntries}
         isLoading={false}
@@ -608,7 +426,7 @@ describe("FileBrowser 選択・ダブルクリック・オーバーレイ", () =
 
   test("ディレクトリの開くボタンでonOpenViewerが呼ばれる", async () => {
     const onOpenViewer = vi.fn();
-    renderWithQuery(
+    renderFileBrowser(
       <FileBrowser
         entries={mockEntries}
         isLoading={false}
@@ -627,19 +445,15 @@ describe("FileBrowser 選択・ダブルクリック・オーバーレイ", () =
 
   test("アーカイブの開くボタンでonOpenViewerが呼ばれる", async () => {
     const entries: BrowseEntry[] = [
-      {
+      makeArchiveEntry({
         node_id: "a1",
         name: "photos.zip",
-        kind: "archive",
         size_bytes: 500,
-        mime_type: "application/zip",
-        child_count: null,
         modified_at: 1_700_000_000,
-        preview_node_ids: null,
-      },
+      }),
     ];
     const onOpenViewer = vi.fn();
-    renderWithQuery(
+    renderFileBrowser(
       <FileBrowser
         entries={entries}
         isLoading={false}
@@ -657,7 +471,7 @@ describe("FileBrowser 選択・ダブルクリック・オーバーレイ", () =
   // --- isError ガード ---
 
   test("isErrorがtrueの場合にエラーメッセージが表示される", () => {
-    renderWithQuery(
+    renderFileBrowser(
       <FileBrowser
         entries={mockEntries}
         isLoading={false}
@@ -673,34 +487,11 @@ describe("FileBrowser 選択・ダブルクリック・オーバーレイ", () =
     ).toBeInTheDocument();
   });
 
-  test("isErrorがtrueの場合にonLoadMoreが発火しない", async () => {
+  test("isErrorがtrueの場合にonLoadMoreが発火しない", () => {
     const onLoadMore = vi.fn();
-    // IntersectionObserver をモック: observe 時に isIntersecting: true で即座にコールバック
-    const originalIO = globalThis.IntersectionObserver;
-    let capturedCallback: IntersectionObserverCallback | null = null;
-    globalThis.IntersectionObserver = class MockIO {
-      // IntersectionObserver の API シグネチャはコールバックベースのため async/await 不可
-      // oxlint-disable-next-line promise/prefer-await-to-callbacks
-      constructor(callback: IntersectionObserverCallback) {
-        capturedCallback = callback;
-      }
-      observe() {
-        capturedCallback?.(
-          [{ isIntersecting: true } as IntersectionObserverEntry],
-          this as unknown as IntersectionObserver,
-        );
-      }
-      disconnect() {}
-      unobserve() {}
-      takeRecords() {
-        return [];
-      }
-      root = null;
-      rootMargin = "";
-      thresholds = [];
-    } as unknown as typeof IntersectionObserver;
+    const { restore } = installMockIntersectionObserver();
 
-    renderWithQuery(
+    renderFileBrowser(
       <FileBrowser
         entries={mockEntries}
         isLoading={false}
@@ -717,12 +508,12 @@ describe("FileBrowser 選択・ダブルクリック・オーバーレイ", () =
     // IntersectionObserver が isIntersecting: true で発火しても onLoadMore は呼ばれない
     expect(onLoadMore).not.toHaveBeenCalled();
 
-    globalThis.IntersectionObserver = originalIO;
+    restore();
   });
 
   test("ディレクトリの進入ボタンでonNavigateが呼ばれる", async () => {
     const onNavigate = vi.fn();
-    renderWithQuery(
+    renderFileBrowser(
       <FileBrowser
         entries={mockEntries}
         isLoading={false}
@@ -738,7 +529,7 @@ describe("FileBrowser 選択・ダブルクリック・オーバーレイ", () =
 
   test("画像の開くボタンでonImageClickが呼ばれる", async () => {
     const onImageClick = vi.fn();
-    renderWithQuery(
+    renderFileBrowser(
       <FileBrowser
         entries={mockEntries}
         isLoading={false}
@@ -755,7 +546,7 @@ describe("FileBrowser 選択・ダブルクリック・オーバーレイ", () =
 
   test("PDFの開くボタンでonPdfClickが呼ばれる", async () => {
     const onPdfClick = vi.fn();
-    renderWithQuery(
+    renderFileBrowser(
       <FileBrowser
         entries={mockEntries}
         isLoading={false}
