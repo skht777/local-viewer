@@ -21,15 +21,15 @@ import { useToast } from "../hooks/useToast";
 import { useToolbarAutoHide } from "../hooks/useToolbarAutoHide";
 import { usePdfContainerSize } from "../hooks/usePdfContainerSize";
 import { usePdfDocument } from "../hooks/usePdfDocument";
+import { usePdfPageState } from "../hooks/usePdfPageState";
 import { usePdfRenderCache } from "../hooks/usePdfRenderCache";
 import { useViewerBoundaryNavigation } from "../hooks/useViewerBoundaryNavigation";
 import { formatPageLabel } from "../utils/formatPageLabel";
 import { PdfCanvas } from "./PdfCanvas";
-import { CgToolbar } from "./CgToolbar";
-import { KeyboardHelp, CG_SHORTCUTS } from "./KeyboardHelp";
-import { NavigationPrompt } from "./NavigationPrompt";
 import { PageSlider } from "./PageSlider";
-import { Toast } from "./Toast";
+import { PdfCgViewerOverlays } from "./PdfCgViewerOverlays";
+import { PdfCgViewerToolbar } from "./PdfCgViewerToolbar";
+import { PdfViewerError, PdfViewerLoading } from "./PdfViewerStatus";
 
 interface PdfCgViewerProps {
   pdfNodeId: string;
@@ -43,10 +43,25 @@ interface PdfCgViewerProps {
   onClose: () => void;
 }
 
-// 受入: 残 12 行 / 4 statements 超過。useState + handler / displayIndices 派生値 /
-// useCgKeyboard 設定オブジェクトの細粒度抽出は可読性低下と引き換えになるため、
-// 「申し送り」へ載せる方針 (B-7 plan の B-6 同等フォールバック)。
-// oxlint-disable-next-line max-lines-per-function, max-statements
+// 見開き表示時の派生値: 各ページの containerWidth と 1-based ページラベル
+function getPdfDisplayRange(
+  displayIndices: number[],
+  containerWidth: number,
+): {
+  pageContainerWidth: number;
+  firstDisplay: number;
+  currentEnd: number | undefined;
+} {
+  const pageContainerWidth = displayIndices.length > 1 ? containerWidth / 2 : containerWidth;
+  const first = displayIndices.length > 0 ? displayIndices[0] + 1 : 1;
+  const last = displayIndices.length > 0 ? displayIndices[displayIndices.length - 1] + 1 : 1;
+  return {
+    pageContainerWidth,
+    firstDisplay: first,
+    currentEnd: displayIndices.length > 1 ? last : undefined,
+  };
+}
+
 export function PdfCgViewer({
   pdfNodeId,
   pdfName,
@@ -65,35 +80,14 @@ export function PdfCgViewer({
   const viewerTransitionId = useViewerStore((s) => s.viewerTransitionId);
   const { toggleFullscreen } = useFullscreen();
 
-  // PDF ドキュメント読み込み
   const { document, pageCount, isLoading, error } = usePdfDocument(`/api/file/${pdfNodeId}`);
-
-  // 描画キャッシュ (PdfCgViewer のみ適用)
+  // 描画キャッシュ (PdfCgViewer のみ適用 — PdfMangaViewer には渡さない)
   const renderCache = usePdfRenderCache();
-
-  // 現在ページ (0-based index で管理、表示は 1-based)
-  const [currentPage, setCurrentPage] = useState(initialPage - 1);
-
-  const handlePageChange = useCallback(
-    (index: number) => {
-      setCurrentPage(index);
-      // URL は 1-based
-      onPageChange(index + 1);
-    },
-    [onPageChange],
-  );
-
-  // ページナビゲーション (spread 対応)
+  const { currentPage, handlePageChange } = usePdfPageState(initialPage, onPageChange);
   const nav = useCgNavigation(pageCount, currentPage, handlePageChange, spreadMode);
 
-  // ツールバー自動表示/非表示
-
   const { isToolbarVisible, isTouch, containerCallbackRef } = useToolbarAutoHide();
-
-  // ページ境界トースト（duration は useToast 内部 timer と Toast 側を同期）
   const { toastMessage, toastDuration, showToast, dismissToast } = useToast();
-
-  // 境界チェック付きナビゲーション（PDF はメッセージを「ページ」表現に差し替え）
   const { handleGoNext, handleGoPrev } = useViewerBoundaryNavigation({
     nav,
     showToast,
@@ -101,10 +95,8 @@ export function PdfCgViewer({
     lastMessage: "最後のページです",
   });
 
-  // キーボードヘルプ
   const [isHelpOpen, setIsHelpOpen] = useState(false);
 
-  // セット間ジャンプ + バックグラウンドプリフェッチ
   const setJump = useSetJump({
     currentNodeId: pdfNodeId,
     parentNodeId,
@@ -126,7 +118,10 @@ export function PdfCgViewer({
     }
   }, [isHelpOpen, setJump]);
 
-  // キーボードショートカット (spread 有効)
+  const { containerSize, imageAreaRef, combinedRef } = usePdfContainerSize();
+  const { resetCursorTimer } = useCursorAutoHide(imageAreaRef);
+  const handleClick = useClickToTurnPage(handleGoNext, handleGoPrev);
+
   useCgKeyboard({
     goNext: handleGoNext,
     goPrev: handleGoPrev,
@@ -158,93 +153,43 @@ export function PdfCgViewer({
     },
   });
 
-  // コンテナサイズ (fitMode 計算用) — ResizeObserver で動的計測
-  const { containerSize, imageAreaRef, combinedRef } = usePdfContainerSize();
-
-  // カーソルオートハイド（1秒 idle で消す）
-  const { resetCursorTimer } = useCursorAutoHide(imageAreaRef);
-
-  // 画像クリックでページ送り (画面中央分割: 右半分→次、左半分→前)
-  const handleClick = useClickToTurnPage(handleGoNext, handleGoPrev);
-
-  // 見開き時の各ページに渡す containerWidth
+  // 見開き表示用の派生値 (containerWidth / 1-based ページラベル)
   const { displayIndices } = nav;
-  const pageContainerWidth =
-    displayIndices.length > 1 ? containerSize.width / 2 : containerSize.width;
+  const display = getPdfDisplayRange(displayIndices, containerSize.width);
 
-  // ページカウンター: 見開き時は "3-4 / 12" 形式
-  const firstDisplay = displayIndices.length > 0 ? displayIndices[0] + 1 : 1;
-  const lastDisplay = displayIndices.length > 0 ? displayIndices[displayIndices.length - 1] + 1 : 1;
-  const currentEnd = displayIndices.length > 1 ? lastDisplay : undefined;
-
-  // ローディング表示
   if (isLoading) {
-    return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black">
-        <p className="text-gray-400" data-testid="pdf-loading">
-          PDF を読み込み中...
-        </p>
-      </div>
-    );
+    return <PdfViewerLoading />;
   }
-
-  // エラー表示
   if (error) {
-    return (
-      <div className="fixed inset-0 z-50 flex flex-col items-center justify-center gap-4 bg-black">
-        <p className="text-red-400" data-testid="pdf-error">
-          PDF を開けません: {error.message}
-        </p>
-        <button
-          type="button"
-          onClick={onClose}
-          className="rounded bg-surface-raised px-4 py-2 text-white hover:bg-surface-overlay"
-        >
-          閉じる
-        </button>
-      </div>
-    );
+    return <PdfViewerError error={error} onClose={onClose} />;
   }
-
   if (!document) {
     return null;
   }
 
   return (
     <div data-testid="pdf-cg-viewer" className="fixed inset-0 z-50 flex bg-black">
-      {/* メインエリア */}
       <div ref={containerCallbackRef} className="relative flex flex-1 flex-col overflow-hidden">
-        {/* ツールバー（デスクトップ: 自動表示/非表示、タッチ: 常時表示・通常フロー） */}
-        <div
-          data-testid="toolbar-wrapper"
-          className={
-            isTouch
-              ? "relative z-10"
-              : `absolute top-0 right-0 left-0 z-10 transition-opacity duration-300 ${isToolbarVisible ? "opacity-100" : "pointer-events-none opacity-0"}`
-          }
-        >
-          <CgToolbar
-            fitMode={fitMode}
-            spreadMode={spreadMode}
-            currentIndex={currentPage}
-            totalCount={pageCount}
-            showSpread={true}
-            setName={pdfName}
-            currentPage={firstDisplay}
-            currentPageEnd={currentEnd}
-            onFitWidth={() => setFitMode("width")}
-            onFitHeight={() => setFitMode("height")}
-            onCycleSpread={cycleSpreadMode}
-            onToggleFullscreen={toggleFullscreen}
-            onGoTo={nav.goTo}
-            onClose={onClose}
-            onPrevSet={setJump.goPrevSet}
-            onNextSet={setJump.goNextSet}
-            isSetJumpDisabled={setJump.prompt != null || viewerTransitionId > 0}
-          />
-        </div>
-
-        {/* PDF ページ表示エリア */}
+        <PdfCgViewerToolbar
+          isTouch={isTouch}
+          isToolbarVisible={isToolbarVisible}
+          fitMode={fitMode}
+          spreadMode={spreadMode}
+          currentPage={currentPage}
+          pageCount={pageCount}
+          pdfName={pdfName}
+          firstDisplay={display.firstDisplay}
+          currentEnd={display.currentEnd}
+          onFitWidth={() => setFitMode("width")}
+          onFitHeight={() => setFitMode("height")}
+          onCycleSpread={cycleSpreadMode}
+          onToggleFullscreen={toggleFullscreen}
+          onGoTo={nav.goTo}
+          onClose={onClose}
+          onPrevSet={setJump.goPrevSet}
+          onNextSet={setJump.goNextSet}
+          isSetJumpDisabled={setJump.prompt != null || viewerTransitionId > 0}
+        />
         <div
           ref={combinedRef}
           data-testid="pdf-cg-page-area"
@@ -265,7 +210,7 @@ export function PdfCgViewer({
                 document={document}
                 pageNumber={pageIdx + 1}
                 fitMode={fitMode}
-                containerWidth={pageContainerWidth}
+                containerWidth={display.pageContainerWidth}
                 renderCache={renderCache}
                 enableTextLayer={true}
                 containerHeight={containerSize.height}
@@ -273,8 +218,6 @@ export function PdfCgViewer({
             </div>
           ))}
         </div>
-
-        {/* ページスライダー（下部フェードイン） */}
         <PageSlider
           currentIndex={currentPage}
           totalCount={pageCount}
@@ -282,26 +225,14 @@ export function PdfCgViewer({
           containerRef={imageAreaRef}
           onSliderActivity={resetCursorTimer}
         />
-
-        {/* ページ境界トースト */}
-        {toastMessage && (
-          <Toast message={toastMessage} onDismiss={dismissToast} duration={toastDuration} />
-        )}
-
-        {/* キーボードヘルプ */}
-        {isHelpOpen && (
-          <KeyboardHelp shortcuts={CG_SHORTCUTS} onClose={() => setIsHelpOpen(false)} />
-        )}
-
-        {/* セット間ジャンプの確認プロンプト */}
-        {setJump.prompt && (
-          <NavigationPrompt
-            message={setJump.prompt.message}
-            onConfirm={setJump.prompt.onConfirm}
-            onCancel={setJump.prompt.onCancel}
-            extraConfirmKeys={setJump.prompt.extraConfirmKeys}
-          />
-        )}
+        <PdfCgViewerOverlays
+          toastMessage={toastMessage}
+          toastDuration={toastDuration}
+          onToastDismiss={dismissToast}
+          isHelpOpen={isHelpOpen}
+          onHelpClose={() => setIsHelpOpen(false)}
+          prompt={setJump.prompt}
+        />
       </div>
     </div>
   );
