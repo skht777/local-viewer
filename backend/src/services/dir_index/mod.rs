@@ -18,7 +18,7 @@ mod schema;
 mod sort_queries;
 #[cfg(test)]
 mod tests;
-mod writes;
+pub(crate) mod writes;
 
 pub(crate) use bulk_insert::BulkInserter;
 
@@ -41,6 +41,19 @@ pub(crate) enum DirIndexError {
     Sqlite(#[from] rusqlite::Error),
     #[error("{0}")]
     Other(String),
+    /// 永続層 (`dir_entries`) の `name` に不正文字 (`/`, `\\0`, `\\`) が混入していた場合に返す
+    ///
+    /// active な `&Transaction` を借用している `canonicalize_parent_in_tx` ではこのエラーを
+    /// 返すだけで、リカバリ (`delete_mount_entries` + `clear_mount_fingerprint`) は呼び出し側
+    /// (`run_mount_scan` / `browse fallback writeback`) で実行する。
+    #[error(
+        "永続層の name が破損しています (mount_id={mount_id}, parent_path={parent_path}, name={name:?})"
+    )]
+    CorruptPersistentName {
+        mount_id: String,
+        parent_path: String,
+        name: String,
+    },
 }
 
 impl From<crate::services::path_keys::PathKeyError> for DirIndexError {
