@@ -29,7 +29,7 @@ import { PdfCanvas } from "./PdfCanvas";
 import { PageSlider } from "./PageSlider";
 import { PdfCgViewerOverlays } from "./PdfCgViewerOverlays";
 import { PdfCgViewerToolbar } from "./PdfCgViewerToolbar";
-import { PdfViewerError, PdfViewerLoading } from "./PdfViewerStatus";
+import { renderPdfStatus } from "./PdfViewerStatus";
 
 interface PdfCgViewerProps {
   pdfNodeId: string;
@@ -157,14 +157,9 @@ export function PdfCgViewer({
   const { displayIndices } = nav;
   const display = getPdfDisplayRange(displayIndices, containerSize.width);
 
-  if (isLoading) {
-    return <PdfViewerLoading />;
-  }
-  if (error) {
-    return <PdfViewerError error={error} onClose={onClose} />;
-  }
-  if (!document) {
-    return null;
+  const status = renderPdfStatus({ isLoading, error, document, onClose });
+  if (status.shouldEarlyReturn || !document) {
+    return status.element;
   }
 
   return (

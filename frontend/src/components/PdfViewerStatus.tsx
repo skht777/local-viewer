@@ -2,6 +2,8 @@
 // - usePdfDocument の isLoading / error を反映
 // - エラー時は閉じるボタンで onClose を呼ぶ
 
+import type { ReactElement } from "react";
+
 interface PdfViewerLoadingProps {
   message?: string;
 }
@@ -36,4 +38,37 @@ export function PdfViewerError({ error, onClose }: PdfViewerErrorProps) {
       </button>
     </div>
   );
+}
+
+interface RenderPdfStatusParams {
+  isLoading: boolean;
+  error: Error | null;
+  document: unknown;
+  onClose: () => void;
+}
+
+interface PdfStatusResult {
+  shouldEarlyReturn: boolean;
+  element: ReactElement | null;
+}
+
+// usePdfDocument の状態 (loading / error / document 不在) に応じた早期 return の指示を返す
+// - shouldEarlyReturn=false なら呼び出し側は通常レンダリングへ進む
+// - true の場合 element を返す (PdfViewerLoading / PdfViewerError / null)
+export function renderPdfStatus({
+  isLoading,
+  error,
+  document,
+  onClose,
+}: RenderPdfStatusParams): PdfStatusResult {
+  if (isLoading) {
+    return { shouldEarlyReturn: true, element: <PdfViewerLoading /> };
+  }
+  if (error) {
+    return { shouldEarlyReturn: true, element: <PdfViewerError error={error} onClose={onClose} /> };
+  }
+  if (!document) {
+    return { shouldEarlyReturn: true, element: null };
+  }
+  return { shouldEarlyReturn: false, element: null };
 }

@@ -1,6 +1,6 @@
 // PDF マンガモードビューワー: 全ページを仮想スクロールで表示
 // - usePdfPageSizes で estimateSize の精度を保証
-// - PdfCanvas で各ページを canvas 描画
+// - PdfCanvas で各ページを canvas 描画 (renderCache は CG モード専用のためここでは渡さない)
 // - MangaToolbar, PageCounter, キーボード等を再利用
 
 import { useCallback, useRef, useState } from "react";
@@ -21,10 +21,9 @@ import { usePdfPageSizes } from "../hooks/usePdfPageSizes";
 import { useUrlIndexSync } from "../hooks/useUrlIndexSync";
 import { formatPageLabel } from "../utils/formatPageLabel";
 import { PdfCanvas } from "./PdfCanvas";
-import { KeyboardHelp, MANGA_SHORTCUTS } from "./KeyboardHelp";
-import { MangaToolbar } from "./MangaToolbar";
-import { NavigationPrompt } from "./NavigationPrompt";
-import { Toast } from "./Toast";
+import { PdfMangaViewerOverlays } from "./PdfMangaViewerOverlays";
+import { PdfMangaViewerToolbar } from "./PdfMangaViewerToolbar";
+import { renderPdfStatus } from "./PdfViewerStatus";
 import { VerticalPageSlider } from "./VerticalPageSlider";
 
 interface PdfMangaViewerProps {
@@ -39,10 +38,6 @@ interface PdfMangaViewerProps {
   onClose: () => void;
 }
 
-// 受入: 残 15 行 / 2 statements 超過。useMangaVirtualizer / useUrlIndexSync 抽出後の
-// 残部を更に分割すると useState/useCallback/JSX の責務分散で逆に追跡が難しくなるため、
-// 「申し送り」へ載せる方針 (B-7 plan の B-6 同等フォールバック)。
-// oxlint-disable-next-line max-lines-per-function, max-statements
 export function PdfMangaViewer({
   pdfNodeId,
   pdfName,
@@ -63,13 +58,9 @@ export function PdfMangaViewer({
   const viewerTransitionId = useViewerStore((s) => s.viewerTransitionId);
   const { toggleFullscreen } = useFullscreen();
 
-  // PDF ドキュメント読み込み
   const { document, pageCount, isLoading, error } = usePdfDocument(`/api/file/${pdfNodeId}`);
-
-  // ページサイズ事前取得 (estimateSize 精度向上)
   const { pageSizes, isReady: pageSizesReady } = usePdfPageSizes(document);
 
-  // 仮想スクロール（pageSizes 反映 + 初期スクロール + zoom anchor 維持）
   const anchorIndexRef = useRef(0);
   const { virtualizer, scrollRef, scrollElement } = useMangaVirtualizer({
     count: pageCount,
@@ -80,7 +71,6 @@ export function PdfMangaViewer({
     anchorIndexRef,
   });
 
-  // スクロール位置からのページ検出
   const mangaScroll = useMangaScroll({
     virtualizer,
     scrollElement,
@@ -91,8 +81,7 @@ export function PdfMangaViewer({
   // zoom anchor 用に最新 index を ref に反映
   anchorIndexRef.current = mangaScroll.currentIndex;
 
-  // currentIndex を URL に即時同期（PdfMangaViewer は initialPage 比較で発火回数が少ないため debounce 不要）
-  // onIndexChange は 0-based、URL は 1-based に変換して onPageChange へ
+  // currentIndex を URL に即時同期 (1-based に変換)
   const handleIndexChange = useCallback(
     (idx: number) => {
       onPageChange(idx + 1);
@@ -106,17 +95,10 @@ export function PdfMangaViewer({
     debounceMs: null,
   });
 
-  // ツールバー自動表示/非表示
-
   const { isToolbarVisible, isTouch, containerCallbackRef } = useToolbarAutoHide();
-
-  // キーボードヘルプ
   const [isHelpOpen, setIsHelpOpen] = useState(false);
-
-  // セット境界トースト（duration は useToast 内部 timer と Toast 側を同期）
   const { toastMessage, toastDuration, showToast, dismissToast } = useToast();
 
-  // セット間ジャンプ + バックグラウンドプリフェッチ
   const setJump = useSetJump({
     currentNodeId: pdfNodeId,
     parentNodeId,
@@ -138,7 +120,6 @@ export function PdfMangaViewer({
     }
   }, [isHelpOpen, setJump]);
 
-  // キーボードショートカット
   useMangaKeyboard({
     scrollUp: mangaScroll.scrollUp,
     scrollDown: mangaScroll.scrollDown,
@@ -155,83 +136,39 @@ export function PdfMangaViewer({
     zoomOut,
     zoomReset: () => setZoomLevel(100),
     toggleHelp: () => setIsHelpOpen((prev) => !prev),
-    // タイトル + 現在ページ / 総ページ を 3 秒トースト表示
     showTitle: () =>
       showToast(formatPageLabel(pdfName, mangaScroll.currentIndex + 1, pageCount), 3000),
   });
 
-  // カーソルオートハイド（1秒 idle で消す）
   const { resetCursorTimer } = useCursorAutoHide(scrollRef);
 
-  // 画像幅
-  const imageWidth = `${zoomLevel}%`;
-
-  // ローディング表示
-  if (isLoading) {
-    return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black">
-        <p className="text-gray-400" data-testid="pdf-loading">
-          PDF を読み込み中...
-        </p>
-      </div>
-    );
-  }
-
-  // エラー表示
-  if (error) {
-    return (
-      <div className="fixed inset-0 z-50 flex flex-col items-center justify-center gap-4 bg-black">
-        <p className="text-red-400" data-testid="pdf-error">
-          PDF を開けません: {error.message}
-        </p>
-        <button
-          type="button"
-          onClick={onClose}
-          className="rounded bg-surface-raised px-4 py-2 text-white hover:bg-surface-overlay"
-        >
-          閉じる
-        </button>
-      </div>
-    );
-  }
-
-  if (!document) {
-    return null;
+  const status = renderPdfStatus({ isLoading, error, document, onClose });
+  if (status.shouldEarlyReturn || !document) {
+    return status.element;
   }
 
   return (
     <div data-testid="pdf-manga-viewer" className="fixed inset-0 z-50 flex bg-black">
-      {/* メインエリア */}
       <div ref={containerCallbackRef} className="relative flex flex-1 flex-col overflow-hidden">
-        {/* ツールバー（デスクトップ: 自動表示/非表示、タッチ: 常時表示・通常フロー） */}
-        <div
-          data-testid="toolbar-wrapper"
-          className={
-            isTouch
-              ? "relative z-10"
-              : `absolute top-0 right-0 left-0 z-10 transition-opacity duration-300 ${isToolbarVisible ? "opacity-100" : "pointer-events-none opacity-0"}`
-          }
-        >
-          <MangaToolbar
-            currentIndex={mangaScroll.currentIndex}
-            totalCount={pageCount}
-            zoomLevel={zoomLevel}
-            scrollSpeed={scrollSpeed}
-            setName={pdfName}
-            onScrollToImage={mangaScroll.scrollToImage}
-            onZoomIn={zoomIn}
-            onZoomOut={zoomOut}
-            onZoomChange={setZoomLevel}
-            onScrollSpeedChange={setScrollSpeed}
-            onToggleFullscreen={toggleFullscreen}
-            onClose={onClose}
-            onPrevSet={setJump.goPrevSet}
-            onNextSet={setJump.goNextSet}
-            isSetJumpDisabled={setJump.prompt != null || viewerTransitionId > 0}
-          />
-        </div>
-
-        {/* 仮想スクロール PDF ページリスト */}
+        <PdfMangaViewerToolbar
+          isTouch={isTouch}
+          isToolbarVisible={isToolbarVisible}
+          currentIndex={mangaScroll.currentIndex}
+          totalCount={pageCount}
+          zoomLevel={zoomLevel}
+          scrollSpeed={scrollSpeed}
+          pdfName={pdfName}
+          onScrollToImage={mangaScroll.scrollToImage}
+          onZoomIn={zoomIn}
+          onZoomOut={zoomOut}
+          onZoomChange={setZoomLevel}
+          onScrollSpeedChange={setScrollSpeed}
+          onToggleFullscreen={toggleFullscreen}
+          onClose={onClose}
+          onPrevSet={setJump.goPrevSet}
+          onNextSet={setJump.goNextSet}
+          isSetJumpDisabled={setJump.prompt != null || viewerTransitionId > 0}
+        />
         <div
           ref={scrollRef}
           data-testid="pdf-manga-scroll-area"
@@ -242,7 +179,7 @@ export function PdfMangaViewer({
             className="relative mx-auto"
             style={{
               height: `${virtualizer.getTotalSize()}px`,
-              width: imageWidth,
+              width: `${zoomLevel}%`,
             }}
           >
             {virtualizer.getVirtualItems().map((virtualRow) => (
@@ -253,9 +190,6 @@ export function PdfMangaViewer({
                 className="absolute left-0 w-full"
                 style={{ top: `${virtualRow.start}px` }}
               >
-                {/* 描画キャッシュ (renderCache) は PdfCgViewer のみ適用
-                    マンガモードは zoomLevel 変動でキャッシュヒット率が低く、
-                    メモリ圧迫のリスクがあるため見送り (Phase 6.5 設計判断) */}
                 <PdfCanvas
                   document={document}
                   pageNumber={virtualRow.index + 1}
@@ -268,8 +202,6 @@ export function PdfMangaViewer({
             ))}
           </div>
         </div>
-
-        {/* ページスライダー（右端フェードイン） */}
         <VerticalPageSlider
           currentIndex={mangaScroll.currentIndex}
           totalCount={pageCount}
@@ -277,26 +209,14 @@ export function PdfMangaViewer({
           containerRef={scrollRef}
           onSliderActivity={resetCursorTimer}
         />
-
-        {/* キーボードヘルプ */}
-        {isHelpOpen && (
-          <KeyboardHelp shortcuts={MANGA_SHORTCUTS} onClose={() => setIsHelpOpen(false)} />
-        )}
-
-        {/* セット間ジャンプの確認プロンプト */}
-        {/* セット境界トースト */}
-        {toastMessage && (
-          <Toast message={toastMessage} onDismiss={dismissToast} duration={toastDuration} />
-        )}
-
-        {setJump.prompt && (
-          <NavigationPrompt
-            message={setJump.prompt.message}
-            onConfirm={setJump.prompt.onConfirm}
-            onCancel={setJump.prompt.onCancel}
-            extraConfirmKeys={setJump.prompt.extraConfirmKeys}
-          />
-        )}
+        <PdfMangaViewerOverlays
+          isHelpOpen={isHelpOpen}
+          onHelpClose={() => setIsHelpOpen(false)}
+          toastMessage={toastMessage}
+          toastDuration={toastDuration}
+          onToastDismiss={dismissToast}
+          prompt={setJump.prompt}
+        />
       </div>
     </div>
   );
