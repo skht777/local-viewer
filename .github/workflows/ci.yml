@@ -57,6 +57,9 @@ jobs:
       - run: npx oxlint frontend/src/
       - run: npx oxfmt --check frontend/src/
 
+      # Frontend type check (tests を含む)
+      - run: cd frontend && npm run typecheck
+
   test-frontend:
     needs: lint-frontend
     runs-on: ubuntu-latest
