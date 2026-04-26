@@ -6,18 +6,19 @@
 // - カーソルオートハイド（1秒 idle → cursor: none）
 // - セット間ジャンプ（useSetJump）+ NavigationPrompt
 
-import { useCallback, useEffect, useRef, useState } from "react";
-import { useVirtualizer } from "@tanstack/react-virtual";
+import { useCallback, useRef, useState } from "react";
 import type { AncestorEntry, BrowseEntry } from "../types/api";
 import { useViewerStore } from "../stores/viewerStore";
 import { useCursorAutoHide } from "../hooks/useCursorAutoHide";
 import { useFullscreen } from "../hooks/useFullscreen";
 import { useMangaScroll } from "../hooks/useMangaScroll";
 import { useMangaKeyboard } from "../hooks/useMangaKeyboard";
+import { useMangaVirtualizer } from "../hooks/useMangaVirtualizer";
 import { useSetJump } from "../hooks/useSetJump";
 import { useSiblingPrefetch } from "../hooks/useSiblingPrefetch";
 import { useToast } from "../hooks/useToast";
 import { useToolbarAutoHide } from "../hooks/useToolbarAutoHide";
+import { useUrlIndexSync } from "../hooks/useUrlIndexSync";
 import type { SortOrder, ViewerMode } from "../hooks/useViewerParams";
 import { formatPageLabel } from "../utils/formatPageLabel";
 import { KeyboardHelp, MANGA_SHORTCUTS } from "./KeyboardHelp";
@@ -60,22 +61,13 @@ export function MangaViewer({
   const viewerTransitionId = useViewerStore((s) => s.viewerTransitionId);
   const { toggleFullscreen } = useFullscreen();
 
-  // スクロールコンテナ
-  const scrollRef = useRef<HTMLDivElement>(null);
-  const [scrollElement, setScrollElement] = useState<HTMLDivElement | null>(null);
-  useEffect(() => {
-    setScrollElement(scrollRef.current);
-  }, []);
-
-  // 仮想スクロール（estimateSize: 3:4 縦長推定）
-  const virtualizer = useVirtualizer({
+  // 仮想スクロール（estimateSize: 3:4 縦長推定）+ 初期スクロール + zoom anchor 維持
+  const anchorIndexRef = useRef(0);
+  const { virtualizer, scrollRef, scrollElement } = useMangaVirtualizer({
     count: images.length,
-    getScrollElement: () => scrollRef.current,
-    estimateSize: () => {
-      const containerWidth = scrollRef.current?.clientWidth ?? 800;
-      return (containerWidth * zoomLevel * 4) / (100 * 3);
-    },
-    overscan: 3,
+    zoomLevel,
+    initialIndex: currentIndex,
+    anchorIndexRef,
   });
 
   // スクロール位置からのページ検出 + スクロール操作
@@ -86,42 +78,19 @@ export function MangaViewer({
     scrollSpeed,
   });
 
+  // zoom anchor 用に最新 index を ref に反映（mangaScroll は virtualizer の後に確定）
+  anchorIndexRef.current = mangaScroll.currentIndex;
+
   // currentIndex を URL に同期（debounce 200ms）
   // 初期マウント時の virtualizer 再計測・画像遅延ロードで起きるスクロール位置の揺らぎが
   // 毎フレームの setSearchParams 連鎖を誘発し React の update depth 制限（#185）を超える
   // ケースがあるため、揺らぎを吸収してから URL に反映する
-  useEffect(() => {
-    if (mangaScroll.currentIndex === currentIndex) {
-      return;
-    }
-    const timer = setTimeout(() => {
-      onIndexChange(mangaScroll.currentIndex);
-    }, 200);
-    return () => clearTimeout(timer);
-  }, [mangaScroll.currentIndex, currentIndex, onIndexChange]);
-
-  // 初期表示で currentIndex の位置にスクロール（モード切替時の位置引き継ぎ）
-  const initialScrollDone = useRef(false);
-  useEffect(() => {
-    if (!initialScrollDone.current && currentIndex > 0 && images.length > 0) {
-      virtualizer.scrollToIndex(currentIndex, { align: "start" });
-      initialScrollDone.current = true;
-    }
-  }, [currentIndex, images.length, virtualizer]);
-
-  // ズーム変更時: スクロールアンカー維持
-  const prevZoomLevel = useRef(zoomLevel);
-  useEffect(() => {
-    if (prevZoomLevel.current !== zoomLevel) {
-      const anchorIndex = mangaScroll.currentIndex;
-      virtualizer.measure();
-      // 次フレームで scrollToIndex（measure 反映後）
-      requestAnimationFrame(() => {
-        virtualizer.scrollToIndex(anchorIndex, { align: "start" });
-      });
-      prevZoomLevel.current = zoomLevel;
-    }
-  }, [zoomLevel, virtualizer, mangaScroll.currentIndex]);
+  useUrlIndexSync({
+    currentIndex: mangaScroll.currentIndex,
+    externalIndex: currentIndex,
+    onChange: onIndexChange,
+    debounceMs: 200,
+  });
 
   // ツールバー自動表示/非表示
 
