@@ -21,20 +21,12 @@ function makeEntry(kind: BrowseEntry["kind"], id: string = kind): BrowseEntry {
   };
 }
 
-interface RenderOpts {
-  indexMap?: Map<string, number>;
-  onNavigate?: ReturnType<typeof vi.fn>;
-  onImageClick?: ReturnType<typeof vi.fn>;
-  onPdfClick?: ReturnType<typeof vi.fn>;
-  onOpenViewer?: ReturnType<typeof vi.fn>;
-}
-
-function setup(opts: RenderOpts = {}) {
+function setup(opts: { indexMap?: Map<string, number> } = {}) {
   const indexMap = opts.indexMap ?? new Map<string, number>();
-  const onNavigate = opts.onNavigate ?? vi.fn();
-  const onImageClick = opts.onImageClick ?? vi.fn();
-  const onPdfClick = opts.onPdfClick ?? vi.fn();
-  const onOpenViewer = opts.onOpenViewer ?? vi.fn();
+  const onNavigate = vi.fn();
+  const onImageClick = vi.fn();
+  const onPdfClick = vi.fn();
+  const onOpenViewer = vi.fn();
   const { result } = renderHook(() =>
     useFileBrowserActions({ indexMap, onNavigate, onImageClick, onPdfClick, onOpenViewer }),
   );
