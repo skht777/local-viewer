@@ -9,7 +9,7 @@ import { useCallback, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { apiFetch } from "./api/apiClient";
-import { browseInfiniteOptions, browseNodeOptions } from "./api/browseQueries";
+import { browseInfiniteOptions, browseNodeOptions, fetchAllBrowsePages } from "./api/browseQueries";
 import { findNextSet, findPrevSet, resolveTopLevelDir, shouldConfirm } from "./useSetNavigation";
 import type { SortOrder, ViewerMode } from "./useViewerParams";
 import type { AncestorEntry, BrowseEntry, BrowseResponse, SiblingResponse } from "../types/api";
@@ -83,14 +83,26 @@ export function useSetJump({
     [mode, sort],
   );
 
-  // browse ノードにナビゲートする前にデータをプリフェッチ
-  // BrowsePage の useInfiniteQuery キャッシュに直接投入する
-  // キャッシュ済みなら即座に返る。未キャッシュでも navigate 前に取得完了する
-  // replace モード: セットジャンプは履歴を汚染しない
-  const prefetchAndNavigate = useCallback(
+  // PDF 用: 1 ページだけプリフェッチして navigate
+
+  // - PDF ビューワーは PDF 自身を表示するため親ディレクトリの全件は不要
+  // - replace モード: セットジャンプは履歴を汚染しない
+  const prefetchFirstPageAndNavigate = useCallback(
     async (nodeId: string, search: string) => {
       startViewerTransition();
       await queryClient.prefetchInfiniteQuery(browseInfiniteOptions(nodeId, sort));
+      navigate(`/browse/${nodeId}${search}`, { replace: true });
+    },
+    [queryClient, navigate, sort, startViewerTransition],
+  );
+
+  // image / archive 用: 全ページをプリフェッチして navigate
+  // - 100 件超のセットでもビューワー側に全画像が渡るよう兄弟全件を温める
+  // - replace モード: セットジャンプは履歴を汚染しない
+  const prefetchAllAndNavigate = useCallback(
+    async (nodeId: string, search: string) => {
+      startViewerTransition();
+      await fetchAllBrowsePages(queryClient, nodeId, sort);
       navigate(`/browse/${nodeId}${search}`, { replace: true });
     },
     [queryClient, navigate, sort, startViewerTransition],
@@ -103,40 +115,42 @@ export function useSetJump({
   const navigateToTarget = useCallback(
     async (target: BrowseEntry, targetParentNodeId: string | null) => {
       if (target.kind === "pdf") {
-        await prefetchAndNavigate(
+        await prefetchFirstPageAndNavigate(
           targetParentNodeId ?? target.node_id,
           buildSearch({ pdf: target.node_id, page: "1" }),
         );
         return;
       }
       if (target.kind !== "directory") {
-        // アーカイブ: プリフェッチしてから進入
-        await prefetchAndNavigate(target.node_id, buildSearch({ tab: "images", index: "0" }));
+        // アーカイブ: 全ページをプリフェッチしてから進入（100 件超でも viewer に渡す）
+        await prefetchAllAndNavigate(target.node_id, buildSearch({ tab: "images", index: "0" }));
         return;
       }
       // ディレクトリ: 再帰探索して最初の閲覧対象を開く
       try {
         const resolved = await resolveFirstViewable(target.node_id, queryClient, sort);
         if (!resolved) {
-          // index なしで遷移 → ブラウザーモードでコンテンツを確認
-          await prefetchAndNavigate(target.node_id, buildSearch({ tab: "images" }));
+          // index なしで遷移 → ブラウザーモードでコンテンツを確認（1 ページで十分）
+          await prefetchFirstPageAndNavigate(target.node_id, buildSearch({ tab: "images" }));
           return;
         }
         if (resolved.entry.kind === "pdf") {
-          await prefetchAndNavigate(
+          await prefetchFirstPageAndNavigate(
             resolved.parentNodeId,
             buildSearch({ pdf: resolved.entry.node_id, page: "1" }),
           );
         } else if (resolved.entry.kind === "image") {
-          // parentNodeId は resolveFirstViewable 内でキャッシュ済み
+          // 画像: 親ディレクトリの全ページをプリフェッチしてから navigate
+          // 100 件超の兄弟画像が viewer に渡るよう保証する
           startViewerTransition();
+          await fetchAllBrowsePages(queryClient, resolved.parentNodeId, sort);
           navigate(
             `/browse/${resolved.parentNodeId}${buildSearch({ tab: "images", index: "0" })}`,
             { replace: true },
           );
         } else {
-          // アーカイブ: プリフェッチしてから進入
-          await prefetchAndNavigate(
+          // アーカイブ: 全ページをプリフェッチしてから進入
+          await prefetchAllAndNavigate(
             resolved.entry.node_id,
             buildSearch({ tab: "images", index: "0" }),
           );
@@ -146,7 +160,15 @@ export function useSetJump({
         navigate(`/browse/${target.node_id}${buildSearch({ tab: "images" })}`, { replace: true });
       }
     },
-    [navigate, prefetchAndNavigate, buildSearch, sort, queryClient, startViewerTransition],
+    [
+      navigate,
+      prefetchFirstPageAndNavigate,
+      prefetchAllAndNavigate,
+      buildSearch,
+      sort,
+      queryClient,
+      startViewerTransition,
+    ],
   );
 
   // 再帰的に親を辿って兄弟セットを探索
