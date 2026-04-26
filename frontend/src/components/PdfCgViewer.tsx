@@ -80,8 +80,8 @@ export function PdfCgViewer({
 
   const { isToolbarVisible, isTouch, containerCallbackRef } = useToolbarAutoHide();
 
-  // ページ境界トースト
-  const { toastMessage, showToast, dismissToast } = useToast();
+  // ページ境界トースト（duration は useToast 内部 timer と Toast 側を同期）
+  const { toastMessage, toastDuration, showToast, dismissToast } = useToast();
 
   // 境界チェック付きナビゲーション
   const handleGoNext = useCallback(() => {
@@ -318,7 +318,9 @@ export function PdfCgViewer({
         />
 
         {/* ページ境界トースト */}
-        {toastMessage && <Toast message={toastMessage} onDismiss={dismissToast} />}
+        {toastMessage && (
+          <Toast message={toastMessage} onDismiss={dismissToast} duration={toastDuration} />
+        )}
 
         {/* キーボードヘルプ */}
         {isHelpOpen && (

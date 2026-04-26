@@ -137,8 +137,8 @@ export function PdfMangaViewer({
   // キーボードヘルプ
   const [isHelpOpen, setIsHelpOpen] = useState(false);
 
-  // セット境界トースト
-  const { toastMessage, showToast, dismissToast } = useToast();
+  // セット境界トースト（duration は useToast 内部 timer と Toast 側を同期）
+  const { toastMessage, toastDuration, showToast, dismissToast } = useToast();
 
   // セット間ジャンプ + バックグラウンドプリフェッチ
   const setJump = useSetJump({
@@ -312,7 +312,9 @@ export function PdfMangaViewer({
 
         {/* セット間ジャンプの確認プロンプト */}
         {/* セット境界トースト */}
-        {toastMessage && <Toast message={toastMessage} onDismiss={dismissToast} />}
+        {toastMessage && (
+          <Toast message={toastMessage} onDismiss={dismissToast} duration={toastDuration} />
+        )}
 
         {setJump.prompt && (
           <NavigationPrompt
