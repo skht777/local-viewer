@@ -48,7 +48,21 @@
     "unicorn/prefer-global-this": "off",
     "unicorn/switch-case-braces": "off",
     "unicorn/no-nested-ternary": "off",
-    "unicorn/no-array-callback-reference": "off"
+    "unicorn/no-array-callback-reference": "off",
+
+    "no-ternary": "off",
+    "no-nested-ternary": "off",
+    "capitalized-comments": "off",
+    "sort-keys": "off",
+    "sort-imports": "off",
+    "no-magic-numbers": "off",
+    "promise/avoid-new": "off",
+    "id-length": ["warn", { "min": 1 }],
+    "func-style": ["warn", "declaration", { "allowArrowFunctions": true }],
+    "max-lines": ["warn", { "max": 500, "skipBlankLines": true, "skipComments": true }],
+    "max-lines-per-function": ["warn", { "max": 300, "skipBlankLines": true, "skipComments": true }],
+    "max-statements": ["warn", { "max": 30 }],
+    "max-params": ["warn", { "max": 5 }]
   },
   "overrides": [
     {
