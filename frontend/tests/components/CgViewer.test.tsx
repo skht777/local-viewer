@@ -19,7 +19,14 @@ beforeEach(() => {
 });
 
 function makeImage(id: string, name: string): BrowseEntry {
-  return { node_id: id, name, kind: "image", size_bytes: 1024, mime_type: "image/jpeg", child_count: null };
+  return {
+    node_id: id,
+    name,
+    kind: "image",
+    size_bytes: 1024,
+    mime_type: "image/jpeg",
+    child_count: null,
+  };
 }
 
 const images = [makeImage("a", "img1.jpg"), makeImage("b", "img2.jpg"), makeImage("c", "img3.jpg")];

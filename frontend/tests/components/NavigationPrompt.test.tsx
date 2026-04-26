@@ -4,7 +4,13 @@ import { NavigationPrompt } from "../../src/components/NavigationPrompt";
 
 describe("NavigationPrompt", () => {
   test("メッセージが表示される", () => {
-    render(<NavigationPrompt message="次のディレクトリに移動しますか？" onConfirm={() => {}} onCancel={() => {}} />);
+    render(
+      <NavigationPrompt
+        message="次のディレクトリに移動しますか？"
+        onConfirm={() => {}}
+        onCancel={() => {}}
+      />,
+    );
     expect(screen.getByText("次のディレクトリに移動しますか？")).toBeInTheDocument();
   });
 
@@ -51,7 +57,12 @@ describe("NavigationPrompt", () => {
   test("extraConfirmKeys の X キーで onConfirm が呼ばれる", async () => {
     const onConfirm = vi.fn();
     render(
-      <NavigationPrompt message="test" onConfirm={onConfirm} onCancel={() => {}} extraConfirmKeys={["x"]} />,
+      <NavigationPrompt
+        message="test"
+        onConfirm={onConfirm}
+        onCancel={() => {}}
+        extraConfirmKeys={["x"]}
+      />,
     );
     await userEvent.keyboard("x");
     expect(onConfirm).toHaveBeenCalledOnce();
@@ -60,7 +71,12 @@ describe("NavigationPrompt", () => {
   test("extraConfirmKeys の Z キーで onConfirm が呼ばれる", async () => {
     const onConfirm = vi.fn();
     render(
-      <NavigationPrompt message="test" onConfirm={onConfirm} onCancel={() => {}} extraConfirmKeys={["z"]} />,
+      <NavigationPrompt
+        message="test"
+        onConfirm={onConfirm}
+        onCancel={() => {}}
+        extraConfirmKeys={["z"]}
+      />,
     );
     await userEvent.keyboard("z");
     expect(onConfirm).toHaveBeenCalledOnce();
@@ -75,7 +91,12 @@ describe("NavigationPrompt", () => {
 
   test("extraConfirmKeys 指定時にヒントテキストにキーが含まれる", () => {
     render(
-      <NavigationPrompt message="test" onConfirm={() => {}} onCancel={() => {}} extraConfirmKeys={["x"]} />,
+      <NavigationPrompt
+        message="test"
+        onConfirm={() => {}}
+        onCancel={() => {}}
+        extraConfirmKeys={["x"]}
+      />,
     );
     expect(screen.getByText(/X.*Y.*Enter/i)).toBeInTheDocument();
   });
@@ -98,11 +119,17 @@ describe("NavigationPrompt", () => {
     const prompt = screen.getByTestId("navigation-prompt");
 
     // 2秒後にホバー開始
-    act(() => { vi.advanceTimersByTime(2000); });
-    act(() => { fireEvent.mouseEnter(prompt); });
+    act(() => {
+      vi.advanceTimersByTime(2000);
+    });
+    act(() => {
+      fireEvent.mouseEnter(prompt);
+    });
 
     // さらに4秒経過（合計6秒）しても呼ばれない
-    act(() => { vi.advanceTimersByTime(4000); });
+    act(() => {
+      vi.advanceTimersByTime(4000);
+    });
     expect(onCancel).not.toHaveBeenCalled();
 
     vi.useRealTimers();
@@ -115,19 +142,31 @@ describe("NavigationPrompt", () => {
     const prompt = screen.getByTestId("navigation-prompt");
 
     // 2秒後にホバー開始
-    act(() => { vi.advanceTimersByTime(2000); });
-    act(() => { fireEvent.mouseEnter(prompt); });
+    act(() => {
+      vi.advanceTimersByTime(2000);
+    });
+    act(() => {
+      fireEvent.mouseEnter(prompt);
+    });
 
     // 1秒後にホバー解除（残り約3秒）
-    act(() => { vi.advanceTimersByTime(1000); });
-    act(() => { fireEvent.mouseLeave(prompt); });
+    act(() => {
+      vi.advanceTimersByTime(1000);
+    });
+    act(() => {
+      fireEvent.mouseLeave(prompt);
+    });
 
     // 残り時間（約3秒）が経過する前は呼ばれない
-    act(() => { vi.advanceTimersByTime(2000); });
+    act(() => {
+      vi.advanceTimersByTime(2000);
+    });
     expect(onCancel).not.toHaveBeenCalled();
 
     // 残り時間（約3秒）が経過すると呼ばれる
-    act(() => { vi.advanceTimersByTime(2000); });
+    act(() => {
+      vi.advanceTimersByTime(2000);
+    });
     expect(onCancel).toHaveBeenCalledOnce();
 
     vi.useRealTimers();

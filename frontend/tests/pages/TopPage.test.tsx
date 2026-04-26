@@ -22,9 +22,7 @@ afterEach(() => {
 describe("TopPage", () => {
   test("ローディング中にスケルトンが表示される", () => {
     // fetch を遅延させてローディング状態を維持
-    globalThis.fetch = vi.fn(
-      () => new Promise(() => {}),
-    ) as typeof fetch;
+    globalThis.fetch = vi.fn(() => new Promise(() => {})) as typeof fetch;
 
     renderTopPage();
     // animate-pulse クラスを持つスケルトン要素が存在する
@@ -33,9 +31,7 @@ describe("TopPage", () => {
   });
 
   test("エラー時にリトライボタンが表示される", async () => {
-    globalThis.fetch = vi.fn(() =>
-      Promise.reject(new Error("Network error")),
-    ) as typeof fetch;
+    globalThis.fetch = vi.fn(() => Promise.reject(new Error("Network error"))) as typeof fetch;
 
     renderTopPage();
 
@@ -52,9 +48,7 @@ describe("TopPage", () => {
       if (callCount <= 1) {
         return Promise.reject(new Error("Network error"));
       }
-      return Promise.resolve(
-        new Response(JSON.stringify({ mounts: [] })),
-      );
+      return Promise.resolve(new Response(JSON.stringify({ mounts: [] })));
     }) as typeof fetch;
 
     renderTopPage();

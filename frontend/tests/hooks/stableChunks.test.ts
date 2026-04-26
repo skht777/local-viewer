@@ -5,42 +5,44 @@
 // - 空配列入力: 空チャンクが返る
 
 import { describe, expect, test } from "vitest";
-import {
-  computeStableChunks,
-  type ChunkState,
-} from "../../src/hooks/api/thumbnailQueries";
+import { computeStableChunks, type ChunkState } from "../../src/hooks/api/thumbnailQueries";
 
 const EMPTY_STATE: ChunkState = { chunks: [], idSet: new Set() };
 
 describe("computeStableChunks", () => {
   test("初回: 空の prev から全チャンク構成される", () => {
-    const result = computeStableChunks(
-      ["a", "b", "c", "d", "e"],
-      3,
-      EMPTY_STATE,
-    );
-    expect(result.chunks).toEqual([["a", "b", "c"], ["d", "e"]]);
+    const result = computeStableChunks(["a", "b", "c", "d", "e"], 3, EMPTY_STATE);
+    expect(result.chunks).toEqual([
+      ["a", "b", "c"],
+      ["d", "e"],
+    ]);
     expect(result.idSet).toEqual(new Set(["a", "b", "c", "d", "e"]));
   });
 
   test("追加のみ: 既存チャンクが維持され新規 ID のみ新チャンクになる", () => {
     const prev: ChunkState = {
-      chunks: [["a", "b", "c"], ["d", "e"]],
+      chunks: [
+        ["a", "b", "c"],
+        ["d", "e"],
+      ],
       idSet: new Set(["a", "b", "c", "d", "e"]),
     };
-    const result = computeStableChunks(
-      ["a", "b", "c", "d", "e", "f", "g"],
-      3,
-      prev,
-    );
+    const result = computeStableChunks(["a", "b", "c", "d", "e", "f", "g"], 3, prev);
     // 既存チャンク [a,b,c], [d,e] はそのまま維持
     // 新規 ID [f,g] だけ新チャンクに
-    expect(result.chunks).toEqual([["a", "b", "c"], ["d", "e"], ["f", "g"]]);
+    expect(result.chunks).toEqual([
+      ["a", "b", "c"],
+      ["d", "e"],
+      ["f", "g"],
+    ]);
   });
 
   test("削除あり: 全チャンク再構成される", () => {
     const prev: ChunkState = {
-      chunks: [["a", "b", "c"], ["d", "e"]],
+      chunks: [
+        ["a", "b", "c"],
+        ["d", "e"],
+      ],
       idSet: new Set(["a", "b", "c", "d", "e"]),
     };
     const result = computeStableChunks(["x", "y"], 3, prev);

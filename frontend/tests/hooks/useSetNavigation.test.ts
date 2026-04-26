@@ -16,78 +16,50 @@ function entry(kind: BrowseEntry["kind"], id: string): BrowseEntry {
 
 describe("findNextSet", () => {
   test("同ディレクトリ内の次のサブディレクトリを返す", () => {
-    const siblings = [
-      entry("image", "i1"),
-      entry("directory", "d1"),
-      entry("directory", "d2"),
-    ];
+    const siblings = [entry("image", "i1"), entry("directory", "d1"), entry("directory", "d2")];
     // 現在 d1 にいる場合、次は d2
     const result = findNextSet(siblings, "d1");
     expect(result?.node_id).toBe("d2");
   });
 
   test("現在のセットが最後の場合は null を返す", () => {
-    const siblings = [
-      entry("directory", "d1"),
-      entry("directory", "d2"),
-    ];
+    const siblings = [entry("directory", "d1"), entry("directory", "d2")];
     const result = findNextSet(siblings, "d2");
     expect(result).toBeNull();
   });
 
   test("archive がセット候補に含まれる", () => {
-    const siblings = [
-      entry("directory", "d1"),
-      entry("archive", "a1"),
-      entry("directory", "d2"),
-    ];
+    const siblings = [entry("directory", "d1"), entry("archive", "a1"), entry("directory", "d2")];
     const result = findNextSet(siblings, "d1");
     expect(result?.node_id).toBe("a1");
   });
 
   test("PDF がセット候補に含まれる", () => {
-    const siblings = [
-      entry("directory", "d1"),
-      entry("pdf", "p1"),
-      entry("directory", "d2"),
-    ];
+    const siblings = [entry("directory", "d1"), entry("pdf", "p1"), entry("directory", "d2")];
     const result = findNextSet(siblings, "d1");
     expect(result?.node_id).toBe("p1");
   });
 
   test("PDF→次のセット候補を返す", () => {
-    const siblings = [
-      entry("pdf", "p1"),
-      entry("archive", "a1"),
-      entry("directory", "d1"),
-    ];
+    const siblings = [entry("pdf", "p1"), entry("archive", "a1"), entry("directory", "d1")];
     const result = findNextSet(siblings, "p1");
     expect(result?.node_id).toBe("a1");
   });
 
   test("アーカイブの次のセットにディレクトリが返る", () => {
-    const siblings = [
-      entry("archive", "a1"),
-      entry("directory", "d1"),
-    ];
+    const siblings = [entry("archive", "a1"), entry("directory", "d1")];
     const result = findNextSet(siblings, "a1");
     expect(result?.node_id).toBe("d1");
   });
 
   test("画像のみの場合は null（セット候補なし）", () => {
-    const siblings = [
-      entry("image", "i1"),
-      entry("image", "i2"),
-    ];
+    const siblings = [entry("image", "i1"), entry("image", "i2")];
     const result = findNextSet(siblings, "i1");
     expect(result).toBeNull();
   });
 
   test("現在の nodeId が見つからない場合は最初のディレクトリを返す", () => {
-    const siblings = [
-      entry("directory", "d1"),
-      entry("directory", "d2"),
-    ];
+    const siblings = [entry("directory", "d1"), entry("directory", "d2")];
     const result = findNextSet(siblings, "unknown");
     expect(result?.node_id).toBe("d1");
   });
@@ -99,7 +71,11 @@ function ancestor(id: string, name: string): AncestorEntry {
 
 describe("resolveTopLevelDir", () => {
   test("ancestors が2要素以上なら ancestors[1] を返す", () => {
-    const ancestors = [ancestor("root", "Root"), ancestor("topA", "TopDirA"), ancestor("sub", "SubDir")];
+    const ancestors = [
+      ancestor("root", "Root"),
+      ancestor("topA", "TopDirA"),
+      ancestor("sub", "SubDir"),
+    ];
     const result = resolveTopLevelDir(ancestors, "sub", entry("archive", "a1"));
     expect(result).toBe("topA");
   });
@@ -159,20 +135,13 @@ describe("shouldConfirm", () => {
 
 describe("findPrevSet", () => {
   test("同ディレクトリ内の前のサブディレクトリを返す", () => {
-    const siblings = [
-      entry("directory", "d1"),
-      entry("directory", "d2"),
-      entry("image", "i1"),
-    ];
+    const siblings = [entry("directory", "d1"), entry("directory", "d2"), entry("image", "i1")];
     const result = findPrevSet(siblings, "d2");
     expect(result?.node_id).toBe("d1");
   });
 
   test("現在のセットが最初の場合は null を返す", () => {
-    const siblings = [
-      entry("directory", "d1"),
-      entry("directory", "d2"),
-    ];
+    const siblings = [entry("directory", "d1"), entry("directory", "d2")];
     const result = findPrevSet(siblings, "d1");
     expect(result).toBeNull();
   });

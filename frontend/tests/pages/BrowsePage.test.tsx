@@ -125,8 +125,22 @@ describe("BrowsePage", () => {
       parent_node_id: "node-parent",
       ancestors: [],
       entries: [
-        { node_id: "img1", name: "a.jpg", kind: "image", size_bytes: 100, mime_type: "image/jpeg", child_count: null },
-        { node_id: "img2", name: "b.png", kind: "image", size_bytes: 200, mime_type: "image/png", child_count: null },
+        {
+          node_id: "img1",
+          name: "a.jpg",
+          kind: "image",
+          size_bytes: 100,
+          mime_type: "image/jpeg",
+          child_count: null,
+        },
+        {
+          node_id: "img2",
+          name: "b.png",
+          kind: "image",
+          size_bytes: 200,
+          mime_type: "image/png",
+          child_count: null,
+        },
       ],
     };
     globalThis.fetch = vi.fn((url: string | URL | Request) => {
@@ -152,7 +166,14 @@ describe("BrowsePage", () => {
       parent_node_id: "node-parent",
       ancestors: [],
       entries: [
-        { node_id: "vid1", name: "clip.mp4", kind: "video", size_bytes: 5000, mime_type: "video/mp4", child_count: null },
+        {
+          node_id: "vid1",
+          name: "clip.mp4",
+          kind: "video",
+          size_bytes: 5000,
+          mime_type: "video/mp4",
+          child_count: null,
+        },
       ],
     };
     globalThis.fetch = vi.fn((url: string | URL | Request) => {
@@ -178,7 +199,15 @@ describe("BrowsePage", () => {
       parent_node_id: "node-parent",
       ancestors: [],
       entries: [
-        { node_id: "img1", name: "a.jpg", kind: "image", size_bytes: 100, mime_type: "image/jpeg", child_count: null, modified_at: 1700000000 },
+        {
+          node_id: "img1",
+          name: "a.jpg",
+          kind: "image",
+          size_bytes: 100,
+          mime_type: "image/jpeg",
+          child_count: null,
+          modified_at: 1700000000,
+        },
       ],
     };
     globalThis.fetch = vi.fn((url: string | URL | Request) => {
@@ -203,7 +232,15 @@ describe("BrowsePage", () => {
       parent_node_id: "node-parent",
       ancestors: [],
       entries: [
-        { node_id: "dir1", name: "subfolder", kind: "directory", size_bytes: null, mime_type: null, child_count: 3, modified_at: 1700000000 },
+        {
+          node_id: "dir1",
+          name: "subfolder",
+          kind: "directory",
+          size_bytes: null,
+          mime_type: null,
+          child_count: 3,
+          modified_at: 1700000000,
+        },
       ],
     };
     globalThis.fetch = vi.fn((url: string | URL | Request) => {
@@ -228,7 +265,15 @@ describe("BrowsePage", () => {
       parent_node_id: "node-parent",
       ancestors: [],
       entries: [
-        { node_id: "dir1", name: "subfolder", kind: "directory", size_bytes: null, mime_type: null, child_count: 3, modified_at: 1700000000 },
+        {
+          node_id: "dir1",
+          name: "subfolder",
+          kind: "directory",
+          size_bytes: null,
+          mime_type: null,
+          child_count: 3,
+          modified_at: 1700000000,
+        },
       ],
     };
     globalThis.fetch = vi.fn((url: string | URL | Request) => {
@@ -253,8 +298,24 @@ describe("BrowsePage", () => {
       parent_node_id: "node-parent",
       ancestors: [],
       entries: [
-        { node_id: "dir1", name: "subfolder", kind: "directory", size_bytes: null, mime_type: null, child_count: 3, modified_at: 1700000000 },
-        { node_id: "vid1", name: "clip.mp4", kind: "video", size_bytes: 5000, mime_type: "video/mp4", child_count: null, modified_at: 1700000000 },
+        {
+          node_id: "dir1",
+          name: "subfolder",
+          kind: "directory",
+          size_bytes: null,
+          mime_type: null,
+          child_count: 3,
+          modified_at: 1700000000,
+        },
+        {
+          node_id: "vid1",
+          name: "clip.mp4",
+          kind: "video",
+          size_bytes: 5000,
+          mime_type: "video/mp4",
+          child_count: null,
+          modified_at: 1700000000,
+        },
       ],
     };
     globalThis.fetch = vi.fn((url: string | URL | Request) => {

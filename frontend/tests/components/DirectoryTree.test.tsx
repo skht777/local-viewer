@@ -63,11 +63,7 @@ function entry(name: string, kind: BrowseEntry["kind"] = "directory"): BrowseEnt
 
 function renderTree(
   rootEntries: BrowseEntry[],
-  {
-    activeNodeId = "",
-    ancestorNodeIds = [] as string[],
-    onNavigate = vi.fn(),
-  } = {},
+  { activeNodeId = "", ancestorNodeIds = [] as string[], onNavigate = vi.fn() } = {},
 ) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },

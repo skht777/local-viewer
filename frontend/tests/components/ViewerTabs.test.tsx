@@ -29,7 +29,12 @@ describe("ViewerTabs", () => {
   test("ソートトグルが表示される", () => {
     const onSortChange = vi.fn();
     render(
-      <ViewerTabs activeTab="filesets" onTabChange={() => {}} sort="name-asc" onSortChange={onSortChange} />,
+      <ViewerTabs
+        activeTab="filesets"
+        onTabChange={() => {}}
+        sort="name-asc"
+        onSortChange={onSortChange}
+      />,
     );
     expect(screen.getByTestId("sort-name")).toBeInTheDocument();
     expect(screen.getByTestId("sort-date")).toBeInTheDocument();
@@ -38,7 +43,12 @@ describe("ViewerTabs", () => {
   test("名前ボタンクリックでonSortChangeが呼ばれる", async () => {
     const onSortChange = vi.fn();
     render(
-      <ViewerTabs activeTab="filesets" onTabChange={() => {}} sort="date-desc" onSortChange={onSortChange} />,
+      <ViewerTabs
+        activeTab="filesets"
+        onTabChange={() => {}}
+        sort="date-desc"
+        onSortChange={onSortChange}
+      />,
     );
     await userEvent.click(screen.getByTestId("sort-name"));
     // 別キーをクリック → デフォルト方向 (name-asc)
@@ -48,7 +58,12 @@ describe("ViewerTabs", () => {
   test("アクティブキー再クリックで方向が反転する", async () => {
     const onSortChange = vi.fn();
     render(
-      <ViewerTabs activeTab="filesets" onTabChange={() => {}} sort="name-asc" onSortChange={onSortChange} />,
+      <ViewerTabs
+        activeTab="filesets"
+        onTabChange={() => {}}
+        sort="name-asc"
+        onSortChange={onSortChange}
+      />,
     );
     await userEvent.click(screen.getByTestId("sort-name"));
     expect(onSortChange).toHaveBeenCalledWith("name-desc");
@@ -57,7 +72,12 @@ describe("ViewerTabs", () => {
   test("アクティブなソートに矢印が表示される", () => {
     const onSortChange = vi.fn();
     render(
-      <ViewerTabs activeTab="filesets" onTabChange={() => {}} sort="date-desc" onSortChange={onSortChange} />,
+      <ViewerTabs
+        activeTab="filesets"
+        onTabChange={() => {}}
+        sort="date-desc"
+        onSortChange={onSortChange}
+      />,
     );
     // date-desc → 更新日ボタンに ↓ が表示される
     expect(screen.getByTestId("sort-date").textContent).toContain("↓");
@@ -77,9 +97,7 @@ describe("ViewerTabs", () => {
 
   test("disabled タブにグレーアウトスタイルが適用される", () => {
     const disabledTabs = new Set(["videos"] as const);
-    render(
-      <ViewerTabs activeTab="filesets" onTabChange={() => {}} disabledTabs={disabledTabs} />,
-    );
+    render(<ViewerTabs activeTab="filesets" onTabChange={() => {}} disabledTabs={disabledTabs} />);
     const videosTab = screen.getByTestId("tab-videos");
     expect(videosTab).toBeDisabled();
     expect(videosTab).toHaveClass("text-gray-600");

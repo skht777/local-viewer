@@ -1,10 +1,6 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import {
-  KeyboardHelp,
-  CG_SHORTCUTS,
-  MANGA_SHORTCUTS,
-} from "../../src/components/KeyboardHelp";
+import { KeyboardHelp, CG_SHORTCUTS, MANGA_SHORTCUTS } from "../../src/components/KeyboardHelp";
 
 describe("KeyboardHelp", () => {
   test("CG ショートカット一覧が表示される", () => {

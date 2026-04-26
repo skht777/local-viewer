@@ -22,9 +22,7 @@ export function renderWithProviders(ui: ReactElement, options?: RenderOptions) {
 
   return render(
     <QueryClientProvider client={queryClient}>
-      <MemoryRouter initialEntries={options?.initialEntries ?? ["/"]}>
-        {ui}
-      </MemoryRouter>
+      <MemoryRouter initialEntries={options?.initialEntries ?? ["/"]}>{ui}</MemoryRouter>
     </QueryClientProvider>,
   );
 }

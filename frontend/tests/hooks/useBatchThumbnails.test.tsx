@@ -53,7 +53,6 @@ beforeEach(() => {
       revokedUrls.push(url);
     }),
   });
-
 });
 
 afterEach(() => {
@@ -242,7 +241,10 @@ describe("useBatchThumbnails", () => {
 
     let resolveApi!: (value: unknown) => void;
     vi.mocked(apiPost).mockImplementation(
-      () => new Promise((resolve) => { resolveApi = resolve; }),
+      () =>
+        new Promise((resolve) => {
+          resolveApi = resolve;
+        }),
     );
 
     const { result } = renderHook(() => useBatchThumbnails(["node-1"]), { wrapper });

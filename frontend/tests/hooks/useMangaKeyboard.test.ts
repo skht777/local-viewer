@@ -90,8 +90,6 @@ describe("useMangaKeyboard", () => {
     expect(defaultCallbacks.toggleFullscreen).toHaveBeenCalledOnce();
   });
 
-
-
   test("Escape キーで onEscape が呼ばれる", () => {
     renderHook(() => useMangaKeyboard(defaultCallbacks));
     pressKey("Escape");

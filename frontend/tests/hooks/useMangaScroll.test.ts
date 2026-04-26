@@ -25,17 +25,30 @@ describe("useMangaScroll", () => {
     const virtualizer = createMockVirtualizer();
     const scrollElement = createMockScrollElement();
     const { result } = renderHook(() =>
-      useMangaScroll({ virtualizer: virtualizer as any, scrollElement, totalCount: 10, scrollSpeed: 1.0 }),
+      useMangaScroll({
+        virtualizer: virtualizer as any,
+        scrollElement,
+        totalCount: 10,
+        scrollSpeed: 1.0,
+      }),
     );
     act(() => result.current.scrollToImage(5));
-    expect(virtualizer.scrollToIndex).toHaveBeenCalledWith(5, expect.objectContaining({ align: "start" }));
+    expect(virtualizer.scrollToIndex).toHaveBeenCalledWith(
+      5,
+      expect.objectContaining({ align: "start" }),
+    );
   });
 
   test("scrollDown で scrollBy が正の値で呼ばれる", () => {
     const virtualizer = createMockVirtualizer();
     const scrollElement = createMockScrollElement();
     const { result } = renderHook(() =>
-      useMangaScroll({ virtualizer: virtualizer as any, scrollElement, totalCount: 10, scrollSpeed: 1.0 }),
+      useMangaScroll({
+        virtualizer: virtualizer as any,
+        scrollElement,
+        totalCount: 10,
+        scrollSpeed: 1.0,
+      }),
     );
     act(() => result.current.scrollDown());
     expect(scrollElement.scrollBy).toHaveBeenCalledWith(0, 200);
@@ -45,7 +58,12 @@ describe("useMangaScroll", () => {
     const virtualizer = createMockVirtualizer();
     const scrollElement = createMockScrollElement();
     const { result } = renderHook(() =>
-      useMangaScroll({ virtualizer: virtualizer as any, scrollElement, totalCount: 10, scrollSpeed: 1.0 }),
+      useMangaScroll({
+        virtualizer: virtualizer as any,
+        scrollElement,
+        totalCount: 10,
+        scrollSpeed: 1.0,
+      }),
     );
     act(() => result.current.scrollUp());
     expect(scrollElement.scrollBy).toHaveBeenCalledWith(0, -200);
@@ -55,7 +73,12 @@ describe("useMangaScroll", () => {
     const virtualizer = createMockVirtualizer();
     const scrollElement = createMockScrollElement();
     const { result } = renderHook(() =>
-      useMangaScroll({ virtualizer: virtualizer as any, scrollElement, totalCount: 10, scrollSpeed: 2.0 }),
+      useMangaScroll({
+        virtualizer: virtualizer as any,
+        scrollElement,
+        totalCount: 10,
+        scrollSpeed: 2.0,
+      }),
     );
     act(() => result.current.scrollDown());
     expect(scrollElement.scrollBy).toHaveBeenCalledWith(0, 400);
@@ -65,7 +88,12 @@ describe("useMangaScroll", () => {
     const virtualizer = createMockVirtualizer();
     const scrollElement = createMockScrollElement(500);
     const { result } = renderHook(() =>
-      useMangaScroll({ virtualizer: virtualizer as any, scrollElement, totalCount: 10, scrollSpeed: 1.0 }),
+      useMangaScroll({
+        virtualizer: virtualizer as any,
+        scrollElement,
+        totalCount: 10,
+        scrollSpeed: 1.0,
+      }),
     );
     act(() => result.current.scrollToTop());
     expect(scrollElement.scrollTop).toBe(0);
@@ -75,9 +103,17 @@ describe("useMangaScroll", () => {
     const virtualizer = createMockVirtualizer();
     const scrollElement = createMockScrollElement();
     const { result } = renderHook(() =>
-      useMangaScroll({ virtualizer: virtualizer as any, scrollElement, totalCount: 10, scrollSpeed: 1.0 }),
+      useMangaScroll({
+        virtualizer: virtualizer as any,
+        scrollElement,
+        totalCount: 10,
+        scrollSpeed: 1.0,
+      }),
     );
     act(() => result.current.scrollToBottom());
-    expect(virtualizer.scrollToIndex).toHaveBeenCalledWith(9, expect.objectContaining({ align: "end" }));
+    expect(virtualizer.scrollToIndex).toHaveBeenCalledWith(
+      9,
+      expect.objectContaining({ align: "end" }),
+    );
   });
 });

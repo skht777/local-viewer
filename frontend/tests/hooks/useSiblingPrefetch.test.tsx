@@ -95,10 +95,7 @@ describe("useSiblingPrefetch", () => {
       entry("directory", "d2"),
     ]);
     // d2 の中に画像がある
-    const d2Data = browseResponse("d2", "parent", [
-      entry("image", "img1"),
-      entry("image", "img2"),
-    ]);
+    const d2Data = browseResponse("d2", "parent", [entry("image", "img1"), entry("image", "img2")]);
 
     const client = createSeededClient({ parent: parentData });
     // d2 は infinite キャッシュ形式で事前投入
@@ -129,9 +126,7 @@ describe("useSiblingPrefetch", () => {
       entry("directory", "d1"),
       entry("directory", "d2"),
     ]);
-    const d1Data = browseResponse("d1", "parent", [
-      entry("image", "img1"),
-    ]);
+    const d1Data = browseResponse("d1", "parent", [entry("image", "img1")]);
 
     const client = createSeededClient({ parent: parentData });
     client.setQueryData(["browse-infinite", "d1", "name-asc"], {
@@ -158,16 +153,12 @@ describe("useSiblingPrefetch", () => {
   test("兄弟がない場合は上位ディレクトリを探索する", async () => {
     // grandparent → parent(d1 のみ) → d1(現在)
     // grandparent に d1の兄弟 d2 がある
-    const parentData = browseResponse("parent", "grandparent", [
-      entry("directory", "d1"),
-    ]);
+    const parentData = browseResponse("parent", "grandparent", [entry("directory", "d1")]);
     const grandparentData = browseResponse("grandparent", null, [
       entry("directory", "parent"),
       entry("directory", "d2"),
     ]);
-    const d2Data = browseResponse("d2", "grandparent", [
-      entry("image", "img1"),
-    ]);
+    const d2Data = browseResponse("d2", "grandparent", [entry("image", "img1")]);
 
     const client = createSeededClient({
       parent: parentData,

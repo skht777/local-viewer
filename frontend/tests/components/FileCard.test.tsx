@@ -98,18 +98,14 @@ const pdfEntry: BrowseEntry = {
 describe("FileCard 選択・ダブルクリック・オーバーレイ", () => {
   test("シングルクリックでonSelectが呼ばれる", async () => {
     const onSelect = vi.fn();
-    render(
-      <FileCard entry={dirEntry} onSelect={onSelect} onDoubleClick={() => {}} />,
-    );
+    render(<FileCard entry={dirEntry} onSelect={onSelect} onDoubleClick={() => {}} />);
     await userEvent.click(screen.getByTestId("file-card-dir001"));
     expect(onSelect).toHaveBeenCalledWith(dirEntry);
   });
 
   test("ダブルクリックでonDoubleClickが呼ばれる", async () => {
     const onDoubleClick = vi.fn();
-    render(
-      <FileCard entry={dirEntry} onSelect={() => {}} onDoubleClick={onDoubleClick} />,
-    );
+    render(<FileCard entry={dirEntry} onSelect={() => {}} onDoubleClick={onDoubleClick} />);
     await userEvent.dblClick(screen.getByTestId("file-card-dir001"));
     expect(onDoubleClick).toHaveBeenCalledWith(dirEntry);
   });
@@ -216,9 +212,7 @@ describe("FileCard 選択・ダブルクリック・オーバーレイ", () => {
 
   test("Enterキーでダブルクリックと同じ動作になる", async () => {
     const onDoubleClick = vi.fn();
-    render(
-      <FileCard entry={dirEntry} onSelect={() => {}} onDoubleClick={onDoubleClick} />,
-    );
+    render(<FileCard entry={dirEntry} onSelect={() => {}} onDoubleClick={onDoubleClick} />);
     screen.getByTestId("file-card-dir001").focus();
     await userEvent.keyboard("{Enter}");
     expect(onDoubleClick).toHaveBeenCalledWith(dirEntry);
@@ -236,9 +230,7 @@ describe("FileCard 選択・ダブルクリック・オーバーレイ", () => {
 
   test("SpaceキーでonSelectにフォールバック（onOpen未指定時）", async () => {
     const onSelect = vi.fn();
-    render(
-      <FileCard entry={dirEntry} onSelect={onSelect} onDoubleClick={() => {}} />,
-    );
+    render(<FileCard entry={dirEntry} onSelect={onSelect} onDoubleClick={() => {}} />);
     screen.getByTestId("file-card-dir001").focus();
     await userEvent.keyboard(" ");
     expect(onSelect).toHaveBeenCalledWith(dirEntry);

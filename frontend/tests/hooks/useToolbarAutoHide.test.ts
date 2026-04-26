@@ -35,8 +35,15 @@ describe("useToolbarAutoHide", () => {
   test("マウスが上部付近に来ると表示される", () => {
     const container = document.createElement("div");
     container.getBoundingClientRect = () => ({
-      top: 0, bottom: 800, left: 0, right: 1200,
-      width: 1200, height: 800, x: 0, y: 0, toJSON: () => {},
+      top: 0,
+      bottom: 800,
+      left: 0,
+      right: 1200,
+      width: 1200,
+      height: 800,
+      x: 0,
+      y: 0,
+      toJSON: () => {},
     });
     const { result } = renderHook(() => useToolbarAutoHide());
 
@@ -47,9 +54,7 @@ describe("useToolbarAutoHide", () => {
 
     // pointermove を上部 (Y=30) で発火
     act(() => {
-      container.dispatchEvent(
-        new PointerEvent("pointermove", { clientY: 30, bubbles: true }),
-      );
+      container.dispatchEvent(new PointerEvent("pointermove", { clientY: 30, bubbles: true }));
     });
     expect(result.current.isToolbarVisible).toBe(true);
   });
@@ -57,8 +62,15 @@ describe("useToolbarAutoHide", () => {
   test("マウスが中央に移動すると非表示になる", () => {
     const container = document.createElement("div");
     container.getBoundingClientRect = () => ({
-      top: 0, bottom: 800, left: 0, right: 1200,
-      width: 1200, height: 800, x: 0, y: 0, toJSON: () => {},
+      top: 0,
+      bottom: 800,
+      left: 0,
+      right: 1200,
+      width: 1200,
+      height: 800,
+      x: 0,
+      y: 0,
+      toJSON: () => {},
     });
     const { result } = renderHook(() => useToolbarAutoHide());
 
@@ -68,17 +80,13 @@ describe("useToolbarAutoHide", () => {
 
     // 上部に移動して表示
     act(() => {
-      container.dispatchEvent(
-        new PointerEvent("pointermove", { clientY: 30, bubbles: true }),
-      );
+      container.dispatchEvent(new PointerEvent("pointermove", { clientY: 30, bubbles: true }));
     });
     expect(result.current.isToolbarVisible).toBe(true);
 
     // 中央に移動して非表示
     act(() => {
-      container.dispatchEvent(
-        new PointerEvent("pointermove", { clientY: 400, bubbles: true }),
-      );
+      container.dispatchEvent(new PointerEvent("pointermove", { clientY: 400, bubbles: true }));
     });
     expect(result.current.isToolbarVisible).toBe(false);
   });
@@ -86,8 +94,15 @@ describe("useToolbarAutoHide", () => {
   test("pointerleave で非表示になる", () => {
     const container = document.createElement("div");
     container.getBoundingClientRect = () => ({
-      top: 0, bottom: 800, left: 0, right: 1200,
-      width: 1200, height: 800, x: 0, y: 0, toJSON: () => {},
+      top: 0,
+      bottom: 800,
+      left: 0,
+      right: 1200,
+      width: 1200,
+      height: 800,
+      x: 0,
+      y: 0,
+      toJSON: () => {},
     });
     const { result } = renderHook(() => useToolbarAutoHide());
 
@@ -96,9 +111,7 @@ describe("useToolbarAutoHide", () => {
     });
 
     act(() => {
-      container.dispatchEvent(
-        new PointerEvent("pointermove", { clientY: 30, bubbles: true }),
-      );
+      container.dispatchEvent(new PointerEvent("pointermove", { clientY: 30, bubbles: true }));
     });
     expect(result.current.isToolbarVisible).toBe(true);
 

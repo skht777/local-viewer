@@ -31,9 +31,7 @@ describe("VideoCard", () => {
   });
 
   test("initialTimeが設定されるとloadedmetadata時にcurrentTimeが設定される", () => {
-    const { container } = render(
-      <VideoCard entry={videoEntry} initialTime={42.5} />,
-    );
+    const { container } = render(<VideoCard entry={videoEntry} initialTime={42.5} />);
     const video = container.querySelector("video") as HTMLVideoElement;
     expect(video).not.toBeNull();
 
@@ -45,9 +43,7 @@ describe("VideoCard", () => {
 
   test("onTimeUpdateがスロットリング付きで呼ばれる", () => {
     const handleTimeUpdate = vi.fn();
-    const { container } = render(
-      <VideoCard entry={videoEntry} onTimeUpdate={handleTimeUpdate} />,
-    );
+    const { container } = render(<VideoCard entry={videoEntry} onTimeUpdate={handleTimeUpdate} />);
     const video = container.querySelector("video") as HTMLVideoElement;
 
     // currentTime を設定してから timeupdate を発火

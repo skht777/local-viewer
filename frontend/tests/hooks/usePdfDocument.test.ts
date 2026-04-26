@@ -118,10 +118,9 @@ describe("usePdfDocument", () => {
       .mockReturnValueOnce(first.loadingTask as ReturnType<typeof getDocument>)
       .mockReturnValueOnce(second.loadingTask as ReturnType<typeof getDocument>);
 
-    const { result, rerender } = renderHook(
-      ({ url }) => usePdfDocument(url),
-      { initialProps: { url: "/api/file/aaa" } },
-    );
+    const { result, rerender } = renderHook(({ url }) => usePdfDocument(url), {
+      initialProps: { url: "/api/file/aaa" },
+    });
 
     // 最初の読み込み完了
     await act(async () => {
@@ -176,10 +175,9 @@ describe("usePdfDocument", () => {
       .mockReturnValueOnce(first.loadingTask as ReturnType<typeof getDocument>)
       .mockReturnValueOnce(second.loadingTask as ReturnType<typeof getDocument>);
 
-    const { result, rerender } = renderHook(
-      ({ url }) => usePdfDocument(url),
-      { initialProps: { url: "/api/file/aaa" } },
-    );
+    const { result, rerender } = renderHook(({ url }) => usePdfDocument(url), {
+      initialProps: { url: "/api/file/aaa" },
+    });
 
     // URL 変更（最初の読み込み完了前）
     rerender({ url: "/api/file/bbb" });

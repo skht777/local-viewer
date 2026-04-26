@@ -32,10 +32,7 @@ describe("PreviewGrid", () => {
   test("3枚のプレビュー画像がグリッド表示される", () => {
     const thumbs = makeBatchThumbnails(["node1", "node2", "node3"]);
     const { container } = render(
-      <PreviewGrid
-        previewNodeIds={["node1", "node2", "node3"]}
-        batchThumbnails={thumbs}
-      />,
+      <PreviewGrid previewNodeIds={["node1", "node2", "node3"]} batchThumbnails={thumbs} />,
     );
     const imgs = container.querySelectorAll("img");
     expect(imgs).toHaveLength(3);
@@ -45,11 +42,7 @@ describe("PreviewGrid", () => {
     const onAllError = vi.fn();
     const thumbs = makeBatchThumbnails(["node1"]);
     const { container } = render(
-      <PreviewGrid
-        previewNodeIds={["node1"]}
-        onAllError={onAllError}
-        batchThumbnails={thumbs}
-      />,
+      <PreviewGrid previewNodeIds={["node1"]} onAllError={onAllError} batchThumbnails={thumbs} />,
     );
     const img = container.querySelector("img")!;
     fireEvent.error(img);
