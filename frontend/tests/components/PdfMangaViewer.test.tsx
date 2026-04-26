@@ -109,7 +109,7 @@ describe("PdfMangaViewer", () => {
 
   test("PDF読み込み中にローディング表示", () => {
     const loadingTask = { promise: new Promise(() => {}), destroy: vi.fn() };
-    mockGetDocument.mockReturnValue(loadingTask as ReturnType<typeof getDocument>);
+    mockGetDocument.mockReturnValue(loadingTask as unknown as ReturnType<typeof getDocument>);
 
     renderWithProviders(<PdfMangaViewer {...defaultProps()} />);
 
@@ -118,7 +118,7 @@ describe("PdfMangaViewer", () => {
 
   test("読み込み完了後にスクロールエリアが表示される", async () => {
     const { loadingTask } = createMockLoadingTask(3);
-    mockGetDocument.mockReturnValue(loadingTask as ReturnType<typeof getDocument>);
+    mockGetDocument.mockReturnValue(loadingTask as unknown as ReturnType<typeof getDocument>);
 
     renderWithProviders(<PdfMangaViewer {...defaultProps()} />);
 
@@ -129,7 +129,7 @@ describe("PdfMangaViewer", () => {
 
   test("読み込みエラー時にエラーメッセージを表示", async () => {
     const loadingTask = createErrorLoadingTask("Broken PDF");
-    mockGetDocument.mockReturnValue(loadingTask as ReturnType<typeof getDocument>);
+    mockGetDocument.mockReturnValue(loadingTask as unknown as ReturnType<typeof getDocument>);
 
     renderWithProviders(<PdfMangaViewer {...defaultProps()} />);
 
@@ -141,7 +141,7 @@ describe("PdfMangaViewer", () => {
 
   test("読み込み完了後にテキストレイヤーが有効化されている", async () => {
     const { loadingTask } = createMockLoadingTask(3);
-    mockGetDocument.mockReturnValue(loadingTask as ReturnType<typeof getDocument>);
+    mockGetDocument.mockReturnValue(loadingTask as unknown as ReturnType<typeof getDocument>);
 
     renderWithProviders(<PdfMangaViewer {...defaultProps()} />);
 
@@ -159,7 +159,7 @@ describe("PdfMangaViewer", () => {
 
   test("閉じるボタンでonCloseが呼ばれる", async () => {
     const { loadingTask } = createMockLoadingTask();
-    mockGetDocument.mockReturnValue(loadingTask as ReturnType<typeof getDocument>);
+    mockGetDocument.mockReturnValue(loadingTask as unknown as ReturnType<typeof getDocument>);
     const onClose = vi.fn();
 
     renderWithProviders(<PdfMangaViewer {...defaultProps({ onClose })} />);

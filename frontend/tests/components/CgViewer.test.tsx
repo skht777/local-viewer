@@ -29,6 +29,8 @@ function makeImage(id: string, name: string): BrowseEntry {
     size_bytes: 1024,
     mime_type: "image/jpeg",
     child_count: null,
+    modified_at: null,
+    preview_node_ids: null,
   };
 }
 

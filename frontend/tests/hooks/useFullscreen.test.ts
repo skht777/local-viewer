@@ -9,8 +9,9 @@ describe("useFullscreen", () => {
     // jsdom は Fullscreen API 未実装のためモック
     mockRequestFullscreen = vi.fn().mockResolvedValue(undefined);
     mockExitFullscreen = vi.fn().mockResolvedValue(undefined);
-    document.documentElement.requestFullscreen = mockRequestFullscreen;
-    document.exitFullscreen = mockExitFullscreen;
+    document.documentElement.requestFullscreen =
+      mockRequestFullscreen as unknown as typeof document.documentElement.requestFullscreen;
+    document.exitFullscreen = mockExitFullscreen as unknown as typeof document.exitFullscreen;
     Object.defineProperty(document, "fullscreenElement", {
       value: null,
       writable: true,

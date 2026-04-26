@@ -8,10 +8,8 @@ import type { ResolvedTarget } from "../../src/utils/resolveFirstViewable";
 import type { BrowseEntry } from "../../src/types/api";
 
 // resolveFirstViewable をモック
-const mockResolveFirstViewable = vi.fn<
-  [string, QueryClient, string],
-  Promise<ResolvedTarget | null>
->();
+const mockResolveFirstViewable =
+  vi.fn<(nodeId: string, queryClient: QueryClient, sort: string) => Promise<ResolvedTarget | null>>();
 vi.mock("../../src/utils/resolveFirstViewable", () => ({
   resolveFirstViewable: (...args: [string, QueryClient, string]) =>
     mockResolveFirstViewable(...args),
@@ -25,7 +23,8 @@ vi.mock("react-router-dom", async () => {
 });
 
 // browseInfiniteOptions / fetchAllBrowsePages をモック
-const mockFetchAllBrowsePages = vi.fn<[unknown, string, string], Promise<void>>();
+const mockFetchAllBrowsePages =
+  vi.fn<(client: unknown, nodeId: string, sort: string) => Promise<void>>();
 vi.mock("../../src/hooks/api/browseQueries", () => ({
   browseInfiniteOptions: (nodeId: string, sort: string) => ({
     queryKey: ["browse-infinite", nodeId, sort],

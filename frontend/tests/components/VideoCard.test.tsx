@@ -10,6 +10,8 @@ const videoEntry: BrowseEntry = {
   size_bytes: 10_485_760,
   mime_type: "video/mp4",
   child_count: null,
+  modified_at: null,
+  preview_node_ids: null,
 };
 
 describe("VideoCard", () => {

@@ -11,7 +11,16 @@ import type { AncestorEntry, BrowseEntry } from "../../src/types/api";
 // 同階層内の候補探索ロジックは純粋関数で抽出
 
 function entry(kind: BrowseEntry["kind"], id: string): BrowseEntry {
-  return { node_id: id, name: id, kind, size_bytes: null, mime_type: null, child_count: null };
+  return {
+    node_id: id,
+    name: id,
+    kind,
+    size_bytes: null,
+    mime_type: null,
+    child_count: null,
+    modified_at: null,
+    preview_node_ids: null,
+  };
 }
 
 describe("findNextSet", () => {

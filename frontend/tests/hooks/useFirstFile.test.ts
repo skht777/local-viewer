@@ -2,7 +2,16 @@ import { selectFirstViewable } from "../../src/hooks/useFirstFile";
 import type { BrowseEntry } from "../../src/types/api";
 
 function entry(kind: BrowseEntry["kind"], id: string): BrowseEntry {
-  return { node_id: id, name: id, kind, size_bytes: null, mime_type: null, child_count: null };
+  return {
+    node_id: id,
+    name: id,
+    kind,
+    size_bytes: null,
+    mime_type: null,
+    child_count: null,
+    modified_at: null,
+    preview_node_ids: null,
+  };
 }
 
 describe("selectFirstViewable", () => {

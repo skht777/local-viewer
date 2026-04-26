@@ -27,6 +27,8 @@ function browseResponse(nodeId: string, entries: BrowseEntry[]): BrowseResponse 
     parent_node_id: null,
     ancestors: [],
     entries,
+    next_cursor: null,
+    total_count: null,
   };
 }
 

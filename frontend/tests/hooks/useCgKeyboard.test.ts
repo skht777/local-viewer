@@ -42,6 +42,7 @@ describe("useCgKeyboard", () => {
     goFirst: vi.fn(),
     goLast: vi.fn(),
     onEscape: vi.fn(),
+    onClose: vi.fn(),
     toggleFullscreen: vi.fn(),
     setFitWidth: vi.fn(),
     setFitHeight: vi.fn(),

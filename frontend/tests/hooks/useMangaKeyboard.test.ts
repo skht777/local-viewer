@@ -34,6 +34,7 @@ describe("useMangaKeyboard", () => {
     scrollToTop: vi.fn(),
     scrollToBottom: vi.fn(),
     onEscape: vi.fn(),
+    onClose: vi.fn(),
     toggleFullscreen: vi.fn(),
     goNextSet: vi.fn(),
     goPrevSet: vi.fn(),

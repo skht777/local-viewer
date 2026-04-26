@@ -50,7 +50,7 @@ describe("usePdfDocument", () => {
 
   test("読み込み中はisLoading=trueを返す", () => {
     const { loadingTask } = createMockLoadingTask();
-    mockGetDocument.mockReturnValue(loadingTask as ReturnType<typeof getDocument>);
+    mockGetDocument.mockReturnValue(loadingTask as unknown as ReturnType<typeof getDocument>);
 
     const { result } = renderHook(() => usePdfDocument("/api/file/abc123"));
 
@@ -62,7 +62,7 @@ describe("usePdfDocument", () => {
 
   test("読み込み完了後にpageCountを返す", async () => {
     const { loadingTask, mockDocument, resolve } = createMockLoadingTask(10);
-    mockGetDocument.mockReturnValue(loadingTask as ReturnType<typeof getDocument>);
+    mockGetDocument.mockReturnValue(loadingTask as unknown as ReturnType<typeof getDocument>);
 
     const { result } = renderHook(() => usePdfDocument("/api/file/abc123"));
 
@@ -80,7 +80,7 @@ describe("usePdfDocument", () => {
 
   test("アンマウント時にloadingTaskをdestroyする", async () => {
     const { loadingTask } = createMockLoadingTask();
-    mockGetDocument.mockReturnValue(loadingTask as ReturnType<typeof getDocument>);
+    mockGetDocument.mockReturnValue(loadingTask as unknown as ReturnType<typeof getDocument>);
 
     const { unmount } = renderHook(() => usePdfDocument("/api/file/abc123"));
 
@@ -91,7 +91,7 @@ describe("usePdfDocument", () => {
 
   test("読み込み完了後のアンマウントでdocumentもdestroyする", async () => {
     const { loadingTask, mockDocument, resolve } = createMockLoadingTask();
-    mockGetDocument.mockReturnValue(loadingTask as ReturnType<typeof getDocument>);
+    mockGetDocument.mockReturnValue(loadingTask as unknown as ReturnType<typeof getDocument>);
 
     const { result, unmount } = renderHook(() => usePdfDocument("/api/file/abc123"));
 
@@ -113,8 +113,8 @@ describe("usePdfDocument", () => {
     const second = createMockLoadingTask(8);
 
     mockGetDocument
-      .mockReturnValueOnce(first.loadingTask as ReturnType<typeof getDocument>)
-      .mockReturnValueOnce(second.loadingTask as ReturnType<typeof getDocument>);
+      .mockReturnValueOnce(first.loadingTask as unknown as ReturnType<typeof getDocument>)
+      .mockReturnValueOnce(second.loadingTask as unknown as ReturnType<typeof getDocument>);
 
     const { result, rerender } = renderHook(({ url }) => usePdfDocument(url), {
       initialProps: { url: "/api/file/aaa" },
@@ -149,7 +149,7 @@ describe("usePdfDocument", () => {
 
   test("読み込みエラー時にerrorを返す", async () => {
     const { loadingTask, reject } = createMockLoadingTask();
-    mockGetDocument.mockReturnValue(loadingTask as ReturnType<typeof getDocument>);
+    mockGetDocument.mockReturnValue(loadingTask as unknown as ReturnType<typeof getDocument>);
 
     const { result } = renderHook(() => usePdfDocument("/api/file/abc123"));
 
@@ -170,8 +170,8 @@ describe("usePdfDocument", () => {
     const second = createMockLoadingTask(8);
 
     mockGetDocument
-      .mockReturnValueOnce(first.loadingTask as ReturnType<typeof getDocument>)
-      .mockReturnValueOnce(second.loadingTask as ReturnType<typeof getDocument>);
+      .mockReturnValueOnce(first.loadingTask as unknown as ReturnType<typeof getDocument>)
+      .mockReturnValueOnce(second.loadingTask as unknown as ReturnType<typeof getDocument>);
 
     const { result, rerender } = renderHook(({ url }) => usePdfDocument(url), {
       initialProps: { url: "/api/file/aaa" },

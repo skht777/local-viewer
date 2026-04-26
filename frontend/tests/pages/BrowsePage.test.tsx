@@ -27,6 +27,8 @@ const mockBrowseData: BrowseResponse = {
       size_bytes: 1024,
       mime_type: "image/jpeg",
       child_count: null,
+      modified_at: null,
+      preview_node_ids: null,
     },
     {
       node_id: "vid1",
@@ -35,6 +37,8 @@ const mockBrowseData: BrowseResponse = {
       size_bytes: 10_240,
       mime_type: "video/mp4",
       child_count: null,
+      modified_at: null,
+      preview_node_ids: null,
     },
     {
       node_id: "dir1",
@@ -43,8 +47,12 @@ const mockBrowseData: BrowseResponse = {
       size_bytes: null,
       mime_type: null,
       child_count: 5,
+      modified_at: null,
+      preview_node_ids: null,
     },
   ],
+  next_cursor: null,
+  total_count: null,
 };
 
 const mockRootData: BrowseResponse = {
@@ -53,6 +61,8 @@ const mockRootData: BrowseResponse = {
   parent_node_id: null,
   ancestors: [],
   entries: [],
+  next_cursor: null,
+  total_count: null,
 };
 
 function setupFetchMock() {
@@ -132,6 +142,8 @@ describe("BrowsePage", () => {
           size_bytes: 100,
           mime_type: "image/jpeg",
           child_count: null,
+        modified_at: null,
+        preview_node_ids: null,
         },
         {
           node_id: "img2",
@@ -140,8 +152,12 @@ describe("BrowsePage", () => {
           size_bytes: 200,
           mime_type: "image/png",
           child_count: null,
+        modified_at: null,
+        preview_node_ids: null,
         },
       ],
+    next_cursor: null,
+    total_count: null,
     };
     globalThis.fetch = vi.fn((url: string | URL | Request) => {
       const urlStr = typeof url === "string" ? url : url.toString();
@@ -173,8 +189,12 @@ describe("BrowsePage", () => {
           size_bytes: 5000,
           mime_type: "video/mp4",
           child_count: null,
+        modified_at: null,
+        preview_node_ids: null,
         },
       ],
+    next_cursor: null,
+    total_count: null,
     };
     globalThis.fetch = vi.fn((url: string | URL | Request) => {
       const urlStr = typeof url === "string" ? url : url.toString();
@@ -207,8 +227,11 @@ describe("BrowsePage", () => {
           mime_type: "image/jpeg",
           child_count: null,
           modified_at: 1_700_000_000,
+        preview_node_ids: null,
         },
       ],
+    next_cursor: null,
+    total_count: null,
     };
     globalThis.fetch = vi.fn((url: string | URL | Request) => {
       const urlStr = typeof url === "string" ? url : url.toString();
@@ -240,8 +263,11 @@ describe("BrowsePage", () => {
           mime_type: null,
           child_count: 3,
           modified_at: 1_700_000_000,
+        preview_node_ids: null,
         },
       ],
+    next_cursor: null,
+    total_count: null,
     };
     globalThis.fetch = vi.fn((url: string | URL | Request) => {
       const urlStr = typeof url === "string" ? url : url.toString();
@@ -273,8 +299,11 @@ describe("BrowsePage", () => {
           mime_type: null,
           child_count: 3,
           modified_at: 1_700_000_000,
+        preview_node_ids: null,
         },
       ],
+    next_cursor: null,
+    total_count: null,
     };
     globalThis.fetch = vi.fn((url: string | URL | Request) => {
       const urlStr = typeof url === "string" ? url : url.toString();
@@ -306,6 +335,7 @@ describe("BrowsePage", () => {
           mime_type: null,
           child_count: 3,
           modified_at: 1_700_000_000,
+        preview_node_ids: null,
         },
         {
           node_id: "vid1",
@@ -315,8 +345,11 @@ describe("BrowsePage", () => {
           mime_type: "video/mp4",
           child_count: null,
           modified_at: 1_700_000_000,
+        preview_node_ids: null,
         },
       ],
+    next_cursor: null,
+    total_count: null,
     };
     globalThis.fetch = vi.fn((url: string | URL | Request) => {
       const urlStr = typeof url === "string" ? url : url.toString();
@@ -342,6 +375,8 @@ describe("BrowsePage", () => {
       parent_node_id: "node-parent",
       ancestors: [],
       entries: [],
+    next_cursor: null,
+    total_count: null,
     };
     globalThis.fetch = vi.fn((url: string | URL | Request) => {
       const urlStr = typeof url === "string" ? url : url.toString();

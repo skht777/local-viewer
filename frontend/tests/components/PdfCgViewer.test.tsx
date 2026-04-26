@@ -92,7 +92,7 @@ describe("PdfCgViewer", () => {
       promise: new Promise(() => {}),
       destroy: vi.fn(),
     };
-    mockGetDocument.mockReturnValue(loadingTask as ReturnType<typeof getDocument>);
+    mockGetDocument.mockReturnValue(loadingTask as unknown as ReturnType<typeof getDocument>);
 
     renderWithProviders(<PdfCgViewer {...defaultProps()} />);
 
@@ -101,7 +101,7 @@ describe("PdfCgViewer", () => {
 
   test("読み込み完了後にPdfCanvasが表示される", async () => {
     const { loadingTask } = createMockLoadingTask(3);
-    mockGetDocument.mockReturnValue(loadingTask as ReturnType<typeof getDocument>);
+    mockGetDocument.mockReturnValue(loadingTask as unknown as ReturnType<typeof getDocument>);
 
     renderWithProviders(<PdfCgViewer {...defaultProps()} />);
 
@@ -112,7 +112,7 @@ describe("PdfCgViewer", () => {
 
   test("読み込みエラー時にエラーメッセージを表示", async () => {
     const loadingTask = createErrorLoadingTask("Corrupt PDF");
-    mockGetDocument.mockReturnValue(loadingTask as ReturnType<typeof getDocument>);
+    mockGetDocument.mockReturnValue(loadingTask as unknown as ReturnType<typeof getDocument>);
 
     renderWithProviders(<PdfCgViewer {...defaultProps()} />);
 
@@ -124,7 +124,7 @@ describe("PdfCgViewer", () => {
 
   test("閉じるボタンでonCloseが呼ばれる", async () => {
     const { loadingTask } = createMockLoadingTask();
-    mockGetDocument.mockReturnValue(loadingTask as ReturnType<typeof getDocument>);
+    mockGetDocument.mockReturnValue(loadingTask as unknown as ReturnType<typeof getDocument>);
     const onClose = vi.fn();
 
     renderWithProviders(<PdfCgViewer {...defaultProps({ onClose })} />);
@@ -139,7 +139,7 @@ describe("PdfCgViewer", () => {
 
   test("見開きボタンが表示される", async () => {
     const { loadingTask } = createMockLoadingTask();
-    mockGetDocument.mockReturnValue(loadingTask as ReturnType<typeof getDocument>);
+    mockGetDocument.mockReturnValue(loadingTask as unknown as ReturnType<typeof getDocument>);
 
     renderWithProviders(<PdfCgViewer {...defaultProps()} />);
 

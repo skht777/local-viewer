@@ -9,6 +9,8 @@ const makeVideo = (id: string, name: string): BrowseEntry => ({
   size_bytes: 1024 * 1024,
   mime_type: "video/mp4",
   child_count: null,
+  modified_at: null,
+  preview_node_ids: null,
 });
 
 describe("VideoFeed", () => {
