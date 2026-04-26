@@ -22,7 +22,7 @@ const PAGE_SIZE = 100;
 export function browseInfiniteOptions(nodeId: string | undefined, sort: SortOrder) {
   return infiniteQueryOptions({
     enabled: !!nodeId,
-    getNextPageParam: (lastPage) => lastPage.next_cursor ?? undefined,
+    getNextPageParam: (lastPage: BrowseResponse) => lastPage.next_cursor ?? undefined,
     initialPageParam: undefined as string | undefined,
     queryFn: async ({ pageParam }) => {
       const params = new URLSearchParams({
@@ -105,7 +105,7 @@ export function searchInfiniteOptions({ q, scope, kind, sort }: SearchInfinitePa
 
   return infiniteQueryOptions({
     enabled: normQ.length >= 2,
-    getNextPageParam: (lastPage) => lastPage.next_offset ?? undefined,
+    getNextPageParam: (lastPage: SearchResponse) => lastPage.next_offset ?? undefined,
     initialPageParam: 0 as number,
     queryFn: async ({ pageParam }) => {
       const params = new URLSearchParams({
