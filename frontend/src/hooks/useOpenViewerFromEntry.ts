@@ -55,25 +55,26 @@ export function useOpenViewerFromEntry({
         if (target.entry.kind === "pdf") {
           // PDF: プリフェッチ → 親ディレクトリで PDF ビューワーを開く
           // browse スコープ (mode/sort) を維持しつつ viewerNavigation で pdf/page を付与
+          // push モード: ブラウザバックで呼び出し元に戻れるようにする（B キー閉じと一致）
           await queryClient.prefetchInfiniteQuery(browseInfiniteOptions(target.parentNodeId, sort));
           const browseBase = new URLSearchParams(buildBrowseSearch().replace(/^\?/, ""));
           const withPdf = buildOpenPdfSearch(browseBase, { pdfNodeId: target.entry.node_id });
           const searchStr = withPdf.toString() ? `?${withPdf}` : "";
-          navigate(`/browse/${target.parentNodeId}${searchStr}`, { replace: true });
+          navigate(`/browse/${target.parentNodeId}${searchStr}`);
         } else if (target.entry.kind === "image") {
           // 画像: 親ディレクトリの全ページをプリフェッチ → ビューワーを開く
           // 100 件超の兄弟画像が infinite query の 1 ページ目に収まらないケースに対応
+          // push モード: ブラウザバックで呼び出し元に戻れるようにする
           await fetchAllBrowsePages(queryClient, target.parentNodeId, sort);
           navigate(
             `/browse/${target.parentNodeId}${buildBrowseSearch({ tab: "images", index: 0 })}`,
-            { replace: true },
           );
         } else {
           // アーカイブ: 中身の全ページをプリフェッチしてから進入
+          // push モード: ブラウザバックで呼び出し元に戻れるようにする
           await fetchAllBrowsePages(queryClient, target.entry.node_id, sort);
           navigate(
             `/browse/${target.entry.node_id}${buildBrowseSearch({ tab: "images", index: 0 })}`,
-            { replace: true },
           );
         }
       } catch {

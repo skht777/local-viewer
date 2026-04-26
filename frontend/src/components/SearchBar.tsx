@@ -76,8 +76,10 @@ export function SearchBar({ scope }: SearchBarProps) {
 
   // 検索結果の選択 → ナビゲーション
   // - ディレクトリ/アーカイブ: ビューワー起動ではないため通常 push 遷移
-  // - pdf/image/video（ビューワー起動）: 現在 URL の mode/sort を継承し、
-  //   scope プロップがある (= BrowsePage 文脈) なら viewerOrigin を設定して replace 遷移
+  // - PDF（ビューワー起動）: scope ありなら viewerOrigin を設定したうえで push 遷移。
+  //   ブラウザバックと B キー閉じの遷移先一致を保証する
+  // - image/video（ビューワー起動ではない: index 不在で tab/select のみ）:
+  //   scope ありなら viewerOrigin を設定して replace（既存挙動維持、closeViewer は呼ばれない）
   //   （isScopeActive トグル状態には依存しない。トグル OFF でも `B` で元に戻れるようにするため）
   const handleSelect = useCallback(
     (result: SearchResult) => {
@@ -108,8 +110,14 @@ export function SearchBar({ scope }: SearchBarProps) {
 
       const url = `/browse/${result.parent_node_id}?${target}`;
 
-      if (scope) {
-        // BrowsePage 文脈: viewer 閉じ時に元ディレクトリへ戻るための origin を設定
+      if (result.kind === "pdf") {
+        // PDF viewer 起動: ブラウザバックで呼び出し元に戻れるよう push 化
+        if (scope) {
+          setViewerOrigin({ nodeId: scope, search: location.search });
+        }
+        navigate(url);
+      } else if (scope) {
+        // image/video（viewer 起動ではない）: scope 戻り用に origin 設定 + replace（既存挙動維持）
         setViewerOrigin({ nodeId: scope, search: location.search });
         navigate(url, { replace: true });
       } else {

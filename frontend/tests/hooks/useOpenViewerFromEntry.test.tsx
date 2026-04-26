@@ -97,10 +97,8 @@ describe("useOpenViewerFromEntry", () => {
         wrapper: createWrapper(),
       });
       await act(() => result.current("dir-1"));
-      expect(mockNavigate).toHaveBeenCalledWith(
-        expect.stringContaining("/browse/parent-1"),
-        expect.anything(),
-      );
+      // push 遷移: options 未指定（履歴に積んでブラウザバックで呼び出し元に戻れる）
+      expect(mockNavigate).toHaveBeenCalledWith(expect.stringContaining("/browse/parent-1"));
     });
 
     test("PDF の場合 parentNodeId に ?pdf= 付きで navigate する", async () => {
@@ -114,7 +112,6 @@ describe("useOpenViewerFromEntry", () => {
       await act(() => result.current("dir-1"));
       expect(mockNavigate).toHaveBeenCalledWith(
         expect.stringMatching(/\/browse\/parent-1\?.*pdf=pdf-1/),
-        expect.anything(),
       );
     });
 
@@ -127,10 +124,7 @@ describe("useOpenViewerFromEntry", () => {
         wrapper: createWrapper(),
       });
       await act(() => result.current("dir-1"));
-      expect(mockNavigate).toHaveBeenCalledWith(
-        expect.stringContaining("/browse/archive-1"),
-        expect.anything(),
-      );
+      expect(mockNavigate).toHaveBeenCalledWith(expect.stringContaining("/browse/archive-1"));
     });
 
     test("解決失敗時はディレクトリに navigate する", async () => {
@@ -293,8 +287,8 @@ describe("useOpenViewerFromEntry", () => {
     });
   });
 
-  describe("replace モード", () => {
-    test("ビューワーを開くときに navigate が replace: true で呼ばれる", async () => {
+  describe("push モード", () => {
+    test("ビューワーを開くときに navigate が push で呼ばれる", async () => {
       mockResolveFirstViewable.mockResolvedValue({
         entry: makeEntry({ kind: "image", node_id: "img-1" }),
         parentNodeId: "parent-1",
@@ -303,10 +297,11 @@ describe("useOpenViewerFromEntry", () => {
         wrapper: createWrapper(),
       });
       await act(() => result.current("dir-1"));
-      expect(mockNavigate).toHaveBeenCalledWith(expect.any(String), { replace: true });
+      // push 遷移: options 未指定。ブラウザバックで呼び出し元に戻れることを保証
+      expect(mockNavigate).toHaveBeenCalledWith(expect.any(String));
     });
 
-    test("解決失敗時は replace なしで navigate が呼ばれる", async () => {
+    test("解決失敗時はディレクトリに push で navigate する", async () => {
       mockResolveFirstViewable.mockResolvedValue(null);
       const { result } = renderHook(() => useOpenViewerFromEntry(defaultProps), {
         wrapper: createWrapper(),

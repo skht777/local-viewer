@@ -127,13 +127,13 @@ export function useViewerParams(): UseViewerParamsReturn {
 
   // 画像ビューワーを開く: tab=images + index を設定、pdf/page を削除
   // mode は browse スコープで管理済みなのでここでは操作しない
-  // replace モード: ブラウザ Back で前のページに戻る
+  // push モード: ブラウザバックで開く前の URL に戻れるようにする（B キー閉じと一致）
   const openViewer = (newIndex: number) => {
-    // 起点情報を保存（閉じる時に戻る先）
+    // 起点情報を保存（B キー閉じる時に戻る先）
     if (nodeId) {
       setViewerOrigin({ nodeId, search: buildBrowseSearch() });
     }
-    setSearchParams((prev) => buildOpenImageSearch(prev, { index: newIndex }), { replace: true });
+    setSearchParams((prev) => buildOpenImageSearch(prev, { index: newIndex }));
   };
 
   // 画像ビューワーを閉じる: 起点に戻るか、履歴を1つ戻る
@@ -150,12 +150,12 @@ export function useViewerParams(): UseViewerParamsReturn {
 
   // PDF ビューワーを開く: pdf/page を設定、index/tab を削除
   // mode は browse スコープで管理済みなのでここでは操作しない
-  // replace モード: ブラウザ Back で前のページに戻る
+  // push モード: ブラウザバックで開く前の URL に戻れるようにする（B キー閉じと一致）
   const openPdfViewer = (pdfNodeId: string) => {
     if (nodeId) {
       setViewerOrigin({ nodeId, search: buildBrowseSearch() });
     }
-    setSearchParams((prev) => buildOpenPdfSearch(prev, { pdfNodeId }), { replace: true });
+    setSearchParams((prev) => buildOpenPdfSearch(prev, { pdfNodeId }));
   };
 
   // PDF ビューワーを閉じる: 起点に戻るか、現在ディレクトリに留まる

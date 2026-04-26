@@ -84,7 +84,7 @@ beforeEach(() => {
 });
 
 describe("SearchBar 履歴モデル", () => {
-  test("PDF 選択時は replace 遷移し viewerOrigin と mode/sort を引き継ぐ", async () => {
+  test("PDF 選択時は push 遷移し viewerOrigin と mode/sort を引き継ぐ", async () => {
     const user = userEvent.setup();
     mockState.results = [
       makeResult({ kind: "pdf", node_id: "pdf1", parent_node_id: "dir1", name: "doc.pdf" }),
@@ -103,7 +103,8 @@ describe("SearchBar 履歴モデル", () => {
     expect(url).toContain("pdf=pdf1");
     expect(url).toContain("mode=manga");
     expect(url).toContain("sort=date-desc");
-    expect(options).toEqual({ replace: true });
+    // push 遷移: ブラウザバックで呼び出し元に戻れるよう options 未指定
+    expect(options).toBeUndefined();
     expect(useViewerStore.getState().viewerOrigin).toEqual({
       nodeId: "dir-scope",
       search: "?mode=manga&sort=date-desc",
