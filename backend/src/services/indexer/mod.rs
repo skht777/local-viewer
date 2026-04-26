@@ -92,6 +92,8 @@ pub(crate) struct WalkCallbackArgs {
     pub dir_mtime_ns: i64,
     pub subdirs: Vec<(String, i64)>,
     pub files: Vec<(String, i64, i64)>,
+    /// `WalkEntry::is_complete` から伝播。`false` のとき `DirIndex` 経路は `cascade` を skip
+    pub is_complete: bool,
 }
 
 /// `SQLite` FTS5 trigram 検索インデクサー

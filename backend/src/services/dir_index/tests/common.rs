@@ -30,6 +30,7 @@ pub(super) fn make_args(
             .into_iter()
             .map(|(n, s, m)| (n.to_owned(), s, m))
             .collect(),
+        is_complete: true,
     }
 }
 

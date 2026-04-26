@@ -33,6 +33,12 @@ pub(crate) struct WalkEntry {
     pub subdirs: Vec<(String, i64)>,
     /// ファイル一覧: (名前, `size_bytes`, `mtime_ns`)
     pub files: Vec<(String, i64, i64)>,
+    /// 走査が完全に成功したか（destructive canonicalize 判定用）
+    ///
+    /// false のとき: `read_dir` 失敗 / per-child エラー / キャンセル / `path_security` reject
+    /// のいずれかで部分結果。DirIndex の per-parent cascade 経路は
+    /// `is_complete=false` の entry を skip して既存行を保持する。
+    pub is_complete: bool,
 }
 
 /// 走査中に発生したエラーの種別
@@ -127,6 +133,10 @@ impl LocalErrorBatch {
 ///   早期 return して空の batch を返す（呼び出し側は level 境界でもキャンセルを検知する）
 /// - スレッドローカルなバッチを返すので lock-free。呼び出し側がレベル単位で
 ///   マージする
+#[allow(
+    clippy::too_many_lines,
+    reason = "is_complete の失敗系を 4 種類網羅しつつ batch 生成と分離した結果、関数が長くなっている。分割すると read_dir のループ条件と is_complete の責務が散る"
+)]
 fn scan_one(
     dir_path: &Path,
     skip_hidden: bool,
@@ -136,6 +146,12 @@ fn scan_one(
     let mut subdirs = Vec::new();
     let mut files = Vec::new();
     let mut batch = LocalErrorBatch::default();
+    // is_complete: 以下のいずれかで false に倒す:
+    //   - 開始前 / 子列挙中の cancelled()
+    //   - read_dir 自体の失敗
+    //   - per-child の DirEntry / metadata エラー
+    //   - path_security.validate(...) による reject
+    let mut is_complete = true;
 
     if cancelled() {
         let entry = WalkEntry {
@@ -143,6 +159,7 @@ fn scan_one(
             mtime_ns: 0,
             subdirs,
             files,
+            is_complete: false,
         };
         return (entry, batch);
     }
@@ -152,6 +169,7 @@ fn scan_one(
             batch.visited_dirs = 1;
             for entry_result in entries {
                 if cancelled() {
+                    is_complete = false;
                     break;
                 }
                 let entry = match entry_result {
@@ -160,6 +178,7 @@ fn scan_one(
                         // 個々の DirEntry 取得失敗 (EACCES 等) はカウントして次へ
                         tracing::warn!("DirEntry 取得失敗: {} (path: {})", e, dir_path.display());
                         batch.record_error(dir_path.to_path_buf(), WalkErrorKind::DirEntry, e);
+                        is_complete = false;
                         continue;
                     }
                 };
@@ -171,9 +190,12 @@ fn scan_one(
                 let child_path = dir_path.join(&name);
 
                 // セキュリティ検証 (stat 前)
+                // reject された child の存在自体が parent の完全性を損なうため
+                // is_complete=false に倒す（destructive canonicalize の保護）
                 if let Some(validator) = path_validator
                     && !validator(&child_path)
                 {
+                    is_complete = false;
                     continue;
                 }
 
@@ -182,6 +204,7 @@ fn scan_one(
                     Err(e) => {
                         tracing::warn!("metadata 失敗: {} (path: {})", e, child_path.display());
                         batch.record_error(child_path, WalkErrorKind::Metadata, e);
+                        is_complete = false;
                         continue;
                     }
                 };
@@ -209,6 +232,7 @@ fn scan_one(
             // 空の WalkEntry を返すと delete_unseen に誤って削除される危険がある
             tracing::warn!("read_dir 失敗: {} (path: {})", e, dir_path.display());
             batch.record_error(dir_path.to_path_buf(), WalkErrorKind::ReadDir, e);
+            is_complete = false;
         }
     }
 
@@ -225,6 +249,7 @@ fn scan_one(
         mtime_ns: dir_mtime_ns,
         subdirs,
         files,
+        is_complete,
     };
     (entry, batch)
 }
@@ -671,5 +696,142 @@ mod tests {
 
         assert!(!report.cancelled);
         assert_eq!(report.entry_count, 3);
+    }
+
+    // --- is_complete フィールドのテスト群 ---
+    // DirIndex の per-parent cascade は is_complete=true の WalkEntry のみを真と扱い、
+    // false の場合は既存行を保持する。よって以下のいずれかで is_complete=false に倒す:
+    //   - read_dir 失敗
+    //   - per-child の DirEntry / metadata 取得失敗
+    //   - キャンセル (scan 開始前 / 子列挙中)
+    //   - path_security.validate(...) による reject
+
+    #[test]
+    fn is_completeは全成功時にtrueになる() {
+        let tree = TestTree::new();
+        let mut entries = Vec::new();
+        parallel_walk(
+            &tree.root,
+            2,
+            true,
+            None,
+            &mut |_, _| true,
+            &mut |e| entries.push(e),
+            &|| false,
+        );
+
+        // 通常経路では全 entry が is_complete=true
+        assert!(
+            entries.iter().all(|e| e.is_complete),
+            "全 entry が is_complete=true であること"
+        );
+    }
+
+    #[test]
+    fn is_completeはread_dir失敗時にfalseになる() {
+        let nonexistent = PathBuf::from("/nonexistent/path/xyz");
+        let mut entries = Vec::new();
+        parallel_walk(
+            &nonexistent,
+            2,
+            true,
+            None,
+            &mut |_, _| true,
+            &mut |e| entries.push(e),
+            &|| false,
+        );
+
+        // read_dir 失敗で entry 1 件返るが is_complete=false
+        assert_eq!(entries.len(), 1);
+        assert!(!entries[0].is_complete, "read_dir 失敗で is_complete=false");
+    }
+
+    #[test]
+    fn is_completeはscan前キャンセルでfalseになる() {
+        let tree = TestTree::new();
+        let mut entries = Vec::new();
+
+        // 常に cancelled → level 先頭で bail するため entry は 0 件
+        // (scan_one が呼ばれない経路は is_complete テストの対象外)
+        let report = parallel_walk(
+            &tree.root,
+            2,
+            true,
+            None,
+            &mut |_, _| true,
+            &mut |e| entries.push(e),
+            &|| true,
+        );
+        assert!(report.cancelled);
+        assert_eq!(entries.len(), 0);
+
+        // 直接 scan_one を呼んで cancel 経路を検証
+        let (entry, _batch) = scan_one(&tree.root, true, None, &|| true);
+        assert!(
+            !entry.is_complete,
+            "scan 開始前キャンセルで is_complete=false"
+        );
+    }
+
+    #[test]
+    fn is_completeは子列挙中キャンセルでfalseになる() {
+        let tree = TestTree::new();
+
+        // read_dir は成功させ、子列挙ループ中に cancelled を true にする
+        let counter = std::sync::atomic::AtomicUsize::new(0);
+        let cancelled_fn = || {
+            // 1 回目 (scan 開始前 check) は false、2 回目以降 (子列挙ループ内) は true
+            counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst) >= 1
+        };
+
+        let (entry, _batch) = scan_one(&tree.root, true, None, &cancelled_fn);
+
+        // 子列挙ループ中にキャンセルを検知 → is_complete=false
+        assert!(!entry.is_complete, "子列挙中キャンセルで is_complete=false");
+    }
+
+    #[test]
+    fn is_completeはpath_security_reject時にfalseになる() {
+        let tree = TestTree::new();
+        // sub1 を reject する validator
+        let sub1_path = tree.root.join("sub1");
+        let validator = move |path: &Path| !path.starts_with(&sub1_path);
+
+        let (entry, _batch) = scan_one(&tree.root, true, Some(&validator), &|| false);
+
+        // sub1 が reject されたため is_complete=false
+        assert!(
+            !entry.is_complete,
+            "path_security reject で is_complete=false"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn is_completeはper_child_metadata失敗時にfalseになる() {
+        use std::os::unix::fs::PermissionsExt;
+        // children のうち 1 つに metadata 失敗を誘発する難しさがある。
+        // 代わりに read_dir 自体が失敗するケースを利用する：
+        // 親ディレクトリの読み権限を剥奪 → read_dir 失敗 → is_complete=false
+        let dir = TempDir::new().unwrap();
+        let root = fs::canonicalize(dir.path()).unwrap();
+        fs::write(root.join("a.txt"), b"a").unwrap();
+        let target = root.join("inner");
+        fs::create_dir(&target).unwrap();
+        fs::write(target.join("inner_a.txt"), b"x").unwrap();
+
+        // inner の読み権限を剥奪
+        let mut perms = fs::metadata(&target).unwrap().permissions();
+        perms.set_mode(0o000);
+        fs::set_permissions(&target, perms).unwrap();
+
+        let (entry, _batch) = scan_one(&target, true, None, &|| false);
+
+        // 権限復元 (TempDir drop のため)
+        let mut perms = fs::metadata(&target).unwrap().permissions();
+        perms.set_mode(0o755);
+        fs::set_permissions(&target, perms).unwrap();
+
+        assert!(!entry.is_complete, "read_dir 失敗で is_complete=false");
     }
 }

@@ -76,6 +76,7 @@ impl Indexer {
                         dir_mtime_ns: entry.mtime_ns,
                         subdirs: entry.subdirs.clone(),
                         files: entry.files.clone(),
+                        is_complete: entry.is_complete,
                     });
                 }
 
