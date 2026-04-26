@@ -40,6 +40,9 @@ const KIND_TABS: { label: string; value: string | null }[] = [
   { label: "ディレクトリ", value: "directory" },
 ];
 
+// 受入: 計画外の新規違反（plan-tests-lint-cleanup.md は B-1〜B-6 のみ対象）。
+// 申し送りで FileBrowser/Browse 系と同様のリファクタを別タスクとして切り出す。
+// oxlint-disable-next-line max-lines-per-function
 export default function SearchResultsPage() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();

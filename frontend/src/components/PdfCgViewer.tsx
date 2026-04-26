@@ -43,6 +43,10 @@ interface PdfCgViewerProps {
   onClose: () => void;
 }
 
+// 受入: 残 12 行 / 4 statements 超過。useState + handler / displayIndices 派生値 /
+// useCgKeyboard 設定オブジェクトの細粒度抽出は可読性低下と引き換えになるため、
+// 「申し送り」へ載せる方針 (B-7 plan の B-6 同等フォールバック)。
+// oxlint-disable-next-line max-lines-per-function, max-statements
 export function PdfCgViewer({
   pdfNodeId,
   pdfName,

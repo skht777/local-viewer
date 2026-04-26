@@ -59,6 +59,10 @@ export function PdfCanvas({
     let renderTask: RenderTask | null = null;
     let timeoutId: ReturnType<typeof setTimeout> | undefined = undefined;
 
+    // 受入: 計画外の新規違反。PDF 描画パイプラインは getPage→viewport→render→
+    // textLayer→cleanup を一連で扱い、途中分割は副作用とライフサイクルの相関を
+    // わかりにくくする。別タスクで段階分解する。
+    // oxlint-disable-next-line max-statements
     async function renderPage() {
       const page = await document.getPage(pageNumber);
       if (cancelled) {

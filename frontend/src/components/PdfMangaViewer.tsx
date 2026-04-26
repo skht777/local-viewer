@@ -39,6 +39,10 @@ interface PdfMangaViewerProps {
   onClose: () => void;
 }
 
+// 受入: 残 15 行 / 2 statements 超過。useMangaVirtualizer / useUrlIndexSync 抽出後の
+// 残部を更に分割すると useState/useCallback/JSX の責務分散で逆に追跡が難しくなるため、
+// 「申し送り」へ載せる方針 (B-7 plan の B-6 同等フォールバック)。
+// oxlint-disable-next-line max-lines-per-function, max-statements
 export function PdfMangaViewer({
   pdfNodeId,
   pdfName,

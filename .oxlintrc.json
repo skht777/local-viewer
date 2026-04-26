@@ -63,8 +63,8 @@
     "id-length": ["warn", { "min": 1 }],
     "func-style": ["warn", "declaration", { "allowArrowFunctions": true }],
     "max-lines": ["warn", { "max": 500, "skipBlankLines": true, "skipComments": true }],
-    "max-lines-per-function": ["warn", { "max": 300, "skipBlankLines": true, "skipComments": true }],
-    "max-statements": ["warn", { "max": 60 }],
+    "max-lines-per-function": ["warn", { "max": 200, "skipBlankLines": true, "skipComments": true }],
+    "max-statements": ["warn", { "max": 30 }],
     "max-params": ["warn", { "max": 5 }]
   },
   "overrides": [
@@ -78,7 +78,8 @@
         "import/first": "off",
         "require-await": "off",
         "max-lines": ["warn", { "max": 500, "skipBlankLines": true, "skipComments": true }],
-        "max-lines-per-function": ["warn", { "max": 500, "skipBlankLines": true, "skipComments": true }]
+        "max-lines-per-function": ["warn", { "max": 500, "skipBlankLines": true, "skipComments": true }],
+        "max-statements": ["warn", { "max": 100 }]
       }
     }
   ],

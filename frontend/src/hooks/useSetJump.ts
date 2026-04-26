@@ -52,6 +52,9 @@ interface UseSetJumpReturn {
 
 const MAX_DEPTH = 10;
 
+// 受入: 計画外の新規違反。findSiblingRecursive 系の再帰探索 + navigate ロジック
+// を hooks 抽出すると useSiblingPrefetch.ts と相互依存が増えるため別タスクで対応。
+// oxlint-disable-next-line max-lines-per-function
 export function useSetJump({
   currentNodeId,
   parentNodeId,
@@ -172,7 +175,10 @@ export function useSetJump({
   );
 
   // 再帰的に親を辿って兄弟セットを探索
+  // 受入: 計画外の新規違反。useSiblingPrefetch と類似の探索ステートマシンで、
+  // 同様の 4 ヘルパ分割が望ましいが別タスクで対応する。
   const findSiblingRecursive = useCallback(
+    // oxlint-disable-next-line max-statements
     async (direction: "next" | "prev"): Promise<SearchResult | null> => {
       let currentChildId = currentNodeId;
       let currentParentId = parentNodeId;

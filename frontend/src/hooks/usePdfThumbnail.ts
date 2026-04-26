@@ -29,6 +29,9 @@ export function usePdfThumbnail(nodeId: string, enabled: boolean): PdfThumbnailR
     let cancelled = false;
     let pdfDoc: PDFDocumentProxy | null = null;
 
+    // 受入: 計画外の新規違反。PdfCanvas.renderPage と同様、PDF サムネイル生成は
+    // getDocument→getPage→render→cleanup を一続きで扱う。別タスクで段階分解する。
+    // oxlint-disable-next-line max-statements
     const generate = async () => {
       setIsLoading(true);
       setHasError(false);
