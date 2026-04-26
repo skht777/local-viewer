@@ -41,7 +41,6 @@
     "promise/always-return": "off",
 
     "unicorn/no-null": "off",
-    "unicorn/prevent-abbreviations": "off",
     "unicorn/filename-case": "off",
     "unicorn/no-array-reduce": "off",
     "unicorn/no-await-expression-member": "off",
@@ -49,15 +48,7 @@
     "unicorn/prefer-global-this": "off",
     "unicorn/switch-case-braces": "off",
     "unicorn/no-nested-ternary": "off",
-    "unicorn/no-array-callback-reference": "off",
-
-    "no-restricted-syntax": [
-      "error",
-      {
-        "selector": "CallExpression[callee.object.name='console'][callee.property.name='log']",
-        "message": "console.log は禁止。console.warn / console.error を使用するか削除"
-      }
-    ]
+    "unicorn/no-array-callback-reference": "off"
   },
   "overrides": [
     {
