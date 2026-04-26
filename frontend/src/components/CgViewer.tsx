@@ -9,6 +9,7 @@
 import { useCallback, useRef, useState } from "react";
 import type { AncestorEntry, BrowseEntry } from "../types/api";
 import { useViewerStore } from "../stores/viewerStore";
+import { useClickToTurnPage } from "../hooks/useClickToTurnPage";
 import { useCursorAutoHide } from "../hooks/useCursorAutoHide";
 import { useFullscreen } from "../hooks/useFullscreen";
 import { useCgNavigation } from "../hooks/useCgNavigation";
@@ -18,6 +19,7 @@ import { useSetJump } from "../hooks/useSetJump";
 import { useSiblingPrefetch } from "../hooks/useSiblingPrefetch";
 import { useToast } from "../hooks/useToast";
 import { useToolbarAutoHide } from "../hooks/useToolbarAutoHide";
+import { useViewerBoundaryNavigation } from "../hooks/useViewerBoundaryNavigation";
 import type { SortOrder, ViewerMode } from "../hooks/useViewerParams";
 import { formatPageLabel } from "../utils/formatPageLabel";
 import { CgToolbar } from "./CgToolbar";
@@ -84,22 +86,8 @@ export function CgViewer({
   // 画像境界トースト（duration は useToast 内部 timer と Toast 側を同期）
   const { toastMessage, toastDuration, showToast, dismissToast } = useToast();
 
-  // 境界チェック付きナビゲーション
-  const handleGoNext = useCallback(() => {
-    if (!nav.canGoNext) {
-      showToast("最後の画像です");
-      return;
-    }
-    nav.goNext();
-  }, [nav, showToast]);
-
-  const handleGoPrev = useCallback(() => {
-    if (!nav.canGoPrev) {
-      showToast("最初の画像です");
-      return;
-    }
-    nav.goPrev();
-  }, [nav, showToast]);
+  // 境界チェック付きナビゲーション（境界到達時は toast を出して停止）
+  const { handleGoNext, handleGoPrev } = useViewerBoundaryNavigation({ nav, showToast });
 
   // キーボードヘルプ
   const [isHelpOpen, setIsHelpOpen] = useState(false);
@@ -167,18 +155,7 @@ export function CgViewer({
   const { resetCursorTimer } = useCursorAutoHide(imageAreaRef);
 
   // 画像クリックでページ送り（画面中央分割: 右半分→次、左半分→前）
-  const handleImageClick = useCallback(
-    (e: React.MouseEvent<HTMLDivElement>) => {
-      const rect = e.currentTarget.getBoundingClientRect();
-      const mid = rect.left + rect.width / 2;
-      if (e.clientX > mid) {
-        handleGoNext();
-      } else {
-        handleGoPrev();
-      }
-    },
-    [handleGoNext, handleGoPrev],
-  );
+  const handleImageClick = useClickToTurnPage(handleGoNext, handleGoPrev);
 
   const { displayIndices } = nav;
   if (displayIndices.length === 0) {
