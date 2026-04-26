@@ -209,13 +209,14 @@ export default function BrowsePage() {
   }, [params.mode, setMode]);
 
   // ブラウズ間遷移の共通 callback
-  // - 同一 nodeId への navigate を抑制し history 重複を防ぐ（ガードはコミット 3 で追加）
+  // - 自分自身（現在 nodeId）への navigate は抑制し history 重複を防ぐ
   // - search は呼び出し側で構築する（mode/sort/tab を保持するため）
   const navigateBrowse = useCallback(
     (targetNodeId: string, search: string) => {
+      if (targetNodeId === nodeId) return;
       navigate(`/browse/${targetNodeId}${search}`);
     },
-    [navigate],
+    [navigate, nodeId],
   );
 
   // 親ディレクトリに戻る
