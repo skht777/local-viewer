@@ -36,7 +36,7 @@
     "import/exports-last": "off",
     "import/max-dependencies": "off",
     "import/no-namespace": "off",
-    "import/no-unassigned-import": ["error", { "allow": ["**/*.css"] }],
+    "import/no-unassigned-import": ["error", { "allow": ["**/*.css", "@testing-library/jest-dom/vitest"] }],
 
     "promise/always-return": "off",
 
@@ -71,7 +71,12 @@
       "rules": {
         "no-console": "off",
         "typescript/no-explicit-any": "off",
-        "typescript/no-non-null-assertion": "off"
+        "typescript/no-non-null-assertion": "off",
+        "typescript/consistent-type-imports": "off",
+        "import/first": "off",
+        "require-await": "off",
+        "max-lines": ["warn", { "max": 1000, "skipBlankLines": true, "skipComments": true }],
+        "max-lines-per-function": ["warn", { "max": 1000, "skipBlankLines": true, "skipComments": true }]
       }
     }
   ],
