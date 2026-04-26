@@ -1,5 +1,8 @@
-import { fireEvent, screen } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import type { ReactNode } from "react";
+import { MemoryRouter } from "react-router-dom";
 import { CgViewer } from "../../src/components/CgViewer";
 import type { BrowseEntry } from "../../src/types/api";
 import { useViewerStore } from "../../src/stores/viewerStore";
@@ -74,5 +77,86 @@ describe("CgViewer", () => {
     renderWithProviders(<CgViewer {...defaultProps} onClose={onClose} />);
     await userEvent.click(screen.getByRole("button", { name: /閉じる/i }));
     expect(onClose).toHaveBeenCalledOnce();
+  });
+
+  // 回帰防止: ページ送り時に React が <img> を unmount/mount して空白フレームを
+  // 出さないこと（key を表示位置ベースにすることで DOM 再利用される仕様）。
+  // 参照: 975d594 fix(frontend): CGモードのページ移動時の画像ちらつきを解消
+  describe("DOM identity 維持（ちらつき回帰防止）", () => {
+    function makeWrapper() {
+      const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+      return function Wrapper({ children }: { children: ReactNode }) {
+        return (
+          <QueryClientProvider client={queryClient}>
+            <MemoryRouter>{children}</MemoryRouter>
+          </QueryClientProvider>
+        );
+      };
+    }
+
+    function findMainImages(): HTMLElement[] {
+      return screen.getAllByRole("img").filter((img) => img.getAttribute("draggable") === "false");
+    }
+
+    test("single モードで currentIndex を進めてもメイン img の DOM ノードが同一", () => {
+      const Wrapper = makeWrapper();
+      const { rerender } = render(
+        <Wrapper>
+          <CgViewer {...defaultProps} currentIndex={0} />
+        </Wrapper>,
+      );
+
+      const before = findMainImages();
+      expect(before).toHaveLength(1);
+      expect(before[0]).toHaveAttribute("src", "/api/file/a");
+
+      rerender(
+        <Wrapper>
+          <CgViewer {...defaultProps} currentIndex={1} />
+        </Wrapper>,
+      );
+
+      const after = findMainImages();
+      expect(after).toHaveLength(1);
+      // DOM ノード再利用の確認: 同一参照であること
+      expect(after[0]).toBe(before[0]);
+      // src だけが切り替わる
+      expect(after[0]).toHaveAttribute("src", "/api/file/b");
+    });
+
+    test("見開き spread モードでも両スロットの img DOM が再利用される", () => {
+      useViewerStore.setState({ spreadMode: "spread" });
+      const four = [
+        makeImage("a", "1.jpg"),
+        makeImage("b", "2.jpg"),
+        makeImage("c", "3.jpg"),
+        makeImage("d", "4.jpg"),
+      ];
+      const Wrapper = makeWrapper();
+      const { rerender } = render(
+        <Wrapper>
+          <CgViewer {...defaultProps} images={four} currentIndex={0} />
+        </Wrapper>,
+      );
+
+      const before = findMainImages();
+      expect(before).toHaveLength(2);
+      expect(before[0]).toHaveAttribute("src", "/api/file/a");
+      expect(before[1]).toHaveAttribute("src", "/api/file/b");
+
+      rerender(
+        <Wrapper>
+          <CgViewer {...defaultProps} images={four} currentIndex={2} />
+        </Wrapper>,
+      );
+
+      const after = findMainImages();
+      expect(after).toHaveLength(2);
+      // 左右スロット個別に DOM 再利用を確認
+      expect(after[0]).toBe(before[0]);
+      expect(after[1]).toBe(before[1]);
+      expect(after[0]).toHaveAttribute("src", "/api/file/c");
+      expect(after[1]).toHaveAttribute("src", "/api/file/d");
+    });
   });
 });
