@@ -18,6 +18,7 @@ import { useSiblingPrefetch } from "../hooks/useSiblingPrefetch";
 import { useToast } from "../hooks/useToast";
 import { useToolbarAutoHide } from "../hooks/useToolbarAutoHide";
 import type { SortOrder, ViewerMode } from "../hooks/useViewerParams";
+import { formatPageLabel } from "../utils/formatPageLabel";
 import { KeyboardHelp, MANGA_SHORTCUTS } from "./KeyboardHelp";
 import { MangaToolbar } from "./MangaToolbar";
 import { NavigationPrompt } from "./NavigationPrompt";
@@ -168,7 +169,9 @@ export function MangaViewer({
     zoomOut,
     zoomReset: () => setZoomLevel(100),
     toggleHelp: () => setIsHelpOpen((prev) => !prev),
-    showTitle: () => showToast(setName || "（タイトルなし）", 3000),
+    // タイトル + 現在ページ / 総ページ を 3 秒トースト表示
+    showTitle: () =>
+      showToast(formatPageLabel(setName, mangaScroll.currentIndex + 1, images.length), 3000),
   });
 
   // カーソルオートハイド

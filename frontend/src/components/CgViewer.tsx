@@ -18,6 +18,7 @@ import { useSiblingPrefetch } from "../hooks/useSiblingPrefetch";
 import { useToast } from "../hooks/useToast";
 import { useToolbarAutoHide } from "../hooks/useToolbarAutoHide";
 import type { SortOrder, ViewerMode } from "../hooks/useViewerParams";
+import { formatPageLabel } from "../utils/formatPageLabel";
 import { CgToolbar } from "./CgToolbar";
 import { KeyboardHelp, CG_SHORTCUTS } from "./KeyboardHelp";
 import { NavigationPrompt } from "./NavigationPrompt";
@@ -143,7 +144,15 @@ export function CgViewer({
     goNextSetParent: setJump.goNextSetParent,
     goPrevSetParent: setJump.goPrevSetParent,
     toggleHelp: () => setIsHelpOpen((prev) => !prev),
-    showTitle: () => showToast(setName || "（タイトルなし）", 3000),
+    // タイトル + ページ番号を 3 秒トースト表示（見開き時は "3-4 / 12" 形式）
+    showTitle: () => {
+      const indices = nav.displayIndices;
+      if (indices.length === 0) return;
+      const first = indices[0] + 1;
+      const last = indices[indices.length - 1] + 1;
+      const end = indices.length > 1 ? last : undefined;
+      showToast(formatPageLabel(setName, first, images.length, end), 3000);
+    },
   });
 
   // ツールバー自動表示/非表示

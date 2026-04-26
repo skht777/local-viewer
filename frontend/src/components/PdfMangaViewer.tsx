@@ -17,6 +17,7 @@ import { useToast } from "../hooks/useToast";
 import { useToolbarAutoHide } from "../hooks/useToolbarAutoHide";
 import { usePdfDocument } from "../hooks/usePdfDocument";
 import { usePdfPageSizes } from "../hooks/usePdfPageSizes";
+import { formatPageLabel } from "../utils/formatPageLabel";
 import { PdfCanvas } from "./PdfCanvas";
 import { KeyboardHelp, MANGA_SHORTCUTS } from "./KeyboardHelp";
 import { MangaToolbar } from "./MangaToolbar";
@@ -179,7 +180,9 @@ export function PdfMangaViewer({
     zoomOut,
     zoomReset: () => setZoomLevel(100),
     toggleHelp: () => setIsHelpOpen((prev) => !prev),
-    showTitle: () => showToast(pdfName || "PDF", 3000),
+    // タイトル + 現在ページ / 総ページ を 3 秒トースト表示
+    showTitle: () =>
+      showToast(formatPageLabel(pdfName, mangaScroll.currentIndex + 1, pageCount), 3000),
   });
 
   // カーソルオートハイド
