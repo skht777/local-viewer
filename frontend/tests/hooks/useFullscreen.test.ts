@@ -2,8 +2,8 @@ import { renderHook, act } from "@testing-library/react";
 import { useFullscreen } from "../../src/hooks/useFullscreen";
 
 describe("useFullscreen", () => {
-  let mockRequestFullscreen: ReturnType<typeof vi.fn>;
-  let mockExitFullscreen: ReturnType<typeof vi.fn>;
+  let mockRequestFullscreen: ReturnType<typeof vi.fn> = vi.fn();
+  let mockExitFullscreen: ReturnType<typeof vi.fn> = vi.fn();
 
   beforeEach(() => {
     // jsdom は Fullscreen API 未実装のためモック

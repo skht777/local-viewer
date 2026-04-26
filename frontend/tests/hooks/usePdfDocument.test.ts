@@ -23,8 +23,8 @@ function createMockLoadingTask(pageCount = 5) {
     getPage: vi.fn(),
   };
 
-  let resolvePromise: (doc: typeof mockDocument) => void;
-  let rejectPromise: (err: Error) => void;
+  let resolvePromise: (doc: typeof mockDocument) => void = vi.fn();
+  let rejectPromise: (err: Error) => void = vi.fn();
   const promise = new Promise<typeof mockDocument>((resolve, reject) => {
     resolvePromise = resolve;
     rejectPromise = reject;

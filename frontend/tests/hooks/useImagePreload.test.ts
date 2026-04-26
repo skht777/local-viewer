@@ -3,7 +3,7 @@ import { useImagePreload } from "../../src/hooks/useImagePreload";
 import type { BrowseEntry } from "../../src/types/api";
 
 // プリロードされた URL を追跡
-let preloadedSrcs: string[];
+let preloadedSrcs: string[] = [];
 const OriginalImage = globalThis.Image;
 beforeEach(() => {
   preloadedSrcs = [];

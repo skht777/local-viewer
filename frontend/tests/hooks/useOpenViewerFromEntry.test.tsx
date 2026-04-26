@@ -49,7 +49,7 @@ function makeEntry(overrides: Partial<BrowseEntry> & { kind: string }): BrowseEn
 }
 
 // テスト用ラッパー
-let testQueryClient: QueryClient;
+let testQueryClient: QueryClient = new QueryClient();
 
 function createWrapper() {
   testQueryClient = new QueryClient({

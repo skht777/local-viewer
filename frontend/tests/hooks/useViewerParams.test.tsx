@@ -1,5 +1,5 @@
 import { renderHook, act } from "@testing-library/react";
-import { MemoryRouter, Route, Routes } from "react-router-dom";
+import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 import { useViewerParams } from "../../src/hooks/useViewerParams";
 import { useViewerStore } from "../../src/stores/viewerStore";
 import type { ReactNode } from "react";
@@ -8,6 +8,13 @@ function createWrapper(initialEntries: string[] = ["/"]) {
   return function Wrapper({ children }: { children: ReactNode }) {
     return <MemoryRouter initialEntries={initialEntries}>{children}</MemoryRouter>;
   };
+}
+
+// 現在の Location を親 onChange コールバックに通知するプローブコンポーネント
+function LocationProbe({ onChange }: { onChange: (path: string, search: string) => void }) {
+  const loc = useLocation();
+  onChange(loc.pathname, loc.search);
+  return null;
 }
 
 describe("useViewerParams", () => {
@@ -102,13 +109,6 @@ describe("useViewerParams", () => {
       pathname: "/browse/origin-node",
       search: "?mode=manga",
     });
-
-    function LocationProbe({ onChange }: { onChange: (path: string, search: string) => void }) {
-      const { useLocation } = require("react-router-dom") as typeof import("react-router-dom");
-      const loc = useLocation();
-      onChange(loc.pathname, loc.search);
-      return null;
-    }
 
     let currentPath = "";
     let currentSearch = "";

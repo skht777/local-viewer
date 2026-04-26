@@ -98,7 +98,7 @@ describe("SearchBar 履歴モデル", () => {
     await user.click(await screen.findByTestId("search-result-0"));
 
     expect(mockNavigate).toHaveBeenCalledTimes(1);
-    const [url, options] = mockNavigate.mock.calls[0];
+    const [[url, options]] = mockNavigate.mock.calls;
     expect(url).toMatch(/^\/browse\/dir1\?/);
     expect(url).toContain("pdf=pdf1");
     expect(url).toContain("mode=manga");
@@ -124,12 +124,13 @@ describe("SearchBar 履歴モデル", () => {
     await openDropdown(user);
     await user.click(await screen.findByTestId("search-result-0"));
 
-    const [url, options] = mockNavigate.mock.calls[0];
+    const [[url, options]] = mockNavigate.mock.calls;
     expect(url).toMatch(/^\/browse\/dir1\?/);
     expect(url).toContain("tab=images");
     expect(url).toContain("select=img1");
     expect(url).toContain("mode=manga");
-    expect(url).not.toContain("sort="); // 既定値は省略
+    // 既定値は省略
+    expect(url).not.toContain("sort=");
     expect(options).toEqual({ replace: true });
     expect(useViewerStore.getState().viewerOrigin).toEqual({
       pathname: "/browse/dir-scope",
@@ -151,7 +152,7 @@ describe("SearchBar 履歴モデル", () => {
     await user.click(await screen.findByTestId("search-result-0"));
 
     expect(mockNavigate).toHaveBeenCalledTimes(1);
-    const [url, options] = mockNavigate.mock.calls[0];
+    const [[url, options]] = mockNavigate.mock.calls;
     expect(url).toBe("/browse/dir-x");
     // replace: true は渡さない（push 遷移）
     expect(options).toBeUndefined();
@@ -170,7 +171,7 @@ describe("SearchBar 履歴モデル", () => {
     await openDropdown(user);
     await user.click(await screen.findByTestId("search-result-0"));
 
-    const [, options] = mockNavigate.mock.calls[0];
+    const [[, options]] = mockNavigate.mock.calls;
     // viewer 起動でも scope 無しなら replace せず push、origin も未設定
     expect(options).toBeUndefined();
     expect(useViewerStore.getState().viewerOrigin).toBeNull();

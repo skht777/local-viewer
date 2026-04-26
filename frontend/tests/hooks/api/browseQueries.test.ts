@@ -40,7 +40,7 @@ function installFetchMock(
 }
 
 describe("fetchAllBrowsePages", () => {
-  let queryClient: QueryClient;
+  let queryClient: QueryClient = new QueryClient();
   const nodeId = "node-1";
   const sort = "name-asc";
 
@@ -98,7 +98,8 @@ describe("fetchAllBrowsePages", () => {
       initialPageParam: undefined,
       getNextPageParam: () => undefined,
     });
-    expect(getCallCount()).toBe(0); // prefetch はモック fetch を経由しない
+    // prefetch はモック fetch を経由しない
+    expect(getCallCount()).toBe(0);
 
     await fetchAllBrowsePages(queryClient, nodeId, sort);
 
@@ -124,7 +125,8 @@ describe("fetchAllBrowsePages", () => {
 
     await fetchAllBrowsePages(queryClient, nodeId, sort);
 
-    expect(getCallCount()).toBe(0); // 追加 fetch 0 件
+    // 追加 fetch 0 件
+    expect(getCallCount()).toBe(0);
   });
 
   test("MAX_PAGES に達したら警告ログを出して中断する", async () => {

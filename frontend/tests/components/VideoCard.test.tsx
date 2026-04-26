@@ -6,7 +6,8 @@ const videoEntry: BrowseEntry = {
   node_id: "vid001",
   name: "clip.mp4",
   kind: "video",
-  size_bytes: 10_485_760, // 10MB
+  // 10MB
+  size_bytes: 10_485_760,
   mime_type: "video/mp4",
   child_count: null,
 };

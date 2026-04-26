@@ -25,6 +25,7 @@ vi.mock("../../src/hooks/api/apiClient", () => ({
     status: number;
     constructor(status: number, message: string) {
       super(message);
+      this.name = "ApiError";
       this.status = status;
     }
   },
@@ -230,7 +231,9 @@ describe("useBatchThumbnails", () => {
 
     // エラー後も空マップ (クラッシュしない)
     await act(async () => {
-      await new Promise((r) => setTimeout(r, 50));
+      await new Promise((resolve) => {
+        setTimeout(resolve, 50);
+      });
     });
 
     expect(result.current.thumbnails.size).toBe(0);
@@ -239,7 +242,7 @@ describe("useBatchThumbnails", () => {
   test("バッチ取得中は isLoading が true になる", async () => {
     const { apiPost } = await import("../../src/hooks/api/apiClient");
 
-    let resolveApi!: (value: unknown) => void;
+    let resolveApi: (value: unknown) => void = vi.fn();
     vi.mocked(apiPost).mockImplementation(
       () =>
         new Promise((resolve) => {
@@ -251,7 +254,9 @@ describe("useBatchThumbnails", () => {
 
     // デバウンス待ち
     await act(async () => {
-      await new Promise((r) => setTimeout(r, 60));
+      await new Promise((resolve) => {
+        setTimeout(resolve, 60);
+      });
     });
 
     // バッチリクエスト中は isLoading = true

@@ -42,7 +42,7 @@ function browseResponse(
 }
 
 // Image モック: プリロードされた URL を追跡
-let preloadedSrcs: string[];
+let preloadedSrcs: string[] = [];
 const OriginalImage = globalThis.Image;
 
 beforeEach(() => {
@@ -269,7 +269,9 @@ describe("useSiblingPrefetch", () => {
     );
 
     // fetchQuery が呼ばれない
-    await new Promise((r) => setTimeout(r, 50));
+    await new Promise((resolve) => {
+      setTimeout(resolve, 50);
+    });
     expect(fetchQuerySpy).not.toHaveBeenCalled();
   });
 
@@ -300,7 +302,9 @@ describe("useSiblingPrefetch", () => {
     // 即座にアンマウント → エラーが発生しないことを確認
     unmount();
     // 少し待ってもクラッシュしない
-    await new Promise((r) => setTimeout(r, 100));
+    await new Promise((resolve) => {
+      setTimeout(resolve, 100);
+    });
   });
 
   test("API エラー時にクラッシュしない", async () => {
@@ -332,6 +336,8 @@ describe("useSiblingPrefetch", () => {
     }).not.toThrow();
 
     // 少し待ってもクラッシュしない
-    await new Promise((r) => setTimeout(r, 100));
+    await new Promise((resolve) => {
+      setTimeout(resolve, 100);
+    });
   });
 });

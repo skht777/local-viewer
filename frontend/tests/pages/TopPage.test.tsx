@@ -48,7 +48,7 @@ describe("TopPage", () => {
       if (callCount <= 1) {
         return Promise.reject(new Error("Network error"));
       }
-      return Promise.resolve(new Response(JSON.stringify({ mounts: [] })));
+      return Promise.resolve(Response.json({ mounts: [] }));
     }) as typeof fetch;
 
     renderTopPage();

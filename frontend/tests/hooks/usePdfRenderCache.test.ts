@@ -85,9 +85,11 @@ describe("usePdfRenderCache", () => {
   });
 
   test("maxBytesを超える単一エントリはキャッシュされない", () => {
-    const maxBytes = 100; // 非常に小さい
+    // 非常に小さい
+    const maxBytes = 100;
     const { result } = renderHook(() => usePdfRenderCache(maxBytes));
-    const bitmap = createMockBitmap(100, 100); // 100*100*4 = 40000 > 100
+    // 100*100*4 = 40000 > 100
+    const bitmap = createMockBitmap(100, 100);
 
     act(() => result.current.put("1:1.0", bitmap));
 

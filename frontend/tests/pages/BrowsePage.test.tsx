@@ -59,10 +59,10 @@ function setupFetchMock() {
   globalThis.fetch = vi.fn((url: string | URL | Request) => {
     const urlStr = typeof url === "string" ? url : url.toString();
     if (urlStr === "/api/browse") {
-      return Promise.resolve(new Response(JSON.stringify(mockRootData)));
+      return Promise.resolve(Response.json(mockRootData));
     }
     if (urlStr.startsWith("/api/browse/")) {
-      return Promise.resolve(new Response(JSON.stringify(mockBrowseData)));
+      return Promise.resolve(Response.json(mockBrowseData));
     }
     return Promise.resolve(new Response("{}", { status: 404 }));
   }) as typeof fetch;
@@ -146,7 +146,7 @@ describe("BrowsePage", () => {
     globalThis.fetch = vi.fn((url: string | URL | Request) => {
       const urlStr = typeof url === "string" ? url : url.toString();
       if (urlStr.startsWith("/api/browse/")) {
-        return Promise.resolve(new Response(JSON.stringify(imagesOnlyData)));
+        return Promise.resolve(Response.json(imagesOnlyData));
       }
       return Promise.resolve(new Response("{}", { status: 404 }));
     }) as typeof fetch;
@@ -179,7 +179,7 @@ describe("BrowsePage", () => {
     globalThis.fetch = vi.fn((url: string | URL | Request) => {
       const urlStr = typeof url === "string" ? url : url.toString();
       if (urlStr.startsWith("/api/browse/")) {
-        return Promise.resolve(new Response(JSON.stringify(videosOnlyData)));
+        return Promise.resolve(Response.json(videosOnlyData));
       }
       return Promise.resolve(new Response("{}", { status: 404 }));
     }) as typeof fetch;
@@ -213,7 +213,7 @@ describe("BrowsePage", () => {
     globalThis.fetch = vi.fn((url: string | URL | Request) => {
       const urlStr = typeof url === "string" ? url : url.toString();
       if (urlStr.startsWith("/api/browse/")) {
-        return Promise.resolve(new Response(JSON.stringify(imagesOnlyData)));
+        return Promise.resolve(Response.json(imagesOnlyData));
       }
       return Promise.resolve(new Response("{}", { status: 404 }));
     }) as typeof fetch;
@@ -246,7 +246,7 @@ describe("BrowsePage", () => {
     globalThis.fetch = vi.fn((url: string | URL | Request) => {
       const urlStr = typeof url === "string" ? url : url.toString();
       if (urlStr.startsWith("/api/browse/")) {
-        return Promise.resolve(new Response(JSON.stringify(dirsOnlyData)));
+        return Promise.resolve(Response.json(dirsOnlyData));
       }
       return Promise.resolve(new Response("{}", { status: 404 }));
     }) as typeof fetch;
@@ -279,7 +279,7 @@ describe("BrowsePage", () => {
     globalThis.fetch = vi.fn((url: string | URL | Request) => {
       const urlStr = typeof url === "string" ? url : url.toString();
       if (urlStr.startsWith("/api/browse/")) {
-        return Promise.resolve(new Response(JSON.stringify(dirsOnlyData)));
+        return Promise.resolve(Response.json(dirsOnlyData));
       }
       return Promise.resolve(new Response("{}", { status: 404 }));
     }) as typeof fetch;
@@ -321,7 +321,7 @@ describe("BrowsePage", () => {
     globalThis.fetch = vi.fn((url: string | URL | Request) => {
       const urlStr = typeof url === "string" ? url : url.toString();
       if (urlStr.startsWith("/api/browse/")) {
-        return Promise.resolve(new Response(JSON.stringify(videosData)));
+        return Promise.resolve(Response.json(videosData));
       }
       return Promise.resolve(new Response("{}", { status: 404 }));
     }) as typeof fetch;
@@ -346,7 +346,7 @@ describe("BrowsePage", () => {
     globalThis.fetch = vi.fn((url: string | URL | Request) => {
       const urlStr = typeof url === "string" ? url : url.toString();
       if (urlStr.startsWith("/api/browse/")) {
-        return Promise.resolve(new Response(JSON.stringify(emptyData)));
+        return Promise.resolve(Response.json(emptyData));
       }
       return Promise.resolve(new Response("{}", { status: 404 }));
     }) as typeof fetch;

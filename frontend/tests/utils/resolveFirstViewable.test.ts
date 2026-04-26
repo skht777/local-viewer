@@ -34,8 +34,7 @@ function browseResponse(nodeId: string, entries: BrowseEntry[]): BrowseResponse 
 function createMockQueryClient(responses: Record<string, BrowseResponse>): QueryClient {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   vi.spyOn(client, "fetchQuery").mockImplementation(async (opts) => {
-    const key = opts.queryKey as string[];
-    const nodeId = key[1];
+    const [, nodeId] = opts.queryKey as string[];
     const response = responses[nodeId];
     if (!response) {
       throw new Error(`No mock for nodeId: ${nodeId}`);

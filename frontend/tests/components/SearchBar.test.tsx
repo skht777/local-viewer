@@ -1,8 +1,15 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter, useLocation } from "react-router-dom";
 import { SearchBar } from "../../src/components/SearchBar";
+
+// 現在の Location を親 onLoc コールバックに通知するスパイコンポーネント
+function LocationSpy({ onLoc }: { onLoc: (path: string, search: string) => void }) {
+  const loc = useLocation();
+  onLoc(loc.pathname, loc.search);
+  return null;
+}
 
 // SearchBar は内部で useSearch + useNavigate を使うためプロバイダーが必要
 function renderSearchBar(props?: { scope?: string }) {
@@ -67,13 +74,6 @@ describe("SearchBar", () => {
   });
 
   describe("Enter キーで /search ページに遷移", () => {
-    function LocationSpy({ onLoc }: { onLoc: (path: string, search: string) => void }) {
-      const { useLocation } = require("react-router-dom") as typeof import("react-router-dom");
-      const loc = useLocation();
-      onLoc(loc.pathname, loc.search);
-      return null;
-    }
-
     test("候補非選択かつ q が 2 文字以上で /search?q=... に push される", async () => {
       let path = "";
       let search = "";

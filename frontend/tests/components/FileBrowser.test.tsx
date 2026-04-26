@@ -679,6 +679,8 @@ describe("FileBrowser 選択・ダブルクリック・オーバーレイ", () =
     const originalIO = globalThis.IntersectionObserver;
     let capturedCallback: IntersectionObserverCallback | null = null;
     globalThis.IntersectionObserver = class MockIO {
+      // IntersectionObserver の API シグネチャはコールバックベースのため async/await 不可
+      // oxlint-disable-next-line promise/prefer-await-to-callbacks
       constructor(callback: IntersectionObserverCallback) {
         capturedCallback = callback;
       }

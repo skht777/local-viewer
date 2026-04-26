@@ -16,7 +16,8 @@ const mockMatchMedia = (matches: boolean) => {
 
 describe("useToolbarAutoHide", () => {
   beforeEach(() => {
-    mockMatchMedia(false); // デフォルトはデスクトップ
+    // デフォルトはデスクトップ
+    mockMatchMedia(false);
   });
 
   test("デスクトップで初期状態は非表示", () => {
