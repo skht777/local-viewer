@@ -79,7 +79,7 @@ export function SearchBar({ scope }: SearchBarProps) {
   // - PDF（ビューワー起動）: scope ありなら viewerOrigin を設定したうえで push 遷移。
   //   ブラウザバックと B キー閉じの遷移先一致を保証する
   // - image/video（ビューワー起動ではない: index 不在で tab/select のみ）:
-  //   scope ありなら viewerOrigin を設定して replace（既存挙動維持、closeViewer は呼ばれない）
+  //   Scope ありなら viewerOrigin を設定して replace（既存挙動維持、closeViewer は呼ばれない）
   //   （isScopeActive トグル状態には依存しない。トグル OFF でも `B` で元に戻れるようにするため）
   const handleSelect = useCallback(
     (result: SearchResult) => {
@@ -91,7 +91,9 @@ export function SearchBar({ scope }: SearchBarProps) {
         return;
       }
 
-      if (!result.parent_node_id) return;
+      if (!result.parent_node_id) {
+        return;
+      }
 
       // 現在 URL から mode/sort を継承（既定値は URL に書かない）
       const current = new URLSearchParams(location.search);
@@ -105,20 +107,24 @@ export function SearchBar({ scope }: SearchBarProps) {
       }
       const mode = current.get("mode");
       const sort = current.get("sort");
-      if (mode) target.set("mode", mode);
-      if (sort) target.set("sort", sort);
+      if (mode) {
+        target.set("mode", mode);
+      }
+      if (sort) {
+        target.set("sort", sort);
+      }
 
       const url = `/browse/${result.parent_node_id}?${target}`;
 
       if (result.kind === "pdf") {
         // PDF viewer 起動: ブラウザバックで呼び出し元に戻れるよう push 化
         if (scope) {
-          setViewerOrigin({ nodeId: scope, search: location.search });
+          setViewerOrigin({ pathname: `/browse/${scope}`, search: location.search });
         }
         navigate(url);
       } else if (scope) {
-        // image/video（viewer 起動ではない）: scope 戻り用に origin 設定 + replace（既存挙動維持）
-        setViewerOrigin({ nodeId: scope, search: location.search });
+        // Image/video（viewer 起動ではない）: scope 戻り用に origin 設定 + replace（既存挙動維持）
+        setViewerOrigin({ pathname: `/browse/${scope}`, search: location.search });
         navigate(url, { replace: true });
       } else {
         // TopPage 文脈: origin 無し、push 遷移
@@ -128,9 +134,49 @@ export function SearchBar({ scope }: SearchBarProps) {
     [navigate, setQuery, location.search, scope, setViewerOrigin],
   );
 
+  // 検索結果一覧ページへの遷移ヘルパ
+  // - q.trim() が 2 文字未満なら何もしない
+  // - effectiveScope（フォルダ内トグル ON のとき）を URL に保持
+  // - kind/sort は外部からの遷移時には付けない（SearchResultsPage 側で設定済み URL を保持）
+  const navigateToSearchPage = useCallback(() => {
+    const trimmed = query.trim();
+    if (trimmed.length < 2) {
+      return;
+    }
+    setIsOpen(false);
+    const params = new URLSearchParams({ q: trimmed });
+    if (effectiveScope) {
+      params.set("scope", effectiveScope);
+    }
+    if (kind) {
+      params.set("kind", kind);
+    }
+    navigate(`/search?${params.toString()}`);
+  }, [query, effectiveScope, kind, navigate]);
+
   // キーボード操作
+  // - IME 変換中（isComposing / keyCode 229）の Enter は無視
+  // - activeIndex>=0 のときは候補選択（既存挙動）
+  // - 候補非選択かつ q が 2 文字以上なら /search に push 遷移
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (!shouldShowDropdown) return;
+    if (e.key === "Enter") {
+      // IME composition 中の Enter は確定操作なので無視（重複遷移防止）
+      const native = e.nativeEvent as KeyboardEvent;
+      if (native.isComposing || native.keyCode === 229) {
+        return;
+      }
+      e.preventDefault();
+      if (shouldShowDropdown && activeIndex >= 0) {
+        handleSelect(results[activeIndex]);
+      } else {
+        navigateToSearchPage();
+      }
+      return;
+    }
+
+    if (!shouldShowDropdown) {
+      return;
+    }
 
     if (e.key === "ArrowDown") {
       e.preventDefault();
@@ -138,9 +184,6 @@ export function SearchBar({ scope }: SearchBarProps) {
     } else if (e.key === "ArrowUp") {
       e.preventDefault();
       setActiveIndex((prev) => Math.max(prev - 1, -1));
-    } else if (e.key === "Enter" && activeIndex >= 0) {
-      e.preventDefault();
-      handleSelect(results[activeIndex]);
     } else if (e.key === "Escape") {
       setIsOpen(false);
       inputRef.current?.blur();
@@ -158,7 +201,9 @@ export function SearchBar({ scope }: SearchBarProps) {
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={handleKeyDown}
             onFocus={() => {
-              if (debouncedQuery.length >= 2) setIsOpen(true);
+              if (debouncedQuery.length >= 2) {
+                setIsOpen(true);
+              }
             }}
             placeholder={effectiveScope ? "このフォルダ内を検索..." : "全体を検索..."}
             aria-label="検索"
@@ -210,6 +255,7 @@ export function SearchBar({ scope }: SearchBarProps) {
           activeIndex={activeIndex}
           onSelect={handleSelect}
           onRetry={refetch}
+          onShowAll={navigateToSearchPage}
         />
       )}
     </div>

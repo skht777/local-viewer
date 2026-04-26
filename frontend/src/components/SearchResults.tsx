@@ -6,12 +6,12 @@
 import type { SearchResult } from "../types/api";
 
 const KIND_ICONS: Record<string, string> = {
+  archive: "\u{1F4E6}",
   directory: "\u{1F4C1}",
   image: "\u{1F5BC}",
-  video: "\u{1F3AC}",
-  pdf: "\u{1F4C4}",
-  archive: "\u{1F4E6}",
   other: "\u{1F4C4}",
+  pdf: "\u{1F4C4}",
+  video: "\u{1F3AC}",
 };
 
 interface SearchResultsProps {
@@ -23,6 +23,8 @@ interface SearchResultsProps {
   activeIndex: number;
   onSelect: (result: SearchResult) => void;
   onRetry?: () => void;
+  /** 「すべて表示」ボタン押下時のハンドラ（/search ページに遷移） */
+  onShowAll?: () => void;
 }
 
 export function SearchResults({
@@ -34,6 +36,7 @@ export function SearchResults({
   activeIndex,
   onSelect,
   onRetry,
+  onShowAll,
 }: SearchResultsProps) {
   if (isIndexing) {
     return (
@@ -100,6 +103,16 @@ export function SearchResults({
       </ul>
       {hasMore && (
         <div className="px-4 py-2 text-center text-xs text-gray-500">さらに結果があります...</div>
+      )}
+      {onShowAll && (
+        <button
+          type="button"
+          onClick={onShowAll}
+          data-testid="search-show-all"
+          className="block w-full border-t border-surface-overlay px-4 py-2 text-center text-sm text-blue-400 hover:bg-surface-overlay hover:text-blue-300"
+        >
+          すべて表示
+        </button>
       )}
     </div>
   );

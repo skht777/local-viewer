@@ -9,7 +9,7 @@
 // URL 構築の pure ロジックは utils/viewerNavigation.ts に分離し、
 // 本 hook は副作用（setSearchParams / navigate / viewerOrigin の更新）のみを担当する。
 
-import { useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useViewerStore } from "../stores/viewerStore";
 import { updateSearchParams } from "../utils/searchParamUpdater";
 import {
@@ -18,6 +18,7 @@ import {
   buildClosePdfSearch,
   buildOpenImageSearch,
   buildOpenPdfSearch,
+  buildSearchSearch,
   VALID_SORT_ORDERS,
 } from "../utils/viewerNavigation";
 
@@ -52,9 +53,30 @@ interface UseViewerParamsReturn {
 export function useViewerParams(): UseViewerParamsReturn {
   const { nodeId } = useParams<{ nodeId: string }>();
   const navigate = useNavigate();
+  const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
   const setViewerOrigin = useViewerStore((s) => s.setViewerOrigin);
   const viewerOrigin = useViewerStore((s) => s.viewerOrigin);
+
+  // viewer 起動時の起点情報を組み立てる
+  // - /browse/:nodeId なら pathname=/browse/{nodeId}、search は browse スコープ（mode/tab/sort）
+  // - /search なら pathname=location.pathname、search は検索スコープ（q/scope/kind/sort/mode）
+  // - その他のルートは何もしない
+  const computeOrigin = (): { pathname: string; search: string } | null => {
+    if (nodeId) {
+      return {
+        pathname: `/browse/${nodeId}`,
+        search: buildBrowseSearchPure(searchParams),
+      };
+    }
+    if (location.pathname === "/search") {
+      return {
+        pathname: "/search",
+        search: buildSearchSearch(searchParams),
+      };
+    }
+    return null;
+  };
 
   const tab = (searchParams.get("tab") ?? "filesets") as ViewerTab;
   const hasIndex = searchParams.has("index");
@@ -130,8 +152,9 @@ export function useViewerParams(): UseViewerParamsReturn {
   // push モード: ブラウザバックで開く前の URL に戻れるようにする（B キー閉じと一致）
   const openViewer = (newIndex: number) => {
     // 起点情報を保存（B キー閉じる時に戻る先）
-    if (nodeId) {
-      setViewerOrigin({ nodeId, search: buildBrowseSearch() });
+    const origin = computeOrigin();
+    if (origin) {
+      setViewerOrigin(origin);
     }
     setSearchParams((prev) => buildOpenImageSearch(prev, { index: newIndex }));
   };
@@ -141,7 +164,7 @@ export function useViewerParams(): UseViewerParamsReturn {
     if (viewerOrigin) {
       const origin = viewerOrigin;
       setViewerOrigin(null);
-      navigate(`/browse/${origin.nodeId}${origin.search}`, { replace: true });
+      navigate(`${origin.pathname}${origin.search}`, { replace: true });
     } else {
       // deep link 等で origin がない場合: 現在ディレクトリに留まる
       setSearchParams(buildCloseImageSearch);
@@ -151,11 +174,12 @@ export function useViewerParams(): UseViewerParamsReturn {
   // PDF ビューワーを開く: pdf/page を設定、index/tab を削除
   // mode は browse スコープで管理済みなのでここでは操作しない
   // push モード: ブラウザバックで開く前の URL に戻れるようにする（B キー閉じと一致）
-  const openPdfViewer = (pdfNodeId: string) => {
-    if (nodeId) {
-      setViewerOrigin({ nodeId, search: buildBrowseSearch() });
+  const openPdfViewer = (nextPdfNodeId: string) => {
+    const origin = computeOrigin();
+    if (origin) {
+      setViewerOrigin(origin);
     }
-    setSearchParams((prev) => buildOpenPdfSearch(prev, { pdfNodeId }));
+    setSearchParams((prev) => buildOpenPdfSearch(prev, { pdfNodeId: nextPdfNodeId }));
   };
 
   // PDF ビューワーを閉じる: 起点に戻るか、現在ディレクトリに留まる
@@ -163,7 +187,7 @@ export function useViewerParams(): UseViewerParamsReturn {
     if (viewerOrigin) {
       const origin = viewerOrigin;
       setViewerOrigin(null);
-      navigate(`/browse/${origin.nodeId}${origin.search}`, { replace: true });
+      navigate(`${origin.pathname}${origin.search}`, { replace: true });
     } else {
       setSearchParams(buildClosePdfSearch);
     }

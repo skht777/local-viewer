@@ -24,6 +24,15 @@ use crate::services::search::SearchResultResponse;
 /// 許可される kind フィルタ値
 pub(super) const VALID_KINDS: &[&str] = &["directory", "image", "video", "pdf", "archive"];
 
+/// 許可される sort 値
+pub(super) const VALID_SORTS: &[&str] = &[
+    "relevance",
+    "name-asc",
+    "name-desc",
+    "date-asc",
+    "date-desc",
+];
+
 /// クエリ文字数の最小値
 pub(super) const MIN_QUERY_LENGTH: usize = 2;
 
@@ -51,6 +60,8 @@ pub(crate) struct SearchQuery {
     pub offset: Option<usize>,
     /// ディレクトリスコープ (`node_id`): 指定ディレクトリ配下のみ検索
     pub scope: Option<String>,
+    /// ソート順 (relevance/name-asc/name-desc/date-asc/date-desc、デフォルト relevance)
+    pub sort: Option<String>,
 }
 
 /// 検索 API のレスポンス
@@ -60,6 +71,9 @@ pub(crate) struct SearchResponse {
     pub has_more: bool,
     pub query: String,
     pub is_stale: bool,
+    /// 次ページのオフセット（`has_more` が false のときは null）
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub next_offset: Option<usize>,
 }
 
 /// リビルド API のレスポンス
@@ -282,6 +296,53 @@ mod tests {
             // インデックスは空だが、スコープ検証に通れば 200 で空結果を返す
             assert_eq!(status, StatusCode::OK, "body: {json}");
             assert_eq!(json["results"].as_array().unwrap().len(), 0);
+        }
+
+        #[tokio::test]
+        async fn 不正なsort値で422を返す() {
+            // 既存 kind バリデーションと同じく InvalidQuery=422 を返す（errors.rs に整合）
+            let (_dir, root, db_dir) = create_test_tree();
+            let state = test_state(&root, db_dir.path());
+
+            let (status, json) =
+                get_status_and_code(app(state), "/api/search?q=hello&sort=invalid_sort").await;
+
+            assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+            assert_eq!(json["code"], "INVALID_QUERY");
+        }
+
+        #[tokio::test]
+        async fn 有効なsort値で200を返す() {
+            let (_dir, root, db_dir) = create_test_tree();
+            let state = test_state(&root, db_dir.path());
+
+            for sort in &[
+                "relevance",
+                "name-asc",
+                "name-desc",
+                "date-asc",
+                "date-desc",
+            ] {
+                let (status, json) = get_status_and_code(
+                    app(Arc::clone(&state)),
+                    &format!("/api/search?q=hello&sort={sort}"),
+                )
+                .await;
+                assert_eq!(status, StatusCode::OK, "sort={sort} body={json}");
+            }
+        }
+
+        #[tokio::test]
+        async fn next_offsetは結果が足りるときに返り終端でnullになる() {
+            let (_dir, root, db_dir) = create_test_tree();
+            let state = test_state(&root, db_dir.path());
+
+            // 結果が 0 件 → has_more=false → next_offset 省略
+            let (status, json) = get_status_and_code(app(state), "/api/search?q=anything").await;
+            assert_eq!(status, StatusCode::OK);
+            assert_eq!(json["has_more"], false);
+            // skip_serializing_if=Option::is_none で None は省略される
+            assert!(json.get("next_offset").is_none() || json["next_offset"].is_null());
         }
     }
 

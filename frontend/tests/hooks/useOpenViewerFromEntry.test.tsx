@@ -157,7 +157,7 @@ describe("useOpenViewerFromEntry", () => {
       });
       await act(() => result.current("dir-1"));
       const origin = useViewerStore.getState().viewerOrigin;
-      expect(origin).toEqual({ nodeId: "current-dir", search: "" });
+      expect(origin).toEqual({ pathname: "/browse/current-dir", search: "" });
     });
 
     test("PDF を開くときに setViewerOrigin が呼ばれる", async () => {
@@ -170,7 +170,7 @@ describe("useOpenViewerFromEntry", () => {
       });
       await act(() => result.current("dir-1"));
       const origin = useViewerStore.getState().viewerOrigin;
-      expect(origin).toEqual({ nodeId: "current-dir", search: "" });
+      expect(origin).toEqual({ pathname: "/browse/current-dir", search: "" });
     });
 
     test("アーカイブを開くときに setViewerOrigin が呼ばれる", async () => {
@@ -183,7 +183,7 @@ describe("useOpenViewerFromEntry", () => {
       });
       await act(() => result.current("dir-1"));
       const origin = useViewerStore.getState().viewerOrigin;
-      expect(origin).toEqual({ nodeId: "current-dir", search: "" });
+      expect(origin).toEqual({ pathname: "/browse/current-dir", search: "" });
     });
 
     test("解決失敗時は viewerOrigin が設定されない", async () => {

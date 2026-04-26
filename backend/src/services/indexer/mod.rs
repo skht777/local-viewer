@@ -16,6 +16,22 @@ pub(crate) use helpers::SearchHit;
 // 再エクスポート。invariant (16 桁 lowercase hex) は `path_keys` 側で強制。
 pub(crate) use crate::services::path_keys::mount_scope_range;
 
+/// 検索結果のソート順
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub(crate) enum SearchOrder {
+    /// FTS5 bm25 ランキング（FTS 経路）/ name ASC（LIKE 経路）。既定値
+    #[default]
+    Relevance,
+    /// 名前昇順（`lower(name)` で大小無視）
+    NameAsc,
+    /// 名前降順
+    NameDesc,
+    /// 更新日時昇順（`mtime_ns`）
+    DateAsc,
+    /// 更新日時降順
+    DateDesc,
+}
+
 /// 検索パラメータ
 pub(crate) struct SearchParams<'a> {
     pub query: &'a str,
@@ -24,6 +40,8 @@ pub(crate) struct SearchParams<'a> {
     pub offset: usize,
     /// ディレクトリスコープ: `{mount_id}/{relative}` 形式のプレフィックス
     pub scope_prefix: Option<&'a str>,
+    /// 結果のソート順（既定: `Relevance`）
+    pub order: SearchOrder,
 }
 
 use std::collections::BTreeSet;
@@ -210,6 +228,7 @@ impl Indexer {
             scope_range
                 .as_ref()
                 .map(|(lo, hi)| (lo.as_str(), hi.as_str())),
+            params.order,
         )?;
 
         let has_more = hits.len() > params.limit;

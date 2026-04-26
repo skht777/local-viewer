@@ -65,4 +65,89 @@ describe("SearchBar", () => {
       expect(screen.getByPlaceholderText("全体を検索...")).toBeInTheDocument();
     });
   });
+
+  describe("Enter キーで /search ページに遷移", () => {
+    function LocationSpy({ onLoc }: { onLoc: (path: string, search: string) => void }) {
+      const { useLocation } = require("react-router-dom") as typeof import("react-router-dom");
+      const loc = useLocation();
+      onLoc(loc.pathname, loc.search);
+      return null;
+    }
+
+    test("候補非選択かつ q が 2 文字以上で /search?q=... に push される", async () => {
+      let path = "";
+      let search = "";
+      const queryClient = new QueryClient({
+        defaultOptions: { queries: { retry: false } },
+      });
+      render(
+        <QueryClientProvider client={queryClient}>
+          <MemoryRouter initialEntries={["/"]}>
+            <LocationSpy
+              onLoc={(p, s) => {
+                path = p;
+                search = s;
+              }}
+            />
+            <SearchBar />
+          </MemoryRouter>
+        </QueryClientProvider>,
+      );
+      const input = screen.getByPlaceholderText("全体を検索...");
+      await userEvent.type(input, "hello");
+      await userEvent.keyboard("{Enter}");
+      expect(path).toBe("/search");
+      expect(search).toContain("q=hello");
+    });
+
+    test("scope ON のとき /search?q=...&scope=... に push される", async () => {
+      let path = "";
+      let search = "";
+      const queryClient = new QueryClient({
+        defaultOptions: { queries: { retry: false } },
+      });
+      render(
+        <QueryClientProvider client={queryClient}>
+          <MemoryRouter initialEntries={["/browse/dir-1"]}>
+            <LocationSpy
+              onLoc={(p, s) => {
+                path = p;
+                search = s;
+              }}
+            />
+            <SearchBar scope="dir-1" />
+          </MemoryRouter>
+        </QueryClientProvider>,
+      );
+      const input = screen.getByPlaceholderText("このフォルダ内を検索...");
+      await userEvent.type(input, "hello");
+      await userEvent.keyboard("{Enter}");
+      expect(path).toBe("/search");
+      expect(search).toContain("q=hello");
+      expect(search).toContain("scope=dir-1");
+    });
+
+    test("q が 1 文字以下では遷移しない", async () => {
+      let path = "/";
+      const queryClient = new QueryClient({
+        defaultOptions: { queries: { retry: false } },
+      });
+      render(
+        <QueryClientProvider client={queryClient}>
+          <MemoryRouter initialEntries={["/"]}>
+            <LocationSpy
+              onLoc={(p) => {
+                path = p;
+              }}
+            />
+            <SearchBar />
+          </MemoryRouter>
+        </QueryClientProvider>,
+      );
+      const input = screen.getByPlaceholderText("全体を検索...");
+      await userEvent.type(input, "a");
+      await userEvent.keyboard("{Enter}");
+      expect(path).toBe("/");
+    });
+  });
 });

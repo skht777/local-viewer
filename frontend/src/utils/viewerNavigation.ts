@@ -11,7 +11,7 @@ export type ViewerTab = "filesets" | "images" | "videos";
 export type ViewerMode = "cg" | "manga";
 export type SortOrder = "name-asc" | "name-desc" | "date-asc" | "date-desc";
 
-export const VALID_SORT_ORDERS: Set<string> = new Set([
+export const VALID_SORT_ORDERS = new Set<string>([
   "name-asc",
   "name-desc",
   "date-asc",
@@ -19,7 +19,7 @@ export const VALID_SORT_ORDERS: Set<string> = new Set([
 ]);
 
 export interface ViewerOrigin {
-  nodeId: string;
+  pathname: string;
   search: string;
 }
 
@@ -76,7 +76,7 @@ export function buildClosePdfSearch(current: URLSearchParams): URLSearchParams {
 }
 
 /**
- * browse スコープのパラメータ（mode / tab / sort / 任意で index）のみを残した search 文字列を返す。
+ * Browse スコープのパラメータ（mode / tab / sort / 任意で index）のみを残した search 文字列を返す。
  * viewer スコープ（pdf/page 等）は除外する。
  */
 export function buildBrowseSearch(
@@ -85,20 +85,62 @@ export function buildBrowseSearch(
 ): string {
   const next = new URLSearchParams();
   const currentMode = current.get("mode");
-  if (currentMode === "manga") next.set("mode", "manga");
+  if (currentMode === "manga") {
+    next.set("mode", "manga");
+  }
   const nextTab = overrides?.tab ?? current.get("tab");
-  if (nextTab && nextTab !== "filesets") next.set("tab", nextTab);
+  if (nextTab && nextTab !== "filesets") {
+    next.set("tab", nextTab);
+  }
   const currentSort = current.get("sort");
   if (currentSort && VALID_SORT_ORDERS.has(currentSort) && currentSort !== "name-asc") {
     next.set("sort", currentSort);
   }
-  if (overrides?.index != null) next.set("index", String(overrides.index));
+  if (overrides?.index != null) {
+    next.set("index", String(overrides.index));
+  }
+  return next.toString() ? `?${next}` : "";
+}
+
+/**
+ * /search ページ用に search パラメータを保持する文字列を返す。
+ * - q / scope / kind / sort を維持し、viewer スコープ (index/mode/pdf/page/tab) を除外する
+ * - mode と sort は `buildBrowseSearch` と同じ正規化（既定値は省略）を踏襲
+ */
+export function buildSearchSearch(
+  current: URLSearchParams,
+  overrides?: { index?: number },
+): string {
+  const next = new URLSearchParams();
+  const q = current.get("q");
+  if (q) {
+    next.set("q", q);
+  }
+  const scope = current.get("scope");
+  if (scope) {
+    next.set("scope", scope);
+  }
+  const kind = current.get("kind");
+  if (kind) {
+    next.set("kind", kind);
+  }
+  const sort = current.get("sort");
+  if (sort && VALID_SORT_ORDERS.has(sort) && sort !== "name-asc") {
+    next.set("sort", sort);
+  }
+  const mode = current.get("mode");
+  if (mode === "manga") {
+    next.set("mode", "manga");
+  }
+  if (overrides?.index != null) {
+    next.set("index", String(overrides.index));
+  }
   return next.toString() ? `?${next}` : "";
 }
 
 /**
  * ビューワーを閉じる時の navigate 先を決定する。
- * - origin があれば `{nodeId, search}` を返す（ナビゲーション先）
+ * - origin があれば `{pathname, search}` を返す（ナビゲーション先）
  * - 無ければ null（呼び出し側は現在ディレクトリに留める fallback を使う）
  */
 export function resolveCloseTarget(origin: ViewerOrigin | null): ViewerOrigin | null {

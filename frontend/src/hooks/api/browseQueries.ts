@@ -1,6 +1,7 @@
-// browse API の TanStack Query オプション定義
+// Browse API の TanStack Query オプション定義
 
-import { infiniteQueryOptions, queryOptions, type QueryClient } from "@tanstack/react-query";
+import { infiniteQueryOptions, queryOptions } from "@tanstack/react-query";
+import type { QueryClient } from "@tanstack/react-query";
 import type { SortOrder } from "../../hooks/useViewerParams";
 import type { BrowseResponse, SearchResponse } from "../../types/api";
 import { apiFetch } from "./apiClient";
@@ -9,9 +10,9 @@ import { apiFetch } from "./apiClient";
 export function browseNodeOptions(nodeId: string | undefined, sort?: SortOrder) {
   const sortParam = sort && sort !== "name-asc" ? `?sort=${sort}` : "";
   return queryOptions({
-    queryKey: ["browse", nodeId, sort ?? "name-asc"],
-    queryFn: () => apiFetch<BrowseResponse>(`/api/browse/${nodeId}${sortParam}`),
     enabled: !!nodeId,
+    queryFn: () => apiFetch<BrowseResponse>(`/api/browse/${nodeId}${sortParam}`),
+    queryKey: ["browse", nodeId, sort ?? "name-asc"],
   });
 }
 
@@ -20,7 +21,9 @@ const PAGE_SIZE = 100;
 
 export function browseInfiniteOptions(nodeId: string | undefined, sort: SortOrder) {
   return infiniteQueryOptions({
-    queryKey: ["browse-infinite", nodeId, sort],
+    enabled: !!nodeId,
+    getNextPageParam: (lastPage) => lastPage.next_cursor ?? undefined,
+    initialPageParam: undefined as string | undefined,
     queryFn: async ({ pageParam }) => {
       const params = new URLSearchParams({
         limit: String(PAGE_SIZE),
@@ -29,9 +32,7 @@ export function browseInfiniteOptions(nodeId: string | undefined, sort: SortOrde
       if (pageParam) params.set("cursor", pageParam);
       return apiFetch<BrowseResponse>(`/api/browse/${nodeId}?${params.toString()}`);
     },
-    initialPageParam: undefined as string | undefined,
-    getNextPageParam: (lastPage) => lastPage.next_cursor ?? undefined,
-    enabled: !!nodeId,
+    queryKey: ["browse-infinite", nodeId, sort],
   });
 }
 
@@ -40,7 +41,7 @@ export function browseInfiniteOptions(nodeId: string | undefined, sort: SortOrde
 // ライブラリ側の do-while ループが自発的に break する。安全上限として機能。
 export const MAX_PAGES = 200;
 
-// browseInfiniteOptions の全ページを逐次フェッチしてキャッシュに詰める
+// BrowseInfiniteOptions の全ページを逐次フェッチしてキャッシュに詰める
 // - ビューワー起動時に兄弟画像が 100 件で打ち切られないようにするためのヘルパー
 // - `prefetchInfiniteQuery` は例外を握り潰すため、呼び元の try/catch で拾える
 //   `fetchInfiniteQuery` を使う
@@ -55,7 +56,7 @@ export async function fetchAllBrowsePages(
     ...options,
     pages: MAX_PAGES,
   });
-  const lastPage = result.pages[result.pages.length - 1];
+  const lastPage = result.pages.at(-1);
   if (result.pages.length >= MAX_PAGES && lastPage?.next_cursor) {
     console.warn(
       `fetchAllBrowsePages: MAX_PAGES (${MAX_PAGES}) に到達しました。nodeId=${nodeId} の続きのページは取得されていません`,
@@ -64,14 +65,59 @@ export async function fetchAllBrowsePages(
 }
 
 // キーワード検索
-// scope: ディレクトリスコープの node_id（指定ディレクトリ配下のみ検索）
+// Scope: ディレクトリスコープの node_id（指定ディレクトリ配下のみ検索）
 export function searchOptions(query: string, kind?: string, scope?: string) {
-  const params = new URLSearchParams({ q: query, limit: "50" });
-  if (kind) params.set("kind", kind);
-  if (scope) params.set("scope", scope);
+  const params = new URLSearchParams({ limit: "50", q: query });
+  if (kind) {
+    params.set("kind", kind);
+  }
+  if (scope) {
+    params.set("scope", scope);
+  }
   return queryOptions({
-    queryKey: ["search", query, kind, scope],
-    queryFn: () => apiFetch<SearchResponse>(`/api/search?${params}`),
     enabled: query.length >= 2,
+    queryFn: () => apiFetch<SearchResponse>(`/api/search?${params}`),
+    queryKey: ["search", query, kind, scope],
+  });
+}
+
+// 検索結果ページ用の検索ソート種別
+export type SearchSort = "relevance" | "name-asc" | "name-desc" | "date-asc" | "date-desc";
+
+// 検索結果の無限スクロールクエリ
+// QueryKey は q.trim() / scope ?? null / kind ?? "all" / sort ?? "relevance" で正規化
+// バックエンドは offset ベースのページネーションだが、next_offset で TanStack の cursor 互換に変換する
+const SEARCH_PAGE_SIZE = 50;
+
+export interface SearchInfiniteParams {
+  q: string;
+  scope?: string | null;
+  kind?: string | null;
+  sort?: SearchSort | null;
+}
+
+export function searchInfiniteOptions({ q, scope, kind, sort }: SearchInfiniteParams) {
+  // キャッシュキー正規化
+  const normQ = q.trim();
+  const normScope = scope ?? null;
+  const normKind = kind ?? "all";
+  const normSort: SearchSort = sort ?? "relevance";
+
+  return infiniteQueryOptions({
+    enabled: normQ.length >= 2,
+    getNextPageParam: (lastPage) => lastPage.next_offset ?? undefined,
+    initialPageParam: 0 as number,
+    queryFn: async ({ pageParam }) => {
+      const params = new URLSearchParams({
+        q: normQ,
+        limit: String(SEARCH_PAGE_SIZE),
+        offset: String(pageParam ?? 0),
+      });
+      if (normKind !== "all") params.set("kind", normKind);
+      if (normScope) params.set("scope", normScope);
+      if (normSort !== "relevance") params.set("sort", normSort);
+      return apiFetch<SearchResponse>(`/api/search?${params.toString()}`);
+    },
+    queryKey: ["search-infinite", normQ, normScope, normKind, normSort] as const,
   });
 }

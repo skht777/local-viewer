@@ -29,8 +29,8 @@ export function useOpenViewerFromEntry({
   sort,
   buildBrowseSearch,
 }: UseOpenViewerFromEntryProps): (entryNodeId: string) => Promise<void> {
-  // mode は現時点では URL 構築側 (buildBrowseSearch) が担うため直接参照しない。
-  // props として維持するのはコール側の型互換性のため。
+  // Mode は現時点では URL 構築側 (buildBrowseSearch) が担うため直接参照しない。
+  // Props として維持するのはコール側の型互換性のため。
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const setViewerOrigin = useViewerStore((s) => s.setViewerOrigin);
@@ -47,15 +47,15 @@ export function useOpenViewerFromEntry({
 
         // 起点記録（閉じる時に戻る先）
         if (nodeId) {
-          setViewerOrigin({ nodeId, search: buildBrowseSearch() });
+          setViewerOrigin({ pathname: `/browse/${nodeId}`, search: buildBrowseSearch() });
         }
         // トランジション開始（ブラウズ画面の不要レンダリング抑制）
         startViewerTransition();
 
         if (target.entry.kind === "pdf") {
           // PDF: プリフェッチ → 親ディレクトリで PDF ビューワーを開く
-          // browse スコープ (mode/sort) を維持しつつ viewerNavigation で pdf/page を付与
-          // push モード: ブラウザバックで呼び出し元に戻れるようにする（B キー閉じと一致）
+          // Browse スコープ (mode/sort) を維持しつつ viewerNavigation で pdf/page を付与
+          // Push モード: ブラウザバックで呼び出し元に戻れるようにする（B キー閉じと一致）
           await queryClient.prefetchInfiniteQuery(browseInfiniteOptions(target.parentNodeId, sort));
           const browseBase = new URLSearchParams(buildBrowseSearch().replace(/^\?/, ""));
           const withPdf = buildOpenPdfSearch(browseBase, { pdfNodeId: target.entry.node_id });
@@ -64,17 +64,17 @@ export function useOpenViewerFromEntry({
         } else if (target.entry.kind === "image") {
           // 画像: 親ディレクトリの全ページをプリフェッチ → ビューワーを開く
           // 100 件超の兄弟画像が infinite query の 1 ページ目に収まらないケースに対応
-          // push モード: ブラウザバックで呼び出し元に戻れるようにする
+          // Push モード: ブラウザバックで呼び出し元に戻れるようにする
           await fetchAllBrowsePages(queryClient, target.parentNodeId, sort);
           navigate(
-            `/browse/${target.parentNodeId}${buildBrowseSearch({ tab: "images", index: 0 })}`,
+            `/browse/${target.parentNodeId}${buildBrowseSearch({ index: 0, tab: "images" })}`,
           );
         } else {
           // アーカイブ: 中身の全ページをプリフェッチしてから進入
-          // push モード: ブラウザバックで呼び出し元に戻れるようにする
+          // Push モード: ブラウザバックで呼び出し元に戻れるようにする
           await fetchAllBrowsePages(queryClient, target.entry.node_id, sort);
           navigate(
-            `/browse/${target.entry.node_id}${buildBrowseSearch({ tab: "images", index: 0 })}`,
+            `/browse/${target.entry.node_id}${buildBrowseSearch({ index: 0, tab: "images" })}`,
           );
         }
       } catch {

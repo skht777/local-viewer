@@ -38,7 +38,7 @@ use std::time::{Duration, Instant};
 
 use rusqlite::{Connection, params};
 
-use super::{Indexer, SearchParams};
+use super::{Indexer, SearchOrder, SearchParams};
 
 // --- 乱数 (再現性のため内製 LCG) ---
 
@@ -190,6 +190,7 @@ fn measure(
                 limit: 50,
                 offset: 0,
                 scope_prefix,
+                order: SearchOrder::Relevance,
             })
             .unwrap();
     }
@@ -205,6 +206,7 @@ fn measure(
                 limit: 50,
                 offset: 0,
                 scope_prefix,
+                order: SearchOrder::Relevance,
             })
             .unwrap();
         timings.push(start.elapsed());

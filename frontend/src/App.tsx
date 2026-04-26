@@ -3,9 +3,10 @@
 // - Routes でページルーティングを定義
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { Routes, Route } from "react-router-dom";
+import { Route, Routes } from "react-router-dom";
 import TopPage from "./pages/TopPage";
 import BrowsePage from "./pages/BrowsePage";
+import SearchResultsPage from "./pages/SearchResultsPage";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -25,6 +26,7 @@ function App() {
         <Routes>
           <Route path="/" element={<TopPage />} />
           <Route path="/browse/:nodeId" element={<BrowsePage />} />
+          <Route path="/search" element={<SearchResultsPage />} />
         </Routes>
       </div>
     </QueryClientProvider>

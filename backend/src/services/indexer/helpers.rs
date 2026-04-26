@@ -13,7 +13,7 @@ use crate::services::extensions::classify_for_index;
 use crate::services::parallel_walk::WalkEntry;
 use crate::services::path_keys::mount_scope_range;
 
-use super::{IndexEntry, IndexerError, WalkCallbackArgs};
+use super::{IndexEntry, IndexerError, SearchOrder, WalkCallbackArgs};
 
 // --- 定数 ---
 
@@ -48,6 +48,8 @@ pub(crate) struct SearchHit {
     pub name: String,
     pub kind: String,
     pub size_bytes: Option<i64>,
+    /// 更新日時（ナノ秒、Unix epoch）
+    pub mtime_ns: i64,
 }
 
 /// キーワード検索を実行する
@@ -63,6 +65,11 @@ pub(crate) struct SearchHit {
 ///   インデックス利用可能な range scan によりスコープ限定する（BINARY collation 前提）
 /// - FTS5 トークンが 1 つ以上ある場合は `entries_fts JOIN entries`、
 ///   全てが LIKE の場合は `entries` 直接の動的 SQL を構築する
+#[allow(
+    clippy::too_many_lines,
+    clippy::too_many_arguments,
+    reason = "動的 SQL 構築は分割すると bind index 管理が複雑化するため一塊で読みやすい"
+)]
 pub(super) fn search_combined(
     conn: &Connection,
     query: &str,
@@ -70,6 +77,7 @@ pub(super) fn search_combined(
     limit: usize,
     offset: usize,
     scope_range: Option<(&str, &str)>,
+    order: SearchOrder,
 ) -> Result<Vec<SearchHit>, IndexerError> {
     let (fts_tokens, like_tokens): (Vec<&str>, Vec<&str>) = query
         .split_whitespace()
@@ -90,13 +98,15 @@ pub(super) fn search_combined(
     // SQL と bind パラメータを動的に構築（bind のみ使用、文字列埋め込み禁止）
     let mut sql = if use_fts {
         String::from(
-            "SELECT e.relative_path, e.name, e.kind, e.size_bytes \
+            "SELECT e.relative_path, e.name, e.kind, e.size_bytes, e.mtime_ns \
              FROM entries_fts f \
              JOIN entries e ON e.id = f.rowid \
              WHERE entries_fts MATCH ?1",
         )
     } else {
-        String::from("SELECT relative_path, name, kind, size_bytes FROM entries WHERE 1=1")
+        String::from(
+            "SELECT relative_path, name, kind, size_bytes, mtime_ns FROM entries WHERE 1=1",
+        )
     };
     let col_prefix = if use_fts { "e." } else { "" };
     let mut bind_values: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
@@ -137,6 +147,41 @@ pub(super) fn search_combined(
         param_idx += 2;
     }
 
+    // ORDER BY: relevance / name / date。relevance は FTS 経路で bm25、LIKE 経路は名前昇順
+    match order {
+        SearchOrder::Relevance => {
+            if use_fts {
+                sql.push_str(" ORDER BY bm25(entries_fts)");
+            } else {
+                let _ = write!(sql, " ORDER BY lower({col_prefix}name) ASC");
+            }
+        }
+        SearchOrder::NameAsc => {
+            let _ = write!(
+                sql,
+                " ORDER BY lower({col_prefix}name) ASC, {col_prefix}relative_path ASC"
+            );
+        }
+        SearchOrder::NameDesc => {
+            let _ = write!(
+                sql,
+                " ORDER BY lower({col_prefix}name) DESC, {col_prefix}relative_path DESC"
+            );
+        }
+        SearchOrder::DateAsc => {
+            let _ = write!(
+                sql,
+                " ORDER BY {col_prefix}mtime_ns ASC, {col_prefix}relative_path ASC"
+            );
+        }
+        SearchOrder::DateDesc => {
+            let _ = write!(
+                sql,
+                " ORDER BY {col_prefix}mtime_ns DESC, {col_prefix}relative_path DESC"
+            );
+        }
+    }
+
     let _ = write!(sql, " LIMIT ?{param_idx} OFFSET ?{}", param_idx + 1);
     // usize → i64: LIMIT/OFFSET は実用範囲内なので try_from でクランプ
     bind_values.push(Box::new(i64::try_from(limit).unwrap_or(i64::MAX)));
@@ -170,6 +215,7 @@ fn map_search_hit(row: &rusqlite::Row<'_>) -> rusqlite::Result<SearchHit> {
         name: row.get(1)?,
         kind: row.get(2)?,
         size_bytes: row.get(3)?,
+        mtime_ns: row.get(4)?,
     })
 }
 

@@ -197,22 +197,22 @@ describe("viewerStore", () => {
     expect(useViewerStore.getState().viewerOrigin).toBeNull();
   });
 
-  test("setViewerOrigin で nodeId と search が保存される", () => {
+  test("setViewerOrigin で pathname と search が保存される", () => {
     useViewerStore
       .getState()
-      .setViewerOrigin({ nodeId: "dir1", search: "?tab=images&sort=date-desc" });
+      .setViewerOrigin({ pathname: "/browse/dir1", search: "?tab=images&sort=date-desc" });
     const origin = useViewerStore.getState().viewerOrigin;
-    expect(origin).toEqual({ nodeId: "dir1", search: "?tab=images&sort=date-desc" });
+    expect(origin).toEqual({ pathname: "/browse/dir1", search: "?tab=images&sort=date-desc" });
   });
 
   test("setViewerOrigin(null) で起点をクリアできる", () => {
-    useViewerStore.getState().setViewerOrigin({ nodeId: "dir1", search: "" });
+    useViewerStore.getState().setViewerOrigin({ pathname: "/browse/dir1", search: "" });
     useViewerStore.getState().setViewerOrigin(null);
     expect(useViewerStore.getState().viewerOrigin).toBeNull();
   });
 
   test("viewerOrigin は localStorage に永続化されない", () => {
-    useViewerStore.getState().setViewerOrigin({ nodeId: "dir1", search: "?tab=images" });
+    useViewerStore.getState().setViewerOrigin({ pathname: "/browse/dir1", search: "?tab=images" });
     const stored = JSON.parse(localStorage.getItem("viewer-store") ?? "{}");
     expect(stored.state?.viewerOrigin).toBeUndefined();
   });

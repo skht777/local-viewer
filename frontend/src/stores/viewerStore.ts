@@ -10,8 +10,9 @@ export type FitMode = "width" | "height" | "original";
 export type SpreadMode = "single" | "spread" | "spread-offset";
 
 // ビューワーを開いた時の起点情報（閉じる時に戻る先）
+// Route-aware: pathname を含めることで /browse 以外（例: /search）から開いても復帰できる
 export interface ViewerOrigin {
-  nodeId: string;
+  pathname: string;
   search: string;
 }
 
@@ -59,13 +60,47 @@ interface ViewerState {
 export const useViewerStore = create<ViewerState>()(
   persist(
     (set) => ({
+      cycleSpreadMode: () =>
+        set((state) => {
+          const idx = SPREAD_CYCLE.indexOf(state.spreadMode);
+          return { spreadMode: SPREAD_CYCLE[(idx + 1) % SPREAD_CYCLE.length] };
+        }),
+
+      endViewerTransition: (id) =>
+        set((state) => {
+          // stale な遷移完了は無視
+          if (state.viewerTransitionId !== id) return state;
+          return { viewerTransitionId: 0 };
+        }),
+
+      expandedNodeIds: new Set<string>(),
+
+      fitMode: "height",
+
       isSidebarOpen: true,
 
-      toggleSidebar: () => set((state) => ({ isSidebarOpen: !state.isSidebarOpen })),
+      scrollSpeed: 1.0,
+
+      setFitMode: (mode) => set({ fitMode: mode }),
+
+      setScrollSpeed: (speed) => set({ scrollSpeed: Math.max(0.5, Math.min(3.0, speed)) }),
 
       setSidebarOpen: (isOpen) => set({ isSidebarOpen: isOpen }),
 
-      expandedNodeIds: new Set<string>(),
+      setViewerOrigin: (origin) => set({ viewerOrigin: origin }),
+
+      setZoomLevel: (level) => set({ zoomLevel: Math.max(25, Math.min(300, level)) }),
+
+      spreadMode: "single",
+
+      startViewerTransition: () => {
+        let newId = 0;
+        set((state) => {
+          newId = state.viewerTransitionId + 1;
+          return { viewerTransitionId: newId };
+        });
+        return newId;
+      },
 
       toggleExpanded: (nodeId) =>
         set((state) => {
@@ -78,60 +113,26 @@ export const useViewerStore = create<ViewerState>()(
           return { expandedNodeIds: next };
         }),
 
-      fitMode: "height",
-
-      setFitMode: (mode) => set({ fitMode: mode }),
-
-      spreadMode: "single",
-
-      cycleSpreadMode: () =>
-        set((state) => {
-          const idx = SPREAD_CYCLE.indexOf(state.spreadMode);
-          return { spreadMode: SPREAD_CYCLE[(idx + 1) % SPREAD_CYCLE.length] };
-        }),
-
-      zoomLevel: 100,
-
-      setZoomLevel: (level) => set({ zoomLevel: Math.max(25, Math.min(300, level)) }),
-
-      zoomIn: () => set((state) => ({ zoomLevel: Math.min(300, state.zoomLevel + 25) })),
-
-      zoomOut: () => set((state) => ({ zoomLevel: Math.max(25, state.zoomLevel - 25) })),
-
-      scrollSpeed: 1.0,
-
-      setScrollSpeed: (speed) => set({ scrollSpeed: Math.max(0.5, Math.min(3.0, speed)) }),
+      toggleSidebar: () => set((state) => ({ isSidebarOpen: !state.isSidebarOpen })),
 
       viewerOrigin: null,
 
-      setViewerOrigin: (origin) => set({ viewerOrigin: origin }),
-
       viewerTransitionId: 0,
 
-      startViewerTransition: () => {
-        let newId = 0;
-        set((state) => {
-          newId = state.viewerTransitionId + 1;
-          return { viewerTransitionId: newId };
-        });
-        return newId;
-      },
+      zoomIn: () => set((state) => ({ zoomLevel: Math.min(300, state.zoomLevel + 25) })),
 
-      endViewerTransition: (id) =>
-        set((state) => {
-          // stale な遷移完了は無視
-          if (state.viewerTransitionId !== id) return state;
-          return { viewerTransitionId: 0 };
-        }),
+      zoomLevel: 100,
+
+      zoomOut: () => set((state) => ({ zoomLevel: Math.max(25, state.zoomLevel - 25) })),
     }),
     {
       name: "viewer-store",
       partialize: (state) => ({
+        expandedNodeIds: [...state.expandedNodeIds],
         fitMode: state.fitMode,
+        scrollSpeed: state.scrollSpeed,
         spreadMode: state.spreadMode,
         zoomLevel: state.zoomLevel,
-        scrollSpeed: state.scrollSpeed,
-        expandedNodeIds: [...state.expandedNodeIds],
       }),
       // Set<string> ↔ Array<string> の変換
       merge: (persisted, current) => ({

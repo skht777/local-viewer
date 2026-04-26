@@ -106,7 +106,7 @@ describe("SearchBar 履歴モデル", () => {
     // push 遷移: ブラウザバックで呼び出し元に戻れるよう options 未指定
     expect(options).toBeUndefined();
     expect(useViewerStore.getState().viewerOrigin).toEqual({
-      nodeId: "dir-scope",
+      pathname: "/browse/dir-scope",
       search: "?mode=manga&sort=date-desc",
     });
   });
@@ -132,7 +132,7 @@ describe("SearchBar 履歴モデル", () => {
     expect(url).not.toContain("sort="); // 既定値は省略
     expect(options).toEqual({ replace: true });
     expect(useViewerStore.getState().viewerOrigin).toEqual({
-      nodeId: "dir-scope",
+      pathname: "/browse/dir-scope",
       search: "?mode=manga",
     });
   });
@@ -194,7 +194,7 @@ describe("SearchBar 履歴モデル", () => {
 
     // isScopeActive=false でも scope プロップがある限り viewerOrigin は設定される
     expect(useViewerStore.getState().viewerOrigin).toEqual({
-      nodeId: "dir-scope",
+      pathname: "/browse/dir-scope",
       search: "",
     });
   });

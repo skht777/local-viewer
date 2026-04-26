@@ -50,6 +50,7 @@ fn エントリの追加と検索ができる() {
             limit: 10,
             offset: 0,
             scope_prefix: None,
+            order: SearchOrder::Relevance,
         })
         .unwrap();
     assert_eq!(hits.len(), 1);
@@ -78,6 +79,7 @@ fn kind指定で検索をフィルタできる() {
             limit: 10,
             offset: 0,
             scope_prefix: None,
+            order: SearchOrder::Relevance,
         })
         .unwrap();
     assert_eq!(hits.len(), 1);
@@ -91,6 +93,7 @@ fn kind指定で検索をフィルタできる() {
             limit: 10,
             offset: 0,
             scope_prefix: None,
+            order: SearchOrder::Relevance,
         })
         .unwrap();
     assert!(hits.is_empty());
@@ -111,6 +114,7 @@ fn エントリの削除で検索から消える() {
             limit: 10,
             offset: 0,
             scope_prefix: None,
+            order: SearchOrder::Relevance,
         })
         .unwrap();
     assert_eq!(hits.len(), 1);
@@ -126,6 +130,7 @@ fn エントリの削除で検索から消える() {
             limit: 10,
             offset: 0,
             scope_prefix: None,
+            order: SearchOrder::Relevance,
         })
         .unwrap();
     assert!(hits.is_empty());
@@ -146,6 +151,7 @@ fn 二文字クエリでlikeフォールバック() {
             limit: 10,
             offset: 0,
             scope_prefix: None,
+            order: SearchOrder::Relevance,
         })
         .unwrap();
     assert_eq!(hits.len(), 1);
@@ -167,6 +173,7 @@ fn 日本語ファイル名の部分一致検索() {
             limit: 10,
             offset: 0,
             scope_prefix: None,
+            order: SearchOrder::Relevance,
         })
         .unwrap();
     assert_eq!(hits.len(), 1);
@@ -199,6 +206,7 @@ fn 日本語スペース区切りで複数トークンがand検索になる() {
             limit: 10,
             offset: 0,
             scope_prefix: None,
+            order: SearchOrder::Relevance,
         })
         .unwrap();
     assert_eq!(
@@ -240,6 +248,7 @@ fn 三文字以上と二文字日本語の混在トークンがandになる() {
             limit: 10,
             offset: 0,
             scope_prefix: None,
+            order: SearchOrder::Relevance,
         })
         .unwrap();
     assert_eq!(
@@ -273,6 +282,7 @@ fn 二文字日本語フォルダ名で検索できる() {
             limit: 10,
             offset: 0,
             scope_prefix: None,
+            order: SearchOrder::Relevance,
         })
         .unwrap();
     assert_eq!(
@@ -312,6 +322,7 @@ fn 二文字日本語複数トークンがand検索になる() {
             limit: 10,
             offset: 0,
             scope_prefix: None,
+            order: SearchOrder::Relevance,
         })
         .unwrap();
     assert_eq!(
@@ -334,6 +345,7 @@ fn 特殊文字入力でエラーにならない() {
         limit: 10,
         offset: 0,
         scope_prefix: None,
+        order: SearchOrder::Relevance,
     });
     assert!(result.is_ok());
 }
@@ -422,6 +434,7 @@ fn has_moreがlimit超過時にtrueになる() {
             limit: 2,
             offset: 0,
             scope_prefix: None,
+            order: SearchOrder::Relevance,
         })
         .unwrap();
     assert_eq!(hits.len(), 2);
@@ -435,6 +448,7 @@ fn has_moreがlimit超過時にtrueになる() {
             limit: 10,
             offset: 0,
             scope_prefix: None,
+            order: SearchOrder::Relevance,
         })
         .unwrap();
     assert_eq!(hits.len(), 3);
@@ -477,6 +491,7 @@ fn scope_prefix付きでfts検索がプレフィックス一致のみ返す() {
             limit: 10,
             offset: 0,
             scope_prefix: Some("mount1/photos"),
+            order: SearchOrder::Relevance,
         })
         .unwrap();
     assert_eq!(hits.len(), 1);
@@ -502,6 +517,7 @@ fn scope_prefix付きでlike検索がプレフィックス一致のみ返す() {
             limit: 10,
             offset: 0,
             scope_prefix: Some("mount1"),
+            order: SearchOrder::Relevance,
         })
         .unwrap();
     assert_eq!(hits.len(), 1);
@@ -528,6 +544,7 @@ fn scope_prefix内のlikeワイルドカードがエスケープされる() {
             limit: 10,
             offset: 0,
             scope_prefix: Some("mount/dir_100%"),
+            order: SearchOrder::Relevance,
         })
         .unwrap();
     assert_eq!(hits.len(), 1);
@@ -552,6 +569,7 @@ fn scope_prefixがnoneの場合はフィルタなしで全件返す() {
             limit: 10,
             offset: 0,
             scope_prefix: None,
+            order: SearchOrder::Relevance,
         })
         .unwrap();
     assert_eq!(hits.len(), 2);
@@ -1364,4 +1382,191 @@ fn delete_mount_entriesはinvariant違反でrejectする() {
     assert!(indexer.delete_mount_entries("").is_err());
     assert!(indexer.delete_mount_entries("short").is_err());
     assert!(indexer.delete_mount_entries("ABCDEF0123456789").is_err());
+}
+
+// --- sort パラメータの ORDER BY テスト ---
+
+#[test]
+fn sort_name_ascで名前昇順に並ぶ() {
+    let (indexer, _tmp) = setup_indexer();
+    // "photo" 共通で 3 件登録（FTS5 経路: 5 文字）
+    indexer
+        .add_entry(&IndexEntry {
+            relative_path: "p/photo_c.jpg".to_owned(),
+            name: "photo_c.jpg".to_owned(),
+            kind: "image".to_owned(),
+            size_bytes: None,
+            mtime_ns: 3_000_000_000,
+        })
+        .unwrap();
+    indexer
+        .add_entry(&IndexEntry {
+            relative_path: "p/photo_a.jpg".to_owned(),
+            name: "photo_a.jpg".to_owned(),
+            kind: "image".to_owned(),
+            size_bytes: None,
+            mtime_ns: 1_000_000_000,
+        })
+        .unwrap();
+    indexer
+        .add_entry(&IndexEntry {
+            relative_path: "p/photo_b.jpg".to_owned(),
+            name: "photo_b.jpg".to_owned(),
+            kind: "image".to_owned(),
+            size_bytes: None,
+            mtime_ns: 2_000_000_000,
+        })
+        .unwrap();
+
+    let (hits, _) = indexer
+        .search(&SearchParams {
+            query: "photo",
+            kind: None,
+            limit: 10,
+            offset: 0,
+            scope_prefix: None,
+            order: SearchOrder::NameAsc,
+        })
+        .unwrap();
+    let names: Vec<&str> = hits.iter().map(|h| h.name.as_str()).collect();
+    assert_eq!(names, vec!["photo_a.jpg", "photo_b.jpg", "photo_c.jpg"]);
+}
+
+#[test]
+fn sort_name_descで名前降順に並ぶ() {
+    let (indexer, _tmp) = setup_indexer();
+    for (rp, n, mt) in [
+        ("p/photo_a.jpg", "photo_a.jpg", 1_000_000_000_i64),
+        ("p/photo_b.jpg", "photo_b.jpg", 2_000_000_000_i64),
+        ("p/photo_c.jpg", "photo_c.jpg", 3_000_000_000_i64),
+    ] {
+        indexer
+            .add_entry(&IndexEntry {
+                relative_path: rp.to_owned(),
+                name: n.to_owned(),
+                kind: "image".to_owned(),
+                size_bytes: None,
+                mtime_ns: mt,
+            })
+            .unwrap();
+    }
+
+    let (hits, _) = indexer
+        .search(&SearchParams {
+            query: "photo",
+            kind: None,
+            limit: 10,
+            offset: 0,
+            scope_prefix: None,
+            order: SearchOrder::NameDesc,
+        })
+        .unwrap();
+    let names: Vec<&str> = hits.iter().map(|h| h.name.as_str()).collect();
+    assert_eq!(names, vec!["photo_c.jpg", "photo_b.jpg", "photo_a.jpg"]);
+}
+
+#[test]
+fn sort_date_ascで更新日時昇順に並ぶ() {
+    let (indexer, _tmp) = setup_indexer();
+    // 名前は逆順、mtime が昇順になるよう登録
+    indexer
+        .add_entry(&IndexEntry {
+            relative_path: "p/photo_c.jpg".to_owned(),
+            name: "photo_c.jpg".to_owned(),
+            kind: "image".to_owned(),
+            size_bytes: None,
+            mtime_ns: 1_000_000_000,
+        })
+        .unwrap();
+    indexer
+        .add_entry(&IndexEntry {
+            relative_path: "p/photo_b.jpg".to_owned(),
+            name: "photo_b.jpg".to_owned(),
+            kind: "image".to_owned(),
+            size_bytes: None,
+            mtime_ns: 2_000_000_000,
+        })
+        .unwrap();
+    indexer
+        .add_entry(&IndexEntry {
+            relative_path: "p/photo_a.jpg".to_owned(),
+            name: "photo_a.jpg".to_owned(),
+            kind: "image".to_owned(),
+            size_bytes: None,
+            mtime_ns: 3_000_000_000,
+        })
+        .unwrap();
+
+    let (hits, _) = indexer
+        .search(&SearchParams {
+            query: "photo",
+            kind: None,
+            limit: 10,
+            offset: 0,
+            scope_prefix: None,
+            order: SearchOrder::DateAsc,
+        })
+        .unwrap();
+    let mts: Vec<i64> = hits.iter().map(|h| h.mtime_ns).collect();
+    assert_eq!(mts, vec![1_000_000_000, 2_000_000_000, 3_000_000_000]);
+}
+
+#[test]
+fn sort_date_descで更新日時降順に並ぶ() {
+    let (indexer, _tmp) = setup_indexer();
+    for (rp, n, mt) in [
+        ("p/photo_a.jpg", "photo_a.jpg", 1_000_000_000_i64),
+        ("p/photo_b.jpg", "photo_b.jpg", 2_000_000_000_i64),
+        ("p/photo_c.jpg", "photo_c.jpg", 3_000_000_000_i64),
+    ] {
+        indexer
+            .add_entry(&IndexEntry {
+                relative_path: rp.to_owned(),
+                name: n.to_owned(),
+                kind: "image".to_owned(),
+                size_bytes: None,
+                mtime_ns: mt,
+            })
+            .unwrap();
+    }
+
+    let (hits, _) = indexer
+        .search(&SearchParams {
+            query: "photo",
+            kind: None,
+            limit: 10,
+            offset: 0,
+            scope_prefix: None,
+            order: SearchOrder::DateDesc,
+        })
+        .unwrap();
+    let mts: Vec<i64> = hits.iter().map(|h| h.mtime_ns).collect();
+    assert_eq!(mts, vec![3_000_000_000, 2_000_000_000, 1_000_000_000]);
+}
+
+#[test]
+fn search_hitにmtime_nsが含まれる() {
+    let (indexer, _tmp) = setup_indexer();
+    indexer
+        .add_entry(&IndexEntry {
+            relative_path: "p/sunset.jpg".to_owned(),
+            name: "sunset.jpg".to_owned(),
+            kind: "image".to_owned(),
+            size_bytes: Some(2048),
+            mtime_ns: 1_700_000_000_000_000_000,
+        })
+        .unwrap();
+
+    let (hits, _) = indexer
+        .search(&SearchParams {
+            query: "sunset",
+            kind: None,
+            limit: 10,
+            offset: 0,
+            scope_prefix: None,
+            order: SearchOrder::Relevance,
+        })
+        .unwrap();
+    assert_eq!(hits.len(), 1);
+    assert_eq!(hits[0].mtime_ns, 1_700_000_000_000_000_000);
 }

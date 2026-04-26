@@ -26,18 +26,18 @@ export interface BrowseResponse {
   total_count: number | null;
 }
 
-// first-viewable API
+// First-viewable API
 export interface FirstViewableResponse {
   entry: BrowseEntry | null;
   parent_node_id: string | null;
 }
 
-// sibling API (単方向)
+// Sibling API (単方向)
 export interface SiblingResponse {
   entry: BrowseEntry | null;
 }
 
-// siblings API (prev + next 一括)
+// Siblings API (prev + next 一括)
 export interface SiblingsResponse {
   prev: BrowseEntry | null;
   next: BrowseEntry | null;
@@ -51,10 +51,17 @@ export interface SearchResult {
   kind: BrowseEntry["kind"];
   relative_path: string;
   size_bytes: number | null;
+  // 拡張フィールド（後方互換: バックエンドが値を返さない場合は undefined/null）
+  modified_at?: number | null;
+  mime_type?: string | null;
+  child_count?: number | null;
+  preview_node_ids?: string[] | null;
 }
 
 export interface SearchResponse {
   results: SearchResult[];
   has_more: boolean;
   query: string;
+  is_stale?: boolean;
+  next_offset?: number | null;
 }

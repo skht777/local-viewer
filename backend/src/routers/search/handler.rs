@@ -8,6 +8,7 @@ use axum::Json;
 use axum::extract::{Query, State};
 
 use crate::errors::AppError;
+use crate::services::indexer::SearchOrder;
 use crate::services::search::resolve_search_results;
 use crate::services::search::resolver::ResolveContext;
 use crate::services::search::scope::resolve_scope_prefix;
@@ -15,8 +16,20 @@ use crate::state::AppState;
 
 use super::{
     DEFAULT_LIMIT, MAX_LIMIT, MAX_QUERY_LENGTH, MIN_QUERY_LENGTH, SearchQuery, SearchResponse,
-    VALID_KINDS,
+    VALID_KINDS, VALID_SORTS,
 };
+
+/// `sort` 文字列を `SearchOrder` に変換する
+fn parse_sort(sort: Option<&str>) -> Option<SearchOrder> {
+    match sort {
+        None | Some("relevance") => Some(SearchOrder::Relevance),
+        Some("name-asc") => Some(SearchOrder::NameAsc),
+        Some("name-desc") => Some(SearchOrder::NameDesc),
+        Some("date-asc") => Some(SearchOrder::DateAsc),
+        Some("date-desc") => Some(SearchOrder::DateDesc),
+        _ => None,
+    }
+}
 
 /// `GET /api/search`
 ///
@@ -46,6 +59,15 @@ pub(crate) async fn search(
         }
     }
 
+    // sort バリデーション → SearchOrder
+    let order = parse_sort(query.sort.as_deref()).ok_or_else(|| {
+        let provided = query.sort.as_deref().unwrap_or("");
+        AppError::InvalidQuery(format!(
+            "無効な sort です: {provided} (有効値: {})",
+            VALID_SORTS.join(", ")
+        ))
+    })?;
+
     // インデックス準備状態チェック
     if !state.indexer.is_ready() {
         return Err(AppError::IndexNotReady(
@@ -74,6 +96,7 @@ pub(crate) async fn search(
     };
 
     let indexer = Arc::clone(&state.indexer);
+    let dir_index = Arc::clone(&state.dir_index);
     let registry = Arc::clone(&state.node_registry);
     let kind = query.kind.clone();
     let q_clone = q.clone();
@@ -83,6 +106,7 @@ pub(crate) async fn search(
     let (results, has_more) = tokio::task::spawn_blocking(move || {
         let ctx = ResolveContext {
             indexer: &indexer,
+            dir_index: &dir_index,
             registry: &registry,
             mount_id_map: &mount_id_map,
             query: &q_clone,
@@ -90,16 +114,24 @@ pub(crate) async fn search(
             limit,
             offset,
             scope_prefix: scope_prefix.as_deref(),
+            order,
         };
         resolve_search_results(&ctx)
     })
     .await
     .map_err(|e| AppError::path_security(format!("タスク実行エラー: {e}")))??;
 
+    let next_offset = if has_more {
+        Some(offset + results.len())
+    } else {
+        None
+    };
+
     Ok(Json(SearchResponse {
         results,
         has_more,
         query: q,
         is_stale,
+        next_offset,
     }))
 }

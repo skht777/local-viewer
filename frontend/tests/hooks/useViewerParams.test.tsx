@@ -6,9 +6,7 @@ import type { ReactNode } from "react";
 
 function createWrapper(initialEntries: string[] = ["/"]) {
   return function Wrapper({ children }: { children: ReactNode }) {
-    return (
-      <MemoryRouter initialEntries={initialEntries}>{children}</MemoryRouter>
-    );
+    return <MemoryRouter initialEntries={initialEntries}>{children}</MemoryRouter>;
   };
 }
 
@@ -101,15 +99,11 @@ describe("useViewerParams", () => {
   test("viewerOriginが設定されていればcloseViewerでorigin側のbrowseURLへ戻る", () => {
     // open 時に setViewerOrigin された状態を再現
     useViewerStore.getState().setViewerOrigin({
-      nodeId: "origin-node",
+      pathname: "/browse/origin-node",
       search: "?mode=manga",
     });
 
-    function LocationProbe({
-      onChange,
-    }: {
-      onChange: (path: string, search: string) => void;
-    }) {
+    function LocationProbe({ onChange }: { onChange: (path: string, search: string) => void }) {
       const { useLocation } = require("react-router-dom") as typeof import("react-router-dom");
       const loc = useLocation();
       onChange(loc.pathname, loc.search);
