@@ -222,9 +222,12 @@ describe("walkUpToParent", () => {
   });
 
   test("parent_node_id が null なら ancestors[0] にフォールバックする", async () => {
-    const parentData = makeBrowseResponse("parent", null, [], [
-      { node_id: "mount", name: "mount" },
-    ]);
+    const parentData = makeBrowseResponse(
+      "parent",
+      null,
+      [],
+      [{ node_id: "mount", name: "mount" }],
+    );
     const client = createSeededClient({ parent: parentData });
 
     const result = await walkUpToParent({
