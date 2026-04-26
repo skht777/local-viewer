@@ -4,7 +4,8 @@
 // - enabled=false の場合はロードしない
 
 import { useEffect, useRef, useState } from "react";
-import type { PDFDocumentProxy } from "../lib/pdfjs";
+import type { MutableRefObject } from "react";
+import type { PDFDocumentProxy, PDFPageProxy } from "../lib/pdfjs";
 import { getDocument } from "../lib/pdfjs";
 
 const THUMB_WIDTH = 300;
@@ -13,6 +14,44 @@ interface PdfThumbnailResult {
   url: string | null;
   isLoading: boolean;
   hasError: boolean;
+}
+
+// PDF の先頭ページを取得する。pdfDoc は呼び出し側が destroy する責務を持つ
+async function loadPdfThumbnailPage(
+  nodeId: string,
+): Promise<{ pdfDoc: PDFDocumentProxy; page: PDFPageProxy }> {
+  const pdfDoc = await getDocument({ url: `/api/file/${nodeId}` }).promise;
+  const page = await pdfDoc.getPage(1);
+  return { pdfDoc, page };
+}
+
+// 指定幅に収まるスケールでオフスクリーン canvas にレンダリングし JPEG blob を返す
+async function renderThumbnailToBlob(page: PDFPageProxy, maxWidth: number): Promise<Blob | null> {
+  const unscaledViewport = page.getViewport({ scale: 1 });
+  const scale = maxWidth / unscaledViewport.width;
+  const viewport = page.getViewport({ scale });
+  const canvas = document.createElement("canvas");
+  canvas.width = viewport.width;
+  canvas.height = viewport.height;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) {
+    throw new Error("Canvas 2D context not available");
+  }
+  await page.render({ canvasContext: ctx, viewport, canvas }).promise;
+  return await new Promise<Blob | null>((resolve) => {
+    canvas.toBlob(resolve, "image/jpeg", 0.8);
+  });
+}
+
+// blob → URL を作成し、ref と state を更新する
+function publishBlobUrl(
+  blob: Blob,
+  urlRef: MutableRefObject<string | null>,
+  setUrl: (url: string) => void,
+): void {
+  const blobUrl = URL.createObjectURL(blob);
+  urlRef.current = blobUrl;
+  setUrl(blobUrl);
 }
 
 export function usePdfThumbnail(nodeId: string, enabled: boolean): PdfThumbnailResult {
@@ -29,55 +68,20 @@ export function usePdfThumbnail(nodeId: string, enabled: boolean): PdfThumbnailR
     let cancelled = false;
     let pdfDoc: PDFDocumentProxy | null = null;
 
-    // 受入: 計画外の新規違反。PdfCanvas.renderPage と同様、PDF サムネイル生成は
-    // getDocument→getPage→render→cleanup を一続きで扱う。別タスクで段階分解する。
-    // oxlint-disable-next-line max-statements
     const generate = async () => {
       setIsLoading(true);
       setHasError(false);
-
       try {
-        const loadingTask = getDocument({ url: `/api/file/${nodeId}` });
-        pdfDoc = await loadingTask.promise;
+        const loaded = await loadPdfThumbnailPage(nodeId);
         if (cancelled) {
           return;
         }
-
-        const page = await pdfDoc.getPage(1);
-        if (cancelled) {
-          return;
-        }
-
-        // 300px 幅に収まるスケールを計算
-        const unscaledViewport = page.getViewport({ scale: 1 });
-        const scale = THUMB_WIDTH / unscaledViewport.width;
-        const viewport = page.getViewport({ scale });
-
-        // オフスクリーン Canvas にレンダリング
-        const canvas = document.createElement("canvas");
-        canvas.width = viewport.width;
-        canvas.height = viewport.height;
-        const ctx = canvas.getContext("2d");
-        if (!ctx) {
-          throw new Error("Canvas 2D context not available");
-        }
-
-        await page.render({ canvasContext: ctx, viewport, canvas }).promise;
-        if (cancelled) {
-          return;
-        }
-
-        // Canvas → blob → URL
-        const blob = await new Promise<Blob | null>((resolve) => {
-          canvas.toBlob(resolve, "image/jpeg", 0.8);
-        });
+        ({ pdfDoc } = loaded);
+        const blob = await renderThumbnailToBlob(loaded.page, THUMB_WIDTH);
         if (cancelled || !blob) {
           return;
         }
-
-        const blobUrl = URL.createObjectURL(blob);
-        urlRef.current = blobUrl;
-        setUrl(blobUrl);
+        publishBlobUrl(blob, urlRef, setUrl);
       } catch {
         if (!cancelled) {
           setHasError(true);
