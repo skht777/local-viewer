@@ -72,6 +72,61 @@ describe("fetchAllBrowsePages", () => {
     expect(getCallCount()).toBe(3);
   });
 
+  test("fresh な 1 ページ目キャッシュがあっても残りページを取得する", async () => {
+    // App.tsx 既定の staleTime: 5 分を再現
+    queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false, staleTime: 60_000 } },
+    });
+    const getCallCount = installFetchMock([
+      makeResponse([], "cursor-1"),
+      makeResponse([], "cursor-2"),
+      makeResponse([], null),
+    ]);
+
+    // useSiblingPrefetch が先に 1 ページ目だけ prefetch しているケース
+    await queryClient.prefetchInfiniteQuery({
+      queryKey: ["browse-infinite", nodeId, sort],
+      queryFn: async () => ({
+        current_node_id: nodeId,
+        current_name: "dir",
+        parent_node_id: null,
+        ancestors: [],
+        entries: [],
+        next_cursor: "cursor-1",
+        total_count: null,
+      }),
+      initialPageParam: undefined,
+      getNextPageParam: () => undefined,
+    });
+    expect(getCallCount()).toBe(0); // prefetch はモック fetch を経由しない
+
+    await fetchAllBrowsePages(queryClient, nodeId, sort);
+
+    const cached = queryClient.getQueryData<{ pages: BrowseResponse[] }>([
+      "browse-infinite",
+      nodeId,
+      sort,
+    ]);
+    // staleTime 内 fresh な 1 ページキャッシュがあっても、最終ページまで揃う
+    expect(cached?.pages).toHaveLength(3);
+    expect(cached?.pages.at(-1)?.next_cursor).toBeNull();
+  });
+
+  test("全ページ取得済みキャッシュなら追加 fetch しない", async () => {
+    // MAX_PAGES に達するなどで完了済みのキャッシュは再 fetch 不要
+    const getCallCount = installFetchMock([makeResponse([], null)]);
+
+    // 完了済みキャッシュを直接投入
+    queryClient.setQueryData(["browse-infinite", nodeId, sort], {
+      pages: [makeResponse([], null)],
+      pageParams: [undefined],
+    });
+
+    await fetchAllBrowsePages(queryClient, nodeId, sort);
+
+    expect(getCallCount()).toBe(0); // 追加 fetch 0 件
+  });
+
   test("MAX_PAGES に達したら警告ログを出して中断する", async () => {
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     const getCallCount = installFetchMock((i) => makeResponse([], `cursor-${i + 1}`));

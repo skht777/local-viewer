@@ -47,6 +47,9 @@ export const MAX_PAGES = 200;
 // - ビューワー起動時に兄弟画像が 100 件で打ち切られないようにするためのヘルパー
 // - `prefetchInfiniteQuery` は例外を握り潰すため、呼び元の try/catch で拾える
 //   `fetchInfiniteQuery` を使う
+// - `staleTime: 0` 強制: QueryClient 既定 staleTime 内に `useSiblingPrefetch`
+//   が 1 ページ目だけ入れた fresh cache があっても、page 2..N まで取得し直す
+// - 完了済みキャッシュ（最終ページの `next_cursor` が null）は早期リターン
 // - 上限到達（最終ページに `next_cursor` が残っている）は警告のみで続行
 export async function fetchAllBrowsePages(
   queryClient: QueryClient,
@@ -54,9 +57,14 @@ export async function fetchAllBrowsePages(
   sort: SortOrder,
 ): Promise<void> {
   const options = browseInfiniteOptions(nodeId, sort);
+  const cached = queryClient.getQueryData<{ pages: BrowseResponse[] }>(options.queryKey);
+  if (cached?.pages?.length && cached.pages.at(-1)?.next_cursor === null) {
+    return;
+  }
   const result = await queryClient.fetchInfiniteQuery({
     ...options,
     pages: MAX_PAGES,
+    staleTime: 0,
   });
   const lastPage = result.pages.at(-1);
   if (result.pages.length >= MAX_PAGES && lastPage?.next_cursor) {
