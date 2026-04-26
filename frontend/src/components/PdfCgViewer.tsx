@@ -153,7 +153,7 @@ export function PdfCgViewer({
         return;
       }
       const first = indices[0] + 1;
-      const last = indices.at(-1) + 1;
+      const last = indices[indices.length - 1] + 1;
       const end = indices.length > 1 ? last : undefined;
       showToast(formatPageLabel(pdfName, first, pageCount, end), 3000);
     },
@@ -237,7 +237,7 @@ export function PdfCgViewer({
 
   // ページカウンター: 見開き時は "3-4 / 12" 形式
   const firstDisplay = displayIndices.length > 0 ? displayIndices[0] + 1 : 1;
-  const lastDisplay = displayIndices.length > 0 ? displayIndices.at(-1) + 1 : 1;
+  const lastDisplay = displayIndices.length > 0 ? displayIndices[displayIndices.length - 1] + 1 : 1;
   const currentEnd = displayIndices.length > 1 ? lastDisplay : undefined;
 
   // ローディング表示

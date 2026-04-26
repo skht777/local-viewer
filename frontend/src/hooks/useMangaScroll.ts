@@ -58,7 +58,7 @@ export function useMangaScroll({
         }
         // フォールバック: 最後の表示アイテム
         if (items.length > 0) {
-          setCurrentIndex(items.at(-1).index);
+          setCurrentIndex(items[items.length - 1].index);
         }
       });
     };

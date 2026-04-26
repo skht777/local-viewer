@@ -54,7 +54,7 @@ const BATCH_SIZE = 100;
 // base64 → Blob URL 変換
 function base64ToBlobUrl(base64: string): string {
   const binary = atob(base64);
-  const bytes = Uint8Array.from(binary, (c) => c.codePointAt(0));
+  const bytes = Uint8Array.from(binary, (c) => c.charCodeAt(0));
   const blob = new Blob([bytes], { type: "image/jpeg" });
   return URL.createObjectURL(blob);
 }

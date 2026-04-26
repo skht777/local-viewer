@@ -151,7 +151,7 @@ export function CgViewer({
         return;
       }
       const first = indices[0] + 1;
-      const last = indices.at(-1) + 1;
+      const last = indices[indices.length - 1] + 1;
       const end = indices.length > 1 ? last : undefined;
       showToast(formatPageLabel(setName, first, images.length, end), 3000);
     },
@@ -199,7 +199,7 @@ export function CgViewer({
 
   // ページカウンター: 見開き時は "3-4 / 12" 形式
   const firstDisplay = displayIndices[0] + 1;
-  const lastDisplay = displayIndices.at(-1) + 1;
+  const lastDisplay = displayIndices[displayIndices.length - 1] + 1;
   const currentEnd = displayIndices.length > 1 ? lastDisplay : undefined;
 
   return (
