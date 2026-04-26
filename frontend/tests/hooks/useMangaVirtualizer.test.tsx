@@ -10,12 +10,12 @@ import { useRef } from "react";
 import { useMangaVirtualizer } from "../../src/hooks/useMangaVirtualizer";
 
 // useVirtualizer をモック化して options をキャプチャ
-type CapturedOptions = {
+interface CapturedOptions {
   count: number;
   estimateSize: (index: number) => number;
   getScrollElement: () => HTMLDivElement | null;
   overscan?: number;
-};
+}
 let lastOptions: CapturedOptions | null = null;
 const measure = vi.fn();
 const scrollToIndex = vi.fn();
@@ -38,6 +38,7 @@ beforeEach(() => {
   scrollToIndex.mockClear();
 });
 
+/* oxlint-disable promise/prefer-await-to-callbacks -- requestAnimationFrame の API は callback ベース */
 function setupRaf() {
   // requestAnimationFrame を即時実行に置換
   return vi
@@ -47,6 +48,7 @@ function setupRaf() {
       return 0;
     });
 }
+/* oxlint-enable promise/prefer-await-to-callbacks */
 
 describe("useMangaVirtualizer - estimateSize", () => {
   test("pageSizes 未指定なら 3:4 比率（containerWidth × 4/3）", () => {
@@ -140,7 +142,7 @@ describe("useMangaVirtualizer - scrollToIndex / measure", () => {
 describe("useMangaVirtualizer - zoom anchor", () => {
   test("zoomLevel 変動で measure + scrollToIndex(anchorIndexRef.current) が呼ばれる", () => {
     const raf = setupRaf();
-    function Probe({ zoom }: { zoom: number }) {
+    function useProbe({ zoom }: { zoom: number }) {
       const anchorIndexRef = useRef(7);
       return useMangaVirtualizer({
         count: 10,
@@ -149,7 +151,7 @@ describe("useMangaVirtualizer - zoom anchor", () => {
         anchorIndexRef,
       });
     }
-    const { rerender } = renderHook(({ zoom }: { zoom: number }) => Probe({ zoom }), {
+    const { rerender } = renderHook(({ zoom }: { zoom: number }) => useProbe({ zoom }), {
       initialProps: { zoom: 100 },
     });
     measure.mockClear();
@@ -176,7 +178,7 @@ describe("useMangaVirtualizer - zoom anchor", () => {
 
   test("zoomLevel が変わらないなら何もしない", () => {
     const raf = setupRaf();
-    function Probe({ zoom }: { zoom: number }) {
+    function useProbe({ zoom }: { zoom: number }) {
       const anchorIndexRef = useRef(3);
       return useMangaVirtualizer({
         count: 5,
@@ -185,7 +187,7 @@ describe("useMangaVirtualizer - zoom anchor", () => {
         anchorIndexRef,
       });
     }
-    const { rerender } = renderHook(({ zoom }: { zoom: number }) => Probe({ zoom }), {
+    const { rerender } = renderHook(({ zoom }: { zoom: number }) => useProbe({ zoom }), {
       initialProps: { zoom: 100 },
     });
     measure.mockClear();

@@ -13,12 +13,12 @@ import { useFindSiblingRecursive } from "../../src/hooks/useFindSiblingRecursive
 import type { AncestorEntry, BrowseEntry, BrowseResponse } from "../../src/types/api";
 
 // fetchSiblingOne をモック化（呼び出し履歴を取得するため）
-type FetchOpts = {
+interface FetchOpts {
   parentId: string;
   childId: string;
   sort: string;
   direction: "next" | "prev";
-};
+}
 type FetchResult = { parentData: BrowseResponse; sibling: BrowseEntry | null } | null;
 const mockFetchSiblingOne =
   vi.fn<(opts: FetchOpts & { queryClient: unknown }) => Promise<FetchResult>>();
@@ -173,7 +173,8 @@ describe("useFindSiblingRecursive", () => {
     });
     const parentB = makeResponse({
       current_node_id: "B",
-      parent_node_id: "A", // 循環
+      // 循環: B の親が A を指す
+      parent_node_id: "A",
       entries: [makeEntry("directory", "A")],
     });
     mockFetchSiblingOne.mockImplementation(async ({ parentId }) => {

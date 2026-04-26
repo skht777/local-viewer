@@ -9,7 +9,7 @@ import { useFileBrowserKeyboardBindings } from "../../src/hooks/useFileBrowserKe
 import type { BrowseEntry } from "../../src/types/api";
 
 // useBrowseKeyboard をモック化し、渡された bindings を捕捉
-type Bindings = {
+interface Bindings {
   move: (delta: number) => void;
   action: () => void;
   open: () => void;
@@ -20,10 +20,10 @@ type Bindings = {
   sortDate: () => void;
   tabChange: (tab: string) => void;
   getColumnCount: () => number;
-};
+}
 
 let lastBindings: Bindings | null = null;
-let lastEnabled: boolean | undefined;
+let lastEnabled: boolean | undefined = undefined;
 
 vi.mock("../../src/hooks/useBrowseKeyboard", () => ({
   useBrowseKeyboard: (bindings: Bindings, enabled: boolean) => {

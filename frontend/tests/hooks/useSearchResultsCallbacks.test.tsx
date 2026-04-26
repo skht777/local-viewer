@@ -46,7 +46,7 @@ function wrapper({ children }: { children: ReactNode }) {
   return (
     <MemoryRouter initialEntries={["/search?q=foo"]}>
       <Routes>
-        <Route path="/search" element={<>{children}</>} />
+        <Route path="/search" element={children} />
       </Routes>
     </MemoryRouter>
   );

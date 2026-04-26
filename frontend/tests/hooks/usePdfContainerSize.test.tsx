@@ -19,6 +19,8 @@ class MockResizeObserver implements ResizeObserver {
   cb: ResizeObserverCallback;
   observed: Element[] = [];
   disconnected = false;
+  // ResizeObserver の API は callback ベースのため、async 化できない
+  // oxlint-disable-next-line promise/prefer-await-to-callbacks
   constructor(cb: ResizeObserverCallback) {
     this.cb = cb;
     observers.push(this);
