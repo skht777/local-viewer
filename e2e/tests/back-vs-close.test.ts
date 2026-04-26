@@ -20,12 +20,13 @@ test.describe("ブラウザバック == B キー閉じる の遷移先一致", (
     await test.step("画像をダブルクリックでビューワー起動", async () => {
       await clickFileCard(page.locator("[data-testid^='file-card-']").first());
       await expect(page).toHaveURL(/index=/, { timeout: 10_000 });
+      await expect(page.locator("[data-testid='cg-viewer']")).toBeVisible();
     });
 
     await test.step("ブラウザバックで呼び出し元に戻る", async () => {
       await page.goBack();
       await expect(page).not.toHaveURL(/index=/);
-      expect(page.url()).toBe(originalUrl);
+      await expect(page).toHaveURL(originalUrl);
     });
   });
 
@@ -40,6 +41,7 @@ test.describe("ブラウザバック == B キー閉じる の遷移先一致", (
     await test.step("画像 → B キー閉じ", async () => {
       await clickFileCard(page.locator("[data-testid^='file-card-']").first());
       await expect(page).toHaveURL(/index=/, { timeout: 10_000 });
+      await expect(page.locator("[data-testid='cg-viewer']")).toBeVisible();
       await page.keyboard.press("b");
       await expect(page).not.toHaveURL(/index=/);
     });
@@ -49,14 +51,15 @@ test.describe("ブラウザバック == B キー閉じる の遷移先一致", (
     await test.step("画像 → ブラウザバック", async () => {
       await clickFileCard(page.locator("[data-testid^='file-card-']").first());
       await expect(page).toHaveURL(/index=/, { timeout: 10_000 });
+      await expect(page.locator("[data-testid='cg-viewer']")).toBeVisible();
       await page.goBack();
       await expect(page).not.toHaveURL(/index=/);
     });
     const urlAfterBack = page.url();
 
     // 両者が一致し、かつ呼び出し元 URL であることを確認
-    expect(urlAfterClose).toBe(originalUrl);
-    expect(urlAfterBack).toBe(originalUrl);
+    await expect(page).toHaveURL(originalUrl);
     expect(urlAfterClose).toBe(urlAfterBack);
+    expect(urlAfterClose).toBe(originalUrl);
   });
 });
