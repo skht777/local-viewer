@@ -143,6 +143,7 @@ export function CgViewer({
     goNextSetParent: setJump.goNextSetParent,
     goPrevSetParent: setJump.goPrevSetParent,
     toggleHelp: () => setIsHelpOpen((prev) => !prev),
+    showTitle: () => showToast(setName || "（タイトルなし）", 3000),
   });
 
   // ツールバー自動表示/非表示

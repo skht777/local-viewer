@@ -21,6 +21,7 @@ interface MangaKeyboardCallbacks {
   zoomIn?: () => void;
   zoomOut?: () => void;
   zoomReset?: () => void;
+  showTitle?: () => void;
 }
 
 export function useMangaKeyboard(callbacks: MangaKeyboardCallbacks): void {
@@ -54,4 +55,7 @@ export function useMangaKeyboard(callbacks: MangaKeyboardCallbacks): void {
   useHotkeys("equal, shift+equal", () => callbacks.zoomIn?.());
   useHotkeys("minus", () => callbacks.zoomOut?.());
   useHotkeys("0", () => callbacks.zoomReset?.());
+
+  // タイトルポップアップ表示
+  useHotkeys("m", () => callbacks.showTitle?.());
 }

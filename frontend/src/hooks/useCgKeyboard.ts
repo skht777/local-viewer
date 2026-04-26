@@ -22,6 +22,7 @@ interface CgKeyboardCallbacks {
   goNextSetParent?: () => void;
   goPrevSetParent?: () => void;
   toggleHelp?: () => void;
+  showTitle?: () => void;
 }
 
 export function useCgKeyboard(callbacks: CgKeyboardCallbacks): void {
@@ -61,4 +62,7 @@ export function useCgKeyboard(callbacks: CgKeyboardCallbacks): void {
 
   // ヘルプ表示切替
   useHotkeys("shift+/", () => callbacks.toggleHelp?.());
+
+  // タイトルポップアップ表示
+  useHotkeys("m", () => callbacks.showTitle?.());
 }

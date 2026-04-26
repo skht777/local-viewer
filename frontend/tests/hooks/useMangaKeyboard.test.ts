@@ -131,4 +131,11 @@ describe("useMangaKeyboard", () => {
     pressKey("0");
     expect(defaultCallbacks.zoomReset).toHaveBeenCalledOnce();
   });
+
+  test("M キーで showTitle が呼ばれる", () => {
+    const showTitle = vi.fn();
+    renderHook(() => useMangaKeyboard({ ...defaultCallbacks, showTitle }));
+    pressKey("m");
+    expect(showTitle).toHaveBeenCalledOnce();
+  });
 });

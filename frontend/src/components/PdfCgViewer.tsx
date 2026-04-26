@@ -144,6 +144,7 @@ export function PdfCgViewer({
     goNextSetParent: setJump.goNextSetParent,
     goPrevSetParent: setJump.goPrevSetParent,
     toggleHelp: () => setIsHelpOpen((prev) => !prev),
+    showTitle: () => showToast(pdfName || "PDF", 3000),
   });
 
   // カーソルオートハイド

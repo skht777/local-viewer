@@ -168,6 +168,7 @@ export function MangaViewer({
     zoomOut,
     zoomReset: () => setZoomLevel(100),
     toggleHelp: () => setIsHelpOpen((prev) => !prev),
+    showTitle: () => showToast(setName || "（タイトルなし）", 3000),
   });
 
   // カーソルオートハイド

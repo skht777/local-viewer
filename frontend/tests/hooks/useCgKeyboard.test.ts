@@ -173,4 +173,11 @@ describe("useCgKeyboard", () => {
     pressKey("z", { shiftKey: true });
     expect(defaultCallbacks.goPrevSetParent).toHaveBeenCalledOnce();
   });
+
+  test("M キーで showTitle が呼ばれる", () => {
+    const showTitle = vi.fn();
+    renderHook(() => useCgKeyboard({ ...defaultCallbacks, showTitle }));
+    pressKey("m");
+    expect(showTitle).toHaveBeenCalledOnce();
+  });
 });

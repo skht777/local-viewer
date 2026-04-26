@@ -179,6 +179,7 @@ export function PdfMangaViewer({
     zoomOut,
     zoomReset: () => setZoomLevel(100),
     toggleHelp: () => setIsHelpOpen((prev) => !prev),
+    showTitle: () => showToast(pdfName || "PDF", 3000),
   });
 
   // カーソルオートハイド
