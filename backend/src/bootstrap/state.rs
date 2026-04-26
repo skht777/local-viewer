@@ -103,8 +103,10 @@ pub(crate) fn build_state(
     } else {
         tracing::warn!("Video remux: FFmpeg not found");
     }
+    let inflight_locks = services::thumbnail_inflight::InflightLocks::new();
     let thumbnail_service = Arc::new(services::thumbnail_service::ThumbnailService::new(
         Arc::clone(&temp_file_cache),
+        inflight_locks,
     ));
     let thumbnail_warmer = Arc::new(services::thumbnail_warmer::ThumbnailWarmer::new(4));
 

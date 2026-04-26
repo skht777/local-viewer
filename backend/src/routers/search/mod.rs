@@ -136,6 +136,7 @@ mod tests {
         use crate::services::node_registry::NodeRegistry;
         use crate::services::path_security::PathSecurity;
         use crate::services::temp_file_cache::TempFileCache;
+        use crate::services::thumbnail_inflight::InflightLocks;
         use crate::services::thumbnail_service::ThumbnailService;
         use crate::services::thumbnail_warmer::ThumbnailWarmer;
         use crate::services::video_converter::VideoConverter;
@@ -156,7 +157,10 @@ mod tests {
             let temp_file_cache = Arc::new(
                 TempFileCache::new(TempDir::new().unwrap().keep(), 10 * 1024 * 1024).unwrap(),
             );
-            let thumbnail_service = Arc::new(ThumbnailService::new(Arc::clone(&temp_file_cache)));
+            let thumbnail_service = Arc::new(ThumbnailService::new(
+                Arc::clone(&temp_file_cache),
+                InflightLocks::new(),
+            ));
             let video_converter =
                 Arc::new(VideoConverter::new(Arc::clone(&temp_file_cache), &settings));
             let thumbnail_warmer = Arc::new(ThumbnailWarmer::new(4));
@@ -308,6 +312,7 @@ mod tests {
         use crate::services::path_security::PathSecurity;
         use crate::services::rebuild_guard::RebuildGuard;
         use crate::services::temp_file_cache::TempFileCache;
+        use crate::services::thumbnail_inflight::InflightLocks;
         use crate::services::thumbnail_service::ThumbnailService;
         use crate::services::thumbnail_warmer::ThumbnailWarmer;
         use crate::services::video_converter::VideoConverter;
@@ -331,7 +336,10 @@ mod tests {
             let temp_file_cache = Arc::new(
                 TempFileCache::new(TempDir::new().unwrap().keep(), 10 * 1024 * 1024).unwrap(),
             );
-            let thumbnail_service = Arc::new(ThumbnailService::new(Arc::clone(&temp_file_cache)));
+            let thumbnail_service = Arc::new(ThumbnailService::new(
+                Arc::clone(&temp_file_cache),
+                InflightLocks::new(),
+            ));
             let video_converter =
                 Arc::new(VideoConverter::new(Arc::clone(&temp_file_cache), &settings));
             let thumbnail_warmer = Arc::new(ThumbnailWarmer::new(4));

@@ -53,10 +53,6 @@ pub(crate) mod search;
 pub(crate) mod security;
 #[allow(dead_code, reason = "Phase 5 のサムネイル・動画サービスで使用")]
 pub(crate) mod temp_file_cache;
-#[allow(
-    dead_code,
-    reason = "Step 3 で ThumbnailService から利用開始（同一コミット系列内）"
-)]
 pub(crate) mod thumbnail_inflight;
 #[allow(dead_code, reason = "Phase 5 のサムネイルルーターで使用")]
 pub(crate) mod thumbnail_service;

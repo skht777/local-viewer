@@ -14,6 +14,7 @@ use image::{DynamicImage, GenericImageView, ImageEncoder, RgbImage};
 
 use crate::errors::AppError;
 use crate::services::temp_file_cache::TempFileCache;
+use crate::services::thumbnail_inflight::{Acquired, InflightLocks};
 
 /// サムネイル生成サービス
 ///
@@ -21,35 +22,84 @@ use crate::services::temp_file_cache::TempFileCache;
 /// - `generate_from_bytes`: バイト列から生成 (アーカイブエントリ用)
 /// - `generate_pdf_thumbnail`: `pdftoppm` subprocess で PDF 先頭ページのサムネイルを生成
 /// - `make_cache_key`: Python 版と同一のキャッシュキーを生成
+/// - `generate_with_dedup`: archive/video の前段処理を含めて重複生成を抑止する汎用ラッパー
 pub(crate) struct ThumbnailService {
     cache: Arc<TempFileCache>,
+    inflight: Arc<InflightLocks>,
     default_width: u32,
     jpeg_quality: u8,
 }
 
 impl ThumbnailService {
-    pub(crate) fn new(cache: Arc<TempFileCache>) -> Self {
+    pub(crate) fn new(cache: Arc<TempFileCache>, inflight: Arc<InflightLocks>) -> Self {
         Self {
             cache,
+            inflight,
             default_width: 300,
             jpeg_quality: 80,
         }
     }
 
+    /// 生成タスクを `cache_key` 単位で重複排除する汎用ラッパー
+    ///
+    /// - cache hit ならそのまま返す
+    /// - Owner になれたら generator を呼び実生成
+    /// - 他者が生成中なら Waiter として待ち、完了後に cache 再読
+    /// - Owner 失敗時は最大 1 回再試行（合計 2 回）
+    ///
+    /// 副作用は generator 内で完結させる（`*_inner` 系は内部で `cache.put` まで行う）。
+    pub(crate) fn generate_with_dedup<F>(
+        &self,
+        cache_key: &str,
+        generator: F,
+    ) -> Result<Vec<u8>, AppError>
+    where
+        F: Fn() -> Result<Vec<u8>, AppError>,
+    {
+        const MAX_ATTEMPTS: usize = 2;
+        for attempt in 0..MAX_ATTEMPTS {
+            // 1. Cache hit 早期リターン
+            if let Some(cached) = self.try_read_cached(cache_key) {
+                return Ok(cached);
+            }
+
+            // 2. Inflight lock acquire
+            match self.inflight.acquire(cache_key) {
+                Acquired::Owner(_guard) => {
+                    // 3a. Owner: 実生成前にもう一度 cache を確認する
+                    // 直前 Owner が cache.put 済みで Drop 中（map remove 完了直後 〜 done 通知前）
+                    // に別スレッドが「miss → acquire」したケースを救う（再生成を回避）
+                    if let Some(cached) = self.try_read_cached(cache_key) {
+                        return Ok(cached);
+                    }
+                    return generator();
+                }
+                Acquired::Waiter(handle) => {
+                    handle.wait_blocking();
+                    if attempt + 1 == MAX_ATTEMPTS {
+                        // 上限到達: cache 再読で最終チェック、無ければ Err
+                        return self.try_read_cached(cache_key).ok_or_else(|| {
+                            AppError::InvalidImage(
+                                "サムネイル生成中の他リクエストが失敗しました".to_string(),
+                            )
+                        });
+                    }
+                    // continue: ループ先頭で cache hit ならリターン、miss なら再 acquire
+                }
+            }
+        }
+        unreachable!()
+    }
+
     /// ファイルパスから JPEG サムネイルを生成する (画像ファイル用)
     ///
-    /// キャッシュヒット時はキャッシュから読み込む。
-    /// ミス時はデコード → リサイズ → JPEG エンコード → キャッシュに書き込み。
+    /// `generate_with_dedup` で同一 `cache_key` の重複生成を抑止する。
     pub(crate) fn generate_from_path(
         &self,
         path: &Path,
         cache_key: &str,
     ) -> Result<Vec<u8>, AppError> {
-        if let Some(cached_path) = self.cache.get(cache_key) {
-            return std::fs::read(&cached_path)
-                .map_err(|e| AppError::InvalidImage(format!("キャッシュ読み込み失敗: {e}")));
-        }
-        self.generate_from_path_inner(path, cache_key)
+        self.generate_with_dedup(cache_key, || self.generate_from_path_inner(path, cache_key))
     }
 
     /// `generate_from_path` の実生成本体 (cache.get 早期リターンを行わない)
@@ -71,18 +121,14 @@ impl ThumbnailService {
     }
 
     /// バイト列から JPEG サムネイルを生成する (アーカイブエントリ用)
-    ///
-    /// キャッシュヒット時はキャッシュから読み込む。
     pub(crate) fn generate_from_bytes(
         &self,
         source_bytes: &[u8],
         cache_key: &str,
     ) -> Result<Vec<u8>, AppError> {
-        if let Some(cached_path) = self.cache.get(cache_key) {
-            return std::fs::read(&cached_path)
-                .map_err(|e| AppError::InvalidImage(format!("キャッシュ読み込み失敗: {e}")));
-        }
-        self.generate_from_bytes_inner(source_bytes, cache_key)
+        self.generate_with_dedup(cache_key, || {
+            self.generate_from_bytes_inner(source_bytes, cache_key)
+        })
     }
 
     /// `generate_from_bytes` の実生成本体 (cache.get 早期リターンを行わない)
@@ -107,11 +153,9 @@ impl ThumbnailService {
         cache_key: &str,
         timeout_secs: u64,
     ) -> Result<Vec<u8>, AppError> {
-        if let Some(cached_path) = self.cache.get(cache_key) {
-            return std::fs::read(&cached_path)
-                .map_err(|e| AppError::InvalidImage(format!("キャッシュ読み込み失敗: {e}")));
-        }
-        self.generate_pdf_thumbnail_inner(pdf_path, cache_key, timeout_secs)
+        self.generate_with_dedup(cache_key, || {
+            self.generate_pdf_thumbnail_inner(pdf_path, cache_key, timeout_secs)
+        })
     }
 
     /// `generate_pdf_thumbnail` の実生成本体 (cache.get 早期リターンを行わない)
@@ -326,7 +370,8 @@ mod tests {
         let dir = tempfile::TempDir::new().unwrap();
         let cache =
             Arc::new(TempFileCache::new(dir.path().to_path_buf(), 10 * 1024 * 1024).unwrap());
-        (ThumbnailService::new(cache), dir)
+        let inflight = InflightLocks::new();
+        (ThumbnailService::new(cache, inflight), dir)
     }
 
     /// 1x1 赤ピクセルの最小 JPEG を生成する
@@ -457,5 +502,104 @@ mod tests {
         let source = minimal_jpeg();
         svc.generate_from_bytes(&source, "cached_key").unwrap();
         assert!(svc.is_cached("cached_key"));
+    }
+
+    #[test]
+    fn 同一cache_keyへの並列generate_with_dedupで正常系のgeneratorは1回しか呼ばれない() {
+        use std::sync::Barrier;
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use std::thread;
+        use std::time::Duration;
+
+        let (svc, _dir) = make_service();
+        let svc = Arc::new(svc);
+        let n = 8;
+        let barrier = Arc::new(Barrier::new(n));
+        let counter = Arc::new(AtomicUsize::new(0));
+        let cache_key = "parallel_dedup_key";
+        let source = Arc::new(minimal_jpeg());
+
+        let handles: Vec<_> = (0..n)
+            .map(|_| {
+                let svc = Arc::clone(&svc);
+                let barrier = Arc::clone(&barrier);
+                let counter = Arc::clone(&counter);
+                let source = Arc::clone(&source);
+                thread::spawn(move || {
+                    // 全スレッドが同時に generate_with_dedup を呼ぶ
+                    barrier.wait();
+                    svc.generate_with_dedup(cache_key, || {
+                        counter.fetch_add(1, Ordering::Relaxed);
+                        // Owner 在籍時間を確保して他スレッドを Waiter 化させる
+                        thread::sleep(Duration::from_millis(50));
+                        svc.generate_from_bytes_inner(&source, cache_key)
+                    })
+                })
+            })
+            .collect();
+
+        let results: Vec<_> = handles.into_iter().map(|h| h.join().unwrap()).collect();
+
+        // 全件 Ok で結果バイト列が一致
+        let first = results[0].as_ref().unwrap().clone();
+        for r in &results {
+            let bytes = r.as_ref().unwrap();
+            assert_eq!(bytes, &first);
+        }
+        // 正常系では generator は 1 回のみ
+        assert_eq!(counter.load(Ordering::Relaxed), 1);
+    }
+
+    #[test]
+    fn owner_generatorがerrを返した場合waiterが再試行する() {
+        use std::sync::Barrier;
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use std::thread;
+        use std::time::Duration;
+
+        let (svc, _dir) = make_service();
+        let svc = Arc::new(svc);
+        let n = 4;
+        let barrier = Arc::new(Barrier::new(n));
+        let counter = Arc::new(AtomicUsize::new(0));
+        let cache_key = "retry_key";
+        let source = Arc::new(minimal_jpeg());
+
+        let handles: Vec<_> = (0..n)
+            .map(|_| {
+                let svc = Arc::clone(&svc);
+                let barrier = Arc::clone(&barrier);
+                let counter = Arc::clone(&counter);
+                let source = Arc::clone(&source);
+                thread::spawn(move || {
+                    barrier.wait();
+                    svc.generate_with_dedup(cache_key, || {
+                        let n = counter.fetch_add(1, Ordering::Relaxed);
+                        thread::sleep(Duration::from_millis(30));
+                        if n == 0 {
+                            // 1 回目は Err を返す（Owner 失敗）
+                            Err(AppError::InvalidImage("test failure".to_string()))
+                        } else {
+                            // 2 回目以降は Ok（再試行で成功）
+                            svc.generate_from_bytes_inner(&source, cache_key)
+                        }
+                    })
+                })
+            })
+            .collect();
+
+        let results: Vec<_> = handles.into_iter().map(|h| h.join().unwrap()).collect();
+
+        // 1 件は Err、残りは Ok（Waiter のリトライで成功）
+        let ok_count = results.iter().filter(|r| r.is_ok()).count();
+        let err_count = results.iter().filter(|r| r.is_err()).count();
+        assert!(ok_count >= 1, "ok_count = {ok_count}");
+        assert_eq!(ok_count + err_count, n);
+        // generator は最大 2 回（初回 Err + リトライ Ok）
+        let calls = counter.load(Ordering::Relaxed);
+        assert!(
+            (1..=2).contains(&calls),
+            "generator calls = {calls} (expected 1..=2)"
+        );
     }
 }
