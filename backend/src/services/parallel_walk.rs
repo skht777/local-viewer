@@ -190,12 +190,13 @@ fn scan_one(
                 let child_path = dir_path.join(&name);
 
                 // セキュリティ検証 (stat 前)
-                // reject された child の存在自体が parent の完全性を損なうため
-                // is_complete=false に倒す（destructive canonicalize の保護）
+                // path_security による reject は「常時適用されるポリシー」(symlink 除外等)
+                // であり、エラーではない。skip_hidden 同様 silent skip し is_complete は
+                // 維持する。これにより allow_symlinks=false 設定下で symlink を含む dir
+                // の canonicalize が永久に skip されることを防ぐ
                 if let Some(validator) = path_validator
                     && !validator(&child_path)
                 {
-                    is_complete = false;
                     continue;
                 }
 
@@ -791,18 +792,25 @@ mod tests {
     }
 
     #[test]
-    fn is_completeはpath_security_reject時にfalseになる() {
+    fn is_completeはpath_security_rejectでもtrueを維持する() {
+        // path_security.validate reject は「常時適用されるポリシー」(symlink 除外等)
+        // であり、エラーではない。skip_hidden 同様 silent skip し is_complete は維持する。
+        // これによりポリシー reject される child を含む parent でも canonicalize が動作し、
+        // stale 行が永続的に残ることを防ぐ。
         let tree = TestTree::new();
-        // sub1 を reject する validator
         let sub1_path = tree.root.join("sub1");
         let validator = move |path: &Path| !path.starts_with(&sub1_path);
 
         let (entry, _batch) = scan_one(&tree.root, true, Some(&validator), &|| false);
 
-        // sub1 が reject されたため is_complete=false
         assert!(
-            !entry.is_complete,
-            "path_security reject で is_complete=false"
+            entry.is_complete,
+            "path_security reject はポリシー filter (skip_hidden 同等)、is_complete=true を維持"
+        );
+        // sub1 が subdirs に含まれないこと (silent filter)
+        assert!(
+            !entry.subdirs.iter().any(|(name, _)| name == "sub1"),
+            "reject された child は subdirs から除外される"
         );
     }
 
