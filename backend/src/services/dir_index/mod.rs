@@ -28,8 +28,14 @@ use rusqlite::Connection;
 
 use dirty_state::DirtyState;
 
-/// スキーマバージョン (v3: マイグレーション時に `dir_meta` + `full_scan_done` もクリア)
-const SCHEMA_VERSION: &str = "3";
+/// スキーマバージョン
+///
+/// - v3: マイグレーション時に `dir_meta` + `full_scan_done` もクリア
+/// - v4: per-parent cascade canonicalize 導入。旧実装 (`INSERT OR REPLACE` のみ)
+///   で蓄積された stale 行を強制クリアし、cold start で `canonicalize_parent_in_tx`
+///   経由で再構築させる。旧 DB は post-deletion mtime のみを記録していて
+///   `incremental_scan` で枝刈りされる罠を回避するための一回限りの purge。
+const SCHEMA_VERSION: &str = "4";
 
 /// `BulkInserter` のバッチサイズ
 const BATCH_SIZE: usize = 1000;
