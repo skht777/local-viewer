@@ -10,11 +10,11 @@ describe("thumbnailUrl", () => {
   });
 
   test("modifiedAt 指定時に ?v= パラメータが付与される", () => {
-    expect(thumbnailUrl("abc123", 1700000000)).toBe("/api/thumbnail/abc123?v=1700000000");
+    expect(thumbnailUrl("abc123", 1_700_000_000)).toBe("/api/thumbnail/abc123?v=1700000000");
   });
 
   test("modifiedAt が小数の場合は整数に切り捨てる", () => {
-    expect(thumbnailUrl("abc123", 1700000000.789)).toBe("/api/thumbnail/abc123?v=1700000000");
+    expect(thumbnailUrl("abc123", 1_700_000_000.789)).toBe("/api/thumbnail/abc123?v=1700000000");
   });
 
   test("modifiedAt が null の場合はバージョンなし", () => {

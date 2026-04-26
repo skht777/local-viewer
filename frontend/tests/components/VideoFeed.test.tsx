@@ -35,7 +35,7 @@ describe("VideoFeed", () => {
     const inner = container.querySelector(".relative.mx-auto.max-w-4xl");
     expect(inner).not.toBeNull();
     // getTotalSize() による高さが設定されている
-    const style = (inner as HTMLElement).style;
+    const { style } = inner as HTMLElement;
     expect(style.height).toBeTruthy();
   });
 });

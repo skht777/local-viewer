@@ -136,13 +136,13 @@ describe("sortEntries", () => {
   describe("compareEntryName", () => {
     test("自然順で数値を数値として比較する", () => {
       const images = [entry("img10.jpg"), entry("img1.jpg"), entry("img2.jpg")];
-      const result = [...images].sort(compareEntryName);
+      const result = [...images].toSorted(compareEntryName);
       expect(result.map((e) => e.name)).toEqual(["img1.jpg", "img2.jpg", "img10.jpg"]);
     });
 
     test("大文字小文字を区別しない昇順", () => {
       const images = [entry("Beta.jpg"), entry("alpha.jpg"), entry("CHARLIE.jpg")];
-      const result = [...images].sort(compareEntryName);
+      const result = [...images].toSorted(compareEntryName);
       expect(result.map((e) => e.name)).toEqual(["alpha.jpg", "Beta.jpg", "CHARLIE.jpg"]);
     });
 
@@ -153,7 +153,7 @@ describe("sortEntries", () => {
         entry("mid.jpg", "image", 200),
         entry("early.jpg", "image", 100),
       ];
-      const viewerOrder = [...dateDescOrder].sort(compareEntryName);
+      const viewerOrder = [...dateDescOrder].toSorted(compareEntryName);
       expect(viewerOrder.map((e) => e.name)).toEqual(["early.jpg", "late.jpg", "mid.jpg"]);
     });
   });

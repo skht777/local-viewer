@@ -70,8 +70,12 @@ const defaultProps = {
   sort: "name-asc" as const,
   buildBrowseSearch: (overrides?: { tab?: string; index?: number }) => {
     const sp = new URLSearchParams();
-    if (overrides?.tab && overrides.tab !== "filesets") sp.set("tab", overrides.tab);
-    if (overrides?.index != null) sp.set("index", String(overrides.index));
+    if (overrides?.tab && overrides.tab !== "filesets") {
+      sp.set("tab", overrides.tab);
+    }
+    if (overrides?.index != null) {
+      sp.set("index", String(overrides.index));
+    }
     return sp.toString() ? `?${sp}` : "";
   },
 };

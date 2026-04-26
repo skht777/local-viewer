@@ -6,11 +6,9 @@ import { renderHook, act, waitFor } from "@testing-library/react";
 import { vi, describe, test, expect, beforeEach } from "vitest";
 
 // src/lib/pdfjs をモック
-vi.mock("../../src/lib/pdfjs", () => {
-  return {
-    getDocument: vi.fn(),
-  };
-});
+vi.mock("../../src/lib/pdfjs", () => ({
+  getDocument: vi.fn(),
+}));
 
 import { getDocument } from "../../src/lib/pdfjs";
 import { usePdfDocument } from "../../src/hooks/usePdfDocument";

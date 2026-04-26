@@ -32,7 +32,7 @@ const mockBrowseData: BrowseResponse = {
       node_id: "vid1",
       name: "clip.mp4",
       kind: "video",
-      size_bytes: 10240,
+      size_bytes: 10_240,
       mime_type: "video/mp4",
       child_count: null,
     },
@@ -206,7 +206,7 @@ describe("BrowsePage", () => {
           size_bytes: 100,
           mime_type: "image/jpeg",
           child_count: null,
-          modified_at: 1700000000,
+          modified_at: 1_700_000_000,
         },
       ],
     };
@@ -239,7 +239,7 @@ describe("BrowsePage", () => {
           size_bytes: null,
           mime_type: null,
           child_count: 3,
-          modified_at: 1700000000,
+          modified_at: 1_700_000_000,
         },
       ],
     };
@@ -272,7 +272,7 @@ describe("BrowsePage", () => {
           size_bytes: null,
           mime_type: null,
           child_count: 3,
-          modified_at: 1700000000,
+          modified_at: 1_700_000_000,
         },
       ],
     };
@@ -305,7 +305,7 @@ describe("BrowsePage", () => {
           size_bytes: null,
           mime_type: null,
           child_count: 3,
-          modified_at: 1700000000,
+          modified_at: 1_700_000_000,
         },
         {
           node_id: "vid1",
@@ -314,7 +314,7 @@ describe("BrowsePage", () => {
           size_bytes: 5000,
           mime_type: "video/mp4",
           child_count: null,
-          modified_at: 1700000000,
+          modified_at: 1_700_000_000,
         },
       ],
     };

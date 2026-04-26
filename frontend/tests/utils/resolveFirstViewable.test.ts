@@ -37,7 +37,9 @@ function createMockQueryClient(responses: Record<string, BrowseResponse>): Query
     const key = opts.queryKey as string[];
     const nodeId = key[1];
     const response = responses[nodeId];
-    if (!response) throw new Error(`No mock for nodeId: ${nodeId}`);
+    if (!response) {
+      throw new Error(`No mock for nodeId: ${nodeId}`);
+    }
     return response;
   });
   return client;

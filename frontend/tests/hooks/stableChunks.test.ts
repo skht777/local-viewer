@@ -5,7 +5,8 @@
 // - 空配列入力: 空チャンクが返る
 
 import { describe, expect, test } from "vitest";
-import { computeStableChunks, type ChunkState } from "../../src/hooks/api/thumbnailQueries";
+import { computeStableChunks } from "../../src/hooks/api/thumbnailQueries";
+import type { ChunkState } from "../../src/hooks/api/thumbnailQueries";
 
 const EMPTY_STATE: ChunkState = { chunks: [], idSet: new Set() };
 

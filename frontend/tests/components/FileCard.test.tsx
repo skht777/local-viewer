@@ -77,7 +77,7 @@ const archiveEntry: BrowseEntry = {
   node_id: "arc001",
   name: "photos.zip",
   kind: "archive",
-  size_bytes: 10240,
+  size_bytes: 10_240,
   mime_type: "application/zip",
   child_count: null,
   modified_at: null,

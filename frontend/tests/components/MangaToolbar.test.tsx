@@ -6,7 +6,7 @@ const defaultProps = {
   currentIndex: 0,
   totalCount: 10,
   zoomLevel: 100,
-  scrollSpeed: 1.0,
+  scrollSpeed: 1,
   setName: "test-set",
   onScrollToImage: vi.fn(),
   onZoomIn: vi.fn(),
@@ -62,7 +62,7 @@ describe("MangaToolbar", () => {
   });
 
   test("スクロール速度が表示される", () => {
-    render(<MangaToolbar {...defaultProps} scrollSpeed={2.0} />);
+    render(<MangaToolbar {...defaultProps} scrollSpeed={2} />);
     expect(screen.getByText("2x")).toBeInTheDocument();
   });
 

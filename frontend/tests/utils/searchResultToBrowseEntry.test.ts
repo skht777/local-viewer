@@ -39,13 +39,13 @@ describe("searchResultToBrowseEntry", () => {
   test("拡張フィールドが指定されていれば反映される", () => {
     const entry = searchResultToBrowseEntry(
       baseResult({
-        modified_at: 1700000000,
+        modified_at: 1_700_000_000,
         mime_type: "image/jpeg",
         child_count: 5,
         preview_node_ids: ["a", "b"],
       }),
     );
-    expect(entry.modified_at).toBe(1700000000);
+    expect(entry.modified_at).toBe(1_700_000_000);
     expect(entry.mime_type).toBe("image/jpeg");
     expect(entry.child_count).toBe(5);
     expect(entry.preview_node_ids).toEqual(["a", "b"]);

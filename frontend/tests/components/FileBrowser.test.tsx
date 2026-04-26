@@ -26,7 +26,7 @@ const mockEntries: BrowseEntry[] = [
     size_bytes: null,
     mime_type: null,
     child_count: 10,
-    modified_at: 1700000000,
+    modified_at: 1_700_000_000,
     preview_node_ids: null,
   },
   {
@@ -36,17 +36,17 @@ const mockEntries: BrowseEntry[] = [
     size_bytes: 2048,
     mime_type: "image/jpeg",
     child_count: null,
-    modified_at: 1700000100,
+    modified_at: 1_700_000_100,
     preview_node_ids: null,
   },
   {
     node_id: "file2",
     name: "movie.mp4",
     kind: "video",
-    size_bytes: 10240,
+    size_bytes: 10_240,
     mime_type: "video/mp4",
     child_count: null,
-    modified_at: 1700000200,
+    modified_at: 1_700_000_200,
     preview_node_ids: null,
   },
   {
@@ -56,7 +56,7 @@ const mockEntries: BrowseEntry[] = [
     size_bytes: 4096,
     mime_type: "application/pdf",
     child_count: null,
-    modified_at: 1700000300,
+    modified_at: 1_700_000_300,
     preview_node_ids: null,
   },
 ];
@@ -157,7 +157,7 @@ describe("FileBrowser", () => {
         size_bytes: null,
         mime_type: null,
         child_count: 5,
-        modified_at: 1700000000,
+        modified_at: 1_700_000_000,
         preview_node_ids: null,
       },
       {
@@ -167,7 +167,7 @@ describe("FileBrowser", () => {
         size_bytes: 500,
         mime_type: "application/zip",
         child_count: null,
-        modified_at: 1700000100,
+        modified_at: 1_700_000_100,
         preview_node_ids: null,
       },
       {
@@ -177,7 +177,7 @@ describe("FileBrowser", () => {
         size_bytes: 300,
         mime_type: "application/pdf",
         child_count: null,
-        modified_at: 1700000200,
+        modified_at: 1_700_000_200,
         preview_node_ids: null,
       },
     ];
@@ -239,7 +239,7 @@ describe("FileBrowser", () => {
         size_bytes: null,
         mime_type: null,
         child_count: 5,
-        modified_at: 1700000000,
+        modified_at: 1_700_000_000,
         preview_node_ids: null,
       },
       {
@@ -249,7 +249,7 @@ describe("FileBrowser", () => {
         size_bytes: 100,
         mime_type: "image/jpeg",
         child_count: null,
-        modified_at: 1700000100,
+        modified_at: 1_700_000_100,
         preview_node_ids: null,
       },
       {
@@ -259,7 +259,7 @@ describe("FileBrowser", () => {
         size_bytes: 200,
         mime_type: "image/jpeg",
         child_count: null,
-        modified_at: 1700000200,
+        modified_at: 1_700_000_200,
         preview_node_ids: null,
       },
     ];
@@ -634,7 +634,7 @@ describe("FileBrowser 選択・ダブルクリック・オーバーレイ", () =
         size_bytes: 500,
         mime_type: "application/zip",
         child_count: null,
-        modified_at: 1700000000,
+        modified_at: 1_700_000_000,
         preview_node_ids: null,
       },
     ];

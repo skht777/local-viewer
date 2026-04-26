@@ -25,7 +25,7 @@ beforeEach(() => {
   useViewerStore.setState({
     isSidebarOpen: true,
     zoomLevel: 100,
-    scrollSpeed: 1.0,
+    scrollSpeed: 1,
   });
 });
 

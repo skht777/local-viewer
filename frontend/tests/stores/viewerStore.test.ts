@@ -11,7 +11,7 @@ describe("viewerStore", () => {
       fitMode: "height",
       spreadMode: "single",
       zoomLevel: 100,
-      scrollSpeed: 1.0,
+      scrollSpeed: 1,
       viewerOrigin: null,
       viewerTransitionId: 0,
     });
@@ -115,7 +115,7 @@ describe("viewerStore", () => {
           fitMode: "height",
           spreadMode: "single",
           zoomLevel: 100,
-          scrollSpeed: 1.0,
+          scrollSpeed: 1,
           expandedNodeIds: ["a", "b"],
         },
         version: 0,
@@ -176,17 +176,17 @@ describe("viewerStore", () => {
   });
 
   test("初期状態で scrollSpeed が 1.0", () => {
-    expect(useViewerStore.getState().scrollSpeed).toBe(1.0);
+    expect(useViewerStore.getState().scrollSpeed).toBe(1);
   });
 
   test("setScrollSpeed で範囲内の値を設定できる", () => {
-    useViewerStore.getState().setScrollSpeed(2.0);
-    expect(useViewerStore.getState().scrollSpeed).toBe(2.0);
+    useViewerStore.getState().setScrollSpeed(2);
+    expect(useViewerStore.getState().scrollSpeed).toBe(2);
   });
 
   test("setScrollSpeed で範囲外の値は clamp される", () => {
-    useViewerStore.getState().setScrollSpeed(5.0);
-    expect(useViewerStore.getState().scrollSpeed).toBe(3.0);
+    useViewerStore.getState().setScrollSpeed(5);
+    expect(useViewerStore.getState().scrollSpeed).toBe(3);
     useViewerStore.getState().setScrollSpeed(0.1);
     expect(useViewerStore.getState().scrollSpeed).toBe(0.5);
   });

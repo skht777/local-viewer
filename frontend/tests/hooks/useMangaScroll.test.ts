@@ -29,7 +29,7 @@ describe("useMangaScroll", () => {
         virtualizer: virtualizer as any,
         scrollElement,
         totalCount: 10,
-        scrollSpeed: 1.0,
+        scrollSpeed: 1,
       }),
     );
     act(() => result.current.scrollToImage(5));
@@ -47,7 +47,7 @@ describe("useMangaScroll", () => {
         virtualizer: virtualizer as any,
         scrollElement,
         totalCount: 10,
-        scrollSpeed: 1.0,
+        scrollSpeed: 1,
       }),
     );
     act(() => result.current.scrollDown());
@@ -62,7 +62,7 @@ describe("useMangaScroll", () => {
         virtualizer: virtualizer as any,
         scrollElement,
         totalCount: 10,
-        scrollSpeed: 1.0,
+        scrollSpeed: 1,
       }),
     );
     act(() => result.current.scrollUp());
@@ -77,7 +77,7 @@ describe("useMangaScroll", () => {
         virtualizer: virtualizer as any,
         scrollElement,
         totalCount: 10,
-        scrollSpeed: 2.0,
+        scrollSpeed: 2,
       }),
     );
     act(() => result.current.scrollDown());
@@ -92,7 +92,7 @@ describe("useMangaScroll", () => {
         virtualizer: virtualizer as any,
         scrollElement,
         totalCount: 10,
-        scrollSpeed: 1.0,
+        scrollSpeed: 1,
       }),
     );
     act(() => result.current.scrollToTop());
@@ -107,7 +107,7 @@ describe("useMangaScroll", () => {
         virtualizer: virtualizer as any,
         scrollElement,
         totalCount: 10,
-        scrollSpeed: 1.0,
+        scrollSpeed: 1,
       }),
     );
     act(() => result.current.scrollToBottom());

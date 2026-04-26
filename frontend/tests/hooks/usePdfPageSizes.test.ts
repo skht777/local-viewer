@@ -99,15 +99,15 @@ describe("usePdfPageSizes", () => {
 
     const mockDoc = {
       numPages: 25,
-      getPage: vi.fn((_num: number) => {
-        return Promise.resolve({
+      getPage: vi.fn((_num: number) =>
+        Promise.resolve({
           getViewport: ({ scale }: { scale: number }) => ({
             width: pages[0].width * scale,
             height: pages[0].height * scale,
           }),
           cleanup: vi.fn(),
-        });
-      }),
+        }),
+      ),
       destroy: vi.fn(),
     };
 
