@@ -166,14 +166,13 @@ fn generate_thumbnail_bytes(state: &AppState, node_id: &str) -> Result<Thumbnail
         let mtime_ns = get_mtime_ns(&archive_path)?;
         let cache_key = thumb_svc.make_cache_key(node_id, mtime_ns);
         let etag = compute_thumb_etag(mtime_ns, node_id);
-        // キャッシュヒット時は外部プロセスをスキップ
-        if let Some(cached) = thumb_svc.try_read_cached(&cache_key) {
-            return Ok(ThumbnailResult { data: cached, etag });
-        }
-        let data = state
-            .archive_service
-            .extract_entry(&archive_path, &entry_name)?;
-        let thumb = thumb_svc.generate_from_bytes(&data, &cache_key)?;
+        // archive-entry: extract_entry も dedup 対象に含める
+        let thumb = thumb_svc.generate_with_dedup(&cache_key, || {
+            let data = state
+                .archive_service
+                .extract_entry(&archive_path, &entry_name)?;
+            thumb_svc.generate_from_bytes_inner(&data, &cache_key)
+        })?;
         return Ok(ThumbnailResult { data: thumb, etag });
     }
 
@@ -200,22 +199,23 @@ fn generate_thumbnail_bytes(state: &AppState, node_id: &str) -> Result<Thumbnail
                 "アーカイブが大きすぎるためサムネイル生成をスキップします".to_string(),
             ));
         }
-        // キャッシュヒット時は list_entries + extract_entry をスキップ
-        if let Some(cached) = thumb_svc.try_read_cached(&cache_key) {
-            return Ok(ThumbnailResult { data: cached, etag });
-        }
-        let entry = state
-            .archive_service
-            .first_image_entry(&resolved)?
-            .ok_or_else(|| AppError::NoImage("アーカイブ内に画像が見つかりません".to_string()))?;
-        let data = state
-            .archive_service
-            .extract_entry(&resolved, &entry.name)?;
-        let thumb = thumb_svc.generate_from_bytes(&data, &cache_key)?;
+        // archive-file: first_image_entry + extract_entry も dedup 対象に含める
+        let thumb = thumb_svc.generate_with_dedup(&cache_key, || {
+            let entry = state
+                .archive_service
+                .first_image_entry(&resolved)?
+                .ok_or_else(|| {
+                    AppError::NoImage("アーカイブ内に画像が見つかりません".to_string())
+                })?;
+            let data = state
+                .archive_service
+                .extract_entry(&resolved, &entry.name)?;
+            thumb_svc.generate_from_bytes_inner(&data, &cache_key)
+        })?;
         return Ok(ThumbnailResult { data: thumb, etag });
     }
 
-    // PDF
+    // PDF (generate_pdf_thumbnail 内で dedup 済み)
     if PDF_EXTENSIONS.contains(&ext.as_str()) {
         let thumb = thumb_svc.generate_pdf_thumbnail(
             &resolved,
@@ -225,20 +225,18 @@ fn generate_thumbnail_bytes(state: &AppState, node_id: &str) -> Result<Thumbnail
         return Ok(ThumbnailResult { data: thumb, etag });
     }
 
-    // 動画
+    // 動画: extract_frame も dedup 対象に含める
     if VIDEO_EXTENSIONS.contains(&ext.as_str()) {
-        // キャッシュヒット時は ffmpeg をスキップ
-        if let Some(cached) = thumb_svc.try_read_cached(&cache_key) {
-            return Ok(ThumbnailResult { data: cached, etag });
-        }
-        let frame = video_conv.extract_frame(&resolved).ok_or_else(|| {
-            AppError::FrameExtractFailed("動画のフレーム抽出に失敗しました".to_string())
+        let thumb = thumb_svc.generate_with_dedup(&cache_key, || {
+            let frame = video_conv.extract_frame(&resolved).ok_or_else(|| {
+                AppError::FrameExtractFailed("動画のフレーム抽出に失敗しました".to_string())
+            })?;
+            thumb_svc.generate_from_bytes_inner(&frame, &cache_key)
         })?;
-        let thumb = thumb_svc.generate_from_bytes(&frame, &cache_key)?;
         return Ok(ThumbnailResult { data: thumb, etag });
     }
 
-    // 画像
+    // 画像 (generate_from_path 内で dedup 済み)
     if IMAGE_EXTENSIONS.contains(&ext.as_str()) {
         let thumb = thumb_svc.generate_from_path(&resolved, &cache_key)?;
         return Ok(ThumbnailResult { data: thumb, etag });
@@ -274,18 +272,21 @@ pub(super) fn generate_thumbnail_with_mtime(
                 "アーカイブが大きすぎるためサムネイル生成をスキップします".to_string(),
             ));
         }
-        if let Some(cached) = thumb_svc.try_read_cached(&cache_key) {
-            return Ok(ThumbnailResult { data: cached, etag });
-        }
-        let entry = state
-            .archive_service
-            .first_image_entry(resolved)?
-            .ok_or_else(|| AppError::NoImage("アーカイブ内に画像が見つかりません".to_string()))?;
-        let data = state.archive_service.extract_entry(resolved, &entry.name)?;
-        let thumb = thumb_svc.generate_from_bytes(&data, &cache_key)?;
+        // archive-file: first_image_entry + extract_entry も dedup 対象に含める
+        let thumb = thumb_svc.generate_with_dedup(&cache_key, || {
+            let entry = state
+                .archive_service
+                .first_image_entry(resolved)?
+                .ok_or_else(|| {
+                    AppError::NoImage("アーカイブ内に画像が見つかりません".to_string())
+                })?;
+            let data = state.archive_service.extract_entry(resolved, &entry.name)?;
+            thumb_svc.generate_from_bytes_inner(&data, &cache_key)
+        })?;
         return Ok(ThumbnailResult { data: thumb, etag });
     }
 
+    // PDF (generate_pdf_thumbnail 内で dedup 済み)
     if PDF_EXTENSIONS.contains(&ext.as_str()) {
         let thumb = thumb_svc.generate_pdf_thumbnail(
             resolved,
@@ -295,17 +296,18 @@ pub(super) fn generate_thumbnail_with_mtime(
         return Ok(ThumbnailResult { data: thumb, etag });
     }
 
+    // 動画: extract_frame も dedup 対象に含める
     if VIDEO_EXTENSIONS.contains(&ext.as_str()) {
-        if let Some(cached) = thumb_svc.try_read_cached(&cache_key) {
-            return Ok(ThumbnailResult { data: cached, etag });
-        }
-        let frame = video_conv.extract_frame(resolved).ok_or_else(|| {
-            AppError::FrameExtractFailed("動画のフレーム抽出に失敗しました".to_string())
+        let thumb = thumb_svc.generate_with_dedup(&cache_key, || {
+            let frame = video_conv.extract_frame(resolved).ok_or_else(|| {
+                AppError::FrameExtractFailed("動画のフレーム抽出に失敗しました".to_string())
+            })?;
+            thumb_svc.generate_from_bytes_inner(&frame, &cache_key)
         })?;
-        let thumb = thumb_svc.generate_from_bytes(&frame, &cache_key)?;
         return Ok(ThumbnailResult { data: thumb, etag });
     }
 
+    // 画像 (generate_from_path 内で dedup 済み)
     if IMAGE_EXTENSIONS.contains(&ext.as_str()) {
         let thumb = thumb_svc.generate_from_path(resolved, &cache_key)?;
         return Ok(ThumbnailResult { data: thumb, etag });

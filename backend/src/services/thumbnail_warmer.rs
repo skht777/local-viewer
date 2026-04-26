@@ -157,12 +157,13 @@ fn warm_one_thumbnail_inner(state: &AppState, node_id: &str) {
     if let Some((archive_path, entry_name)) = entry {
         if let Ok(mtime_ns) = mtime_ns_of(&archive_path) {
             let cache_key = thumb_svc.make_cache_key(node_id, mtime_ns);
-            if let Ok(data) = state
-                .archive_service
-                .extract_entry(&archive_path, &entry_name)
-            {
-                let _ = thumb_svc.generate_from_bytes(&data, &cache_key);
-            }
+            // archive-entry: extract_entry も dedup 対象に含める
+            let _ = thumb_svc.generate_with_dedup(&cache_key, || {
+                let data = state
+                    .archive_service
+                    .extract_entry(&archive_path, &entry_name)?;
+                thumb_svc.generate_from_bytes_inner(&data, &cache_key)
+            });
         }
         return;
     }
@@ -187,17 +188,26 @@ fn warm_one_thumbnail_inner(state: &AppState, node_id: &str) {
     let cache_key = thumb_svc.make_cache_key(node_id, mtime_ns);
     let ext = ext_lower(&resolved.to_string_lossy());
 
-    // アーカイブファイル → 先頭画像
+    // アーカイブファイル → 先頭画像 (first_image_entry + extract_entry も dedup 対象に含める)
     if state.archive_service.is_supported(&resolved) {
-        if let Ok(Some(entry)) = state.archive_service.first_image_entry(&resolved) {
-            if let Ok(data) = state.archive_service.extract_entry(&resolved, &entry.name) {
-                let _ = thumb_svc.generate_from_bytes(&data, &cache_key);
-            }
-        }
+        let _ = thumb_svc.generate_with_dedup(&cache_key, || {
+            let entry = state
+                .archive_service
+                .first_image_entry(&resolved)?
+                .ok_or_else(|| {
+                    crate::errors::AppError::NoImage(
+                        "アーカイブ内に画像が見つかりません".to_string(),
+                    )
+                })?;
+            let data = state
+                .archive_service
+                .extract_entry(&resolved, &entry.name)?;
+            thumb_svc.generate_from_bytes_inner(&data, &cache_key)
+        });
         return;
     }
 
-    // PDF
+    // PDF (generate_pdf_thumbnail 内で dedup 済み)
     if PDF_EXTENSIONS.contains(&ext.as_str()) {
         let _ = thumb_svc.generate_pdf_thumbnail(
             &resolved,
@@ -207,15 +217,20 @@ fn warm_one_thumbnail_inner(state: &AppState, node_id: &str) {
         return;
     }
 
-    // 動画
+    // 動画: extract_frame も dedup 対象に含める
     if VIDEO_EXTENSIONS.contains(&ext.as_str()) {
-        if let Some(frame) = video_conv.extract_frame(&resolved) {
-            let _ = thumb_svc.generate_from_bytes(&frame, &cache_key);
-        }
+        let _ = thumb_svc.generate_with_dedup(&cache_key, || {
+            let frame = video_conv.extract_frame(&resolved).ok_or_else(|| {
+                crate::errors::AppError::FrameExtractFailed(
+                    "動画のフレーム抽出に失敗しました".to_string(),
+                )
+            })?;
+            thumb_svc.generate_from_bytes_inner(&frame, &cache_key)
+        });
         return;
     }
 
-    // 画像
+    // 画像 (generate_from_path 内で dedup 済み)
     if IMAGE_EXTENSIONS.contains(&ext.as_str()) {
         let _ = thumb_svc.generate_from_path(&resolved, &cache_key);
     }
