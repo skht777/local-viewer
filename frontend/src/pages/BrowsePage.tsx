@@ -208,12 +208,22 @@ export default function BrowsePage() {
     setMode(params.mode === "cg" ? "manga" : "cg");
   }, [params.mode, setMode]);
 
+  // ブラウズ間遷移の共通 callback
+  // - 同一 nodeId への navigate を抑制し history 重複を防ぐ（ガードはコミット 3 で追加）
+  // - search は呼び出し側で構築する（mode/sort/tab を保持するため）
+  const navigateBrowse = useCallback(
+    (targetNodeId: string, search: string) => {
+      navigate(`/browse/${targetNodeId}${search}`);
+    },
+    [navigate],
+  );
+
   // 親ディレクトリに戻る
   const handleGoParent = useCallback(() => {
     if (data?.parent_node_id) {
-      navigate(`/browse/${data.parent_node_id}${buildBrowseSearch()}`);
+      navigateBrowse(data.parent_node_id, buildBrowseSearch());
     }
-  }, [data?.parent_node_id, navigate, buildBrowseSearch]);
+  }, [data?.parent_node_id, navigateBrowse, buildBrowseSearch]);
 
   // ツリーにフォーカス移動（現在のディレクトリのノードにフォーカス）
   const handleFocusTree = useCallback(() => {
@@ -259,7 +269,7 @@ export default function BrowsePage() {
       <BrowseHeader
         currentName={data?.current_name ?? ""}
         ancestors={data?.ancestors ?? []}
-        onBreadcrumbSelect={(id) => navigate(`/browse/${id}${buildBrowseSearch()}`)}
+        onBreadcrumbSelect={(id) => navigateBrowse(id, buildBrowseSearch())}
         mode={params.mode}
         onModeChange={setMode}
         nodeId={nodeId}
@@ -278,7 +288,7 @@ export default function BrowsePage() {
             rootEntries={rootEntries}
             activeNodeId={nodeId ?? ""}
             ancestorNodeIds={ancestorNodeIds}
-            onNavigate={(id) => navigate(`/browse/${id}${buildBrowseSearch()}`)}
+            onNavigate={(id) => navigateBrowse(id, buildBrowseSearch())}
             onFocusBrowser={handleFocusBrowser}
             keyboardEnabled={focusArea === "tree"}
           />
@@ -290,7 +300,7 @@ export default function BrowsePage() {
             entries={data?.entries ?? []}
             isLoading={isLoading}
             onNavigate={(id, options) => {
-              navigate(`/browse/${id}${buildBrowseSearch({ tab: options?.tab })}`);
+              navigateBrowse(id, buildBrowseSearch({ tab: options?.tab }));
             }}
             onImageClick={openViewerNameSorted}
             onPdfClick={openPdfViewer}
