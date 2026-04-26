@@ -11,13 +11,14 @@ import { useSearchNavigation } from "../../src/hooks/useSearchNavigation";
 import type { SearchResult } from "../../src/types/api";
 
 function makeLocation(search = ""): Location {
+  // Location 型の internal フィールドは undefined キャストで埋める
   return {
     pathname: "/browse/x",
     search,
     hash: "",
     state: null,
     key: "default",
-  };
+  } as unknown as Location;
 }
 
 function makeResult(
