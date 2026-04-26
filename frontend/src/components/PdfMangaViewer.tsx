@@ -3,8 +3,7 @@
 // - PdfCanvas で各ページを canvas 描画
 // - MangaToolbar, PageCounter, キーボード等を再利用
 
-import { useCallback, useEffect, useRef, useState } from "react";
-import { useVirtualizer } from "@tanstack/react-virtual";
+import { useCallback, useRef, useState } from "react";
 import type { AncestorEntry } from "../types/api";
 import type { SortOrder, ViewerMode } from "../hooks/useViewerParams";
 import { useViewerStore } from "../stores/viewerStore";
@@ -12,12 +11,14 @@ import { useCursorAutoHide } from "../hooks/useCursorAutoHide";
 import { useFullscreen } from "../hooks/useFullscreen";
 import { useMangaScroll } from "../hooks/useMangaScroll";
 import { useMangaKeyboard } from "../hooks/useMangaKeyboard";
+import { useMangaVirtualizer } from "../hooks/useMangaVirtualizer";
 import { useSetJump } from "../hooks/useSetJump";
 import { useSiblingPrefetch } from "../hooks/useSiblingPrefetch";
 import { useToast } from "../hooks/useToast";
 import { useToolbarAutoHide } from "../hooks/useToolbarAutoHide";
 import { usePdfDocument } from "../hooks/usePdfDocument";
 import { usePdfPageSizes } from "../hooks/usePdfPageSizes";
+import { useUrlIndexSync } from "../hooks/useUrlIndexSync";
 import { formatPageLabel } from "../utils/formatPageLabel";
 import { PdfCanvas } from "./PdfCanvas";
 import { KeyboardHelp, MANGA_SHORTCUTS } from "./KeyboardHelp";
@@ -64,37 +65,16 @@ export function PdfMangaViewer({
   // ページサイズ事前取得 (estimateSize 精度向上)
   const { pageSizes, isReady: pageSizesReady } = usePdfPageSizes(document);
 
-  // スクロールコンテナ
-  const scrollRef = useRef<HTMLDivElement>(null);
-  const [scrollElement, setScrollElement] = useState<HTMLDivElement | null>(null);
-  useEffect(() => {
-    setScrollElement(scrollRef.current);
-  }, []);
-
-  // 仮想スクロール
-  const virtualizer = useVirtualizer({
+  // 仮想スクロール（pageSizes 反映 + 初期スクロール + zoom anchor 維持）
+  const anchorIndexRef = useRef(0);
+  const { virtualizer, scrollRef, scrollElement } = useMangaVirtualizer({
     count: pageCount,
-    getScrollElement: () => scrollRef.current,
-    estimateSize: (index) => {
-      // ページサイズが取得済みなら正確な高さを返す
-      if (pageSizesReady && pageSizes[index]) {
-        const ps = pageSizes[index];
-        const w = ((scrollRef.current?.clientWidth ?? 800) * zoomLevel) / 100;
-        return w * (ps.height / ps.width);
-      }
-      // フォールバック: 3:4 比率
-      const w = scrollRef.current?.clientWidth ?? 800;
-      return (w * zoomLevel * 4) / (100 * 3);
-    },
-    overscan: 3,
+    zoomLevel,
+    initialIndex: initialPage - 1,
+    pageSizes,
+    pageSizesReady,
+    anchorIndexRef,
   });
-
-  // pageSizes 取得完了時に measure を再実行
-  useEffect(() => {
-    if (pageSizesReady) {
-      virtualizer.measure();
-    }
-  }, [pageSizesReady, virtualizer]);
 
   // スクロール位置からのページ検出
   const mangaScroll = useMangaScroll({
@@ -104,36 +84,23 @@ export function PdfMangaViewer({
     scrollSpeed,
   });
 
-  // currentIndex を URL に同期（値が変化した場合のみ）
-  useEffect(() => {
-    // 1-based
-    const page = mangaScroll.currentIndex + 1;
-    if (page !== initialPage) {
-      onPageChange(page);
-    }
-  }, [mangaScroll.currentIndex, initialPage, onPageChange]);
+  // zoom anchor 用に最新 index を ref に反映
+  anchorIndexRef.current = mangaScroll.currentIndex;
 
-  // 初期表示で initialPage の位置にスクロール
-  const initialScrollDone = useRef(false);
-  useEffect(() => {
-    if (!initialScrollDone.current && initialPage > 1 && pageCount > 0) {
-      virtualizer.scrollToIndex(initialPage - 1, { align: "start" });
-      initialScrollDone.current = true;
-    }
-  }, [initialPage, pageCount, virtualizer]);
-
-  // ズーム変更時: スクロールアンカー維持
-  const prevZoomLevel = useRef(zoomLevel);
-  useEffect(() => {
-    if (prevZoomLevel.current !== zoomLevel) {
-      const anchorIndex = mangaScroll.currentIndex;
-      virtualizer.measure();
-      requestAnimationFrame(() => {
-        virtualizer.scrollToIndex(anchorIndex, { align: "start" });
-      });
-      prevZoomLevel.current = zoomLevel;
-    }
-  }, [zoomLevel, virtualizer, mangaScroll.currentIndex]);
+  // currentIndex を URL に即時同期（PdfMangaViewer は initialPage 比較で発火回数が少ないため debounce 不要）
+  // onIndexChange は 0-based、URL は 1-based に変換して onPageChange へ
+  const handleIndexChange = useCallback(
+    (idx: number) => {
+      onPageChange(idx + 1);
+    },
+    [onPageChange],
+  );
+  useUrlIndexSync({
+    currentIndex: mangaScroll.currentIndex,
+    externalIndex: initialPage - 1,
+    onChange: handleIndexChange,
+    debounceMs: null,
+  });
 
   // ツールバー自動表示/非表示
 
