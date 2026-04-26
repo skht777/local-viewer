@@ -7,7 +7,7 @@
 // - enableTextLayer: テキスト選択用の透明テキストレイヤーオーバーレイ
 
 import { useEffect, useRef, useState } from "react";
-import type { PDFDocumentProxy, RenderTask } from "../lib/pdfjs";
+import type { PageViewport, PDFDocumentProxy, PDFPageProxy } from "../lib/pdfjs";
 import { TextLayer } from "../lib/pdfjs";
 import type { FitMode } from "../stores/viewerStore";
 import type { PdfRenderCache } from "../hooks/usePdfRenderCache";
@@ -34,6 +34,152 @@ function clearChildren(container: HTMLElement): void {
   }
 }
 
+// renderPage で算出する scale 関連の派生値
+interface ScaledRender {
+  scale: number;
+  dpr: number;
+  viewport: PageViewport;
+  cssWidth: number;
+  cssHeight: number;
+  cacheKey: string;
+}
+
+// fitMode + container 寸法 + dpr から render 用の scale / viewport / cacheKey を計算する純粋関数
+function computePdfRenderScale(params: {
+  page: PDFPageProxy;
+  pageNumber: number;
+  fitMode: FitMode;
+  containerWidth: number;
+  containerHeight: number;
+}): ScaledRender {
+  const baseViewport = params.page.getViewport({ scale: 1 });
+  const rawScale =
+    params.fitMode === "width"
+      ? params.containerWidth / baseViewport.width
+      : params.fitMode === "height"
+        ? params.containerHeight / baseViewport.height
+        : 1;
+  const scale = Math.min(rawScale, MAX_SCALE);
+  const dpr = window.devicePixelRatio || 1;
+  const viewport = params.page.getViewport({ scale: scale * dpr });
+  return {
+    scale,
+    dpr,
+    viewport,
+    cssWidth: viewport.width / dpr,
+    cssHeight: viewport.height / dpr,
+    cacheKey: `${params.pageNumber}:${scale * dpr}`,
+  };
+}
+
+// canvas のピクセルサイズと CSS 寸法を一括設定する
+function setupCanvasDimensions(canvas: HTMLCanvasElement, render: ScaledRender): void {
+  canvas.width = render.viewport.width;
+  canvas.height = render.viewport.height;
+  canvas.style.width = `${render.cssWidth}px`;
+  canvas.style.height = `${render.cssHeight}px`;
+}
+
+// PDF.js の RenderTask を開始し promise / cancel / clearTimer を返す
+// - cancel は AbortSignal ではなく PDF.js 仕様の RenderTask.cancel() を使う
+// - page.cleanup() は呼び出し側 (renderPage 本体の finally / 早期 return) に残す
+interface RenderTaskHandle {
+  promise: Promise<void>;
+  cancel: () => void;
+  clearTimer: () => void;
+}
+
+function startPdfRenderTask(params: {
+  page: PDFPageProxy;
+  canvas: HTMLCanvasElement;
+  context: CanvasRenderingContext2D;
+  viewport: PageViewport;
+  timeoutMs: number;
+  onTimeout: () => void;
+}): RenderTaskHandle {
+  const task = params.page.render({
+    canvas: params.canvas,
+    canvasContext: params.context,
+    viewport: params.viewport,
+  });
+  const timeoutId = setTimeout(() => {
+    task.cancel();
+    params.onTimeout();
+  }, params.timeoutMs);
+  return {
+    promise: task.promise,
+    cancel: () => task.cancel(),
+    clearTimer: () => clearTimeout(timeoutId),
+  };
+}
+
+// キャッシュヒット時: 保存済み bitmap を直描画 + textLayer を必要なら再構築する
+// - 内部で page.cleanup() は呼ばない (textLayer 完了前に getTextContent 不能になる)
+async function paintCachedBitmap(params: {
+  ctx: CanvasRenderingContext2D;
+  bitmap: ImageBitmap;
+  page: PDFPageProxy;
+  textLayerEl: HTMLDivElement | null;
+  enableTextLayer: boolean;
+  render: ScaledRender;
+}): Promise<void> {
+  params.ctx.drawImage(params.bitmap, 0, 0);
+  if (params.enableTextLayer && params.textLayerEl) {
+    await renderTextLayerOverlay(
+      params.page,
+      params.textLayerEl,
+      params.render.scale,
+      params.render.cssWidth,
+      params.render.cssHeight,
+    );
+  }
+}
+
+// 描画完了後に canvas を ImageBitmap 化してキャッシュへ格納する
+async function cacheRenderedBitmap(
+  cache: PdfRenderCache,
+  canvas: HTMLCanvasElement,
+  cacheKey: string,
+): Promise<void> {
+  if (typeof createImageBitmap === "undefined") {
+    return;
+  }
+  try {
+    const bitmap = await createImageBitmap(canvas);
+    cache.put(cacheKey, bitmap);
+  } catch {
+    // createImageBitmap 失敗は無視
+  }
+}
+
+// RenderTask 完了後の後処理: キャッシュ格納 → textLayer 描画 → 完了通知
+async function finishPdfRender(params: {
+  page: PDFPageProxy;
+  canvas: HTMLCanvasElement;
+  render: ScaledRender;
+  renderCache: PdfRenderCache | undefined;
+  textLayerEl: HTMLDivElement | null;
+  enableTextLayer: boolean;
+  cancelled: () => boolean;
+  onRenderComplete?: () => void;
+}): Promise<void> {
+  if (!params.cancelled() && params.renderCache) {
+    await cacheRenderedBitmap(params.renderCache, params.canvas, params.render.cacheKey);
+  }
+  if (!params.cancelled() && params.enableTextLayer && params.textLayerEl) {
+    await renderTextLayerOverlay(
+      params.page,
+      params.textLayerEl,
+      params.render.scale,
+      params.render.cssWidth,
+      params.render.cssHeight,
+    );
+  }
+  if (!params.cancelled()) {
+    params.onRenderComplete?.();
+  }
+}
+
 export function PdfCanvas({
   document,
   pageNumber,
@@ -56,112 +202,78 @@ export function PdfCanvas({
 
   useEffect(() => {
     let cancelled = false;
-    let renderTask: RenderTask | null = null;
-    let timeoutId: ReturnType<typeof setTimeout> | undefined = undefined;
+    let handle: RenderTaskHandle | null = null;
 
-    // 受入: 計画外の新規違反。PDF 描画パイプラインは getPage→viewport→render→
-    // textLayer→cleanup を一連で扱い、途中分割は副作用とライフサイクルの相関を
-    // わかりにくくする。別タスクで段階分解する。
-    // oxlint-disable-next-line max-statements
     async function renderPage() {
       const page = await document.getPage(pageNumber);
-      if (cancelled) {
-        page.cleanup();
-        return;
-      }
-
       const canvas = canvasRef.current;
-      if (!canvas) {
+      if (cancelled || !canvas) {
         page.cleanup();
         return;
       }
-
-      // オリジナルサイズ取得
-      const baseViewport = page.getViewport({ scale: 1 });
-
-      // fitMode に応じた scale 計算
-      const computeScale = (): number => {
-        switch (fitMode) {
-          case "width":
-            return containerWidth / baseViewport.width;
-          case "height":
-            return containerHeight / baseViewport.height;
-          default:
-            return 1;
-        }
-      };
-      // 最大 scale 制限
-      const scale = Math.min(computeScale(), MAX_SCALE);
-
-      // retina 対応
-      const dpr = window.devicePixelRatio || 1;
-      const viewport = page.getViewport({ scale: scale * dpr });
-
-      // canvas のピクセルサイズ (retina 解像度)
-      canvas.width = viewport.width;
-      canvas.height = viewport.height;
-
-      // CSS サイズ (論理ピクセル)
-      const cssWidth = viewport.width / dpr;
-      const cssHeight = viewport.height / dpr;
-      canvas.style.width = `${cssWidth}px`;
-      canvas.style.height = `${cssHeight}px`;
-
+      const render = computePdfRenderScale({
+        page,
+        pageNumber,
+        fitMode,
+        containerWidth,
+        containerHeight,
+      });
+      setupCanvasDimensions(canvas, render);
       const context = canvas.getContext("2d");
       if (!context) {
         page.cleanup();
         return;
       }
 
-      // キャッシュキー: "pageNumber:effectiveScale"
-      const cacheKey = `${pageNumber}:${scale * dpr}`;
-
-      // キャッシュヒット: ImageBitmap から即座に描画
-      if (renderCache) {
-        const cached = renderCache.get(cacheKey);
-        if (cached) {
-          context.drawImage(cached, 0, 0);
-          // テキストレイヤーも描画 (キャッシュヒット時)
-          if (enableTextLayer && textLayerRef.current) {
-            await renderTextLayerOverlay(page, textLayerRef.current, scale, cssWidth, cssHeight);
+      // キャッシュヒット: ImageBitmap から即座に描画 (textLayer 完了後に cleanup)
+      const cached = renderCache?.get(render.cacheKey);
+      if (cached) {
+        try {
+          await paintCachedBitmap({
+            ctx: context,
+            bitmap: cached,
+            page,
+            textLayerEl: textLayerRef.current,
+            enableTextLayer,
+            render,
+          });
+          if (!cancelled) {
+            onRenderComplete?.();
           }
+        } finally {
           page.cleanup();
-          onRenderComplete?.();
-          return;
         }
+        return;
       }
 
-      renderTask = page.render({ canvas, canvasContext: context, viewport });
-
-      // 描画タイムアウト
-      timeoutId = setTimeout(() => {
-        renderTask?.cancel();
-        if (!cancelled) {
-          setRenderError(true);
-        }
-      }, RENDER_TIMEOUT_MS);
-
-      try {
-        await renderTask.promise;
-        clearTimeout(timeoutId);
-        // キャッシュに格納
-        if (!cancelled && renderCache && typeof createImageBitmap !== "undefined") {
-          try {
-            const bitmap = await createImageBitmap(canvas);
-            renderCache.put(cacheKey, bitmap);
-          } catch {
-            // createImageBitmap 失敗は無視
+      // キャッシュミス: RenderTask を起動して描画 → キャッシュ → textLayer
+      handle = startPdfRenderTask({
+        page,
+        canvas,
+        context,
+        viewport: render.viewport,
+        timeoutMs: RENDER_TIMEOUT_MS,
+        onTimeout: () => {
+          if (!cancelled) {
+            setRenderError(true);
           }
-        }
-        // テキストレイヤー描画
-        if (!cancelled && enableTextLayer && textLayerRef.current) {
-          await renderTextLayerOverlay(page, textLayerRef.current, scale, cssWidth, cssHeight);
-        }
-        if (!cancelled) {
-          onRenderComplete?.();
-        }
+        },
+      });
+      try {
+        await handle.promise;
+        handle.clearTimer();
+        await finishPdfRender({
+          page,
+          canvas,
+          render,
+          renderCache,
+          textLayerEl: textLayerRef.current,
+          enableTextLayer,
+          cancelled: () => cancelled,
+          onRenderComplete,
+        });
       } catch (error) {
-        clearTimeout(timeoutId);
+        handle.clearTimer();
         const err = error as { name?: string };
         if (err?.name !== "RenderingCancelledException") {
           // eslint-disable-next-line no-console
@@ -178,8 +290,8 @@ export function PdfCanvas({
 
     return () => {
       cancelled = true;
-      clearTimeout(timeoutId);
-      renderTask?.cancel();
+      handle?.clearTimer();
+      handle?.cancel();
       // テキストレイヤーをクリア (DOM 安全操作)
       if (textLayerEl) {
         clearChildren(textLayerEl);
