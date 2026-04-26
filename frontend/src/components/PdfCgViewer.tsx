@@ -6,10 +6,11 @@
 // - ResizeObserver でコンテナサイズを動的計測
 // - useSetJump: currentNodeId = pdfNodeId (PDF 自身)
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useState } from "react";
 import type { AncestorEntry } from "../types/api";
 import type { SortOrder, ViewerMode } from "../hooks/useViewerParams";
 import { useViewerStore } from "../stores/viewerStore";
+import { useClickToTurnPage } from "../hooks/useClickToTurnPage";
 import { useCursorAutoHide } from "../hooks/useCursorAutoHide";
 import { useFullscreen } from "../hooks/useFullscreen";
 import { useCgNavigation } from "../hooks/useCgNavigation";
@@ -18,8 +19,10 @@ import { useSetJump } from "../hooks/useSetJump";
 import { useSiblingPrefetch } from "../hooks/useSiblingPrefetch";
 import { useToast } from "../hooks/useToast";
 import { useToolbarAutoHide } from "../hooks/useToolbarAutoHide";
+import { usePdfContainerSize } from "../hooks/usePdfContainerSize";
 import { usePdfDocument } from "../hooks/usePdfDocument";
 import { usePdfRenderCache } from "../hooks/usePdfRenderCache";
+import { useViewerBoundaryNavigation } from "../hooks/useViewerBoundaryNavigation";
 import { formatPageLabel } from "../utils/formatPageLabel";
 import { PdfCanvas } from "./PdfCanvas";
 import { CgToolbar } from "./CgToolbar";
@@ -86,22 +89,13 @@ export function PdfCgViewer({
   // ページ境界トースト（duration は useToast 内部 timer と Toast 側を同期）
   const { toastMessage, toastDuration, showToast, dismissToast } = useToast();
 
-  // 境界チェック付きナビゲーション
-  const handleGoNext = useCallback(() => {
-    if (!nav.canGoNext) {
-      showToast("最後のページです");
-      return;
-    }
-    nav.goNext();
-  }, [nav, showToast]);
-
-  const handleGoPrev = useCallback(() => {
-    if (!nav.canGoPrev) {
-      showToast("最初のページです");
-      return;
-    }
-    nav.goPrev();
-  }, [nav, showToast]);
+  // 境界チェック付きナビゲーション（PDF はメッセージを「ページ」表現に差し替え）
+  const { handleGoNext, handleGoPrev } = useViewerBoundaryNavigation({
+    nav,
+    showToast,
+    firstMessage: "最初のページです",
+    lastMessage: "最後のページです",
+  });
 
   // キーボードヘルプ
   const [isHelpOpen, setIsHelpOpen] = useState(false);
@@ -160,64 +154,14 @@ export function PdfCgViewer({
     },
   });
 
+  // コンテナサイズ (fitMode 計算用) — ResizeObserver で動的計測
+  const { containerSize, imageAreaRef, combinedRef } = usePdfContainerSize();
+
   // カーソルオートハイド（1秒 idle で消す）
-  const imageAreaRef = useRef<HTMLDivElement>(null);
   const { resetCursorTimer } = useCursorAutoHide(imageAreaRef);
 
   // 画像クリックでページ送り (画面中央分割: 右半分→次、左半分→前)
-  const handleClick = useCallback(
-    (e: React.MouseEvent<HTMLDivElement>) => {
-      const rect = e.currentTarget.getBoundingClientRect();
-      const mid = rect.left + rect.width / 2;
-      if (e.clientX > mid) {
-        handleGoNext();
-      } else {
-        handleGoPrev();
-      }
-    },
-    [handleGoNext, handleGoPrev],
-  );
-
-  // コンテナサイズ (fitMode 計算用) — ResizeObserver で動的計測
-  const [containerSize, setContainerSize] = useState({ width: 800, height: 600 });
-  const resizeObserverRef = useRef<ResizeObserver | null>(null);
-
-  const combinedRef = useCallback((node: HTMLDivElement | null) => {
-    // 既存の Observer をクリーンアップ
-    resizeObserverRef.current?.disconnect();
-
-    (imageAreaRef as React.MutableRefObject<HTMLDivElement | null>).current = node;
-    if (!node) {
-      return;
-    }
-
-    // 初期サイズ
-    const w = node.clientWidth || 800;
-    const h = node.clientHeight || 600;
-    setContainerSize({ width: w, height: h });
-
-    // ResizeObserver で動的追従
-    resizeObserverRef.current = new ResizeObserver((entries) => {
-      const [entry] = entries;
-      if (!entry) {
-        return;
-      }
-      const { width, height } = entry.contentRect;
-      setContainerSize((prev) => {
-        if (prev.width === width && prev.height === height) {
-          return prev;
-        }
-        return { width, height };
-      });
-    });
-    resizeObserverRef.current.observe(node);
-  }, []);
-
-  // ResizeObserver クリーンアップ
-  // oxlint-disable-next-line arrow-body-style
-  useEffect(() => {
-    return () => resizeObserverRef.current?.disconnect();
-  }, []);
+  const handleClick = useClickToTurnPage(handleGoNext, handleGoPrev);
 
   // 見開き時の各ページに渡す containerWidth
   const { displayIndices } = nav;
