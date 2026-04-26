@@ -26,9 +26,12 @@ use serde::{Deserialize, Serialize};
 
 use crate::errors::AppError;
 use crate::services::browse_cursor::{MAX_LIMIT, SortOrder};
+use crate::services::dir_index::{DirIndex, DirIndexError};
 use crate::services::extensions::{self, EntryKind};
+use crate::services::indexer::{Indexer, WalkCallbackArgs};
 use crate::services::models::{AncestorEntry, BrowseResponse, EntryMeta};
 use crate::services::node_registry::NodeRegistry;
+use crate::services::path_security::PathSecurity;
 use crate::state::AppState;
 
 // --- クエリパラメータ ---
@@ -193,6 +196,187 @@ pub(super) fn dir_entry_to_entry_meta(
     })
 }
 
+// --- fallback writeback ヘルパ ---
+
+/// `mtime_ns` を `i64` で取得する小さなヘルパ
+fn dir_mtime_ns(path: &std::path::Path) -> Option<i64> {
+    let m = std::fs::metadata(path).ok()?;
+    let modified = m.modified().ok()?;
+    let d = modified.duration_since(std::time::UNIX_EPOCH).ok()?;
+    #[allow(
+        clippy::cast_possible_wrap,
+        reason = "UNIX タイムスタンプは i64 範囲内"
+    )]
+    let ns = d.as_nanos() as i64;
+    Some(ns)
+}
+
+/// `parent_key` (`"{mount_id}/relative"` or `"{mount_id}"`) から `mount_id` を抜き出す
+fn extract_mount_id_from_parent_key(parent_key: &str) -> &str {
+    parent_key.split_once('/').map_or(parent_key, |(m, _)| m)
+}
+
+/// fallback writeback 用の完全列挙 (limit なし、fail-closed)
+///
+/// 既存の pagination 系ヘルパは `DirEntry`/`file_type`/`metadata` 失敗を silent drop
+/// するため canonicalize 用には使えない。本関数は以下のいずれかでも失敗した場合に
+/// `Err` を返し writeback 全体を中止する:
+/// - `read_dir` 自体の失敗
+/// - 各 child の `DirEntry` / `file_type` / `metadata` 取得失敗
+/// - `path_security.validate_child` の reject
+///
+/// **CAS 条件**: scan 開始前の `mtime_before` と完了後の `mtime_after` を比較し、
+/// 一致しない場合は `Ok(None)` を返す (途中変更を検出 → writeback skip、次回
+/// fallback で再試行)。
+///
+/// 一致した場合は `WalkCallbackArgs { is_complete: true }` を返す。
+fn scan_full_children_for_writeback(
+    parent_path: &std::path::Path,
+    root: &std::path::Path,
+    mount_id: &str,
+    path_security: &PathSecurity,
+) -> std::io::Result<Option<WalkCallbackArgs>> {
+    let mtime_before = dir_mtime_ns(parent_path)
+        .ok_or_else(|| std::io::Error::other("親 dir mtime 取得失敗 (writeback skip)"))?;
+
+    let mut subdirs: Vec<(String, i64)> = Vec::new();
+    let mut files: Vec<(String, i64, i64)> = Vec::new();
+
+    for entry_result in std::fs::read_dir(parent_path)? {
+        let entry = entry_result?; // DirEntry エラーで fail-closed
+        let name_os = entry.file_name();
+        let name = name_os.to_string_lossy().into_owned();
+        if name.starts_with('.') {
+            continue;
+        }
+        let child_path = parent_path.join(&name);
+        let file_type = entry.file_type()?; // file_type エラーで fail-closed
+        let is_symlink = file_type.is_symlink();
+        // path_security.validate_child で symlink ポリシーと root 配下を検証 (fail-closed)
+        if path_security
+            .validate_child(&child_path, is_symlink)
+            .is_err()
+        {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::PermissionDenied,
+                format!("path_security reject: {}", child_path.display()),
+            ));
+        }
+        let metadata = entry.metadata()?; // metadata エラーで fail-closed
+        let mtime_ns = metadata
+            .modified()
+            .ok()
+            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+            .map(|d| {
+                #[allow(
+                    clippy::cast_possible_wrap,
+                    reason = "UNIX タイムスタンプは i64 範囲内"
+                )]
+                let ns = d.as_nanos() as i64;
+                ns
+            })
+            .ok_or_else(|| std::io::Error::other("child mtime 取得失敗"))?;
+
+        if metadata.is_dir() {
+            subdirs.push((name, mtime_ns));
+        } else if metadata.is_file() {
+            #[allow(clippy::cast_possible_wrap, reason = "ファイルサイズは i64 に収まる")]
+            let size = metadata.len() as i64;
+            files.push((name, size, mtime_ns));
+        }
+    }
+
+    let mtime_after = dir_mtime_ns(parent_path)
+        .ok_or_else(|| std::io::Error::other("親 dir mtime_after 取得失敗 (writeback skip)"))?;
+    if mtime_before != mtime_after {
+        // CAS mismatch: scan 中に外部変更を検出 → writeback skip
+        return Ok(None);
+    }
+
+    Ok(Some(WalkCallbackArgs {
+        walk_entry_path: parent_path.to_string_lossy().into_owned(),
+        root_dir: root.to_string_lossy().into_owned(),
+        mount_id: mount_id.to_owned(),
+        dir_mtime_ns: mtime_before,
+        subdirs,
+        files,
+        is_complete: true,
+    }))
+}
+
+/// fallback の self-healing: 完全列挙 + canonicalize による `DirIndex` 書き戻し
+///
+/// 戻り値は writeback 成功で `true`、CAS mismatch / scan 失敗 / ingest 失敗で
+/// `false`。dirty 解除は呼び出し側で「(`writeback_ok` && 世代一致)」のときだけ実行する。
+///
+/// `CorruptPersistentName` を捕捉した場合は `recover_from_corrupt_persistent_name`
+/// を呼ぶ (`Indexer` 参照は call site が持つ)。
+fn perform_fallback_writeback(
+    parent_path: &std::path::Path,
+    parent_key: &str,
+    path_security: &PathSecurity,
+    dir_index: &DirIndex,
+    indexer: &Indexer,
+) -> bool {
+    let Some(root) = path_security.find_root_for(parent_path) else {
+        tracing::warn!(parent_key, "fallback writeback: find_root_for 失敗");
+        return false;
+    };
+    let mount_id = extract_mount_id_from_parent_key(parent_key);
+
+    let scan_result = scan_full_children_for_writeback(parent_path, &root, mount_id, path_security);
+    match scan_result {
+        Ok(Some(args)) => match dir_index.ingest_walk_entry(&args) {
+            Ok(()) => true,
+            Err(DirIndexError::CorruptPersistentName {
+                mount_id: corrupt_mount_id,
+                parent_path: corrupt_parent,
+                name,
+            }) => {
+                if let Err(rec_err) =
+                    crate::services::dir_index::writes::recover_from_corrupt_persistent_name(
+                        dir_index,
+                        indexer,
+                        &corrupt_mount_id,
+                        &corrupt_parent,
+                        &name,
+                    )
+                {
+                    tracing::error!(
+                        mount_id = %corrupt_mount_id,
+                        error = %rec_err,
+                        "fallback writeback: 破損リカバリ自体に失敗"
+                    );
+                }
+                false
+            }
+            Err(e) => {
+                tracing::warn!(
+                    parent_key,
+                    error = %e,
+                    "fallback writeback: ingest_walk_entry 失敗"
+                );
+                false
+            }
+        },
+        Ok(None) => {
+            tracing::debug!(
+                parent_key,
+                "fallback writeback: mtime CAS mismatch (scan 中変更を検出、次回再試行)"
+            );
+            false
+        }
+        Err(e) => {
+            tracing::warn!(
+                parent_key,
+                error = %e,
+                "fallback writeback: 完全列挙失敗 (writeback skip)"
+            );
+            false
+        }
+    }
+}
+
 // --- ハンドラ ---
 
 /// `GET /api/browse/{node_id}`
@@ -259,6 +443,7 @@ pub(crate) async fn browse_directory(
         // ディレクトリの通常ブラウズ (DirIndex 高速パス → Two-Phase フォールバック)
         let registry = Arc::clone(&state.node_registry);
         let dir_index = Arc::clone(&state.dir_index);
+        let indexer = Arc::clone(&state.indexer);
         let nid = node_id.clone();
         let is_dir_index_ready = state.dir_index.is_ready();
         // 計測用の DirIndex 状態ラベル (cold/warm_indexing/warm_ready)
@@ -327,29 +512,18 @@ pub(crate) async fn browse_directory(
                 state_label,
             );
 
-            // fallback 成功後に DirIndex を自己修復 (mtime 更新 + dirty 解除)
+            // fallback 成功後に DirIndex を自己修復:
+            //   1. scan_full_children_for_writeback で完全列挙 (limit なし、fail-closed)
+            //   2. mtime CAS で途中変更を検出した場合は writeback skip
+            //   3. dir_index.ingest_walk_entry で正本化 (per-parent cascade canonicalize)
+            //   4. dirty 世代カウンタ一致 AND writeback 成功時のみ dirty 解除
+            //      (writeback 失敗時は dirty 維持で次回 fallback 再試行)
             if result.is_ok()
                 && let Some(ref pk) = parent_key_for_heal
             {
-                // 現在の FS mtime で DirIndex を更新
-                if let Some(mtime_ns) = std::fs::metadata(&path)
-                    .ok()
-                    .and_then(|m| m.modified().ok())
-                    .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
-                    .map(|d| {
-                        #[allow(
-                            clippy::cast_possible_wrap,
-                            reason = "UNIX タイムスタンプは i64 範囲内"
-                        )]
-                        let ns = d.as_nanos() as i64;
-                        ns
-                    })
-                {
-                    let _ = dir_index.set_dir_mtime(pk, mtime_ns);
-                }
-                // dirty 世代が一致する場合のみ dirty を解除
-                // （スキャン中に FileWatcher が再 dirty 化した場合は世代が進んでいるので解除されない）
-                if let Some(dg) = dirty_generation {
+                let writeback_ok =
+                    perform_fallback_writeback(&path, pk, &path_security, &dir_index, &indexer);
+                if writeback_ok && let Some(dg) = dirty_generation {
                     dir_index.clear_dir_dirty_if_match(pk, dg);
                 }
             }

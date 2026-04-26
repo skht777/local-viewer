@@ -834,3 +834,135 @@ async fn first_viewableがアーカイブの中身から最初の閲覧対象を
     // parent_node_id はアーカイブ自体の node_id
     assert_eq!(json["parent_node_id"], zip_node_id);
 }
+
+// --- fallback writeback の単体テスト ---
+//
+// 完全列挙ヘルパ `scan_full_children_for_writeback` と `perform_fallback_writeback`
+// の振る舞いを直接検証する。HTTP API 経由のフルスタックテストは複雑になるため、
+// ここでは内部関数を直接呼び出して以下を確認:
+// - 完全列挙成功 → WalkCallbackArgs (is_complete=true) を返す
+// - 隠しファイルは除外
+// - perform_fallback_writeback で DirIndex の stale 行が消える
+// - perform_fallback_writeback の失敗系で false を返す
+
+#[test]
+fn scan_full_children_for_writebackは隠しファイルを除外して完全列挙する() {
+    let (_dir, root) = create_test_dir();
+    let ps = PathSecurity::new(vec![root.clone()], false).unwrap();
+    // .hidden を作成
+    fs::write(root.join("photos/.hidden_secret"), "x").unwrap();
+
+    let parent = root.join("photos");
+    let result =
+        super::scan_full_children_for_writeback(&parent, &root, "aaaaaaaaaaaaaaaa", &ps).unwrap();
+
+    let args = result.expect("CAS 一致時は Some を返す");
+    assert!(args.is_complete, "完全列挙成功で is_complete=true");
+    assert_eq!(args.mount_id, "aaaaaaaaaaaaaaaa");
+
+    // 隠しファイル (.hidden_secret) は除外される
+    let names: Vec<&str> = args.files.iter().map(|(n, _, _)| n.as_str()).collect();
+    assert!(!names.contains(&".hidden_secret"));
+    // 通常のファイルは含まれる: img1.jpg img2.png doc.pdf
+    assert!(names.contains(&"img1.jpg"));
+    assert!(names.contains(&"img2.png"));
+    assert!(names.contains(&"doc.pdf"));
+}
+
+#[tokio::test]
+#[allow(
+    non_snake_case,
+    reason = "日本語テスト名で PascalCase 残存を許容（規約 07_testing.md）"
+)]
+async fn perform_fallback_writebackで削除済ファイル行がDirIndexから消える() {
+    // 主目的シナリオ: dirty 化された parent を fallback writeback で正本化
+    // 1. DirIndex に stale な (a.jpg, b.jpg) 行を投入
+    // 2. 実際の FS には a.jpg のみ作成 (b.jpg は不在)
+    // 3. perform_fallback_writeback で完全列挙 → ingest → b.jpg が消える
+    let (_dir, root) = create_test_dir();
+    let ps = PathSecurity::new(vec![root.clone()], false).unwrap();
+
+    // photos/ に a.jpg を作成 (img1, img2, doc.pdf を削除して a.jpg のみ)
+    let photos = root.join("photos");
+    for name in ["img1.jpg", "img2.png", "doc.pdf"] {
+        fs::remove_file(photos.join(name)).unwrap();
+    }
+    fs::write(photos.join("a.jpg"), "fake-a").unwrap();
+
+    // DirIndex を準備し、stale な行を直接 INSERT
+    let dir_index_db = tempfile::NamedTempFile::new().unwrap();
+    let dir_index = DirIndex::new(dir_index_db.path().to_str().unwrap());
+    dir_index.init_db().unwrap();
+    let parent_key = "aaaaaaaaaaaaaaaa/photos";
+    {
+        // ingest で a.jpg と stale な b.jpg を投入
+        let conn = rusqlite::Connection::open(dir_index_db.path()).unwrap();
+        for (name, kind) in [("a.jpg", "image"), ("b.jpg", "image")] {
+            conn.execute(
+                "INSERT INTO dir_entries (parent_path, name, kind, sort_key, size_bytes, mtime_ns) \
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                rusqlite::params![parent_key, name, kind, name, 100_i64, 1_000_000_i64],
+            )
+            .unwrap();
+        }
+        conn.execute(
+            "INSERT INTO dir_meta (path, mtime_ns) VALUES (?1, ?2)",
+            rusqlite::params![parent_key, 1_000_000_i64],
+        )
+        .unwrap();
+    }
+    assert_eq!(dir_index.child_count(parent_key).unwrap(), 2);
+
+    // Indexer (recovery 用、実際には呼ばれない)
+    let index_db = tempfile::NamedTempFile::new().unwrap();
+    let indexer = crate::services::indexer::Indexer::new(index_db.path().to_str().unwrap());
+    indexer.init_db().unwrap();
+
+    // perform_fallback_writeback で正本化
+    let writeback_ok =
+        super::perform_fallback_writeback(&photos, parent_key, &ps, &dir_index, &indexer);
+
+    assert!(writeback_ok, "writeback 成功で true");
+
+    // DirIndex から b.jpg が消え、a.jpg のみが残ること
+    let entries = dir_index
+        .query_page(parent_key, "name-asc", Some(100), None)
+        .unwrap();
+    let names: Vec<&str> = entries.iter().map(|e| e.name.as_str()).collect();
+    assert_eq!(names, vec!["a.jpg"], "stale な b.jpg が消えている");
+}
+
+#[test]
+fn perform_fallback_writebackは存在しない親で_falseを返す() {
+    let (_dir, root) = create_test_dir();
+    let ps = PathSecurity::new(vec![root.clone()], false).unwrap();
+    let nonexistent = root.join("does_not_exist");
+
+    let dir_index_db = tempfile::NamedTempFile::new().unwrap();
+    let dir_index = DirIndex::new(dir_index_db.path().to_str().unwrap());
+    dir_index.init_db().unwrap();
+    let index_db = tempfile::NamedTempFile::new().unwrap();
+    let indexer = crate::services::indexer::Indexer::new(index_db.path().to_str().unwrap());
+    indexer.init_db().unwrap();
+
+    let writeback_ok = super::perform_fallback_writeback(
+        &nonexistent,
+        "aaaaaaaaaaaaaaaa/does_not_exist",
+        &ps,
+        &dir_index,
+        &indexer,
+    );
+
+    assert!(!writeback_ok, "scan 失敗で false (dirty 維持)");
+}
+
+#[test]
+fn extract_mount_id_from_parent_keyはmount_idのみと配下両方をサポートする() {
+    assert_eq!(super::extract_mount_id_from_parent_key("abc"), "abc");
+    assert_eq!(super::extract_mount_id_from_parent_key("abc/sub"), "abc");
+    assert_eq!(
+        super::extract_mount_id_from_parent_key("abc/sub/deeper"),
+        "abc"
+    );
+    assert_eq!(super::extract_mount_id_from_parent_key(""), "");
+}
