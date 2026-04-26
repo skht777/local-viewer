@@ -67,4 +67,52 @@ describe("useToast", () => {
     });
     expect(result.current.toastMessage).toBeNull();
   });
+
+  test("showToast に duration override を渡すと override 後の時間で消える", () => {
+    const { result } = renderHook(() => useToast());
+    act(() => {
+      result.current.showToast("タイトル", 3000);
+    });
+    expect(result.current.toastMessage).toBe("タイトル");
+    // 2000ms 経過時点ではまだ表示維持
+    act(() => {
+      vi.advanceTimersByTime(2000);
+    });
+    expect(result.current.toastMessage).toBe("タイトル");
+    // 残り 1000ms で消える
+    act(() => {
+      vi.advanceTimersByTime(1000);
+    });
+    expect(result.current.toastMessage).toBeNull();
+  });
+
+  test("showToast に duration を省略するとフックの duration で消える", () => {
+    const { result } = renderHook(() => useToast(500));
+    act(() => {
+      result.current.showToast("ショート");
+    });
+    expect(result.current.toastMessage).toBe("ショート");
+    act(() => {
+      vi.advanceTimersByTime(500);
+    });
+    expect(result.current.toastMessage).toBeNull();
+  });
+
+  test("toastDuration は最後の showToast で指定された値を返す", () => {
+    const { result } = renderHook(() => useToast());
+    // 初期はフックのデフォルト値
+    expect(result.current.toastDuration).toBe(2000);
+    act(() => {
+      result.current.showToast("デフォルト");
+    });
+    expect(result.current.toastDuration).toBe(2000);
+    act(() => {
+      result.current.showToast("ロング", 3000);
+    });
+    expect(result.current.toastDuration).toBe(3000);
+    act(() => {
+      result.current.showToast("デフォルト2");
+    });
+    expect(result.current.toastDuration).toBe(2000);
+  });
 });
