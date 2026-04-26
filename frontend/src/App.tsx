@@ -11,10 +11,12 @@ import SearchResultsPage from "./pages/SearchResultsPage";
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      staleTime: 5 * 60 * 1000, // ローカルファイルは頻繁に変わらない
+      // ローカルファイルは頻繁に変わらない
+      staleTime: 5 * 60 * 1000,
       gcTime: 10 * 60 * 1000,
       retry: 1,
-      refetchOnWindowFocus: false, // タブ切替での不要な再フェッチを防止
+      // タブ切替での不要な再フェッチを防止
+      refetchOnWindowFocus: false,
     },
   },
 });

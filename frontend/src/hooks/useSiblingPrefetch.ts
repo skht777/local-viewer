@@ -128,10 +128,13 @@ export function useSiblingPrefetch({
 
         // API で見つからなかった方向はクライアント側フォールバック
         if ((needPrev && !prevSibling) || (needNext && !nextSibling)) {
-          let parentData: BrowseResponse;
+          let parentData: BrowseResponse | undefined = undefined;
           try {
             parentData = await queryClient.fetchQuery(browseNodeOptions(currentParentId, sort));
           } catch {
+            return;
+          }
+          if (!parentData) {
             return;
           }
           if (!currentChildId || cancelled) {
@@ -164,10 +167,13 @@ export function useSiblingPrefetch({
         if (needPrev || needNext) {
           levelsUp++;
           // 親ディレクトリのデータを取得して上へ
-          let parentData: BrowseResponse;
+          let parentData: BrowseResponse | undefined = undefined;
           try {
             parentData = await queryClient.fetchQuery(browseNodeOptions(currentParentId, sort));
           } catch {
+            return;
+          }
+          if (!parentData) {
             return;
           }
           currentChildId = parentData.current_node_id;
@@ -180,14 +186,16 @@ export function useSiblingPrefetch({
       }
     }
 
-    prefetchBothDirections().then(() => {
+    async function runPrefetch() {
+      await prefetchBothDirections();
       if (!cancelled) {
         if (prefetchedKeys.size >= PREFETCHED_KEYS_MAX) {
           prefetchedKeys.clear();
         }
         prefetchedKeys.add(prefetchKey);
       }
-    });
+    }
+    runPrefetch();
 
     return () => {
       cancelled = true;

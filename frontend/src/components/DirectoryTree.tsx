@@ -87,7 +87,9 @@ function TreeNode({ entry, depth, activeNodeId, ancestorNodeIds, onNavigate }: T
   // oxlint-disable-next-line arrow-body-style
   useEffect(() => {
     return () => {
-      if (hoverTimerRef.current) clearTimeout(hoverTimerRef.current);
+      if (hoverTimerRef.current) {
+        clearTimeout(hoverTimerRef.current);
+      }
     };
   }, []);
 
@@ -206,14 +208,14 @@ export function DirectoryTree({
     }
     const treeItem = focused.closest("[role='treeitem']");
     const isExpanded = treeItem?.getAttribute("aria-expanded") === "true";
-    if (!isExpanded) {
-      // 折りたたまれている → 展開
-      toggleExpanded(nodeId);
-    } else {
+    if (isExpanded) {
       // 展開済み → 最初の子に移動
       const group = treeItem?.querySelector("[role='group']");
       const firstChild = group?.querySelector<HTMLButtonElement>("[data-node-id]");
       firstChild?.focus();
+    } else {
+      // 折りたたまれている → 展開
+      toggleExpanded(nodeId);
     }
   }, [toggleExpanded]);
 

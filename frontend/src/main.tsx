@@ -8,7 +8,11 @@ import App from "./App";
 // Service Worker 登録 (本番ビルドのみ有効)
 registerSW({ immediate: true });
 
-createRoot(document.querySelector("#root")!).render(
+const rootElement = document.querySelector("#root");
+if (!rootElement) {
+  throw new Error("Root element #root not found");
+}
+createRoot(rootElement).render(
   <StrictMode>
     <BrowserRouter>
       <App />

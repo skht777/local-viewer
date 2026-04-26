@@ -81,7 +81,7 @@ export default function BrowsePage() {
     if (!infiniteData?.pages?.length) {
       return undefined;
     }
-    const first = infiniteData.pages[0];
+    const [first] = infiniteData.pages;
     const allEntries = infiniteData.pages.flatMap((p) => p.entries);
     return {
       ...first,

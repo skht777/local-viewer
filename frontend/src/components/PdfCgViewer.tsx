@@ -69,7 +69,8 @@ export function PdfCgViewer({
   const handlePageChange = useCallback(
     (index: number) => {
       setCurrentPage(index);
-      onPageChange(index + 1); // URL は 1-based
+      // URL は 1-based
+      onPageChange(index + 1);
     },
     [onPageChange],
   );
@@ -208,7 +209,7 @@ export function PdfCgViewer({
 
     // ResizeObserver で動的追従
     resizeObserverRef.current = new ResizeObserver((entries) => {
-      const entry = entries[0];
+      const [entry] = entries;
       if (!entry) {
         return;
       }

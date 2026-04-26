@@ -37,8 +37,9 @@ export function usePdfDocument(fileUrl: string): UsePdfDocumentReturn {
 
     const loadingTask = getDocument(fileUrl);
 
-    loadingTask.promise.then(
-      (pdf) => {
+    async function load() {
+      try {
+        const pdf = await loadingTask.promise;
         if (cancelled) {
           // URL 変更/unmount 後に解決 → 破棄
           pdf.destroy();
@@ -47,13 +48,15 @@ export function usePdfDocument(fileUrl: string): UsePdfDocumentReturn {
         documentRef.current = pdf;
         setDocument(pdf);
         setIsLoading(false);
-      },
-      (loadError: unknown) => {
-        if (cancelled) return;
+      } catch (loadError: unknown) {
+        if (cancelled) {
+          return;
+        }
         setError(loadError instanceof Error ? loadError : new Error(String(loadError)));
         setIsLoading(false);
-      },
-    );
+      }
+    }
+    load();
 
     return () => {
       cancelled = true;

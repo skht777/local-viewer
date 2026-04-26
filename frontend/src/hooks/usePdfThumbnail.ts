@@ -65,9 +65,9 @@ export function usePdfThumbnail(nodeId: string, enabled: boolean): PdfThumbnailR
         }
 
         // Canvas → blob → URL
-        const blob = await new Promise<Blob | null>((resolve) =>
-          canvas.toBlob(resolve, "image/jpeg", 0.8),
-        );
+        const blob = await new Promise<Blob | null>((resolve) => {
+          canvas.toBlob(resolve, "image/jpeg", 0.8);
+        });
         if (cancelled || !blob) {
           return;
         }

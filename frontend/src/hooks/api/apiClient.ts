@@ -2,13 +2,21 @@
 // - Vite proxy 経由で /api にアクセス
 // - エラー時は ApiError を throw
 
+interface ApiErrorBody {
+  error: string;
+  code: string;
+  detail?: string;
+}
+
 export class ApiError extends Error {
-  constructor(
-    public status: number,
-    public body: { error: string; code: string; detail?: string },
-  ) {
+  status: number;
+  body: ApiErrorBody;
+
+  constructor(status: number, body: ApiErrorBody) {
     super(body.error);
     this.name = "ApiError";
+    this.status = status;
+    this.body = body;
   }
 }
 
@@ -21,7 +29,7 @@ export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> 
   return response.json() as Promise<T>;
 }
 
-export async function apiPost<T>(path: string, body: unknown): Promise<T> {
+export function apiPost<T>(path: string, body: unknown): Promise<T> {
   return apiFetch<T>(path, {
     method: "POST",
     headers: { "Content-Type": "application/json" },

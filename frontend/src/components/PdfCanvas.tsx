@@ -30,7 +30,7 @@ interface PdfCanvasProps {
 // テキストレイヤーコンテナの子要素を安全にクリアする
 function clearChildren(container: HTMLElement): void {
   while (container.firstChild) {
-    container.removeChild(container.firstChild);
+    container.firstChild.remove();
   }
 }
 
@@ -57,9 +57,10 @@ export function PdfCanvas({
   useEffect(() => {
     let cancelled = false;
     let renderTask: RenderTask | null = null;
-    let timeoutId: ReturnType<typeof setTimeout> | undefined;
+    let timeoutId: ReturnType<typeof setTimeout> | undefined = undefined;
 
-    document.getPage(pageNumber).then(async (page) => {
+    async function renderPage() {
+      const page = await document.getPage(pageNumber);
       if (cancelled) {
         page.cleanup();
         return;
@@ -75,22 +76,18 @@ export function PdfCanvas({
       const baseViewport = page.getViewport({ scale: 1 });
 
       // fitMode に応じた scale 計算
-      let scale: number;
-      switch (fitMode) {
-        case "width":
-          scale = containerWidth / baseViewport.width;
-          break;
-        case "height":
-          scale = containerHeight / baseViewport.height;
-          break;
-        case "original":
-        default:
-          scale = 1;
-          break;
-      }
-
+      const computeScale = (): number => {
+        switch (fitMode) {
+          case "width":
+            return containerWidth / baseViewport.width;
+          case "height":
+            return containerHeight / baseViewport.height;
+          default:
+            return 1;
+        }
+      };
       // 最大 scale 制限
-      scale = Math.min(scale, MAX_SCALE);
+      const scale = Math.min(computeScale(), MAX_SCALE);
 
       // retina 対応
       const dpr = window.devicePixelRatio || 1;
@@ -140,37 +137,37 @@ export function PdfCanvas({
         }
       }, RENDER_TIMEOUT_MS);
 
-      renderTask.promise
-        .then(async () => {
-          clearTimeout(timeoutId);
-          // キャッシュに格納
-          if (!cancelled && renderCache && typeof createImageBitmap !== "undefined") {
-            try {
-              const bitmap = await createImageBitmap(canvas);
-              renderCache.put(cacheKey, bitmap);
-            } catch {
-              // createImageBitmap 失敗は無視
-            }
+      try {
+        await renderTask.promise;
+        clearTimeout(timeoutId);
+        // キャッシュに格納
+        if (!cancelled && renderCache && typeof createImageBitmap !== "undefined") {
+          try {
+            const bitmap = await createImageBitmap(canvas);
+            renderCache.put(cacheKey, bitmap);
+          } catch {
+            // createImageBitmap 失敗は無視
           }
-          // テキストレイヤー描画
-          if (!cancelled && enableTextLayer && textLayerRef.current) {
-            await renderTextLayerOverlay(page, textLayerRef.current, scale, cssWidth, cssHeight);
-          }
-          if (!cancelled) {
-            onRenderComplete?.();
-          }
-        })
-        .catch((error: { name?: string }) => {
-          clearTimeout(timeoutId);
-          if (error?.name !== "RenderingCancelledException") {
-            // eslint-disable-next-line no-console
-            console.error("PDF render error:", error);
-          }
-        })
-        .finally(() => {
-          page.cleanup();
-        });
-    });
+        }
+        // テキストレイヤー描画
+        if (!cancelled && enableTextLayer && textLayerRef.current) {
+          await renderTextLayerOverlay(page, textLayerRef.current, scale, cssWidth, cssHeight);
+        }
+        if (!cancelled) {
+          onRenderComplete?.();
+        }
+      } catch (error) {
+        clearTimeout(timeoutId);
+        const err = error as { name?: string };
+        if (err?.name !== "RenderingCancelledException") {
+          // eslint-disable-next-line no-console
+          console.error("PDF render error:", error);
+        }
+      } finally {
+        page.cleanup();
+      }
+    }
+    renderPage();
 
     // cleanup 時に参照が変わっている可能性があるためローカルにコピー
     const textLayerEl = textLayerRef.current;

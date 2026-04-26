@@ -7,7 +7,8 @@
 
 import { useCallback, useRef } from "react";
 
-const DEFAULT_MAX_BYTES = 256 * 1024 * 1024; // 256MB
+// 256MB
+const DEFAULT_MAX_BYTES = 256 * 1024 * 1024;
 
 interface CacheEntry {
   key: string;

@@ -24,7 +24,7 @@ export function browseInfiniteOptions(nodeId: string | undefined, sort: SortOrde
     enabled: Boolean(nodeId),
     getNextPageParam: (lastPage: BrowseResponse) => lastPage.next_cursor ?? undefined,
     initialPageParam: undefined as string | undefined,
-    queryFn: async ({ pageParam }) => {
+    queryFn: ({ pageParam }) => {
       const params = new URLSearchParams({
         limit: String(PAGE_SIZE),
         sort,
@@ -109,7 +109,7 @@ export function searchInfiniteOptions({ q, scope, kind, sort }: SearchInfinitePa
     enabled: normQ.length >= 2,
     getNextPageParam: (lastPage: SearchResponse) => lastPage.next_offset ?? undefined,
     initialPageParam: 0 as number,
-    queryFn: async ({ pageParam }) => {
+    queryFn: ({ pageParam }) => {
       const params = new URLSearchParams({
         q: normQ,
         limit: String(SEARCH_PAGE_SIZE),

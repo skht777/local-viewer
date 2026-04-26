@@ -105,7 +105,8 @@ export function PdfMangaViewer({
 
   // currentIndex を URL に同期（値が変化した場合のみ）
   useEffect(() => {
-    const page = mangaScroll.currentIndex + 1; // 1-based
+    // 1-based
+    const page = mangaScroll.currentIndex + 1;
     if (page !== initialPage) {
       onPageChange(page);
     }

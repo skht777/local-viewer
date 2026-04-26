@@ -49,12 +49,10 @@ export async function resolveFirstViewable(
       return null;
     }
 
-    if (first.kind === "directory") {
-      currentNodeId = first.node_id;
-      continue;
+    if (first.kind !== "directory") {
+      return { entry: first, parentNodeId: data.current_node_id ?? currentNodeId };
     }
-
-    return { entry: first, parentNodeId: data.current_node_id ?? currentNodeId };
+    currentNodeId = first.node_id;
   }
 
   return null;

@@ -17,8 +17,7 @@ export function PreviewGrid({ previewNodeIds, onAllError, batchThumbnails }: Pre
 
   const handleError = (nodeId: string) => {
     setErrorSet((prev) => {
-      const next = new Set(prev);
-      next.add(nodeId);
+      const next = new Set([...prev, nodeId]);
       // 全画像がエラーなら親に通知
       if (next.size >= previewNodeIds.length) {
         onAllError?.();

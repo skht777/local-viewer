@@ -63,7 +63,8 @@ export function useVirtualGrid({
     estimateSize: () => estimateRowHeight,
     overscan,
     enabled,
-    gap: 16, // Tailwind gap-4 相当（行間スペース）
+    // Tailwind gap-4 相当（行間スペース）
+    gap: 16,
   });
 
   // アイテムインデックスから行・列を計算

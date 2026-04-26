@@ -120,7 +120,7 @@ export const FileCard = memo(function FileCard({
           )
         ) : hasDirectoryPreview ? (
           <PreviewGrid
-            previewNodeIds={entry.preview_node_ids!}
+            previewNodeIds={entry.preview_node_ids ?? []}
             onAllError={() => setHasPreviewError(true)}
             batchThumbnails={batchThumbnails}
           />
@@ -152,7 +152,7 @@ export const FileCard = memo(function FileCard({
           )
         ) : hasPdfPreview ? (
           <img
-            src={pdfThumbnail.url!}
+            src={pdfThumbnail.url ?? ""}
             alt={entry.name}
             className="h-full w-full object-cover"
             decoding="async"

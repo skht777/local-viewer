@@ -21,9 +21,9 @@ import {
   buildSearchSearch,
   VALID_SORT_ORDERS,
 } from "../utils/viewerNavigation";
+import type { SortOrder, ViewerMode, ViewerTab } from "../utils/viewerNavigation";
 
 export type { SortOrder, ViewerMode, ViewerTab } from "../utils/viewerNavigation";
-import type { SortOrder, ViewerMode, ViewerTab } from "../utils/viewerNavigation";
 
 interface ViewerParams {
   tab: ViewerTab;
@@ -79,8 +79,8 @@ export function useViewerParams(): UseViewerParamsReturn {
   };
 
   const tab = (searchParams.get("tab") ?? "filesets") as ViewerTab;
-  const hasIndex = searchParams.has("index");
-  const index = hasIndex ? parseInt(searchParams.get("index")!, 10) : -1;
+  const indexParam = searchParams.get("index");
+  const index = indexParam === null ? -1 : parseInt(indexParam, 10);
   // 不正値ガード: "manga" 以外はすべて "cg" に正規化
   const rawMode = searchParams.get("mode");
   const mode: ViewerMode = rawMode === "manga" ? "manga" : "cg";
@@ -94,7 +94,10 @@ export function useViewerParams(): UseViewerParamsReturn {
   // PDF が開いていたら画像ビューワーは開かない (排他)
   const isPdfViewerOpen = pdfNodeId !== null && (mode === "cg" || mode === "manga");
   const isViewerOpen =
-    !isPdfViewerOpen && hasIndex && tab === "images" && (mode === "cg" || mode === "manga");
+    !isPdfViewerOpen &&
+    indexParam !== null &&
+    tab === "images" &&
+    (mode === "cg" || mode === "manga");
 
   const buildBrowseSearch = (overrides?: { tab?: string; index?: number }): string =>
     buildBrowseSearchPure(searchParams, overrides);

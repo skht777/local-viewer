@@ -204,8 +204,9 @@ export function useSetJump({
 
         // ソースの topDir を level 0 で算出
         if (!isSourceResolved) {
+          const targetChildId = currentChildId;
           const sourceEntry = parentData.entries.find(
-            (e: BrowseEntry) => e.node_id === currentChildId,
+            (e: BrowseEntry) => e.node_id === targetChildId,
           );
           if (sourceEntry) {
             sourceTopDir = resolveTopLevelDir(

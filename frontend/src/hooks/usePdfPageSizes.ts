@@ -33,6 +33,7 @@ export function usePdfPageSizes(document: PDFDocumentProxy | null): UsePdfPageSi
 
     cancelledRef.current = false;
     const { numPages } = document;
+    const pdfDocument = document;
 
     // バッチ処理で getPage burst を抑制
     // - BATCH_SIZE ページずつ getPage + getViewport
@@ -43,7 +44,7 @@ export function usePdfPageSizes(document: PDFDocumentProxy | null): UsePdfPageSi
         const end = Math.min(i + BATCH_SIZE, numPages);
         const batch = await Promise.all(
           Array.from({ length: end - i }, (_, j) =>
-            document!.getPage(i + j + 1).then((page) => {
+            pdfDocument.getPage(i + j + 1).then((page) => {
               const vp = page.getViewport({ scale: 1 });
               page.cleanup();
               return { width: vp.width, height: vp.height };
@@ -56,7 +57,9 @@ export function usePdfPageSizes(document: PDFDocumentProxy | null): UsePdfPageSi
         sizes.push(...batch);
         // UI スレッドに譲る (最終バッチ以外)
         if (end < numPages) {
-          await new Promise<void>((r) => setTimeout(r, 0));
+          await new Promise<void>((resolve) => {
+            setTimeout(resolve, 0);
+          });
         }
       }
       if (!cancelledRef.current) {

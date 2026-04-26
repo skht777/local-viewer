@@ -140,9 +140,7 @@ export const useViewerStore = create<ViewerState>()(
       merge: (persisted, current) => ({
         ...current,
         ...(persisted as Record<string, unknown>),
-        expandedNodeIds: new Set(
-          (persisted as { expandedNodeIds?: string[] })?.expandedNodeIds ?? [],
-        ),
+        expandedNodeIds: new Set((persisted as { expandedNodeIds?: string[] })?.expandedNodeIds),
       }),
     },
   ),
