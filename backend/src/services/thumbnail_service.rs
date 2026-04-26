@@ -49,7 +49,18 @@ impl ThumbnailService {
             return std::fs::read(&cached_path)
                 .map_err(|e| AppError::InvalidImage(format!("キャッシュ読み込み失敗: {e}")));
         }
+        self.generate_from_path_inner(path, cache_key)
+    }
 
+    /// `generate_from_path` の実生成本体 (cache.get 早期リターンを行わない)
+    ///
+    /// ディスクキャッシュからの読み込みを行わず、必ず生成して `cache.put` する。
+    /// `generate_with_dedup` のクロージャ内から直接呼ぶ用途で `pub(crate)`。
+    pub(crate) fn generate_from_path_inner(
+        &self,
+        path: &Path,
+        cache_key: &str,
+    ) -> Result<Vec<u8>, AppError> {
         let source_bytes = std::fs::read(path)
             .map_err(|e| AppError::InvalidImage(format!("ファイル読み込み失敗: {e}")))?;
 
@@ -71,7 +82,15 @@ impl ThumbnailService {
             return std::fs::read(&cached_path)
                 .map_err(|e| AppError::InvalidImage(format!("キャッシュ読み込み失敗: {e}")));
         }
+        self.generate_from_bytes_inner(source_bytes, cache_key)
+    }
 
+    /// `generate_from_bytes` の実生成本体 (cache.get 早期リターンを行わない)
+    pub(crate) fn generate_from_bytes_inner(
+        &self,
+        source_bytes: &[u8],
+        cache_key: &str,
+    ) -> Result<Vec<u8>, AppError> {
         let thumb = resize_to_jpeg(source_bytes, self.default_width, self.jpeg_quality)?;
 
         let _ = self.cache.put(cache_key, &thumb, ".jpg");
@@ -92,7 +111,16 @@ impl ThumbnailService {
             return std::fs::read(&cached_path)
                 .map_err(|e| AppError::InvalidImage(format!("キャッシュ読み込み失敗: {e}")));
         }
+        self.generate_pdf_thumbnail_inner(pdf_path, cache_key, timeout_secs)
+    }
 
+    /// `generate_pdf_thumbnail` の実生成本体 (cache.get 早期リターンを行わない)
+    pub(crate) fn generate_pdf_thumbnail_inner(
+        &self,
+        pdf_path: &Path,
+        cache_key: &str,
+        timeout_secs: u64,
+    ) -> Result<Vec<u8>, AppError> {
         // 一時ディレクトリを作成 (Drop で自動削除)
         let tmp_dir = tempfile::TempDir::new()
             .map_err(|e| AppError::InvalidImage(format!("一時ディレクトリ作成失敗: {e}")))?;
