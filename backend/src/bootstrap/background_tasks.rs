@@ -351,7 +351,8 @@ pub(crate) fn spawn_background_tasks(bg: BackgroundContext) -> tokio::task::Join
 ///   - warm start (`incremental_scan`) は `WalkReport` を返さないため常に `None`
 #[allow(
     clippy::too_many_arguments,
-    reason = "scan 組み立てに必要な Arc/参照 + cancelled をまとめるため、閾値超過を許容"
+    clippy::too_many_lines,
+    reason = "scan 組み立てに必要な Arc/参照 + cancelled をまとめるため、また破損リカバリ分岐を含むため閾値超過を許容"
 )]
 fn run_mount_scan(
     is_warm_start: bool,
@@ -429,6 +430,31 @@ fn run_mount_scan(
     let flush_ok = if let Some(mut bulk) = bulk_opt {
         match bulk.flush() {
             Ok(()) => true,
+            // 永続層 name 破損を検出: 新 tx でリカバリ実行 (delete_mount_entries +
+            // clear_mount_fingerprint)。これにより次回起動が cold start に強制され
+            // full rescan で DirIndex が正常な状態に再構築される
+            Err(crate::services::dir_index::DirIndexError::CorruptPersistentName {
+                mount_id: corrupt_mount_id,
+                parent_path,
+                name,
+            }) => {
+                if let Err(rec_err) =
+                    crate::services::dir_index::writes::recover_from_corrupt_persistent_name(
+                        dir_index,
+                        indexer,
+                        &corrupt_mount_id,
+                        &parent_path,
+                        &name,
+                    )
+                {
+                    tracing::error!(
+                        mount_id = %corrupt_mount_id,
+                        error = %rec_err,
+                        "破損リカバリ自体に失敗"
+                    );
+                }
+                false
+            }
             Err(e) => {
                 tracing::warn!("DirIndex flush 失敗 ({mount_id}): {e}");
                 false
