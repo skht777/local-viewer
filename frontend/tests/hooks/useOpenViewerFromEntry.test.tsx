@@ -315,4 +315,88 @@ describe("useOpenViewerFromEntry", () => {
       expect(mockNavigate).toHaveBeenCalledWith("/browse/dir-1");
     });
   });
+
+  describe("buildOrigin オプション", () => {
+    test("buildOrigin 指定時は戻り値の origin が保存される", async () => {
+      mockResolveFirstViewable.mockResolvedValue({
+        entry: makeEntry({ kind: "image", node_id: "img-1" }),
+        parentNodeId: "parent-1",
+      });
+      const props = {
+        ...defaultProps,
+        nodeId: undefined,
+        buildOrigin: () => ({ pathname: "/search", search: "?q=hello" }),
+      };
+      const { result } = renderHook(() => useOpenViewerFromEntry(props), {
+        wrapper: createWrapper(),
+      });
+      await act(() => result.current("dir-1"));
+      expect(useViewerStore.getState().viewerOrigin).toEqual({
+        pathname: "/search",
+        search: "?q=hello",
+      });
+    });
+
+    test("buildOrigin が null を返した場合は viewerOrigin が保存されない", async () => {
+      mockResolveFirstViewable.mockResolvedValue({
+        entry: makeEntry({ kind: "image", node_id: "img-1" }),
+        parentNodeId: "parent-1",
+      });
+      const props = {
+        ...defaultProps,
+        nodeId: undefined,
+        buildOrigin: () => null,
+      };
+      const { result } = renderHook(() => useOpenViewerFromEntry(props), {
+        wrapper: createWrapper(),
+      });
+      await act(() => result.current("dir-1"));
+      expect(useViewerStore.getState().viewerOrigin).toBeNull();
+    });
+
+    test("buildOrigin 指定 + 解決失敗時は viewerOrigin が保存されない", async () => {
+      // first-viewable 失敗時に origin を残さないことを保証（再発防止）
+      mockResolveFirstViewable.mockResolvedValue(null);
+      const buildOrigin = vi.fn(() => ({ pathname: "/search", search: "?q=hello" }));
+      const props = {
+        ...defaultProps,
+        nodeId: undefined,
+        buildOrigin,
+      };
+      const { result } = renderHook(() => useOpenViewerFromEntry(props), {
+        wrapper: createWrapper(),
+      });
+      await act(() => result.current("dir-1"));
+      expect(useViewerStore.getState().viewerOrigin).toBeNull();
+      expect(buildOrigin).not.toHaveBeenCalled();
+    });
+
+    test("buildOrigin 未指定 + nodeId なしは viewerOrigin が保存されない（既存挙動）", async () => {
+      mockResolveFirstViewable.mockResolvedValue({
+        entry: makeEntry({ kind: "image", node_id: "img-1" }),
+        parentNodeId: "parent-1",
+      });
+      const props = { ...defaultProps, nodeId: undefined };
+      const { result } = renderHook(() => useOpenViewerFromEntry(props), {
+        wrapper: createWrapper(),
+      });
+      await act(() => result.current("dir-1"));
+      expect(useViewerStore.getState().viewerOrigin).toBeNull();
+    });
+
+    test("buildOrigin 未指定 + nodeId 指定時は /browse/(nodeId) が保存される（既存挙動）", async () => {
+      mockResolveFirstViewable.mockResolvedValue({
+        entry: makeEntry({ kind: "image", node_id: "img-1" }),
+        parentNodeId: "parent-1",
+      });
+      const { result } = renderHook(() => useOpenViewerFromEntry(defaultProps), {
+        wrapper: createWrapper(),
+      });
+      await act(() => result.current("dir-1"));
+      expect(useViewerStore.getState().viewerOrigin).toEqual({
+        pathname: "/browse/current-dir",
+        search: "",
+      });
+    });
+  });
 });

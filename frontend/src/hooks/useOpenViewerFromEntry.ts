@@ -21,6 +21,16 @@ interface UseOpenViewerFromEntryProps {
   mode: ViewerMode;
   sort: SortOrder;
   buildBrowseSearch: (overrides?: { tab?: string; index?: number }) => string;
+  /**
+   * viewer 起動時に保存する起点情報を上書きするビルダー。
+   * - 未指定: `nodeId` から `/browse/${nodeId}` 形を組み立てる（既存挙動）
+   * - 指定 + 戻り値が `null`: 起点保存をスキップ
+   * - 指定 + 戻り値があり: その値を `setViewerOrigin` に渡す
+   *
+   * `/search` 等、`nodeId` を持たないページからの起動でも
+   * 適切な閉じ戻り先を保存できるようにするために追加。
+   */
+  buildOrigin?: () => { pathname: string; search: string } | null;
 }
 
 export function useOpenViewerFromEntry({
@@ -28,6 +38,7 @@ export function useOpenViewerFromEntry({
   mode: _mode,
   sort,
   buildBrowseSearch,
+  buildOrigin,
 }: UseOpenViewerFromEntryProps): (entryNodeId: string) => Promise<void> {
   // Mode は現時点では URL 構築側 (buildBrowseSearch) が担うため直接参照しない。
   // Props として維持するのはコール側の型互換性のため。
@@ -46,8 +57,17 @@ export function useOpenViewerFromEntry({
         }
 
         // 起点記録（閉じる時に戻る先）
-        if (nodeId) {
-          setViewerOrigin({ pathname: `/browse/${nodeId}`, search: buildBrowseSearch() });
+        // - buildOrigin 指定時はその戻り値を優先（null なら保存スキップ）
+        // - 未指定 + nodeId あり時のみ既存の /browse/${nodeId} 形を保存
+        // first-viewable 解決成功後にのみ保存することで、fallback 経路で
+        // stale origin が残らないことを保証する
+        const origin = buildOrigin
+          ? buildOrigin()
+          : nodeId
+            ? { pathname: `/browse/${nodeId}`, search: buildBrowseSearch() }
+            : null;
+        if (origin) {
+          setViewerOrigin(origin);
         }
         // トランジション開始（ブラウズ画面の不要レンダリング抑制）
         startViewerTransition();
@@ -88,6 +108,7 @@ export function useOpenViewerFromEntry({
       nodeId,
       sort,
       buildBrowseSearch,
+      buildOrigin,
       setViewerOrigin,
       startViewerTransition,
     ],
