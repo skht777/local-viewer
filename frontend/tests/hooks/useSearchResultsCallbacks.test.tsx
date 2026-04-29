@@ -70,6 +70,7 @@ beforeEach(() => {
     viewerOrigin: null,
     viewerTransitionId: 0,
     viewerJumpList: null,
+    viewerJumpListIndex: null,
   });
 });
 
@@ -211,7 +212,7 @@ describe("useSearchResultsCallbacks - handleSortChange", () => {
 });
 
 describe("useSearchResultsCallbacks - viewerJumpList", () => {
-  test("handlePdfClick で allRawResults の DAP を viewerJumpList に snapshot する", () => {
+  test("handlePdfClick で allRawResults の DAP を viewerJumpList に snapshot し index も pdf 位置にセット", () => {
     const allRawResults = [
       makeSearchEntry("dir1", "directory"),
       makeSearchEntry("img1", "image"),
@@ -228,7 +229,26 @@ describe("useSearchResultsCallbacks - viewerJumpList", () => {
     );
     result.current.handlePdfClick("pdf1");
     const list = useViewerStore.getState().viewerJumpList;
+    // image は除外されるため list は [dir1, pdf1]
     expect(list?.map((e) => e.node_id)).toEqual(["dir1", "pdf1"]);
+    // pdf1 はフィルタ後 list の index 1（生 allRawResults の index 2 ではない）
+    expect(useViewerStore.getState().viewerJumpListIndex).toBe(1);
+  });
+
+  test("handlePdfClick で list に該当 pdf が無い場合は (null, null) にフォールバック", () => {
+    const allRawResults = [makeSearchEntry("dir1", "directory")];
+    const { result } = renderHook(
+      () =>
+        useSearchResultsCallbacks({
+          filteredImages: [],
+          viewerIndexMap: new Map(),
+          allRawResults,
+        }),
+      { wrapper },
+    );
+    result.current.handlePdfClick("missing-pdf");
+    expect(useViewerStore.getState().viewerJumpList).toBeNull();
+    expect(useViewerStore.getState().viewerJumpListIndex).toBeNull();
   });
 
   test("handleImageClick は viewerJumpList を null にクリアする (画像経路は jumpList 対象外)", () => {
@@ -237,6 +257,7 @@ describe("useSearchResultsCallbacks - viewerJumpList", () => {
       viewerOrigin: null,
       viewerTransitionId: 0,
       viewerJumpList: [{ node_id: "dir1", parent_node_id: null, kind: "directory", name: "dir1" }],
+      viewerJumpListIndex: 0,
     });
     const filteredImages = [makeImage("i1", "a.jpg")];
     const viewerIndexMap = new Map([["i1", 0]]);
@@ -246,6 +267,7 @@ describe("useSearchResultsCallbacks - viewerJumpList", () => {
     );
     result.current.handleImageClick(0);
     expect(useViewerStore.getState().viewerJumpList).toBeNull();
+    expect(useViewerStore.getState().viewerJumpListIndex).toBeNull();
   });
 });
 

@@ -165,7 +165,7 @@ export function useViewerParams(): UseViewerParamsReturn {
 
   // 画像ビューワーを閉じる: 起点に戻るか、履歴を1つ戻る
   const closeViewer = () => {
-    setViewerJumpList(null);
+    setViewerJumpList(null, null);
     if (viewerOrigin) {
       const origin = viewerOrigin;
       setViewerOrigin(null);
@@ -189,7 +189,7 @@ export function useViewerParams(): UseViewerParamsReturn {
 
   // PDF ビューワーを閉じる: 起点に戻るか、現在ディレクトリに留まる
   const closePdfViewer = () => {
-    setViewerJumpList(null);
+    setViewerJumpList(null, null);
     if (viewerOrigin) {
       const origin = viewerOrigin;
       setViewerOrigin(null);

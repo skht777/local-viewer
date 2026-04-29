@@ -46,15 +46,18 @@ interface UseSetJumpReturn {
 // jumpList 経路の判定 + 副作用ハンドラ
 // - 戻り値 true: 処理済み (FS sibling 経路へフォールバックしない)
 // - 戻り値 false: jumpList null のため呼び出し側で従来 FS 経路へ
+// - index ベース: viewer の currentNodeId が resolveFirstViewable で着地ずれしても
+//   起動 entry の位置で固定された jumpListIndex を起点に next/prev する
 function useJumpListHandler(
-  currentNodeId: string | null,
   navigateToTarget: (target: SetJumpTarget, parent: string | null) => Promise<void>,
   onBoundary: ((message: string) => void) | undefined,
 ): (direction: "next" | "prev") => Promise<boolean> {
   const viewerJumpList = useViewerStore((s) => s.viewerJumpList);
+  const viewerJumpListIndex = useViewerStore((s) => s.viewerJumpListIndex);
+  const setViewerJumpListIndex = useViewerStore((s) => s.setViewerJumpListIndex);
   return useCallback(
     async (direction) => {
-      const action = resolveJumpListAction(direction, currentNodeId, viewerJumpList);
+      const action = resolveJumpListAction(direction, viewerJumpListIndex, viewerJumpList);
       if (action.type === "fallback") {
         return false;
       }
@@ -62,10 +65,12 @@ function useJumpListHandler(
         onBoundary?.(action.message);
         return true;
       }
+      // navigate 前に index を更新（store の即時反映で連打時も整合性を保つ）
+      setViewerJumpListIndex(action.nextIndex);
       await navigateToTarget(action.target, action.target.parent_node_id);
       return true;
     },
-    [viewerJumpList, currentNodeId, navigateToTarget, onBoundary],
+    [viewerJumpList, viewerJumpListIndex, setViewerJumpListIndex, navigateToTarget, onBoundary],
   );
 }
 
@@ -188,7 +193,7 @@ export function useSetJump({
     sort,
   });
 
-  const handleJumpList = useJumpListHandler(currentNodeId, navigateToTarget, onBoundary);
+  const handleJumpList = useJumpListHandler(navigateToTarget, onBoundary);
 
   // PageDown/X: 条件付き確認で次のセットへ（トランジション中は無効化）
   const goNextSet = useCallback(async () => {

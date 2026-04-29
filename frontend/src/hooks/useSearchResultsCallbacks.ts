@@ -49,7 +49,7 @@ export function useSearchResultsCallbacks({
         return;
       }
       // 画像経路は jumpList 対象外（currentNodeId が不定のため）→ FS 経路にする
-      useViewerStore.getState().setViewerJumpList(null);
+      useViewerStore.getState().setViewerJumpList(null, null);
       const viewerIdx = viewerIndexMap.get(img.node_id) ?? 0;
       const next = new URLSearchParams(searchParams);
       next.set("tab", "images");
@@ -64,8 +64,6 @@ export function useSearchResultsCallbacks({
 
   const handlePdfClick = useCallback(
     (pdfNodeId: string) => {
-      // PDF 起動直前に検索結果から jumpList を snapshot
-      useViewerStore.getState().setViewerJumpList(buildJumpListFromSearch(allRawResults));
       const next = new URLSearchParams(searchParams);
       next.set("pdf", pdfNodeId);
       next.set("page", "1");
@@ -73,6 +71,16 @@ export function useSearchResultsCallbacks({
       next.delete("tab");
       saveSearchOrigin(searchParams);
       setSearchParams(next);
+      // PDF 起動直後に検索結果から jumpList を snapshot
+      // - フィルタ後の jumpList 上の index を渡す（生 allRawResults の index は image/video 混在でずれる）
+      // - 該当しない場合は (null, null) にフォールバック
+      const list = buildJumpListFromSearch(allRawResults);
+      const idx = list.findIndex((e) => e.node_id === pdfNodeId);
+      if (idx === -1) {
+        useViewerStore.getState().setViewerJumpList(null, null);
+      } else {
+        useViewerStore.getState().setViewerJumpList(list, idx);
+      }
     },
     [allRawResults, searchParams, setSearchParams],
   );

@@ -97,20 +97,28 @@ export default function SearchResultsPage() {
     }),
   });
 
-  // viewer 起動直前に検索結果の DAP を jumpList として snapshot
-  // - 画像 entry の起動経路は jumpList=null にして既存 FS 経路で動作させる
+  // viewer 起動「後」にフィルタ後 jumpList の index を計算して snapshot
+  // - baseOpenViewer 冒頭で setViewerJumpList(null, null) されるので、まず一旦クリア
+  // - 起動成功後に上書きセット（resolveFirstViewable 失敗時は viewer が開かないため
+  //   snapshot が残っても次の通常 viewer 起動で再度クリアされ無害）
+  // - 画像 entry の経路は jumpList 対象外で null のまま
   const openViewerFromEntry = useCallback(
     async (entryNodeId: string) => {
+      await baseOpenViewer(entryNodeId);
       const entry = allEntries.find((e) => e.node_id === entryNodeId);
       if (
-        entry &&
-        (entry.kind === "directory" || entry.kind === "archive" || entry.kind === "pdf")
+        !entry ||
+        (entry.kind !== "directory" && entry.kind !== "archive" && entry.kind !== "pdf")
       ) {
-        setViewerJumpList(buildJumpListFromSearch(allRawResults));
-      } else {
-        setViewerJumpList(null);
+        return;
       }
-      await baseOpenViewer(entryNodeId);
+      const list = buildJumpListFromSearch(allRawResults);
+      const idx = list.findIndex((e) => e.node_id === entryNodeId);
+      if (idx === -1) {
+        setViewerJumpList(null, null);
+      } else {
+        setViewerJumpList(list, idx);
+      }
     },
     [baseOpenViewer, allEntries, allRawResults, setViewerJumpList],
   );

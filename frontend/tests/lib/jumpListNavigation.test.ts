@@ -1,15 +1,15 @@
 // jumpListNavigation のユニットテスト
-// - findInJumpList: 任意リスト範囲のセット間ジャンプ用の純粋関数
+// - findInJumpList: 任意リスト範囲のセット間ジャンプ用の純粋関数（index ベース）
+// - resolveJumpListAction: action 判定（fallback / boundary / navigate）
 // - buildJumpListFromSearch: 検索結果から jumpList を構築
-// - 設計: リスト内に currentNodeId が無ければ null（FS フォールバックしない）
 // - 境界（先頭/末尾）はループせず null を返す
+// - index 範囲外 / null は boundary（FS フォールバックは list が null のときのみ）
 
 import { describe, expect, test } from "vitest";
 import {
   buildJumpListFromSearch,
   findInJumpList,
-  findInJumpListByIndex,
-  resolveJumpListActionByIndex,
+  resolveJumpListAction,
 } from "../../src/lib/jumpListNavigation";
 import type { JumpListEntry } from "../../src/lib/jumpListNavigation";
 import type { SearchResult } from "../../src/types/api";
@@ -41,101 +41,69 @@ function makeSearchResult(
 describe("findInJumpList", () => {
   const list: JumpListEntry[] = [makeJumpEntry("a"), makeJumpEntry("b"), makeJumpEntry("c")];
 
-  test("next で次のエントリを返す", () => {
-    expect(findInJumpList("next", "a", list)).toEqual(list[1]);
-  });
-
-  test("prev で前のエントリを返す", () => {
-    expect(findInJumpList("prev", "c", list)).toEqual(list[1]);
-  });
-
-  test("末尾で next を押すと境界扱い (null)", () => {
-    expect(findInJumpList("next", "c", list)).toBeNull();
-  });
-
-  test("先頭で prev を押すと境界扱い (null)", () => {
-    expect(findInJumpList("prev", "a", list)).toBeNull();
-  });
-
-  test("リスト未登録の currentNodeId は境界扱い (null)", () => {
-    expect(findInJumpList("next", "unknown", list)).toBeNull();
-  });
-
-  test("currentNodeId が null なら境界扱い (null)", () => {
-    expect(findInJumpList("next", null, list)).toBeNull();
-  });
-
-  test("空リストは常に境界扱い (null)", () => {
-    expect(findInJumpList("next", "a", [])).toBeNull();
-  });
-});
-
-describe("findInJumpListByIndex", () => {
-  const list: JumpListEntry[] = [makeJumpEntry("a"), makeJumpEntry("b"), makeJumpEntry("c")];
-
   test("next で次の entry と nextIndex を返す", () => {
-    expect(findInJumpListByIndex("next", 0, list)).toEqual({ entry: list[1], nextIndex: 1 });
+    expect(findInJumpList("next", 0, list)).toEqual({ entry: list[1], nextIndex: 1 });
   });
 
   test("prev で前の entry と nextIndex を返す", () => {
-    expect(findInJumpListByIndex("prev", 2, list)).toEqual({ entry: list[1], nextIndex: 1 });
+    expect(findInJumpList("prev", 2, list)).toEqual({ entry: list[1], nextIndex: 1 });
   });
 
-  test("末尾 index で next は境界 (null)", () => {
-    expect(findInJumpListByIndex("next", 2, list)).toBeNull();
+  test("末尾 index で next は境界扱い (null)", () => {
+    expect(findInJumpList("next", 2, list)).toBeNull();
   });
 
-  test("先頭 index で prev は境界 (null)", () => {
-    expect(findInJumpListByIndex("prev", 0, list)).toBeNull();
+  test("先頭 index で prev は境界扱い (null)", () => {
+    expect(findInJumpList("prev", 0, list)).toBeNull();
   });
 
-  test("currentIndex が null なら境界 (null)", () => {
-    expect(findInJumpListByIndex("next", null, list)).toBeNull();
+  test("currentIndex が null なら境界扱い (null)", () => {
+    expect(findInJumpList("next", null, list)).toBeNull();
   });
 
-  test("負の index は境界 (null)", () => {
-    expect(findInJumpListByIndex("next", -1, list)).toBeNull();
+  test("負の index は境界扱い (null)", () => {
+    expect(findInJumpList("next", -1, list)).toBeNull();
   });
 
-  test("リスト長以上の index は境界 (null)", () => {
-    expect(findInJumpListByIndex("next", 3, list)).toBeNull();
+  test("リスト長以上の index は境界扱い (null)", () => {
+    expect(findInJumpList("next", 3, list)).toBeNull();
   });
 
-  test("空リストは常に境界 (null)", () => {
-    expect(findInJumpListByIndex("next", 0, [])).toBeNull();
+  test("空リストは常に境界扱い (null)", () => {
+    expect(findInJumpList("next", 0, [])).toBeNull();
   });
 });
 
-describe("resolveJumpListActionByIndex", () => {
+describe("resolveJumpListAction", () => {
   const list: JumpListEntry[] = [makeJumpEntry("a"), makeJumpEntry("b"), makeJumpEntry("c")];
 
   test("list が null なら fallback", () => {
-    expect(resolveJumpListActionByIndex("next", 0, null)).toEqual({ type: "fallback" });
+    expect(resolveJumpListAction("next", 0, null)).toEqual({ type: "fallback" });
   });
 
   test("currentIndex が null なら boundary", () => {
-    expect(resolveJumpListActionByIndex("next", null, list)).toEqual({
+    expect(resolveJumpListAction("next", null, list)).toEqual({
       type: "boundary",
       message: "最後のセットです",
     });
   });
 
   test("末尾で next は boundary", () => {
-    expect(resolveJumpListActionByIndex("next", 2, list)).toEqual({
+    expect(resolveJumpListAction("next", 2, list)).toEqual({
       type: "boundary",
       message: "最後のセットです",
     });
   });
 
   test("先頭で prev は boundary", () => {
-    expect(resolveJumpListActionByIndex("prev", 0, list)).toEqual({
+    expect(resolveJumpListAction("prev", 0, list)).toEqual({
       type: "boundary",
       message: "最初のセットです",
     });
   });
 
   test("通常遷移は navigate と nextIndex を返す", () => {
-    expect(resolveJumpListActionByIndex("next", 0, list)).toEqual({
+    expect(resolveJumpListAction("next", 0, list)).toEqual({
       type: "navigate",
       target: list[1],
       nextIndex: 1,
@@ -150,7 +118,7 @@ describe("resolveJumpListActionByIndex", () => {
       name: "pdf-orphan",
     };
     const listWithOrphan: JumpListEntry[] = [makeJumpEntry("a"), orphan];
-    expect(resolveJumpListActionByIndex("next", 0, listWithOrphan)).toEqual({
+    expect(resolveJumpListAction("next", 0, listWithOrphan)).toEqual({
       type: "boundary",
       message: "セットを開けません",
     });

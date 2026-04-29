@@ -62,7 +62,10 @@ interface ViewerState {
   // - 非 null: 与えられたリスト範囲内でのみ X/Z でジャンプ
   // - 検索結果からの viewer 起動時に snapshot され、close でクリアされる
   viewerJumpList: JumpListEntry[] | null;
-  setViewerJumpList: (list: JumpListEntry[] | null) => void;
+  // list と index を必ず同時に更新する（不整合を不可能にする）
+  // - list が null のときは index も内部で null に強制
+  // - 範囲外 index は内部で null に正規化
+  setViewerJumpList: (list: JumpListEntry[] | null, index: number | null) => void;
 
   // jumpList 内の現在位置（永続化しない）
   // - null: jumpList 未使用または範囲外（FS sibling 経路へフォールバック扱い）
@@ -106,7 +109,16 @@ export const useViewerStore = create<ViewerState>()(
 
       setSidebarOpen: (isOpen) => set({ isSidebarOpen: isOpen }),
 
-      setViewerJumpList: (list) => set({ viewerJumpList: list }),
+      setViewerJumpList: (list, index) =>
+        set(() => {
+          if (list === null) {
+            return { viewerJumpList: null, viewerJumpListIndex: null };
+          }
+          if (index === null || index < 0 || index >= list.length) {
+            return { viewerJumpList: list, viewerJumpListIndex: null };
+          }
+          return { viewerJumpList: list, viewerJumpListIndex: index };
+        }),
 
       setViewerJumpListIndex: (index) =>
         set((state) => {

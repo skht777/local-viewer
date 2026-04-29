@@ -106,6 +106,7 @@ beforeEach(() => {
     viewerOrigin: null,
     viewerTransitionId: 0,
     viewerJumpList: null,
+    viewerJumpListIndex: null,
   });
 });
 
@@ -197,6 +198,7 @@ describe("useSetJump jumpList 経路", () => {
       viewerOrigin: null,
       viewerTransitionId: 0,
       viewerJumpList: list,
+      viewerJumpListIndex: 0,
     });
 
     const { result } = renderHook(() => useSetJump(defaultProps), {
@@ -213,12 +215,66 @@ describe("useSetJump jumpList 経路", () => {
     expect(mockFetchAllBrowsePages).toHaveBeenCalledWith(expect.anything(), "next-set", "name-asc");
   });
 
-  test("リスト末尾で goNextSet を押すと onBoundary で停止し navigate しない", async () => {
-    const list = [makeJumpEntry("current-set")];
+  test("navigate 成功後に viewerJumpListIndex が更新される", async () => {
+    const list = [
+      makeJumpEntry("a", "archive"),
+      makeJumpEntry("b", "archive"),
+      makeJumpEntry("c", "archive"),
+    ];
     useViewerStore.setState({
       viewerOrigin: null,
       viewerTransitionId: 0,
       viewerJumpList: list,
+      viewerJumpListIndex: 1,
+    });
+
+    const { result } = renderHook(() => useSetJump(defaultProps), {
+      wrapper: createWrapper(),
+    });
+    await act(async () => {
+      await result.current.goNextSet();
+    });
+    await waitFor(() => expect(mockNavigate).toHaveBeenCalled());
+
+    expect(useViewerStore.getState().viewerJumpListIndex).toBe(2);
+  });
+
+  test("Bug 1 回帰: 起動 dirA(0) で着地先が archiveB(1) のまま prev で dirA に戻れる", async () => {
+    // 検索結果 [dirA, archiveB, archiveC]、dirA をクリック起動 → first-viewable で archiveB に着地
+    // viewer の currentNodeId は archiveB だが viewerJumpListIndex は 0 で固定
+    const list: JumpListEntry[] = [
+      makeJumpEntry("dirA", "directory"),
+      makeJumpEntry("archiveB", "archive"),
+      makeJumpEntry("archiveC", "archive"),
+    ];
+    useViewerStore.setState({
+      viewerOrigin: null,
+      viewerTransitionId: 0,
+      viewerJumpList: list,
+      viewerJumpListIndex: 0,
+    });
+
+    const onBoundary = vi.fn();
+    // viewer は archiveB を表示中（currentNodeId が起動 entry とずれている状態）
+    const { result } = renderHook(
+      () => useSetJump({ ...defaultProps, currentNodeId: "archiveB", onBoundary }),
+      { wrapper: createWrapper() },
+    );
+    // prev (Z): index=0 → 先頭 boundary（dirA より前は無い、収束ループに陥らない）
+    await act(async () => {
+      await result.current.goPrevSet();
+    });
+    expect(onBoundary).toHaveBeenCalledWith("最初のセットです");
+    expect(mockNavigate).not.toHaveBeenCalled();
+  });
+
+  test("リスト末尾で goNextSet を押すと onBoundary で停止し navigate しない", async () => {
+    const list = [makeJumpEntry("only", "archive")];
+    useViewerStore.setState({
+      viewerOrigin: null,
+      viewerTransitionId: 0,
+      viewerJumpList: list,
+      viewerJumpListIndex: 0,
     });
     const onBoundary = vi.fn();
     const { result } = renderHook(() => useSetJump({ ...defaultProps, onBoundary }), {
@@ -233,18 +289,18 @@ describe("useSetJump jumpList 経路", () => {
     expect(mockApiFetch).not.toHaveBeenCalled();
   });
 
-  test("currentNodeId=null では onBoundary で停止する", async () => {
+  test("viewerJumpListIndex=null では onBoundary で停止する", async () => {
     const list = [makeJumpEntry("a"), makeJumpEntry("b")];
     useViewerStore.setState({
       viewerOrigin: null,
       viewerTransitionId: 0,
       viewerJumpList: list,
+      viewerJumpListIndex: null,
     });
     const onBoundary = vi.fn();
-    const { result } = renderHook(
-      () => useSetJump({ ...defaultProps, currentNodeId: null, onBoundary }),
-      { wrapper: createWrapper() },
-    );
+    const { result } = renderHook(() => useSetJump({ ...defaultProps, onBoundary }), {
+      wrapper: createWrapper(),
+    });
     await act(async () => {
       await result.current.goNextSet();
     });
@@ -260,6 +316,7 @@ describe("useSetJump jumpList 経路", () => {
       viewerOrigin: null,
       viewerTransitionId: 0,
       viewerJumpList: list,
+      viewerJumpListIndex: 0,
     });
     const onBoundary = vi.fn();
     const { result } = renderHook(() => useSetJump({ ...defaultProps, onBoundary }), {
@@ -280,6 +337,7 @@ describe("useSetJump jumpList 経路", () => {
       viewerOrigin: null,
       viewerTransitionId: 0,
       viewerJumpList: list,
+      viewerJumpListIndex: 0,
     });
 
     const { result } = renderHook(() => useSetJump(defaultProps), {
