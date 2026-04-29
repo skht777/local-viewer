@@ -51,3 +51,33 @@ export function buildJumpListFromSearch(entries: SearchResult[]): JumpListEntry[
       name: e.name,
     }));
 }
+
+// useSetJump の jumpList 経路を純粋関数化したアクション判定
+// - "fallback": jumpList が null → 既存 FS sibling 経路へ
+// - "boundary": リスト境界 / 未登録 ID / PDF parent null → onBoundary でメッセージ表示
+// - "navigate": navigateToTarget で遷移
+export type JumpListAction =
+  | { type: "fallback" }
+  | { type: "boundary"; message: string }
+  | { type: "navigate"; target: JumpListEntry };
+
+export function resolveJumpListAction(
+  direction: "next" | "prev",
+  currentNodeId: string | null,
+  list: JumpListEntry[] | null,
+): JumpListAction {
+  if (!list) {
+    return { type: "fallback" };
+  }
+  const target = findInJumpList(direction, currentNodeId, list);
+  if (!target) {
+    return {
+      type: "boundary",
+      message: direction === "next" ? "最後のセットです" : "最初のセットです",
+    };
+  }
+  if (target.kind === "pdf" && target.parent_node_id === null) {
+    return { type: "boundary", message: "セットを開けません" };
+  }
+  return { type: "navigate", target };
+}

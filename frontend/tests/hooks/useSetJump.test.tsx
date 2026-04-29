@@ -10,6 +10,7 @@ import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import { useSetJump } from "../../src/hooks/useSetJump";
 import { useViewerStore } from "../../src/stores/viewerStore";
+import type { JumpListEntry } from "../../src/lib/jumpListNavigation";
 import type { ResolvedTarget } from "../../src/utils/resolveFirstViewable";
 import type { BrowseEntry, SiblingResponse } from "../../src/types/api";
 
@@ -101,7 +102,11 @@ beforeEach(() => {
   mockFetchAllBrowsePages.mockResolvedValue(undefined);
   // viewerTransitionId は zustand のグローバル状態。テスト間でリセットしないと
   // 前テストの startViewerTransition が次の goNextSetParent の早期 return を引き起こす
-  useViewerStore.setState({ viewerOrigin: null, viewerTransitionId: 0 });
+  useViewerStore.setState({
+    viewerOrigin: null,
+    viewerTransitionId: 0,
+    viewerJumpList: null,
+  });
 });
 
 describe("useSetJump プリフェッチ分岐", () => {
@@ -170,5 +175,121 @@ describe("useSetJump プリフェッチ分岐", () => {
       "img-parent",
       "name-asc",
     );
+  });
+});
+
+function makeJumpEntry(
+  id: string,
+  kind: JumpListEntry["kind"] = "directory",
+  parent: string | null = `parent-of-${id}`,
+): JumpListEntry {
+  return { node_id: id, parent_node_id: parent, kind, name: id };
+}
+
+// jumpList 経路: 任意リスト範囲のセット間ジャンプ
+// - viewerJumpList 設定時は FS sibling API を呼ばずリスト内で完結する
+// - 境界 (末尾/先頭/未登録 ID/null) と PDF parent null は onBoundary で停止
+// - FS sibling フォールバックはしない
+describe("useSetJump jumpList 経路", () => {
+  test("jumpList 設定時は次のリスト entry に navigate し、sibling API を呼ばない", async () => {
+    const list = [makeJumpEntry("current-set"), makeJumpEntry("next-set", "archive")];
+    useViewerStore.setState({
+      viewerOrigin: null,
+      viewerTransitionId: 0,
+      viewerJumpList: list,
+    });
+
+    const { result } = renderHook(() => useSetJump(defaultProps), {
+      wrapper: createWrapper(),
+    });
+    await act(async () => {
+      await result.current.goNextSet();
+    });
+    await waitFor(() => expect(mockNavigate).toHaveBeenCalled());
+
+    // sibling API は呼ばれない (FS sibling フォールバック禁止)
+    expect(mockApiFetch).not.toHaveBeenCalled();
+    // archive 経路で全ページ fetch
+    expect(mockFetchAllBrowsePages).toHaveBeenCalledWith(expect.anything(), "next-set", "name-asc");
+  });
+
+  test("リスト末尾で goNextSet を押すと onBoundary で停止し navigate しない", async () => {
+    const list = [makeJumpEntry("current-set")];
+    useViewerStore.setState({
+      viewerOrigin: null,
+      viewerTransitionId: 0,
+      viewerJumpList: list,
+    });
+    const onBoundary = vi.fn();
+    const { result } = renderHook(() => useSetJump({ ...defaultProps, onBoundary }), {
+      wrapper: createWrapper(),
+    });
+    await act(async () => {
+      await result.current.goNextSet();
+    });
+
+    expect(onBoundary).toHaveBeenCalledWith("最後のセットです");
+    expect(mockNavigate).not.toHaveBeenCalled();
+    expect(mockApiFetch).not.toHaveBeenCalled();
+  });
+
+  test("currentNodeId=null では onBoundary で停止する", async () => {
+    const list = [makeJumpEntry("a"), makeJumpEntry("b")];
+    useViewerStore.setState({
+      viewerOrigin: null,
+      viewerTransitionId: 0,
+      viewerJumpList: list,
+    });
+    const onBoundary = vi.fn();
+    const { result } = renderHook(
+      () => useSetJump({ ...defaultProps, currentNodeId: null, onBoundary }),
+      { wrapper: createWrapper() },
+    );
+    await act(async () => {
+      await result.current.goNextSet();
+    });
+
+    expect(onBoundary).toHaveBeenCalled();
+    expect(mockNavigate).not.toHaveBeenCalled();
+    expect(mockApiFetch).not.toHaveBeenCalled();
+  });
+
+  test("PDF target で parent_node_id=null は onBoundary で停止し navigate しない", async () => {
+    const list = [makeJumpEntry("current-set"), makeJumpEntry("orphan-pdf", "pdf", null)];
+    useViewerStore.setState({
+      viewerOrigin: null,
+      viewerTransitionId: 0,
+      viewerJumpList: list,
+    });
+    const onBoundary = vi.fn();
+    const { result } = renderHook(() => useSetJump({ ...defaultProps, onBoundary }), {
+      wrapper: createWrapper(),
+    });
+    await act(async () => {
+      await result.current.goNextSet();
+    });
+
+    expect(onBoundary).toHaveBeenCalledWith("セットを開けません");
+    expect(mockNavigate).not.toHaveBeenCalled();
+    expect(mockApiFetch).not.toHaveBeenCalled();
+  });
+
+  test("Shift+X (goNextSetParent) でも jumpList 経路を優先し sibling API を呼ばない", async () => {
+    const list = [makeJumpEntry("current-set"), makeJumpEntry("next-set", "archive")];
+    useViewerStore.setState({
+      viewerOrigin: null,
+      viewerTransitionId: 0,
+      viewerJumpList: list,
+    });
+
+    const { result } = renderHook(() => useSetJump(defaultProps), {
+      wrapper: createWrapper(),
+    });
+    await act(async () => {
+      await result.current.goNextSetParent();
+    });
+    await waitFor(() => expect(mockNavigate).toHaveBeenCalled());
+
+    expect(mockApiFetch).not.toHaveBeenCalled();
   });
 });

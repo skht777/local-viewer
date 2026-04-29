@@ -14,6 +14,7 @@ import { useFindSiblingRecursive } from "./useFindSiblingRecursive";
 import type { SortOrder, ViewerMode } from "./useViewerParams";
 import type { AncestorEntry } from "../types/api";
 import type { SetJumpTarget } from "../lib/jumpListNavigation";
+import { resolveJumpListAction } from "../lib/jumpListNavigation";
 import { useViewerStore } from "../stores/viewerStore";
 import { resolveFirstViewable } from "../utils/resolveFirstViewable";
 
@@ -40,6 +41,32 @@ interface UseSetJumpReturn {
   goPrevSetParent: () => void;
   prompt: Prompt | null;
   dismissPrompt: () => void;
+}
+
+// jumpList 経路の判定 + 副作用ハンドラ
+// - 戻り値 true: 処理済み (FS sibling 経路へフォールバックしない)
+// - 戻り値 false: jumpList null のため呼び出し側で従来 FS 経路へ
+function useJumpListHandler(
+  currentNodeId: string | null,
+  navigateToTarget: (target: SetJumpTarget, parent: string | null) => Promise<void>,
+  onBoundary: ((message: string) => void) | undefined,
+): (direction: "next" | "prev") => Promise<boolean> {
+  const viewerJumpList = useViewerStore((s) => s.viewerJumpList);
+  return useCallback(
+    async (direction) => {
+      const action = resolveJumpListAction(direction, currentNodeId, viewerJumpList);
+      if (action.type === "fallback") {
+        return false;
+      }
+      if (action.type === "boundary") {
+        onBoundary?.(action.message);
+        return true;
+      }
+      await navigateToTarget(action.target, action.target.parent_node_id);
+      return true;
+    },
+    [viewerJumpList, currentNodeId, navigateToTarget, onBoundary],
+  );
 }
 
 export function useSetJump({
@@ -73,10 +100,7 @@ export function useSetJump({
     [mode, sort],
   );
 
-  // PDF 用: 1 ページだけプリフェッチして navigate
-
-  // - PDF ビューワーは PDF 自身を表示するため親ディレクトリの全件は不要
-  // - replace モード: セットジャンプは履歴を汚染しない
+  // PDF 用: 1 ページだけプリフェッチして navigate (replace で履歴汚染回避)
   const prefetchFirstPageAndNavigate = useCallback(
     async (nodeId: string, search: string) => {
       startViewerTransition();
@@ -86,9 +110,7 @@ export function useSetJump({
     [queryClient, navigate, sort, startViewerTransition],
   );
 
-  // image / archive 用: 全ページをプリフェッチして navigate
-  // - 100 件超のセットでもビューワー側に全画像が渡るよう兄弟全件を温める
-  // - replace モード: セットジャンプは履歴を汚染しない
+  // image / archive 用: 全ページをプリフェッチして navigate (replace、100 件超対応)
   const prefetchAllAndNavigate = useCallback(
     async (nodeId: string, search: string) => {
       startViewerTransition();
@@ -98,12 +120,8 @@ export function useSetJump({
     [queryClient, navigate, sort, startViewerTransition],
   );
 
-  // 遷移先の kind に応じた URL で遷移
-  // - PDF: ターゲットの親ディレクトリに留まり ?pdf= 付きで PDF ビューワーを開く
-  // - アーカイブ: そのまま進入してビューワーを開く
-  // - ディレクトリ: 再帰探索して最初の閲覧対象を開く
-  // 引数は SetJumpTarget = Pick<BrowseEntry, "node_id" | "kind" | "name"> に narrow
-  // し、BrowseEntry / JumpListEntry のいずれも構造的に渡せるようにする
+  // 遷移先 kind に応じた URL 遷移 (PDF=親dir+?pdf=、archive=進入、directory=first-viewable)
+  // 引数 SetJumpTarget は BrowseEntry / JumpListEntry いずれも構造的に渡せる
   const navigateToTarget = useCallback(
     async (target: SetJumpTarget, targetParentNodeId: string | null) => {
       if (target.kind === "pdf") {
@@ -170,9 +188,14 @@ export function useSetJump({
     sort,
   });
 
+  const handleJumpList = useJumpListHandler(currentNodeId, navigateToTarget, onBoundary);
+
   // PageDown/X: 条件付き確認で次のセットへ（トランジション中は無効化）
   const goNextSet = useCallback(async () => {
     if (viewerTransitionId > 0) {
+      return;
+    }
+    if (await handleJumpList("next")) {
       return;
     }
     const result = await findSiblingRecursive("next");
@@ -200,11 +223,14 @@ export function useSetJump({
     } else {
       navigateToTarget(result.target, result.searchDirData.current_node_id);
     }
-  }, [findSiblingRecursive, navigateToTarget, onBoundary, viewerTransitionId]);
+  }, [handleJumpList, findSiblingRecursive, navigateToTarget, onBoundary, viewerTransitionId]);
 
   // PageUp/Z: 条件付き確認で前のセットへ（トランジション中は無効化）
   const goPrevSet = useCallback(async () => {
     if (viewerTransitionId > 0) {
+      return;
+    }
+    if (await handleJumpList("prev")) {
       return;
     }
     const result = await findSiblingRecursive("prev");
@@ -232,29 +258,35 @@ export function useSetJump({
     } else {
       navigateToTarget(result.target, result.searchDirData.current_node_id);
     }
-  }, [findSiblingRecursive, navigateToTarget, onBoundary, viewerTransitionId]);
+  }, [handleJumpList, findSiblingRecursive, navigateToTarget, onBoundary, viewerTransitionId]);
 
   // Shift+X: 確認なしで次のセットへ（トランジション中は無効化）
   const goNextSetParent = useCallback(async () => {
     if (viewerTransitionId > 0) {
       return;
     }
+    if (await handleJumpList("next")) {
+      return;
+    }
     const result = await findSiblingRecursive("next");
     if (result) {
       navigateToTarget(result.target, result.searchDirData.current_node_id);
     }
-  }, [findSiblingRecursive, navigateToTarget, viewerTransitionId]);
+  }, [handleJumpList, findSiblingRecursive, navigateToTarget, viewerTransitionId]);
 
   // Shift+Z: 確認なしで前のセットへ（トランジション中は無効化）
   const goPrevSetParent = useCallback(async () => {
     if (viewerTransitionId > 0) {
       return;
     }
+    if (await handleJumpList("prev")) {
+      return;
+    }
     const result = await findSiblingRecursive("prev");
     if (result) {
       navigateToTarget(result.target, result.searchDirData.current_node_id);
     }
-  }, [findSiblingRecursive, navigateToTarget, viewerTransitionId]);
+  }, [handleJumpList, findSiblingRecursive, navigateToTarget, viewerTransitionId]);
 
   return { goNextSet, goPrevSet, goNextSetParent, goPrevSetParent, prompt, dismissPrompt };
 }
