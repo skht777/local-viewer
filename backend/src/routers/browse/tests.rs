@@ -1112,3 +1112,152 @@ async fn limit無しのbrowseはthumbnail_warmerをスケジュールしない()
         "limit 無し browse は内部探索用なので warm() を呼んではならない"
     );
 }
+
+// --- DirIndex 由来の不正名 lexical validation テスト ---
+//
+// 永続層 (DirIndex SQLite) からの復元エントリ名は `Component::Normal` 1 つでなければ
+// `root.join(...)` 前に reject すること（09_security.md の必須要件）。
+// 既存の `name_has_invalid_byte` は `/`, `\\0`, `\\` のみを reject するため、
+// `..` や `.` は ingest 時には通過してしまい、読み出し時の防壁が必要。
+
+/// 直接 INSERT 用に `dir_index` DB ファイルを保持する test 用 `AppState` セットアップ
+///
+/// 通常の `test_state` は `NamedTempFile` をローカル変数で保持するため関数戻り直後に
+/// 削除されてしまい、新規 `Connection::open` が空 DB を再作成してしまう。
+/// 本ヘルパは `keep()` で DB ファイルを永続化し、外部から raw SQL を流せるようにする。
+fn test_state_persistent_dir_index(
+    root: &std::path::Path,
+    mount_names: HashMap<std::path::PathBuf, String>,
+) -> (Arc<AppState>, std::path::PathBuf) {
+    let settings = Settings::from_map(&HashMap::from([(
+        "MOUNT_BASE_DIR".to_string(),
+        root.to_string_lossy().into_owned(),
+    )]))
+    .unwrap();
+    let ps = Arc::new(PathSecurity::new(vec![root.to_path_buf()], false).unwrap());
+    let registry = NodeRegistry::new(Arc::clone(&ps), 100_000, mount_names);
+    let archive_service = Arc::new(crate::services::archive::ArchiveService::new(&settings));
+    let temp_file_cache = Arc::new(
+        TempFileCache::new(tempfile::TempDir::new().unwrap().keep(), 10 * 1024 * 1024).unwrap(),
+    );
+    let thumbnail_service = Arc::new(ThumbnailService::new(
+        Arc::clone(&temp_file_cache),
+        InflightLocks::new(),
+    ));
+    let video_converter = Arc::new(VideoConverter::new(Arc::clone(&temp_file_cache), &settings));
+    let thumbnail_warmer = Arc::new(ThumbnailWarmer::new(4));
+    let index_db = tempfile::NamedTempFile::new().unwrap();
+    let indexer = Arc::new(crate::services::indexer::Indexer::new(
+        index_db.path().to_str().unwrap(),
+    ));
+    indexer.init_db().unwrap();
+    // dir_index DB ファイルを keep() で永続化（テスト終了時のクリーンアップは tempdir に委ねる）
+    let dir_index_db_path = tempfile::NamedTempFile::new().unwrap().keep().unwrap().1;
+    let dir_index = Arc::new(DirIndex::new(dir_index_db_path.to_str().unwrap()));
+    dir_index.init_db().unwrap();
+    let state = Arc::new(AppState {
+        settings: Arc::new(settings),
+        node_registry: Arc::new(Mutex::new(registry)),
+        archive_service,
+        temp_file_cache,
+        thumbnail_service,
+        video_converter,
+        thumbnail_warmer,
+        thumb_semaphore: Arc::new(tokio::sync::Semaphore::new(8)),
+        archive_thumb_semaphore: Arc::new(tokio::sync::Semaphore::new(4)),
+        indexer,
+        dir_index,
+        last_rebuild: tokio::sync::Mutex::new(None),
+        scan_complete: Arc::new(std::sync::atomic::AtomicBool::new(true)),
+        registry_populate_stats: Arc::new(crate::services::node_registry::PopulateStats::default()),
+        last_scan_report: Arc::new(std::sync::RwLock::new(None)),
+        rebuild_guard: Arc::new(crate::services::rebuild_guard::RebuildGuard::new()),
+        file_watcher: Arc::new(Mutex::new(None)),
+        path_security: ps,
+        shutdown: crate::state::ShutdownFields::fresh(),
+    });
+    (state, dir_index_db_path)
+}
+
+/// `fast_path` 経由で `DirIndex` に直接 INSERT した不正名エントリが response から除外される
+#[tokio::test]
+#[allow(
+    non_snake_case,
+    reason = "日本語テスト名で PascalCase 残存を許容（規約 07_testing.md）"
+)]
+async fn fast_path_DirIndex由来の不正名エントリは_response_から除外される() {
+    use std::time::UNIX_EPOCH;
+
+    let (_dir, root) = create_test_dir();
+    // photos/ には good.jpg のみを残す（既存ファイルは削除）
+    let photos = root.join("photos");
+    for name in ["img1.jpg", "img2.png", "doc.pdf"] {
+        fs::remove_file(photos.join(name)).unwrap();
+    }
+    fs::write(photos.join("good.jpg"), "fake").unwrap();
+
+    // mount_id を固定して mount_id_map をセット
+    let mount_id = "aaaaaaaaaaaaaaaa".to_string();
+    let (state, dir_index_db_path) = test_state_persistent_dir_index(&root, HashMap::new());
+    {
+        #[allow(clippy::expect_used, reason = "テストコード")]
+        let mut reg = state.node_registry.lock().expect("lock");
+        let mut map = HashMap::new();
+        map.insert(mount_id.clone(), root.clone());
+        reg.set_mount_id_map(map);
+    }
+
+    // photos/ の FS mtime を取得
+    let photos_meta = fs::metadata(&photos).unwrap();
+    #[allow(clippy::cast_possible_wrap, reason = "UNIX タイムスタンプ")]
+    let photos_mtime_ns = photos_meta
+        .modified()
+        .unwrap()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_nanos() as i64;
+
+    let parent_key = format!("{mount_id}/photos");
+
+    // DirIndex に good.jpg と不正名 (".." と ".") を直接 INSERT
+    {
+        let conn = rusqlite::Connection::open(&dir_index_db_path).unwrap();
+        for (name, sort_key) in [("good.jpg", "good.jpg"), ("..", ".."), (".", ".")] {
+            conn.execute(
+                "INSERT INTO dir_entries (parent_path, name, kind, sort_key, size_bytes, mtime_ns) \
+                 VALUES (?1, ?2, 'image', ?3, 100, 1)",
+                rusqlite::params![&parent_key, name, sort_key],
+            )
+            .unwrap();
+        }
+        conn.execute(
+            "INSERT INTO dir_meta (path, mtime_ns) VALUES (?1, ?2)",
+            rusqlite::params![&parent_key, photos_mtime_ns],
+        )
+        .unwrap();
+    }
+    state.dir_index.mark_ready();
+
+    // photos の node_id を取得して browse
+    let photos_node_id = register_node_id(&state, &photos);
+    let (status, json) = get_json(app(state), &format!("/api/browse/{photos_node_id}")).await;
+
+    // テスト終了後の DB クリーンアップ
+    let _ = std::fs::remove_file(&dir_index_db_path);
+
+    assert_eq!(status, StatusCode::OK);
+    let entries = json["entries"].as_array().unwrap();
+    let names: Vec<&str> = entries
+        .iter()
+        .map(|e| e["name"].as_str().unwrap())
+        .collect();
+    assert!(names.contains(&"good.jpg"), "good.jpg は残る");
+    assert!(
+        !names.contains(&".."),
+        ".. は lexical validation で除外される"
+    );
+    assert!(
+        !names.contains(&"."),
+        ". は lexical validation で除外される"
+    );
+}

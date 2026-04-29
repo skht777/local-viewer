@@ -118,6 +118,12 @@ impl DirIndex {
         }
     }
 
+    /// テスト用: 内部 DB ファイルパスを返す (raw SQL で永続層を直接操作するため)
+    #[cfg(test)]
+    pub(crate) fn db_path_for_test(&self) -> &str {
+        &self.db_path
+    }
+
     /// WAL モード + パフォーマンス PRAGMA を設定した接続を開く
     fn connect(&self) -> Result<Connection, DirIndexError> {
         let conn = Connection::open(&self.db_path)?;

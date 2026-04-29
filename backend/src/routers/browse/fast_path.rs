@@ -208,11 +208,36 @@ pub(super) fn try_dir_index_browse_split(
     Some((response, etag))
 }
 
+/// `DirIndex` 由来のエントリ名が安全か検証する (lexical validation)
+///
+/// 永続層 (`SQLite`) から復元した name を `root.join(...)` する前に、`Path::components()`
+/// が `Component::Normal` 1 つだけで構成されることを確認する。`..` / `.` / `/abs` /
+/// `\\` / `""` 等は reject。NUL バイトも明示的に reject (`Path::components` は
+/// NUL を Normal 内の文字として扱うため)。`09_security.md` の必須要件
+/// 「永続層・キャッシュ復元パスの `join` 前検証必須」に対応。
+fn safe_db_name(name: &str) -> bool {
+    if name.as_bytes().contains(&0) {
+        return false;
+    }
+    let mut comps = std::path::Path::new(name).components();
+    matches!(
+        (comps.next(), comps.next()),
+        (Some(std::path::Component::Normal(_)), None)
+    )
+}
+
 /// `DirIndex` の `DirEntry` + バッチ情報から `ScannedEntry` を構築する (ロック不要)
 ///
 /// mtime ガード通過済みのため、DirIndex のエントリはファイルシステムと一致している。
 /// `exists()` / `canonicalize()` をスキップしてパスをそのまま使用する。
 /// symlink 有効時のみ `canonicalize` で正規化する。
+///
+/// `de.name` / `pv.name` は `safe_db_name` で lexical validation し、不正名は捨てる
+/// （永続層の DB 破損 / cfg 改竄に対する fail-closed 防壁）。
+#[allow(
+    clippy::too_many_lines,
+    reason = "DirEntry → ScannedEntry 変換 + 不正名 reject + preview 構築の段階的処理を 1 関数に集約"
+)]
 fn build_scanned_from_dir_index(
     entries: &[DirEntry],
     root: &std::path::Path,
@@ -223,6 +248,16 @@ fn build_scanned_from_dir_index(
     entries
         .iter()
         .filter_map(|de| {
+            // 永続層由来 name の lexical validation (root.join 前)
+            if !safe_db_name(&de.name) {
+                tracing::warn!(
+                    parent_key,
+                    name = %de.name,
+                    "DirIndex 由来の不正な name を reject"
+                );
+                return None;
+            }
+
             let rel = parent_key_relative(parent_key);
             let abs_path = root.join(rel).join(&de.name);
             // mtime ガード通過済み: エントリ構成はスキャン時点から不変
@@ -263,6 +298,15 @@ fn build_scanned_from_dir_index(
                         .previews
                         .iter()
                         .filter_map(|pv| {
+                            // preview name も lexical validation で fail-closed
+                            if !safe_db_name(&pv.name) {
+                                tracing::warn!(
+                                    child_key = %child_key,
+                                    name = %pv.name,
+                                    "DirIndex 由来の preview name を reject"
+                                );
+                                return None;
+                            }
                             let pv_rel = parent_key_relative(&child_key);
                             let pv_abs = root.join(pv_rel).join(&pv.name);
                             if allow_symlinks {
@@ -296,4 +340,39 @@ fn build_scanned_from_dir_index(
             })
         })
         .collect()
+}
+
+#[cfg(test)]
+mod safe_db_name_tests {
+    use super::safe_db_name;
+
+    #[test]
+    fn 通常のファイル名は通過する() {
+        assert!(safe_db_name("photo.jpg"));
+        assert!(safe_db_name("a"));
+        assert!(safe_db_name("ふぁいる.png"));
+    }
+
+    #[test]
+    fn 空文字列は除外される() {
+        assert!(!safe_db_name(""));
+    }
+
+    #[test]
+    fn dot_と_dotdot_は除外される() {
+        assert!(!safe_db_name("."));
+        assert!(!safe_db_name(".."));
+    }
+
+    #[test]
+    fn 区切り含み_絶対パスは除外される() {
+        assert!(!safe_db_name("a/b"));
+        assert!(!safe_db_name("/abs"));
+        assert!(!safe_db_name("/"));
+    }
+
+    #[test]
+    fn nul_バイト含みは除外される() {
+        assert!(!safe_db_name("a\0b"));
+    }
 }
