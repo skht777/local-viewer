@@ -12,7 +12,8 @@ import { browseInfiniteOptions, fetchAllBrowsePages } from "./api/browseQueries"
 import { resolveTopLevelDir, shouldConfirm } from "./useSetNavigation";
 import { useFindSiblingRecursive } from "./useFindSiblingRecursive";
 import type { SortOrder, ViewerMode } from "./useViewerParams";
-import type { AncestorEntry, BrowseEntry } from "../types/api";
+import type { AncestorEntry } from "../types/api";
+import type { SetJumpTarget } from "../lib/jumpListNavigation";
 import { useViewerStore } from "../stores/viewerStore";
 import { resolveFirstViewable } from "../utils/resolveFirstViewable";
 
@@ -101,8 +102,10 @@ export function useSetJump({
   // - PDF: ターゲットの親ディレクトリに留まり ?pdf= 付きで PDF ビューワーを開く
   // - アーカイブ: そのまま進入してビューワーを開く
   // - ディレクトリ: 再帰探索して最初の閲覧対象を開く
+  // 引数は SetJumpTarget = Pick<BrowseEntry, "node_id" | "kind" | "name"> に narrow
+  // し、BrowseEntry / JumpListEntry のいずれも構造的に渡せるようにする
   const navigateToTarget = useCallback(
-    async (target: BrowseEntry, targetParentNodeId: string | null) => {
+    async (target: SetJumpTarget, targetParentNodeId: string | null) => {
       if (target.kind === "pdf") {
         await prefetchFirstPageAndNavigate(
           targetParentNodeId ?? target.node_id,
