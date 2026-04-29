@@ -155,6 +155,8 @@ export function useViewerParams(): UseViewerParamsReturn {
   // mode は browse スコープで管理済みなのでここでは操作しない
   // push モード: ブラウザバックで開く前の URL に戻れるようにする（B キー閉じと一致）
   const openViewer = (newIndex: number) => {
+    // 残存 jumpList をクリア（検索結果からの離脱後など、stale な snapshot を引き継がない）
+    setViewerJumpList(null, null);
     // 起点情報を保存（B キー閉じる時に戻る先）
     const origin = computeOrigin();
     if (origin) {
@@ -180,6 +182,8 @@ export function useViewerParams(): UseViewerParamsReturn {
   // mode は browse スコープで管理済みなのでここでは操作しない
   // push モード: ブラウザバックで開く前の URL に戻れるようにする（B キー閉じと一致）
   const openPdfViewer = (nextPdfNodeId: string) => {
+    // 残存 jumpList をクリア（stale な snapshot を引き継がない）
+    setViewerJumpList(null, null);
     const origin = computeOrigin();
     if (origin) {
       setViewerOrigin(origin);

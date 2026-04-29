@@ -9,7 +9,7 @@
 import { useCallback } from "react";
 import type { Location, NavigateFunction } from "react-router-dom";
 import type { SearchResult } from "../types/api";
-import type { useViewerStore } from "../stores/viewerStore";
+import { useViewerStore } from "../stores/viewerStore";
 
 type SetViewerOrigin = ReturnType<typeof useViewerStore.getState>["setViewerOrigin"];
 
@@ -47,6 +47,10 @@ export function useSearchNavigation({
     (result: SearchResult) => {
       setIsOpen(false);
       setQuery("");
+      // SearchBar 直クリックは検索結果一覧の snapshot を持たないので残存 jumpList を必ずクリア
+      // （検索結果ページからのバック後にこの経路で viewer が開かれたとき stale な
+      // jumpList で boundary 判定されるのを防ぐ）
+      useViewerStore.getState().setViewerJumpList(null, null);
 
       if (result.kind === "directory" || result.kind === "archive") {
         navigate(`/browse/${result.node_id}`);

@@ -45,10 +45,13 @@ export function useOpenViewerFromEntry({
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const setViewerOrigin = useViewerStore((s) => s.setViewerOrigin);
+  const setViewerJumpList = useViewerStore((s) => s.setViewerJumpList);
   const startViewerTransition = useViewerStore((s) => s.startViewerTransition);
 
   return useCallback(
     async (entryNodeId: string) => {
+      // 残存 jumpList を起動冒頭でクリア（検索結果ラッパーは baseOpenViewer 後に上書き）
+      setViewerJumpList(null, null);
       try {
         const target = await resolveFirstViewable(entryNodeId, queryClient, sort);
         if (!target) {
@@ -110,6 +113,7 @@ export function useOpenViewerFromEntry({
       buildBrowseSearch,
       buildOrigin,
       setViewerOrigin,
+      setViewerJumpList,
       startViewerTransition,
     ],
   );

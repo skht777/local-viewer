@@ -343,4 +343,38 @@ describe("useViewerParams", () => {
     const search = result.current.buildBrowseSearch();
     expect(search).not.toContain("index");
   });
+
+  // Bug 2 回帰: openViewer / openPdfViewer 起動冒頭で残存 jumpList を必ずクリア
+  describe("Bug 2 回帰: viewer 起動経路で残存 jumpList をクリアする", () => {
+    beforeEach(() => {
+      useViewerStore.setState({
+        viewerJumpList: [
+          { node_id: "stale", parent_node_id: null, kind: "directory", name: "stale" },
+        ],
+        viewerJumpListIndex: 0,
+      });
+    });
+
+    test("openViewer 冒頭で viewerJumpList / viewerJumpListIndex が null になる", () => {
+      const { result } = renderHook(() => useViewerParams(), {
+        wrapper: createWrapper(["/?tab=filesets"]),
+      });
+      act(() => {
+        result.current.openViewer(2);
+      });
+      expect(useViewerStore.getState().viewerJumpList).toBeNull();
+      expect(useViewerStore.getState().viewerJumpListIndex).toBeNull();
+    });
+
+    test("openPdfViewer 冒頭で viewerJumpList / viewerJumpListIndex が null になる", () => {
+      const { result } = renderHook(() => useViewerParams(), {
+        wrapper: createWrapper(["/?tab=filesets"]),
+      });
+      act(() => {
+        result.current.openPdfViewer("pdf-1");
+      });
+      expect(useViewerStore.getState().viewerJumpList).toBeNull();
+      expect(useViewerStore.getState().viewerJumpListIndex).toBeNull();
+    });
+  });
 });

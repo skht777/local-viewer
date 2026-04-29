@@ -8,6 +8,7 @@
 import { renderHook } from "@testing-library/react";
 import type { Location } from "react-router-dom";
 import { useSearchNavigation } from "../../src/hooks/useSearchNavigation";
+import { useViewerStore } from "../../src/stores/viewerStore";
 import type { SearchResult } from "../../src/types/api";
 
 function makeLocation(search = ""): Location {
@@ -172,5 +173,52 @@ describe("useSearchNavigation - navigateToSearchPage", () => {
     const { result, navigate } = setup({ query: "  a  " });
     result.current.navigateToSearchPage();
     expect(navigate).not.toHaveBeenCalled();
+  });
+});
+
+// Bug 2 防御: SearchBar 直クリック経路で残存 jumpList が必ずクリアされる
+describe("useSearchNavigation - jumpList クリア (Bug 2 回帰)", () => {
+  beforeEach(() => {
+    useViewerStore.setState({
+      viewerJumpList: [{ node_id: "stale", parent_node_id: null, kind: "directory", name: "s" }],
+      viewerJumpListIndex: 0,
+    });
+  });
+
+  test("directory クリックで残存 jumpList が null クリアされる", () => {
+    const { result } = setup();
+    result.current.handleSelect(makeResult({ kind: "directory", node_id: "d1" }));
+    expect(useViewerStore.getState().viewerJumpList).toBeNull();
+    expect(useViewerStore.getState().viewerJumpListIndex).toBeNull();
+  });
+
+  test("archive クリックで残存 jumpList が null クリアされる", () => {
+    const { result } = setup();
+    result.current.handleSelect(makeResult({ kind: "archive", node_id: "a1" }));
+    expect(useViewerStore.getState().viewerJumpList).toBeNull();
+  });
+
+  test("PDF クリックで残存 jumpList が null クリアされる", () => {
+    const { result } = setup({ scope: "s", search: "?q=foo" });
+    result.current.handleSelect(
+      makeResult({ kind: "pdf", node_id: "p1", parent_node_id: "parent-1" }),
+    );
+    expect(useViewerStore.getState().viewerJumpList).toBeNull();
+  });
+
+  test("image クリックで残存 jumpList が null クリアされる", () => {
+    const { result } = setup();
+    result.current.handleSelect(
+      makeResult({ kind: "image", node_id: "i1", parent_node_id: "parent-1" }),
+    );
+    expect(useViewerStore.getState().viewerJumpList).toBeNull();
+  });
+
+  test("video クリックで残存 jumpList が null クリアされる", () => {
+    const { result } = setup();
+    result.current.handleSelect(
+      makeResult({ kind: "video", node_id: "v1", parent_node_id: "parent-1" }),
+    );
+    expect(useViewerStore.getState().viewerJumpList).toBeNull();
   });
 });
