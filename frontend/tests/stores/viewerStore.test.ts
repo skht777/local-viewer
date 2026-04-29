@@ -15,6 +15,7 @@ describe("viewerStore", () => {
       viewerOrigin: null,
       viewerTransitionId: 0,
       viewerJumpList: null,
+      viewerJumpListIndex: null,
     });
   });
 
@@ -281,5 +282,59 @@ describe("viewerStore", () => {
       .setViewerJumpList([{ node_id: "a", parent_node_id: null, kind: "directory", name: "a" }]);
     const stored = JSON.parse(localStorage.getItem("viewer-store") ?? "{}");
     expect(stored.state?.viewerJumpList).toBeUndefined();
+  });
+
+  // --- viewerJumpListIndex (persist 除外) ---
+
+  test("初期状態で viewerJumpListIndex が null", () => {
+    expect(useViewerStore.getState().viewerJumpListIndex).toBeNull();
+  });
+
+  test("setViewerJumpListIndex で list が null なら index は null に正規化", () => {
+    useViewerStore.getState().setViewerJumpListIndex(2);
+    expect(useViewerStore.getState().viewerJumpListIndex).toBeNull();
+  });
+
+  test("setViewerJumpListIndex で list 範囲内の index は保存される", () => {
+    useViewerStore.getState().setViewerJumpList([
+      { node_id: "a", parent_node_id: null, kind: "directory", name: "a" },
+      { node_id: "b", parent_node_id: null, kind: "directory", name: "b" },
+    ]);
+    useViewerStore.getState().setViewerJumpListIndex(1);
+    expect(useViewerStore.getState().viewerJumpListIndex).toBe(1);
+  });
+
+  test("setViewerJumpListIndex で範囲外の index は null に正規化", () => {
+    useViewerStore
+      .getState()
+      .setViewerJumpList([{ node_id: "a", parent_node_id: null, kind: "directory", name: "a" }]);
+    useViewerStore.getState().setViewerJumpListIndex(5);
+    expect(useViewerStore.getState().viewerJumpListIndex).toBeNull();
+  });
+
+  test("setViewerJumpListIndex で負の index は null に正規化", () => {
+    useViewerStore
+      .getState()
+      .setViewerJumpList([{ node_id: "a", parent_node_id: null, kind: "directory", name: "a" }]);
+    useViewerStore.getState().setViewerJumpListIndex(-1);
+    expect(useViewerStore.getState().viewerJumpListIndex).toBeNull();
+  });
+
+  test("setViewerJumpListIndex(null) で明示的にクリアできる", () => {
+    useViewerStore
+      .getState()
+      .setViewerJumpList([{ node_id: "a", parent_node_id: null, kind: "directory", name: "a" }]);
+    useViewerStore.getState().setViewerJumpListIndex(0);
+    useViewerStore.getState().setViewerJumpListIndex(null);
+    expect(useViewerStore.getState().viewerJumpListIndex).toBeNull();
+  });
+
+  test("viewerJumpListIndex は localStorage に永続化されない", () => {
+    useViewerStore
+      .getState()
+      .setViewerJumpList([{ node_id: "a", parent_node_id: null, kind: "directory", name: "a" }]);
+    useViewerStore.getState().setViewerJumpListIndex(0);
+    const stored = JSON.parse(localStorage.getItem("viewer-store") ?? "{}");
+    expect(stored.state?.viewerJumpListIndex).toBeUndefined();
   });
 });

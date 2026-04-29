@@ -63,6 +63,15 @@ interface ViewerState {
   // - 検索結果からの viewer 起動時に snapshot され、close でクリアされる
   viewerJumpList: JumpListEntry[] | null;
   setViewerJumpList: (list: JumpListEntry[] | null) => void;
+
+  // jumpList 内の現在位置（永続化しない）
+  // - null: jumpList 未使用または範囲外（FS sibling 経路へフォールバック扱い）
+  // - 非 null: jumpList[index] が現在開かれているセット起点
+  // - viewer の currentNodeId が resolveFirstViewable で着地ずれしても index は起動 entry の位置で固定
+  viewerJumpListIndex: number | null;
+  // index のみ更新（navigate 後の前進/後退用）
+  // - viewerJumpList が null または範囲外の場合は内部で null に正規化する
+  setViewerJumpListIndex: (index: number | null) => void;
 }
 
 export const useViewerStore = create<ViewerState>()(
@@ -99,6 +108,23 @@ export const useViewerStore = create<ViewerState>()(
 
       setViewerJumpList: (list) => set({ viewerJumpList: list }),
 
+      setViewerJumpListIndex: (index) =>
+        set((state) => {
+          // list 未設定なら index は常に null
+          if (state.viewerJumpList === null) {
+            return { viewerJumpListIndex: null };
+          }
+          // null は明示的なクリア
+          if (index === null) {
+            return { viewerJumpListIndex: null };
+          }
+          // 範囲外は null に正規化（不正な index による静かな破綻を防ぐ）
+          if (index < 0 || index >= state.viewerJumpList.length) {
+            return { viewerJumpListIndex: null };
+          }
+          return { viewerJumpListIndex: index };
+        }),
+
       setViewerOrigin: (origin) => set({ viewerOrigin: origin }),
 
       setZoomLevel: (level) => set({ zoomLevel: Math.max(25, Math.min(300, level)) }),
@@ -128,6 +154,8 @@ export const useViewerStore = create<ViewerState>()(
       toggleSidebar: () => set((state) => ({ isSidebarOpen: !state.isSidebarOpen })),
 
       viewerJumpList: null,
+
+      viewerJumpListIndex: null,
 
       viewerOrigin: null,
 
