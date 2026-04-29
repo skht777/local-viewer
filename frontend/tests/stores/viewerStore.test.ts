@@ -14,6 +14,7 @@ describe("viewerStore", () => {
       scrollSpeed: 1,
       viewerOrigin: null,
       viewerTransitionId: 0,
+      viewerJumpList: null,
     });
   });
 
@@ -245,5 +246,40 @@ describe("viewerStore", () => {
     useViewerStore.getState().startViewerTransition();
     const stored = JSON.parse(localStorage.getItem("viewer-store") ?? "{}");
     expect(stored.state?.viewerTransitionId).toBeUndefined();
+  });
+
+  // --- viewerJumpList (persist 除外) ---
+
+  test("初期状態で viewerJumpList が null", () => {
+    expect(useViewerStore.getState().viewerJumpList).toBeNull();
+  });
+
+  test("setViewerJumpList でリストをセットできる", () => {
+    const list = [
+      {
+        node_id: "a",
+        parent_node_id: "p",
+        kind: "directory" as const,
+        name: "a",
+      },
+    ];
+    useViewerStore.getState().setViewerJumpList(list);
+    expect(useViewerStore.getState().viewerJumpList).toEqual(list);
+  });
+
+  test("setViewerJumpList(null) でクリアできる", () => {
+    useViewerStore
+      .getState()
+      .setViewerJumpList([{ node_id: "a", parent_node_id: null, kind: "pdf", name: "a" }]);
+    useViewerStore.getState().setViewerJumpList(null);
+    expect(useViewerStore.getState().viewerJumpList).toBeNull();
+  });
+
+  test("viewerJumpList は localStorage に永続化されない", () => {
+    useViewerStore
+      .getState()
+      .setViewerJumpList([{ node_id: "a", parent_node_id: null, kind: "directory", name: "a" }]);
+    const stored = JSON.parse(localStorage.getItem("viewer-store") ?? "{}");
+    expect(stored.state?.viewerJumpList).toBeUndefined();
   });
 });

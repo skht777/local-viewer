@@ -5,6 +5,7 @@
 
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
+import type { JumpListEntry } from "../lib/jumpListNavigation";
 
 export type FitMode = "width" | "height" | "original";
 export type SpreadMode = "single" | "spread" | "spread-offset";
@@ -55,6 +56,13 @@ interface ViewerState {
   viewerTransitionId: number;
   startViewerTransition: () => number;
   endViewerTransition: (id: number) => void;
+
+  // セット間ジャンプの範囲リスト（永続化しない）
+  // - null: 既存 FS sibling 経路（マウントルートまで再帰）
+  // - 非 null: 与えられたリスト範囲内でのみ X/Z でジャンプ
+  // - 検索結果からの viewer 起動時に snapshot され、close でクリアされる
+  viewerJumpList: JumpListEntry[] | null;
+  setViewerJumpList: (list: JumpListEntry[] | null) => void;
 }
 
 export const useViewerStore = create<ViewerState>()(
@@ -89,6 +97,8 @@ export const useViewerStore = create<ViewerState>()(
 
       setSidebarOpen: (isOpen) => set({ isSidebarOpen: isOpen }),
 
+      setViewerJumpList: (list) => set({ viewerJumpList: list }),
+
       setViewerOrigin: (origin) => set({ viewerOrigin: origin }),
 
       setZoomLevel: (level) => set({ zoomLevel: Math.max(25, Math.min(300, level)) }),
@@ -116,6 +126,8 @@ export const useViewerStore = create<ViewerState>()(
         }),
 
       toggleSidebar: () => set((state) => ({ isSidebarOpen: !state.isSidebarOpen })),
+
+      viewerJumpList: null,
 
       viewerOrigin: null,
 
