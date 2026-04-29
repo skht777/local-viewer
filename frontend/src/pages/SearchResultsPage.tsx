@@ -3,16 +3,20 @@
 // - データ層は useSearchResultsData、callback は useSearchResultsCallbacks に委譲
 // - viewer は BrowsePageViewerSwitch を再利用、画像セットは常に名前昇順
 // - viewerOrigin は { pathname: "/search", search } で保存（B キー閉じで /search に戻る）
+// - directory/archive の ▶/Space は useOpenViewerFromEntry に委譲（buildOrigin で /search 起点を保存）
 
 import { useMemo } from "react";
+import { useSearchParams } from "react-router-dom";
 import { useViewerParams } from "../hooks/useViewerParams";
 import { useViewerStore } from "../stores/viewerStore";
+import { useOpenViewerFromEntry } from "../hooks/useOpenViewerFromEntry";
 import { useSearchResultsData } from "../hooks/useSearchResultsData";
 import { useSearchResultsCallbacks } from "../hooks/useSearchResultsCallbacks";
 import { BrowsePageViewerSwitch } from "../components/BrowsePageViewerSwitch";
 import { FileBrowser } from "../components/FileBrowser";
 import { SearchBar } from "../components/SearchBar";
 import { compareEntryName } from "../utils/sortEntries";
+import { buildSearchSearch } from "../utils/viewerNavigation";
 
 import type { SearchSort } from "../hooks/api/browseQueries";
 
@@ -28,6 +32,7 @@ const KIND_TABS: { label: string; value: string | null }[] = [
 
 export default function SearchResultsPage() {
   const viewerTransitionId = useViewerStore((s) => s.viewerTransitionId);
+  const [searchParams] = useSearchParams();
   const {
     params,
     isViewerOpen,
@@ -36,6 +41,7 @@ export default function SearchResultsPage() {
     setPdfPage,
     closeViewer,
     closePdfViewer,
+    buildBrowseSearch,
   } = useViewerParams();
 
   const {
@@ -70,6 +76,21 @@ export default function SearchResultsPage() {
 
   const { handleImageClick, handlePdfClick, handleKindChange, handleSortChange, handleNavigate } =
     useSearchResultsCallbacks({ filteredImages, viewerIndexMap });
+
+  // ▶/Space で directory/archive/PDF/image をビューワー起動する callback
+  // - nodeId=undefined: フック内部の /browse/${nodeId} 形 origin 保存を抑止
+  // - buildOrigin: first-viewable 解決成功後に /search origin を保存（fallback 経路で残らない）
+  // - buildBrowseSearch: 画像 viewer の URL に ?index=0&tab=images を付ける
+  const openViewerFromEntry = useOpenViewerFromEntry({
+    nodeId: undefined,
+    mode: params.mode,
+    sort: "name-asc",
+    buildBrowseSearch,
+    buildOrigin: () => ({
+      pathname: "/search",
+      search: buildSearchSearch(searchParams),
+    }),
+  });
 
   // ビューワー用 data 形状（BrowsePageViewerSwitch が要求）
   const viewerData = useMemo(
@@ -164,6 +185,7 @@ export default function SearchResultsPage() {
           onNavigate={handleNavigate}
           onImageClick={handleImageClick}
           onPdfClick={handlePdfClick}
+          onOpenViewer={openViewerFromEntry}
           tab={kind === "image" ? "images" : kind === "video" ? "videos" : "filesets"}
           sort="name-asc"
           hasMore={hasNextPage}
