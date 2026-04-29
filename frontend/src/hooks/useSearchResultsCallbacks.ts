@@ -1,6 +1,7 @@
 // 検索結果ページのコールバック群
 // - handleImageClick: filteredImages 基準 index → viewerImages 昇順 index に変換して URL を組み立てる
-// - handlePdfClick: ?pdf= 付きで PDF ビューワーを開く
+//   （画像経路は jumpList 対象外なので jumpList を null にクリア）
+// - handlePdfClick: ?pdf= 付きで PDF ビューワーを開く（起動直前に jumpList を snapshot）
 // - handleKindChange: kind フィルタ更新 (viewer 関連パラメータをリセット)
 // - handleSortChange: sort 更新 (relevance ならパラメータ削除)
 // - handleNavigate: directory/archive クリックで /browse へ遷移
@@ -8,8 +9,9 @@
 import { useCallback } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useViewerStore } from "../stores/viewerStore";
+import { buildJumpListFromSearch } from "../lib/jumpListNavigation";
 import type { SearchSort } from "./api/browseQueries";
-import type { BrowseEntry } from "../types/api";
+import type { BrowseEntry, SearchResult } from "../types/api";
 import type { ViewerTab } from "../utils/viewerNavigation";
 
 export interface SearchResultsCallbacks {
@@ -23,6 +25,7 @@ export interface SearchResultsCallbacks {
 interface UseSearchResultsCallbacksProps {
   filteredImages: BrowseEntry[];
   viewerIndexMap: Map<string, number>;
+  allEntries: SearchResult[];
 }
 
 // /search 起点として viewer origin を保存する
@@ -34,6 +37,7 @@ function saveSearchOrigin(searchParams: URLSearchParams): void {
 export function useSearchResultsCallbacks({
   filteredImages,
   viewerIndexMap,
+  allEntries,
 }: UseSearchResultsCallbacksProps): SearchResultsCallbacks {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -44,6 +48,8 @@ export function useSearchResultsCallbacks({
       if (!img) {
         return;
       }
+      // 画像経路は jumpList 対象外（currentNodeId が不定のため）→ FS 経路にする
+      useViewerStore.getState().setViewerJumpList(null);
       const viewerIdx = viewerIndexMap.get(img.node_id) ?? 0;
       const next = new URLSearchParams(searchParams);
       next.set("tab", "images");
@@ -58,6 +64,8 @@ export function useSearchResultsCallbacks({
 
   const handlePdfClick = useCallback(
     (pdfNodeId: string) => {
+      // PDF 起動直前に検索結果から jumpList を snapshot
+      useViewerStore.getState().setViewerJumpList(buildJumpListFromSearch(allEntries));
       const next = new URLSearchParams(searchParams);
       next.set("pdf", pdfNodeId);
       next.set("page", "1");
@@ -66,7 +74,7 @@ export function useSearchResultsCallbacks({
       saveSearchOrigin(searchParams);
       setSearchParams(next);
     },
-    [searchParams, setSearchParams],
+    [allEntries, searchParams, setSearchParams],
   );
 
   const handleKindChange = useCallback(

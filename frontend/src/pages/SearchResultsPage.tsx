@@ -4,8 +4,9 @@
 // - viewer は BrowsePageViewerSwitch を再利用、画像セットは常に名前昇順
 // - viewerOrigin は { pathname: "/search", search } で保存（B キー閉じで /search に戻る）
 // - directory/archive の ▶/Space は useOpenViewerFromEntry に委譲（buildOrigin で /search 起点を保存）
+// - viewerJumpList は viewer 起動直前 snapshot で設定（cleanup や mount clear はしない）
 
-import { useMemo } from "react";
+import { useCallback, useMemo } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useViewerParams } from "../hooks/useViewerParams";
 import { useViewerStore } from "../stores/viewerStore";
@@ -15,9 +16,11 @@ import { useSearchResultsCallbacks } from "../hooks/useSearchResultsCallbacks";
 import { BrowsePageViewerSwitch } from "../components/BrowsePageViewerSwitch";
 import { FileBrowser } from "../components/FileBrowser";
 import { SearchBar } from "../components/SearchBar";
+import { buildJumpListFromSearch } from "../lib/jumpListNavigation";
 import { compareEntryName } from "../utils/sortEntries";
 import { buildSearchSearch } from "../utils/viewerNavigation";
 
+import type { BrowseEntry } from "../types/api";
 import type { SearchSort } from "../hooks/api/browseQueries";
 
 // kind フィルタは FileBrowser のタブと別管理（検索 API の kind パラメータに直結）
@@ -75,13 +78,15 @@ export default function SearchResultsPage() {
   }, [viewerImages]);
 
   const { handleImageClick, handlePdfClick, handleKindChange, handleSortChange, handleNavigate } =
-    useSearchResultsCallbacks({ filteredImages, viewerIndexMap });
+    useSearchResultsCallbacks({ filteredImages, viewerIndexMap, allEntries });
+
+  const setViewerJumpList = useViewerStore((s) => s.setViewerJumpList);
 
   // ▶/Space で directory/archive/PDF/image をビューワー起動する callback
   // - nodeId=undefined: フック内部の /browse/${nodeId} 形 origin 保存を抑止
   // - buildOrigin: first-viewable 解決成功後に /search origin を保存（fallback 経路で残らない）
   // - buildBrowseSearch: 画像 viewer の URL に ?index=0&tab=images を付ける
-  const openViewerFromEntry = useOpenViewerFromEntry({
+  const baseOpenViewer = useOpenViewerFromEntry({
     nodeId: undefined,
     mode: params.mode,
     sort: "name-asc",
@@ -91,6 +96,20 @@ export default function SearchResultsPage() {
       search: buildSearchSearch(searchParams),
     }),
   });
+
+  // viewer 起動直前に検索結果の DAP を jumpList として snapshot
+  // - 画像 entry の起動経路（あるなら）も jumpList=null にして FS 経路を保証
+  const openViewerFromEntry = useCallback(
+    (entry: BrowseEntry) => {
+      if (entry.kind === "directory" || entry.kind === "archive" || entry.kind === "pdf") {
+        setViewerJumpList(buildJumpListFromSearch(allEntries));
+      } else {
+        setViewerJumpList(null);
+      }
+      return baseOpenViewer(entry);
+    },
+    [baseOpenViewer, allEntries, setViewerJumpList],
+  );
 
   // ビューワー用 data 形状（BrowsePageViewerSwitch が要求）
   const viewerData = useMemo(

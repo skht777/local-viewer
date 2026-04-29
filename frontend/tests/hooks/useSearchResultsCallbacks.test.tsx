@@ -10,7 +10,7 @@ import type { ReactNode } from "react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { useSearchResultsCallbacks } from "../../src/hooks/useSearchResultsCallbacks";
 import { useViewerStore } from "../../src/stores/viewerStore";
-import type { BrowseEntry } from "../../src/types/api";
+import type { BrowseEntry, SearchResult } from "../../src/types/api";
 
 // react-router-dom の useNavigate / useSearchParams をモック化
 let lastSetSearchParams: unknown[] = [];
@@ -42,6 +42,17 @@ function makeImage(id: string, name: string): BrowseEntry {
   };
 }
 
+function makeSearchEntry(id: string, kind: SearchResult["kind"]): SearchResult {
+  return {
+    node_id: id,
+    parent_node_id: `parent-${id}`,
+    name: id,
+    kind,
+    relative_path: `path/${id}`,
+    size_bytes: null,
+  };
+}
+
 function wrapper({ children }: { children: ReactNode }) {
   return (
     <MemoryRouter initialEntries={["/search?q=foo"]}>
@@ -55,7 +66,11 @@ function wrapper({ children }: { children: ReactNode }) {
 beforeEach(() => {
   vi.clearAllMocks();
   lastSetSearchParams = [];
-  useViewerStore.setState({ viewerOrigin: null, viewerTransitionId: 0 });
+  useViewerStore.setState({
+    viewerOrigin: null,
+    viewerTransitionId: 0,
+    viewerJumpList: null,
+  });
 });
 
 describe("useSearchResultsCallbacks - handleImageClick", () => {
@@ -66,7 +81,7 @@ describe("useSearchResultsCallbacks - handleImageClick", () => {
       ["i1", 1],
     ]);
     const { result } = renderHook(
-      () => useSearchResultsCallbacks({ filteredImages, viewerIndexMap }),
+      () => useSearchResultsCallbacks({ filteredImages, viewerIndexMap, allEntries: [] }),
       { wrapper },
     );
     result.current.handleImageClick(0);
@@ -88,6 +103,7 @@ describe("useSearchResultsCallbacks - handleImageClick", () => {
         useSearchResultsCallbacks({
           filteredImages: [],
           viewerIndexMap: new Map(),
+          allEntries: [],
         }),
       { wrapper },
     );
@@ -103,6 +119,7 @@ describe("useSearchResultsCallbacks - handlePdfClick", () => {
         useSearchResultsCallbacks({
           filteredImages: [],
           viewerIndexMap: new Map(),
+          allEntries: [],
         }),
       { wrapper },
     );
@@ -126,6 +143,7 @@ describe("useSearchResultsCallbacks - handleKindChange", () => {
         useSearchResultsCallbacks({
           filteredImages: [],
           viewerIndexMap: new Map(),
+          allEntries: [],
         }),
       { wrapper },
     );
@@ -147,6 +165,7 @@ describe("useSearchResultsCallbacks - handleKindChange", () => {
         useSearchResultsCallbacks({
           filteredImages: [],
           viewerIndexMap: new Map(),
+          allEntries: [],
         }),
       { wrapper },
     );
@@ -164,6 +183,7 @@ describe("useSearchResultsCallbacks - handleSortChange", () => {
         useSearchResultsCallbacks({
           filteredImages: [],
           viewerIndexMap: new Map(),
+          allEntries: [],
         }),
       { wrapper },
     );
@@ -179,6 +199,7 @@ describe("useSearchResultsCallbacks - handleSortChange", () => {
         useSearchResultsCallbacks({
           filteredImages: [],
           viewerIndexMap: new Map(),
+          allEntries: [],
         }),
       { wrapper },
     );
@@ -189,6 +210,45 @@ describe("useSearchResultsCallbacks - handleSortChange", () => {
   });
 });
 
+describe("useSearchResultsCallbacks - viewerJumpList", () => {
+  test("handlePdfClick で allEntries の DAP を viewerJumpList に snapshot する", () => {
+    const allEntries = [
+      makeSearchEntry("dir1", "directory"),
+      makeSearchEntry("img1", "image"),
+      makeSearchEntry("pdf1", "pdf"),
+    ];
+    const { result } = renderHook(
+      () =>
+        useSearchResultsCallbacks({
+          filteredImages: [],
+          viewerIndexMap: new Map(),
+          allEntries,
+        }),
+      { wrapper },
+    );
+    result.current.handlePdfClick("pdf1");
+    const list = useViewerStore.getState().viewerJumpList;
+    expect(list?.map((e) => e.node_id)).toEqual(["dir1", "pdf1"]);
+  });
+
+  test("handleImageClick は viewerJumpList を null にクリアする (画像経路は jumpList 対象外)", () => {
+    // 事前に jumpList を入れておく → クリアされることを確認
+    useViewerStore.setState({
+      viewerOrigin: null,
+      viewerTransitionId: 0,
+      viewerJumpList: [{ node_id: "dir1", parent_node_id: null, kind: "directory", name: "dir1" }],
+    });
+    const filteredImages = [makeImage("i1", "a.jpg")];
+    const viewerIndexMap = new Map([["i1", 0]]);
+    const { result } = renderHook(
+      () => useSearchResultsCallbacks({ filteredImages, viewerIndexMap, allEntries: [] }),
+      { wrapper },
+    );
+    result.current.handleImageClick(0);
+    expect(useViewerStore.getState().viewerJumpList).toBeNull();
+  });
+});
+
 describe("useSearchResultsCallbacks - handleNavigate", () => {
   test("tab 未指定で /browse/{id} に navigate する", () => {
     const { result } = renderHook(
@@ -196,6 +256,7 @@ describe("useSearchResultsCallbacks - handleNavigate", () => {
         useSearchResultsCallbacks({
           filteredImages: [],
           viewerIndexMap: new Map(),
+          allEntries: [],
         }),
       { wrapper },
     );
@@ -209,6 +270,7 @@ describe("useSearchResultsCallbacks - handleNavigate", () => {
         useSearchResultsCallbacks({
           filteredImages: [],
           viewerIndexMap: new Map(),
+          allEntries: [],
         }),
       { wrapper },
     );
@@ -222,6 +284,7 @@ describe("useSearchResultsCallbacks - handleNavigate", () => {
         useSearchResultsCallbacks({
           filteredImages: [],
           viewerIndexMap: new Map(),
+          allEntries: [],
         }),
       { wrapper },
     );
