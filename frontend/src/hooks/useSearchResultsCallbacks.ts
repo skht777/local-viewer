@@ -25,7 +25,7 @@ export interface SearchResultsCallbacks {
 interface UseSearchResultsCallbacksProps {
   filteredImages: BrowseEntry[];
   viewerIndexMap: Map<string, number>;
-  allEntries: SearchResult[];
+  allRawResults: SearchResult[];
 }
 
 // /search 起点として viewer origin を保存する
@@ -37,7 +37,7 @@ function saveSearchOrigin(searchParams: URLSearchParams): void {
 export function useSearchResultsCallbacks({
   filteredImages,
   viewerIndexMap,
-  allEntries,
+  allRawResults,
 }: UseSearchResultsCallbacksProps): SearchResultsCallbacks {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -65,7 +65,7 @@ export function useSearchResultsCallbacks({
   const handlePdfClick = useCallback(
     (pdfNodeId: string) => {
       // PDF 起動直前に検索結果から jumpList を snapshot
-      useViewerStore.getState().setViewerJumpList(buildJumpListFromSearch(allEntries));
+      useViewerStore.getState().setViewerJumpList(buildJumpListFromSearch(allRawResults));
       const next = new URLSearchParams(searchParams);
       next.set("pdf", pdfNodeId);
       next.set("page", "1");
@@ -74,7 +74,7 @@ export function useSearchResultsCallbacks({
       saveSearchOrigin(searchParams);
       setSearchParams(next);
     },
-    [allEntries, searchParams, setSearchParams],
+    [allRawResults, searchParams, setSearchParams],
   );
 
   const handleKindChange = useCallback(

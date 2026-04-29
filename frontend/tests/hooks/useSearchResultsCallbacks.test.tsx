@@ -81,7 +81,7 @@ describe("useSearchResultsCallbacks - handleImageClick", () => {
       ["i1", 1],
     ]);
     const { result } = renderHook(
-      () => useSearchResultsCallbacks({ filteredImages, viewerIndexMap, allEntries: [] }),
+      () => useSearchResultsCallbacks({ filteredImages, viewerIndexMap, allRawResults: [] }),
       { wrapper },
     );
     result.current.handleImageClick(0);
@@ -103,7 +103,7 @@ describe("useSearchResultsCallbacks - handleImageClick", () => {
         useSearchResultsCallbacks({
           filteredImages: [],
           viewerIndexMap: new Map(),
-          allEntries: [],
+          allRawResults: [],
         }),
       { wrapper },
     );
@@ -119,7 +119,7 @@ describe("useSearchResultsCallbacks - handlePdfClick", () => {
         useSearchResultsCallbacks({
           filteredImages: [],
           viewerIndexMap: new Map(),
-          allEntries: [],
+          allRawResults: [],
         }),
       { wrapper },
     );
@@ -143,7 +143,7 @@ describe("useSearchResultsCallbacks - handleKindChange", () => {
         useSearchResultsCallbacks({
           filteredImages: [],
           viewerIndexMap: new Map(),
-          allEntries: [],
+          allRawResults: [],
         }),
       { wrapper },
     );
@@ -165,7 +165,7 @@ describe("useSearchResultsCallbacks - handleKindChange", () => {
         useSearchResultsCallbacks({
           filteredImages: [],
           viewerIndexMap: new Map(),
-          allEntries: [],
+          allRawResults: [],
         }),
       { wrapper },
     );
@@ -183,7 +183,7 @@ describe("useSearchResultsCallbacks - handleSortChange", () => {
         useSearchResultsCallbacks({
           filteredImages: [],
           viewerIndexMap: new Map(),
-          allEntries: [],
+          allRawResults: [],
         }),
       { wrapper },
     );
@@ -199,7 +199,7 @@ describe("useSearchResultsCallbacks - handleSortChange", () => {
         useSearchResultsCallbacks({
           filteredImages: [],
           viewerIndexMap: new Map(),
-          allEntries: [],
+          allRawResults: [],
         }),
       { wrapper },
     );
@@ -211,8 +211,8 @@ describe("useSearchResultsCallbacks - handleSortChange", () => {
 });
 
 describe("useSearchResultsCallbacks - viewerJumpList", () => {
-  test("handlePdfClick で allEntries の DAP を viewerJumpList に snapshot する", () => {
-    const allEntries = [
+  test("handlePdfClick で allRawResults の DAP を viewerJumpList に snapshot する", () => {
+    const allRawResults = [
       makeSearchEntry("dir1", "directory"),
       makeSearchEntry("img1", "image"),
       makeSearchEntry("pdf1", "pdf"),
@@ -222,7 +222,7 @@ describe("useSearchResultsCallbacks - viewerJumpList", () => {
         useSearchResultsCallbacks({
           filteredImages: [],
           viewerIndexMap: new Map(),
-          allEntries,
+          allRawResults,
         }),
       { wrapper },
     );
@@ -241,7 +241,7 @@ describe("useSearchResultsCallbacks - viewerJumpList", () => {
     const filteredImages = [makeImage("i1", "a.jpg")];
     const viewerIndexMap = new Map([["i1", 0]]);
     const { result } = renderHook(
-      () => useSearchResultsCallbacks({ filteredImages, viewerIndexMap, allEntries: [] }),
+      () => useSearchResultsCallbacks({ filteredImages, viewerIndexMap, allRawResults: [] }),
       { wrapper },
     );
     result.current.handleImageClick(0);
@@ -256,7 +256,7 @@ describe("useSearchResultsCallbacks - handleNavigate", () => {
         useSearchResultsCallbacks({
           filteredImages: [],
           viewerIndexMap: new Map(),
-          allEntries: [],
+          allRawResults: [],
         }),
       { wrapper },
     );
@@ -270,7 +270,7 @@ describe("useSearchResultsCallbacks - handleNavigate", () => {
         useSearchResultsCallbacks({
           filteredImages: [],
           viewerIndexMap: new Map(),
-          allEntries: [],
+          allRawResults: [],
         }),
       { wrapper },
     );
@@ -284,7 +284,7 @@ describe("useSearchResultsCallbacks - handleNavigate", () => {
         useSearchResultsCallbacks({
           filteredImages: [],
           viewerIndexMap: new Map(),
-          allEntries: [],
+          allRawResults: [],
         }),
       { wrapper },
     );

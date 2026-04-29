@@ -20,7 +20,6 @@ import { buildJumpListFromSearch } from "../lib/jumpListNavigation";
 import { compareEntryName } from "../utils/sortEntries";
 import { buildSearchSearch } from "../utils/viewerNavigation";
 
-import type { BrowseEntry } from "../types/api";
 import type { SearchSort } from "../hooks/api/browseQueries";
 
 // kind フィルタは FileBrowser のタブと別管理（検索 API の kind パラメータに直結）
@@ -58,6 +57,7 @@ export default function SearchResultsPage() {
     isFetchingNextPage,
     isError,
     allEntries,
+    allRawResults,
     scopeName,
   } = useSearchResultsData();
 
@@ -78,7 +78,7 @@ export default function SearchResultsPage() {
   }, [viewerImages]);
 
   const { handleImageClick, handlePdfClick, handleKindChange, handleSortChange, handleNavigate } =
-    useSearchResultsCallbacks({ filteredImages, viewerIndexMap, allEntries });
+    useSearchResultsCallbacks({ filteredImages, viewerIndexMap, allRawResults });
 
   const setViewerJumpList = useViewerStore((s) => s.setViewerJumpList);
 
@@ -98,17 +98,21 @@ export default function SearchResultsPage() {
   });
 
   // viewer 起動直前に検索結果の DAP を jumpList として snapshot
-  // - 画像 entry の起動経路（あるなら）も jumpList=null にして FS 経路を保証
+  // - 画像 entry の起動経路は jumpList=null にして既存 FS 経路で動作させる
   const openViewerFromEntry = useCallback(
-    (entry: BrowseEntry) => {
-      if (entry.kind === "directory" || entry.kind === "archive" || entry.kind === "pdf") {
-        setViewerJumpList(buildJumpListFromSearch(allEntries));
+    async (entryNodeId: string) => {
+      const entry = allEntries.find((e) => e.node_id === entryNodeId);
+      if (
+        entry &&
+        (entry.kind === "directory" || entry.kind === "archive" || entry.kind === "pdf")
+      ) {
+        setViewerJumpList(buildJumpListFromSearch(allRawResults));
       } else {
         setViewerJumpList(null);
       }
-      return baseOpenViewer(entry);
+      await baseOpenViewer(entryNodeId);
     },
-    [baseOpenViewer, allEntries, setViewerJumpList],
+    [baseOpenViewer, allEntries, allRawResults, setViewerJumpList],
   );
 
   // ビューワー用 data 形状（BrowsePageViewerSwitch が要求）

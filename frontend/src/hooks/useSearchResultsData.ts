@@ -10,7 +10,7 @@ import { useSearchParams } from "react-router-dom";
 import { browseNodeOptions, searchInfiniteOptions } from "./api/browseQueries";
 import type { SearchSort } from "./api/browseQueries";
 import { searchResultToBrowseEntry } from "../utils/searchResultToBrowseEntry";
-import type { BrowseEntry } from "../types/api";
+import type { BrowseEntry, SearchResult } from "../types/api";
 
 const VALID_SEARCH_SORTS = new Set<string>([
   "relevance",
@@ -33,6 +33,8 @@ export interface SearchResultsData {
   isFetchingNextPage: boolean;
   isError: boolean;
   allEntries: BrowseEntry[];
+  // jumpList 構築用に parent_node_id を含む生データも保持
+  allRawResults: SearchResult[];
   scopeName: string | null;
 }
 
@@ -53,13 +55,19 @@ export function useSearchResultsData(): SearchResultsData {
   const { data, isLoading, hasNextPage, fetchNextPage, isFetchingNextPage, isError } =
     useInfiniteQuery(searchInfiniteOptions({ q, scope, kind, sort }));
 
-  // 検索結果を BrowseEntry に変換
-  const allEntries = useMemo<BrowseEntry[]>(() => {
+  // 検索結果の生データ（parent_node_id 等を保持）
+  const allRawResults = useMemo<SearchResult[]>(() => {
     if (!data?.pages?.length) {
       return [];
     }
-    return data.pages.flatMap((p) => p.results.map(searchResultToBrowseEntry));
+    return data.pages.flatMap((p) => p.results);
   }, [data]);
+
+  // 検索結果を BrowseEntry に変換
+  const allEntries = useMemo<BrowseEntry[]>(
+    () => allRawResults.map(searchResultToBrowseEntry),
+    [allRawResults],
+  );
 
   return {
     q,
@@ -72,6 +80,7 @@ export function useSearchResultsData(): SearchResultsData {
     isFetchingNextPage,
     isError,
     allEntries,
+    allRawResults,
     scopeName: scopeData?.current_name ?? null,
   };
 }
