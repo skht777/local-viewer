@@ -1261,3 +1261,154 @@ async fn fast_path_DirIndex由来の不正名エントリは_response_から除�
         ". は lexical validation で除外される"
     );
 }
+
+// --- dirty 子ディレクトリの preview/child_count 再スキャンテスト ---
+//
+// FileWatcher が子ファイル削除時に subdir を `mark_dir_dirty` するが、親
+// browse の fast_path は subdir 自体の dirty を見ずに stale な dir_entries を
+// 返してしまう。dirty な子ディレクトリは `scan_child_meta` で FS から再スキャン
+// して preview/child_count を上書きすることでこの不整合を解消する。
+
+/// 親 browse の `fast_path` で dirty 化された子ディレクトリの `preview_node_ids`
+/// と `child_count` が FS の最新状態を反映する
+#[tokio::test]
+#[allow(
+    non_snake_case,
+    clippy::too_many_lines,
+    reason = "日本語テスト名で PascalCase 残存を許容（規約 07_testing.md）。tempdir 構築 + 直接 SQL INSERT + 検証で行数増加"
+)]
+async fn fast_path_dirty化された子ディレクトリのpreviewはFSから再スキャンされる() {
+    use std::time::UNIX_EPOCH;
+
+    // 1. parent_dir/subdir/{a.jpg, b.jpg} を作成
+    let dir = TempDir::new().unwrap();
+    let root = fs::canonicalize(dir.path()).unwrap();
+    let parent_dir = root.join("parent_dir");
+    let subdir = parent_dir.join("subdir");
+    fs::create_dir_all(&subdir).unwrap();
+    fs::write(subdir.join("a.jpg"), "fake-a").unwrap();
+    fs::write(subdir.join("b.jpg"), "fake-b").unwrap();
+
+    let mount_id = "aaaaaaaaaaaaaaaa".to_string();
+    let (state, dir_index_db_path) = test_state_persistent_dir_index(&root, HashMap::new());
+    {
+        #[allow(clippy::expect_used, reason = "テストコード")]
+        let mut reg = state.node_registry.lock().expect("lock");
+        let mut map = HashMap::new();
+        map.insert(mount_id.clone(), root.clone());
+        reg.set_mount_id_map(map);
+    }
+
+    // 2. parent_dir / subdir の FS mtime を取得
+    #[allow(clippy::cast_possible_wrap, reason = "UNIX タイムスタンプ")]
+    let dir_mtime_ns = |p: &std::path::Path| -> i64 {
+        fs::metadata(p)
+            .unwrap()
+            .modified()
+            .unwrap()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos() as i64
+    };
+    let parent_mtime_ns = dir_mtime_ns(&parent_dir);
+
+    let parent_key = format!("{mount_id}/parent_dir");
+    let subdir_key = format!("{mount_id}/parent_dir/subdir");
+
+    // 3. DirIndex に直接 INSERT:
+    //    - parent_dir 配下: subdir (directory)
+    //    - subdir 配下: a.jpg, b.jpg (image, stale 状態を再現するため両方を入れる)
+    //    後で b.jpg を削除しても DirIndex 側は両方のままで stale 化する
+    {
+        let conn = rusqlite::Connection::open(&dir_index_db_path).unwrap();
+        // parent_dir の子: subdir (directory)
+        conn.execute(
+            "INSERT INTO dir_entries (parent_path, name, kind, sort_key, size_bytes, mtime_ns) \
+             VALUES (?1, 'subdir', 'directory', 'subdir', NULL, ?2)",
+            rusqlite::params![&parent_key, dir_mtime_ns(&subdir)],
+        )
+        .unwrap();
+        // subdir の子: a.jpg, b.jpg
+        for name in ["a.jpg", "b.jpg"] {
+            conn.execute(
+                "INSERT INTO dir_entries (parent_path, name, kind, sort_key, size_bytes, mtime_ns) \
+                 VALUES (?1, ?2, 'image', ?2, 100, 1)",
+                rusqlite::params![&subdir_key, name],
+            )
+            .unwrap();
+        }
+        conn.execute(
+            "INSERT INTO dir_meta (path, mtime_ns) VALUES (?1, ?2)",
+            rusqlite::params![&parent_key, parent_mtime_ns],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO dir_meta (path, mtime_ns) VALUES (?1, ?2)",
+            rusqlite::params![&subdir_key, dir_mtime_ns(&subdir)],
+        )
+        .unwrap();
+    }
+    state.dir_index.mark_ready();
+
+    // 4. b.jpg を FS から削除（DirIndex には残ったまま = stale 状態）
+    fs::remove_file(subdir.join("b.jpg")).unwrap();
+
+    // 5. subdir を dirty 化（FileWatcher の振る舞いを再現）
+    state.dir_index.mark_dir_dirty(&subdir_key);
+
+    // 6. parent_dir を browse （fast_path 経由）
+    let parent_node_id = register_node_id(&state, &parent_dir);
+    let (status, json) = get_json(
+        app(Arc::clone(&state)),
+        &format!("/api/browse/{parent_node_id}"),
+    )
+    .await;
+
+    // 7. response の subdir entry を取得して検証
+    assert_eq!(status, StatusCode::OK);
+    let entries = json["entries"].as_array().unwrap();
+    let subdir_entry = entries
+        .iter()
+        .find(|e| e["name"] == "subdir")
+        .expect("subdir entry が存在する");
+
+    // child_count は FS 上の実数 (a.jpg のみで 1) を反映
+    assert_eq!(
+        subdir_entry["child_count"].as_i64().unwrap(),
+        1,
+        "dirty 子の child_count が FS から再スキャンされて 1 になる"
+    );
+
+    // preview_node_ids は実在ファイル (a.jpg) の node_id 1 件のみ
+    let preview_ids = subdir_entry["preview_node_ids"]
+        .as_array()
+        .expect("preview_node_ids 配列");
+    assert_eq!(
+        preview_ids.len(),
+        1,
+        "dirty 子の preview は FS から再スキャンされて 1 件 (a.jpg のみ) になる"
+    );
+
+    // preview node_id が a.jpg を指していることを検証
+    {
+        #[allow(clippy::expect_used, reason = "テストコード")]
+        let reg = state.node_registry.lock().expect("lock");
+        let preview_node_id = preview_ids[0].as_str().unwrap();
+        let resolved = reg.resolve(preview_node_id).expect("resolve");
+        assert_eq!(
+            resolved,
+            subdir.join("a.jpg"),
+            "preview node_id は実在する a.jpg を指す"
+        );
+        assert!(resolved.exists(), "resolved パスが実在する");
+    }
+
+    // 8. fast_path 読み取り補正は dirty を解除しない（次回 fallback で正本化）
+    assert!(
+        state.dir_index.is_dir_dirty(&subdir_key),
+        "fast_path での再スキャンは dirty フラグを解除しない"
+    );
+
+    // クリーンアップ
+    let _ = std::fs::remove_file(&dir_index_db_path);
+}

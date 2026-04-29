@@ -12,7 +12,9 @@ mod scan;
 mod tests;
 
 pub(crate) use populate::{PopulateStats, populate_registry};
-pub(crate) use scan::{ScannedEntry, scan_entries, scan_entry_metas, stat_entries};
+pub(crate) use scan::{
+    ScannedEntry, scan_child_meta, scan_entries, scan_entry_metas, stat_entries,
+};
 
 use std::collections::{HashMap, VecDeque};
 use std::path::{Path, PathBuf};

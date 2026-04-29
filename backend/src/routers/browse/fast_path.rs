@@ -9,7 +9,8 @@ use crate::services::dir_index::{DirChildInfo, DirEntry, DirIndex};
 use crate::services::extensions::{self, EntryKind};
 use crate::services::models::{AncestorEntry, BrowseResponse};
 use crate::services::natural_sort::encode_sort_key;
-use crate::services::node_registry::{NodeRegistry, ScannedEntry};
+use crate::services::node_registry::{NodeRegistry, ScannedEntry, scan_child_meta};
+use crate::services::path_security::PathSecurity;
 
 use super::{compute_etag, parent_key_relative};
 
@@ -45,9 +46,9 @@ pub(super) fn try_dir_index_browse_split(
         clippy::expect_used,
         reason = "Mutex poison は致命的エラー、パニックが適切"
     )]
-    let (parent_key, root, cursor_entry_path, allow_symlinks) = {
+    let (parent_key, root, cursor_entry_path, allow_symlinks, path_security) = {
         let reg = registry.lock().expect("NodeRegistry Mutex poisoned");
-        let ps = reg.path_security();
+        let ps = reg.path_security_arc();
         let parent_key = reg.compute_parent_path_key(path)?;
         let root = ps.find_root_for(path)?;
         let allow_symlinks = ps.is_allow_symlinks();
@@ -57,7 +58,7 @@ pub(super) fn try_dir_index_browse_split(
                 .ok()
                 .map(std::path::Path::to_path_buf)
         });
-        (parent_key, root, cursor_path, allow_symlinks)
+        (parent_key, root, cursor_path, allow_symlinks, ps)
     }; // ロック解放
 
     // カーソル変換失敗時はフォールバック
@@ -156,8 +157,18 @@ pub(super) fn try_dir_index_browse_split(
     let dir_info = reader.batch_dir_info(&dir_child_key_refs, 3).ok()?;
 
     // DirEntry → ScannedEntry 変換 (ロック不要)
-    let scanned =
-        build_scanned_from_dir_index(&page_entries, &root, &parent_key, &dir_info, allow_symlinks);
+    // dirty な子ディレクトリは scan_child_meta で FS から再スキャンする
+    let mut dirty_child_rescanned = 0usize;
+    let scanned = build_scanned_from_dir_index(
+        &page_entries,
+        &root,
+        &parent_key,
+        &dir_info,
+        allow_symlinks,
+        dir_index,
+        path_security.as_ref(),
+        &mut dirty_child_rescanned,
+    );
 
     // --- Phase 2 (短ロック): node_id 登録 + パンくず ---
     #[allow(
@@ -201,6 +212,7 @@ pub(super) fn try_dir_index_browse_split(
     tracing::info!(
         entries = response.entries.len(),
         has_next,
+        dirty_child_rescanned,
         elapsed_us = u64::try_from(started.elapsed().as_micros()).unwrap_or(u64::MAX),
         "browse dir_index_fast completed"
     );
@@ -234,9 +246,15 @@ fn safe_db_name(name: &str) -> bool {
 ///
 /// `de.name` / `pv.name` は `safe_db_name` で lexical validation し、不正名は捨てる
 /// （永続層の DB 破損 / cfg 改竄に対する fail-closed 防壁）。
+///
+/// 子ディレクトリが `dir_index.is_dir_dirty` で dirty 化されている場合、
+/// `dir_info` の preview/count は stale 可能性があるため `scan_child_meta` で
+/// FS から即時再スキャンして上書きする（FileWatcher 連動の自己修復）。
+/// `dirty_child_rescanned` には再スキャン件数を加算する。
 #[allow(
     clippy::too_many_lines,
-    reason = "DirEntry → ScannedEntry 変換 + 不正名 reject + preview 構築の段階的処理を 1 関数に集約"
+    clippy::too_many_arguments,
+    reason = "DirEntry → ScannedEntry 変換 + 不正名 reject + preview 構築 + dirty 子再スキャンを 1 関数に集約"
 )]
 fn build_scanned_from_dir_index(
     entries: &[DirEntry],
@@ -244,6 +262,9 @@ fn build_scanned_from_dir_index(
     parent_key: &str,
     dir_info: &std::collections::HashMap<String, DirChildInfo>,
     allow_symlinks: bool,
+    dir_index: &DirIndex,
+    path_security: &PathSecurity,
+    dirty_child_rescanned: &mut usize,
 ) -> Vec<ScannedEntry> {
     entries
         .iter()
@@ -265,7 +286,7 @@ fn build_scanned_from_dir_index(
             let resolved = if allow_symlinks {
                 std::fs::canonicalize(&abs_path).ok()?
             } else {
-                abs_path
+                abs_path.clone()
             };
 
             let kind = if de.kind == "directory" {
@@ -291,34 +312,46 @@ fn build_scanned_from_dir_index(
 
             let (child_count, preview_paths) = if kind == EntryKind::Directory {
                 let child_key = format!("{parent_key}/{}", de.name);
-                let info = dir_info.get(&child_key);
-                let count = info.map_or(0, |i| i.count);
-                let previews = info.and_then(|i| {
-                    let paths: Vec<std::path::PathBuf> = i
-                        .previews
-                        .iter()
-                        .filter_map(|pv| {
-                            // preview name も lexical validation で fail-closed
-                            if !safe_db_name(&pv.name) {
-                                tracing::warn!(
-                                    child_key = %child_key,
-                                    name = %pv.name,
-                                    "DirIndex 由来の preview name を reject"
-                                );
-                                return None;
-                            }
-                            let pv_rel = parent_key_relative(&child_key);
-                            let pv_abs = root.join(pv_rel).join(&pv.name);
-                            if allow_symlinks {
-                                std::fs::canonicalize(&pv_abs).ok()
-                            } else {
-                                Some(pv_abs)
-                            }
-                        })
-                        .collect();
-                    if paths.is_empty() { None } else { Some(paths) }
-                });
-                (Some(count), previews)
+                if dir_index.is_dir_dirty(&child_key) {
+                    // dirty 子: FS から再スキャンして DirIndex の stale を回避
+                    *dirty_child_rescanned += 1;
+                    let cm = scan_child_meta(path_security, &abs_path, 3, allow_symlinks);
+                    let previews = if cm.preview_paths.is_empty() {
+                        None
+                    } else {
+                        Some(cm.preview_paths)
+                    };
+                    (Some(cm.count), previews)
+                } else {
+                    let info = dir_info.get(&child_key);
+                    let count = info.map_or(0, |i| i.count);
+                    let previews = info.and_then(|i| {
+                        let paths: Vec<std::path::PathBuf> = i
+                            .previews
+                            .iter()
+                            .filter_map(|pv| {
+                                // preview name も lexical validation で fail-closed
+                                if !safe_db_name(&pv.name) {
+                                    tracing::warn!(
+                                        child_key = %child_key,
+                                        name = %pv.name,
+                                        "DirIndex 由来の preview name を reject"
+                                    );
+                                    return None;
+                                }
+                                let pv_rel = parent_key_relative(&child_key);
+                                let pv_abs = root.join(pv_rel).join(&pv.name);
+                                if allow_symlinks {
+                                    std::fs::canonicalize(&pv_abs).ok()
+                                } else {
+                                    Some(pv_abs)
+                                }
+                            })
+                            .collect();
+                        if paths.is_empty() { None } else { Some(paths) }
+                    });
+                    (Some(count), previews)
+                }
             } else {
                 (None, None)
             };
