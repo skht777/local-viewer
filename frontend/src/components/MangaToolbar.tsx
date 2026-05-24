@@ -58,8 +58,11 @@ export function MangaToolbar({
   onGoLast,
   onToggleHelp,
 }: MangaToolbarProps) {
-  // mobile ⋯ メニュー項目 (Home/End/Help を集約)
+  // mobile ⋯ メニュー項目
+  // - フルスクリーン (mobile では収まらないため集約。iOS Safari は制限あるが Android は機能)
+  // - Home / End / Help (キーボードがない端末向け)
   const overflowItems = [
+    { label: "フルスクリーン", onClick: onToggleFullscreen, "data-testid": "overflow-fullscreen" },
     onGoFirst && { label: "最初へ (Home)", onClick: onGoFirst, "data-testid": "overflow-home" },
     onGoLast && { label: "最後へ (End)", onClick: onGoLast, "data-testid": "overflow-end" },
     onToggleHelp && {
@@ -70,9 +73,9 @@ export function MangaToolbar({
   ].filter(Boolean) as { label: string; onClick: () => void; "data-testid": string }[];
 
   return (
-    <div className="flex items-center bg-black/50 px-4 py-2 pt-safe-top pl-safe-left pr-safe-right backdrop-blur-md">
-      {/* 左: コントロール群 */}
-      <div className="flex items-center gap-2 lg:gap-3">
+    <div className="flex items-center gap-1 bg-black/50 px-2 py-2 pt-safe-top pl-safe-left pr-safe-right backdrop-blur-md lg:gap-3 lg:px-4">
+      {/* 左: コントロール群 (shrink-0 で潰れない) */}
+      <div className="flex shrink-0 items-center gap-1 lg:gap-3">
         {/* ページセレクト: モバイルでは非表示 */}
         <select
           value={currentIndex}
@@ -87,11 +90,11 @@ export function MangaToolbar({
           ))}
         </select>
 
-        {/* ズームスライダー: モバイルでも表示 (タッチ操作で重要) */}
+        {/* ズーム +/- は mobile でも表示。スライダーは lg のみ (スペース節約) */}
         <button
           type="button"
           onClick={onZoomOut}
-          className="rounded px-3 py-2 text-sm text-gray-300 hover:bg-surface-raised"
+          className="rounded px-2 py-2 text-sm text-gray-300 hover:bg-surface-raised lg:px-3"
           aria-label="ズームアウト"
         >
           -
@@ -103,11 +106,11 @@ export function MangaToolbar({
           step={25}
           value={zoomLevel}
           onChange={(e) => onZoomChange(Number(e.target.value))}
-          className="w-20 lg:w-28"
+          className="hidden w-28 lg:inline-block"
           aria-label="ズーム"
         />
         <span
-          className="min-w-[3.5rem] text-center text-sm font-mono tabular-nums text-gray-300"
+          className="min-w-[3rem] text-center text-xs font-mono tabular-nums text-gray-300 lg:min-w-[3.5rem] lg:text-sm"
           data-testid="manga-zoom-level"
         >
           {zoomLevel}%
@@ -115,7 +118,7 @@ export function MangaToolbar({
         <button
           type="button"
           onClick={onZoomIn}
-          className="rounded px-3 py-2 text-sm text-gray-300 hover:bg-surface-raised"
+          className="rounded px-2 py-2 text-sm text-gray-300 hover:bg-surface-raised lg:px-3"
           aria-label="ズームイン"
         >
           +
@@ -140,8 +143,8 @@ export function MangaToolbar({
         </span>
       </div>
 
-      {/* 中央: 前セット + ページカウンター + 次セット */}
-      <div className="flex flex-1 items-center justify-center gap-2">
+      {/* 中央: 前セット + ページカウンター + 次セット (min-w-0 で潰れ許容) */}
+      <div className="flex min-w-0 flex-1 items-center justify-center gap-1 lg:gap-2">
         <button
           type="button"
           onClick={onPrevSet}
@@ -155,7 +158,7 @@ export function MangaToolbar({
         </button>
         <span
           data-testid="page-counter"
-          className="max-w-[60%] truncate text-center text-xs font-mono tabular-nums text-gray-300 lg:text-sm"
+          className="min-w-0 truncate text-center text-xs font-mono tabular-nums text-gray-300 lg:text-sm"
         >
           {formatPageLabel(setName, currentIndex + 1, totalCount)}
         </span>
@@ -172,12 +175,12 @@ export function MangaToolbar({
         </button>
       </div>
 
-      {/* 右: フルスクリーン + 閉じる + ⋯ (mobile) */}
-      <div className="flex items-center gap-2 lg:gap-3">
+      {/* 右: フルスクリーン (lg のみ) + 閉じる + ⋯ (mobile) */}
+      <div className="flex shrink-0 items-center gap-1 lg:gap-3">
         <button
           type="button"
           onClick={onToggleFullscreen}
-          className="rounded px-3 py-2 text-sm text-gray-300 hover:bg-surface-raised"
+          className="hidden rounded px-3 py-2 text-sm text-gray-300 hover:bg-surface-raised lg:inline-flex"
           aria-label="フルスクリーン"
         >
           F
@@ -185,7 +188,7 @@ export function MangaToolbar({
         <button
           type="button"
           onClick={onClose}
-          className="rounded px-3 py-2 text-sm text-gray-300 hover:bg-surface-raised"
+          className="rounded px-2 py-2 text-sm text-gray-300 hover:bg-surface-raised lg:px-3"
           aria-label="閉じる"
         >
           ✕
