@@ -192,6 +192,9 @@ export function PdfCgViewer({
           onPrevSet={setJump.goPrevSet}
           onNextSet={setJump.goNextSet}
           isSetJumpDisabled={setJump.prompt != null || viewerTransitionId > 0}
+          onGoFirst={nav.goFirst}
+          onGoLast={nav.goLast}
+          onToggleHelp={() => setIsHelpOpen((prev) => !prev)}
         />
         <div
           ref={combinedRef}

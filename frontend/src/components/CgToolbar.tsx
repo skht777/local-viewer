@@ -1,10 +1,16 @@
 // CGモードのツールバー（3カラム構成）
-// - 左: フィット切替(W, H) + 見開き切替(Q) + ページセレクト
+// - 左: フィット切替(W, H) + 見開き切替(Q) + ページセレクト (lg 以上)
 // - 中央: ページカウンター（セット名 + ページ番号）
-// - 右: フルスクリーン(F) + 閉じる
+// - 右: フルスクリーン(F) + 閉じる + ⋯メニュー (mobile のみ Home/End/Help)
+//
+// mobile (lg 未満) 時の縮小:
+// - ページセレクトを hidden lg:block で非表示
+// - ⋯メニュー (lg:hidden) で「最初」「最後」「ヘルプ」に到達可能化
+// - safe-area: pl-safe-left / pr-safe-right / pt-safe-top を適用 (notch 衝突回避)
 
 import type { FitMode, SpreadMode } from "../stores/viewerStore";
 import { formatPageLabel } from "../utils/formatPageLabel";
+import { ToolbarOverflowMenu } from "./ToolbarOverflowMenu";
 
 interface CgToolbarProps {
   fitMode: FitMode;
@@ -24,12 +30,15 @@ interface CgToolbarProps {
   onPrevSet: () => void;
   onNextSet: () => void;
   isSetJumpDisabled: boolean;
+  // モバイル ⋯ メニュー用 (optional; 渡されない場合は非表示)
+  onGoFirst?: () => void;
+  onGoLast?: () => void;
+  onToggleHelp?: () => void;
 }
 
-// セット間ジャンプボタンの共通スタイル
-// 既存の非アクティブボタンに disabled:* を足しただけ（@theme トークン寄せ）
+// セット間ジャンプボタンの共通スタイル (タッチターゲット 44px 確保のため py-2)
 const setJumpBtnClass =
-  "rounded px-3 py-1.5 text-sm text-gray-300 hover:bg-surface-raised " +
+  "rounded px-3 py-2 text-sm text-gray-300 hover:bg-surface-raised " +
   "disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent";
 
 // 見開きモードの表示ラベル
@@ -74,16 +83,30 @@ export function CgToolbar({
   onPrevSet,
   onNextSet,
   isSetJumpDisabled,
+  onGoFirst,
+  onGoLast,
+  onToggleHelp,
 }: CgToolbarProps) {
+  // mobile ⋯ メニュー項目 (Home/End/Help を集約)
+  const overflowItems = [
+    onGoFirst && { label: "最初へ (Home)", onClick: onGoFirst, "data-testid": "overflow-home" },
+    onGoLast && { label: "最後へ (End)", onClick: onGoLast, "data-testid": "overflow-end" },
+    onToggleHelp && {
+      label: "ヘルプ (?)",
+      onClick: onToggleHelp,
+      "data-testid": "overflow-help",
+    },
+  ].filter(Boolean) as { label: string; onClick: () => void; "data-testid": string }[];
+
   return (
-    <div className="flex items-center bg-black/50 backdrop-blur-md px-4 py-2.5">
+    <div className="flex items-center bg-black/50 px-4 py-2 pt-safe-top pl-safe-left pr-safe-right backdrop-blur-md">
       {/* 左: コントロール群 */}
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-2 lg:gap-3">
         {/* フィット切替 */}
         <button
           type="button"
           onClick={onFitWidth}
-          className={`rounded px-3 py-1.5 text-sm ${fitMode === "width" ? "bg-blue-600 text-white" : "text-gray-300 hover:bg-surface-raised"}`}
+          className={`rounded px-3 py-2 text-sm ${fitMode === "width" ? "bg-blue-600 text-white" : "text-gray-300 hover:bg-surface-raised"}`}
           aria-label="幅フィット"
           aria-pressed={fitMode === "width"}
         >
@@ -92,7 +115,7 @@ export function CgToolbar({
         <button
           type="button"
           onClick={onFitHeight}
-          className={`rounded px-3 py-1.5 text-sm ${fitMode === "height" ? "bg-blue-600 text-white" : "text-gray-300 hover:bg-surface-raised"}`}
+          className={`rounded px-3 py-2 text-sm ${fitMode === "height" ? "bg-blue-600 text-white" : "text-gray-300 hover:bg-surface-raised"}`}
           aria-label="高さフィット"
           aria-pressed={fitMode === "height"}
         >
@@ -104,7 +127,7 @@ export function CgToolbar({
           <button
             type="button"
             onClick={onCycleSpread}
-            className="rounded px-3 py-1.5 text-sm text-gray-300 hover:bg-surface-raised"
+            className="rounded px-3 py-2 text-sm text-gray-300 hover:bg-surface-raised"
             title={spreadTooltip(spreadMode)}
             aria-label={spreadTooltip(spreadMode)}
             data-testid="cg-spread-btn"
@@ -113,11 +136,12 @@ export function CgToolbar({
           </button>
         )}
 
-        {/* ページセレクト */}
+        {/* ページセレクト: モバイルでは非表示 (⋯メニューの Home/End で代替) */}
         <select
           value={currentIndex}
           onChange={(e) => onGoTo(Number(e.target.value))}
-          className="rounded bg-surface-raised px-3 py-1.5 text-sm text-white"
+          className="hidden rounded bg-surface-raised px-3 py-2 text-sm text-white lg:block"
+          aria-label="ページ選択"
         >
           {Array.from({ length: totalCount }, (_, i) => (
             <option key={i} value={i}>
@@ -142,7 +166,7 @@ export function CgToolbar({
         </button>
         <span
           data-testid="page-counter"
-          className="max-w-[60%] truncate text-center text-sm font-mono tabular-nums text-gray-300"
+          className="max-w-[60%] truncate text-center text-xs font-mono tabular-nums text-gray-300 lg:text-sm"
         >
           {formatPageLabel(setName, currentPage, totalCount, currentPageEnd)}
         </span>
@@ -159,12 +183,12 @@ export function CgToolbar({
         </button>
       </div>
 
-      {/* 右: フルスクリーン + 閉じる */}
-      <div className="flex items-center gap-3">
+      {/* 右: フルスクリーン + 閉じる + ⋯ (mobile のみ) */}
+      <div className="flex items-center gap-2 lg:gap-3">
         <button
           type="button"
           onClick={onToggleFullscreen}
-          className="rounded px-3 py-1.5 text-sm text-gray-300 hover:bg-surface-raised"
+          className="rounded px-3 py-2 text-sm text-gray-300 hover:bg-surface-raised"
           aria-label="フルスクリーン"
         >
           F
@@ -172,11 +196,14 @@ export function CgToolbar({
         <button
           type="button"
           onClick={onClose}
-          className="rounded px-3 py-1.5 text-sm text-gray-300 hover:bg-surface-raised"
+          className="rounded px-3 py-2 text-sm text-gray-300 hover:bg-surface-raised"
           aria-label="閉じる"
         >
           ✕
         </button>
+        {overflowItems.length > 0 && (
+          <ToolbarOverflowMenu items={overflowItems} className="lg:hidden" />
+        )}
       </div>
     </div>
   );

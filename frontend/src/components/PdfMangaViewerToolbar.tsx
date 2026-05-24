@@ -22,6 +22,10 @@ interface PdfMangaViewerToolbarProps {
   onPrevSet: () => void;
   onNextSet: () => void;
   isSetJumpDisabled: boolean;
+  // モバイル ⋯ メニュー用
+  onGoFirst?: () => void;
+  onGoLast?: () => void;
+  onToggleHelp?: () => void;
 }
 
 export function PdfMangaViewerToolbar(props: PdfMangaViewerToolbarProps) {
@@ -48,6 +52,9 @@ export function PdfMangaViewerToolbar(props: PdfMangaViewerToolbarProps) {
         onPrevSet={props.onPrevSet}
         onNextSet={props.onNextSet}
         isSetJumpDisabled={props.isSetJumpDisabled}
+        onGoFirst={props.onGoFirst}
+        onGoLast={props.onGoLast}
+        onToggleHelp={props.onToggleHelp}
       />
     </div>
   );

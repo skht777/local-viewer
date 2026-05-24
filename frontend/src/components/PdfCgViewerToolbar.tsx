@@ -25,6 +25,10 @@ interface PdfCgViewerToolbarProps {
   onPrevSet: () => void;
   onNextSet: () => void;
   isSetJumpDisabled: boolean;
+  // モバイル ⋯ メニュー用
+  onGoFirst?: () => void;
+  onGoLast?: () => void;
+  onToggleHelp?: () => void;
 }
 
 export function PdfCgViewerToolbar({
@@ -46,6 +50,9 @@ export function PdfCgViewerToolbar({
   onPrevSet,
   onNextSet,
   isSetJumpDisabled,
+  onGoFirst,
+  onGoLast,
+  onToggleHelp,
 }: PdfCgViewerToolbarProps) {
   const wrapperClass = isTouch
     ? "relative z-10"
@@ -72,6 +79,9 @@ export function PdfCgViewerToolbar({
         onPrevSet={onPrevSet}
         onNextSet={onNextSet}
         isSetJumpDisabled={isSetJumpDisabled}
+        onGoFirst={onGoFirst}
+        onGoLast={onGoLast}
+        onToggleHelp={onToggleHelp}
       />
     </div>
   );

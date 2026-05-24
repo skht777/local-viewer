@@ -168,6 +168,9 @@ export function PdfMangaViewer({
           onPrevSet={setJump.goPrevSet}
           onNextSet={setJump.goNextSet}
           isSetJumpDisabled={setJump.prompt != null || viewerTransitionId > 0}
+          onGoFirst={mangaScroll.scrollToTop}
+          onGoLast={mangaScroll.scrollToBottom}
+          onToggleHelp={() => setIsHelpOpen((prev) => !prev)}
         />
         <div
           ref={scrollRef}

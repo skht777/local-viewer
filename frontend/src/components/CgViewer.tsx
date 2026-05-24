@@ -208,6 +208,9 @@ export function CgViewer({
             onPrevSet={setJump.goPrevSet}
             onNextSet={setJump.goNextSet}
             isSetJumpDisabled={setJump.prompt != null || viewerTransitionId > 0}
+            onGoFirst={nav.goFirst}
+            onGoLast={nav.goLast}
+            onToggleHelp={() => setIsHelpOpen((prev) => !prev)}
           />
         </div>
 

@@ -14,6 +14,15 @@ interface KeyboardHelpProps {
   onClose: () => void;
 }
 
+// タッチ操作の早見表 (モバイルから ⋯ メニュー経由でヘルプを開いたユーザー向け)
+export const TOUCH_GESTURES: ShortcutEntry[] = [
+  { key: "左スワイプ", description: "次のページ" },
+  { key: "右スワイプ", description: "前のページ" },
+  { key: "タップ", description: "ツールバーの操作" },
+  { key: "ピンチ", description: "ブラウザのズーム (UI 非干渉)" },
+  { key: "⋯ メニュー", description: "最初へ / 最後へ / ヘルプ" },
+];
+
 export const CG_SHORTCUTS: ShortcutEntry[] = [
   { key: "→ / D", description: "次のページ" },
   { key: "← / A", description: "前のページ" },
@@ -98,6 +107,17 @@ export function KeyboardHelp({ shortcuts, onClose }: KeyboardHelpProps) {
             <Fragment key={s.key}>
               <dt className="text-right font-mono text-sm text-blue-400">{s.key}</dt>
               <dd className="text-sm text-gray-300">{s.description}</dd>
+            </Fragment>
+          ))}
+        </dl>
+        <h3 className="mt-6 mb-2 text-sm font-semibold uppercase tracking-wider text-gray-400">
+          タッチ操作
+        </h3>
+        <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2">
+          {TOUCH_GESTURES.map((g) => (
+            <Fragment key={g.key}>
+              <dt className="text-right font-mono text-sm text-blue-400">{g.key}</dt>
+              <dd className="text-sm text-gray-300">{g.description}</dd>
             </Fragment>
           ))}
         </dl>
