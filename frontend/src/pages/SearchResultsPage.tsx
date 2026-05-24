@@ -160,8 +160,8 @@ export default function SearchResultsPage() {
 
   return (
     <div className="flex h-screen flex-col">
-      <header className="flex flex-col gap-3 border-b border-surface-overlay bg-surface-base px-6 py-4">
-        <div className="flex items-baseline gap-3">
+      <header className="flex flex-col gap-3 border-b border-surface-overlay bg-surface-base px-4 py-3 lg:px-6 lg:py-4">
+        <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
           <h1 className="text-lg font-semibold text-white">検索結果</h1>
           {q && (
             <span className="text-sm text-gray-400">
@@ -174,18 +174,21 @@ export default function SearchResultsPage() {
             </span>
           )}
         </div>
-        <div className="max-w-2xl">
+        <div className="w-full lg:max-w-2xl">
           <SearchBar scope={scope ?? undefined} />
         </div>
-        <div className="flex items-center gap-3">
-          <div className="flex gap-1" data-testid="search-kind-tabs">
+        <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:gap-3">
+          <div
+            className="flex gap-1 overflow-x-auto whitespace-nowrap"
+            data-testid="search-kind-tabs"
+          >
             {KIND_TABS.map((tab) => (
               <button
                 key={tab.value ?? "all"}
                 type="button"
                 onClick={() => handleKindChange(tab.value)}
                 data-testid={`search-kind-${tab.value ?? "all"}`}
-                className={`rounded px-3 py-1 text-sm ${
+                className={`shrink-0 rounded px-3 py-2 text-sm ${
                   kind === tab.value
                     ? "bg-blue-600 text-white"
                     : "bg-surface-raised text-gray-400 hover:bg-surface-overlay"
@@ -199,7 +202,7 @@ export default function SearchResultsPage() {
             value={sort}
             onChange={(e) => handleSortChange(e.target.value as SearchSort)}
             data-testid="search-sort-select"
-            className="ml-auto rounded bg-surface-raised px-3 py-1 text-sm text-white"
+            className="w-full rounded bg-surface-raised px-3 py-2 text-sm text-white lg:ml-auto lg:w-auto"
           >
             <option value="relevance">関連度</option>
             <option value="name-asc">名前昇順</option>
