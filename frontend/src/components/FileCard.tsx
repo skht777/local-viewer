@@ -172,7 +172,7 @@ export const FileCard = memo(function FileCard({
                 type="button"
                 data-testid={`action-open-${entry.node_id}`}
                 onClick={() => onOpen(entry)}
-                className="rounded bg-blue-600 px-3 py-1 text-sm text-white hover:bg-blue-500"
+                className="rounded bg-blue-600 px-3 py-2 text-sm text-white hover:bg-blue-500"
               >
                 ▶ 開く
               </button>
@@ -182,7 +182,7 @@ export const FileCard = memo(function FileCard({
                 type="button"
                 data-testid={`action-enter-${entry.node_id}`}
                 onClick={() => onEnter(entry)}
-                className="rounded bg-surface-raised px-3 py-1 text-sm text-white ring-1 ring-white/10 hover:bg-surface-overlay"
+                className="rounded bg-surface-raised px-3 py-2 text-sm text-white ring-1 ring-white/10 hover:bg-surface-overlay"
               >
                 → 進入
               </button>
