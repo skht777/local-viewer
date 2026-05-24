@@ -47,7 +47,9 @@ export function ToolbarOverflowMenu({
       </summary>
       <div
         role="menu"
-        className="absolute right-0 z-20 mt-1 min-w-[10rem] rounded-lg bg-surface-raised p-1 shadow-xl ring-1 ring-white/10"
+        // z-40: 親 toolbar-wrapper (z-30) より上、KeyboardHelp (z-60) より下
+        // max-w で safe-area 含む画面外オーバーフローを保護 (右端からの余白 16px)
+        className="absolute right-0 z-40 mt-1 min-w-[10rem] max-w-[calc(100vw-2rem)] rounded-lg bg-surface-raised p-1 shadow-xl ring-1 ring-white/10"
       >
         {items.map((item) => (
           <button

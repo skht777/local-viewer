@@ -199,7 +199,9 @@ export function PdfCgViewer({
         <div
           ref={combinedRef}
           data-testid="pdf-cg-page-area"
-          className="flex flex-1 items-center justify-center overflow-auto"
+          // touch-pan-y: 縦パンはブラウザに任せ、水平スワイプは useTouchPageTurn で処理
+          // (これを当てないとブラウザが水平 touch も scroll に解釈して pointercancel が発火)
+          className="flex flex-1 items-center justify-center overflow-auto touch-pan-y"
           onClick={handleClick}
           onMouseMove={resetCursorTimer}
           {...touchPageTurn}

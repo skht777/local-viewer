@@ -54,9 +54,11 @@ export function PdfCgViewerToolbar({
   onGoLast,
   onToggleHelp,
 }: PdfCgViewerToolbarProps) {
+  // z-30: PageSlider (z-20) より上に置き、⋯ popover やツールバー右側が
+  // スライダーに覆われないことを保証
   const wrapperClass = isTouch
-    ? "relative z-10"
-    : `absolute top-0 right-0 left-0 z-10 transition-opacity duration-300 ${
+    ? "relative z-30"
+    : `absolute top-0 right-0 left-0 z-30 transition-opacity duration-300 ${
         isToolbarVisible ? "opacity-100" : "pointer-events-none opacity-0"
       }`;
   return (

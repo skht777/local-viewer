@@ -29,9 +29,11 @@ interface PdfMangaViewerToolbarProps {
 }
 
 export function PdfMangaViewerToolbar(props: PdfMangaViewerToolbarProps) {
+  // z-30: VerticalPageSlider (z-20) より上に置き、⋯ popover やツールバー右側が
+  // スライダーに覆われないことを保証
   const wrapperClass = props.isTouch
-    ? "relative z-10"
-    : `absolute top-0 right-0 left-0 z-10 transition-opacity duration-300 ${
+    ? "relative z-30"
+    : `absolute top-0 right-0 left-0 z-30 transition-opacity duration-300 ${
         props.isToolbarVisible ? "opacity-100" : "pointer-events-none opacity-0"
       }`;
   return (

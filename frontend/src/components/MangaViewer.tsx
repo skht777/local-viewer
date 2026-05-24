@@ -157,12 +157,14 @@ export function MangaViewer({
       {/* メインエリア */}
       <div ref={containerCallbackRef} className="relative flex flex-1 flex-col overflow-hidden">
         {/* ツールバー（デスクトップ: 自動表示/非表示、タッチ: 常時表示・通常フロー） */}
+        {/* z-30: VerticalPageSlider (z-20) より上に置き、⋯ popover やツールバー右側が */}
+        {/* スライダーに覆われないことを保証 */}
         <div
           data-testid="toolbar-wrapper"
           className={
             isTouch
-              ? "relative z-10"
-              : `absolute top-0 right-0 left-0 z-10 transition-opacity duration-300 ${isToolbarVisible ? "opacity-100" : "pointer-events-none opacity-0"}`
+              ? "relative z-30"
+              : `absolute top-0 right-0 left-0 z-30 transition-opacity duration-300 ${isToolbarVisible ? "opacity-100" : "pointer-events-none opacity-0"}`
           }
         >
           <MangaToolbar
