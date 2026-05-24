@@ -1,9 +1,11 @@
 // Playwright E2E テスト設定
 // - E2E 専用ポート (8001/5174) で開発サーバーと共存可能
 // - テストデータの各ディレクトリをマウントポイントとして起動
-// - 現在 chromium のみ
+// - プロジェクト: chromium (デスクトップ) + mobile-chromium (Pixel 5)
+//   + mobile-webkit (PLAYWRIGHT_WEBKIT=1 のときのみ、ローカル任意)
+// - mobile プロジェクトは tests/mobile/** のみ実行、その他は chromium のみ
 
-import { defineConfig } from "@playwright/test";
+import { defineConfig, devices } from "@playwright/test";
 import path from "node:path";
 import { generateMountsJson } from "./fixtures/generate-mounts";
 
@@ -17,6 +19,8 @@ generateMountsJson(mountsPath);
 // E2E 専用ポート（開発サーバーの 8000/5173 と競合しない）
 const BACKEND_PORT = 8001;
 const FRONTEND_PORT = 5174;
+
+const enableWebkit = process.env.PLAYWRIGHT_WEBKIT === "1";
 
 export default defineConfig({
   testDir: "./tests",
@@ -55,9 +59,27 @@ export default defineConfig({
   projects: [
     {
       name: "chromium",
+      // モバイル専用 spec は除外 (mobile-chromium プロジェクトで実行する)
+      testIgnore: /\/mobile\//,
       use: {
         browserName: "chromium",
       },
     },
+    {
+      name: "mobile-chromium",
+      // tests/mobile/** のみ実行 (Pixel 5: 393×851, hasTouch, isMobile)
+      testMatch: /\/mobile\//,
+      use: { ...devices["Pixel 5"] },
+    },
+    ...(enableWebkit
+      ? [
+          {
+            name: "mobile-webkit",
+            testMatch: /\/mobile\//,
+            // PLAYWRIGHT_WEBKIT=1 のときのみ有効 (Ubuntu CI で webkit 未インストールの場合あり)
+            use: { ...devices["iPhone 13"] },
+          },
+        ]
+      : []),
   ],
 });
