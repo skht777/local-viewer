@@ -62,4 +62,14 @@ describe("useClickToTurnPage", () => {
     result.current(makeEvent(250, { left: 100, width: 200 }));
     expect(handleNext).toHaveBeenCalledOnce();
   });
+
+  test("enabled=false のとき右半分クリックでも handleNext/handlePrev は呼ばれない", () => {
+    const handleNext = vi.fn();
+    const handlePrev = vi.fn();
+    const { result } = renderHook(() => useClickToTurnPage(handleNext, handlePrev, false));
+    result.current(makeEvent(800, { left: 0, width: 1000 }));
+    result.current(makeEvent(200, { left: 0, width: 1000 }));
+    expect(handleNext).not.toHaveBeenCalled();
+    expect(handlePrev).not.toHaveBeenCalled();
+  });
 });

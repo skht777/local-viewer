@@ -11,6 +11,7 @@ import type { AncestorEntry } from "../types/api";
 import type { SortOrder, ViewerMode } from "../hooks/useViewerParams";
 import { useViewerStore } from "../stores/viewerStore";
 import { useClickToTurnPage } from "../hooks/useClickToTurnPage";
+import { useTouchPageTurn } from "../hooks/useTouchPageTurn";
 import { useCursorAutoHide } from "../hooks/useCursorAutoHide";
 import { useFullscreen } from "../hooks/useFullscreen";
 import { useCgNavigation } from "../hooks/useCgNavigation";
@@ -120,7 +121,14 @@ export function PdfCgViewer({
 
   const { containerSize, imageAreaRef, combinedRef } = usePdfContainerSize();
   const { resetCursorTimer } = useCursorAutoHide(imageAreaRef);
-  const handleClick = useClickToTurnPage(handleGoNext, handleGoPrev);
+  // クリックでページ送り: touch device では useTouchPageTurn と二重発火しないよう no-op
+  const handleClick = useClickToTurnPage(handleGoNext, handleGoPrev, !isTouch);
+  // タッチ水平スワイプでページ送り (左→次、右→前)
+  const touchPageTurn = useTouchPageTurn({
+    enabled: isTouch,
+    onSwipeLeft: handleGoNext,
+    onSwipeRight: handleGoPrev,
+  });
 
   useCgKeyboard({
     goNext: handleGoNext,
@@ -191,6 +199,7 @@ export function PdfCgViewer({
           className="flex flex-1 items-center justify-center overflow-auto"
           onClick={handleClick}
           onMouseMove={resetCursorTimer}
+          {...touchPageTurn}
         >
           {displayIndices.map((pageIdx) => (
             <div

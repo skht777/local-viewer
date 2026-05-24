@@ -10,6 +10,7 @@ import { useCallback, useRef, useState } from "react";
 import type { AncestorEntry, BrowseEntry } from "../types/api";
 import { useViewerStore } from "../stores/viewerStore";
 import { useClickToTurnPage } from "../hooks/useClickToTurnPage";
+import { useTouchPageTurn } from "../hooks/useTouchPageTurn";
 import { useCursorAutoHide } from "../hooks/useCursorAutoHide";
 import { useFullscreen } from "../hooks/useFullscreen";
 import { useCgNavigation } from "../hooks/useCgNavigation";
@@ -155,7 +156,17 @@ export function CgViewer({
   const { resetCursorTimer } = useCursorAutoHide(imageAreaRef);
 
   // 画像クリックでページ送り（画面中央分割: 右半分→次、左半分→前）
-  const handleImageClick = useClickToTurnPage(handleGoNext, handleGoPrev);
+  // - touch device では useTouchPageTurn と二重発火しないよう no-op 化
+  const handleImageClick = useClickToTurnPage(handleGoNext, handleGoPrev, !isTouch);
+
+  // タッチ水平スワイプでページ送り (左→次、右→前)
+  // - touch 以外の pointerType は internally に無視されるため、デスクトップ影響なし
+  // - swipe 後の合成 click は onClickCapture で抑制 (useClickToTurnPage と二重発火しない)
+  const touchPageTurn = useTouchPageTurn({
+    enabled: isTouch,
+    onSwipeLeft: handleGoNext,
+    onSwipeRight: handleGoPrev,
+  });
 
   const { displayIndices } = nav;
   if (displayIndices.length === 0) {
@@ -209,6 +220,7 @@ export function CgViewer({
           className="flex flex-1 justify-center overflow-auto"
           onClick={handleImageClick}
           onMouseMove={resetCursorTimer}
+          {...touchPageTurn}
         >
           {displayIndices.map((idx, position) => {
             const img = images[idx];
