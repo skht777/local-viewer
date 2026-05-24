@@ -22,8 +22,14 @@
 - ビューワー画面はコンテンツを最大限に表示する
 
 ## レスポンシブ
-- デスクトップファーストで設計（ローカルビューワーのため）
-- 最小幅 1024px を想定
+- **デスクトップ最適化 + モバイル対応**
+- 主要動作環境はデスクトップ (≥1024px) だが、スマートフォン (375px 以上) でも操作可能であることを必須とする
+- ブレイクポイント: Tailwind v4 デフォルト (`sm:640 / md:768 / lg:1024 / xl:1280`)。`lg:` をデスクトップ層境界として一貫運用 (base は ≥375px のモバイル想定)
+- 横画面短小スマホ向けの個別調整は arbitrary variant `[@media(orientation:landscape)_and_(max-height:500px)]:` を使用
+- safe-area (notch): `viewport-fit=cover` + `@theme` の `--spacing-safe-*` トークン経由で `pt-safe-top` 等を適用
+- タッチターゲット: 操作要素は 44×44px 以上 (Apple HIG)。`py-2.5` ベースで確保
+- レイアウト由来の横スクロールは 375px 環境で発生させない (画像/PDF 原寸表示時のコンテンツ overflow は例外、`overflow-x-auto` 等で明示)
+- 新規 npm 依存 (framer-motion / hammerjs 等) は導入禁止。タッチは標準 PointerEvent API で実装
 
 ## TopPage
 - マルチマウントポイント対応: `GET /api/mounts` から取得した一覧をカード形式で表示

@@ -242,6 +242,60 @@ AI が統計的中心に収束しやすいパターンを明示的に禁止す�
 
 ---
 
+## 6.5 レスポンシブ・モバイル対応
+
+主要動作環境はデスクトップ (≥1024px) だが、スマートフォン (375px 以上) でも全画面が操作可能であること。
+
+### ブレイクポイント
+
+Tailwind v4 デフォルトのみ使用:
+
+| トークン | 幅 | 意味 |
+|---------|------|------|
+| (base) | ≥375px | モバイル既定 (iPhone SE 第2/3 世代相当) |
+| `sm:` | ≥640px | 大型スマホ |
+| `md:` | ≥768px | タブレット縦 |
+| `lg:` | ≥1024px | **デスクトップ層境界** (PC レイアウト適用) |
+| `xl:` | ≥1280px | 大型ディスプレイ |
+
+横画面短小スマホ向けは arbitrary variant `[@media(orientation:landscape)_and_(max-height:500px)]:` を使用。
+
+### safe-area
+
+- `frontend/index.html` の viewport は `width=device-width, initial-scale=1, viewport-fit=cover`
+- `user-scalable=no` / `maximum-scale=1` は **禁止** (WCAG 1.4.4 違反 + ピンチズーム阻害)
+- `index.css` の `@theme` で `--spacing-safe-{top,bottom,left,right}` を `env(safe-area-inset-*)` に紐付け
+- ビューワーツールバー等で `pt-safe-top` / `pb-safe-bottom` / `pl-safe-left` / `pr-safe-right` を適用 (notch なし環境では 0px のため desktop 影響なし)
+
+### タッチターゲット
+
+- 操作要素は **44×44px 以上** (Apple HIG)
+- 既定 padding は `py-2.5` (h≈40px + 内部要素で 44px 確保) を目安。`px-3` 以上
+- ツールバー/ヘッダー/タブ/Card 操作要素すべて適用
+
+### タッチ操作
+
+- 標準 PointerEvent API のみ使用 (framer-motion / hammerjs / react-use-gesture 禁止)
+- `useIsTouchDevice` (`pointer: coarse` 購読) で touch/mouse を分岐
+- ビューワー画像エリアの水平スワイプは `useTouchPageTurn` で実装。`touch-pan-y` で水平パン解釈を抑制
+- click と swipe の二重発火防止: `useClickToTurnPage` は touch 時 `enabled: false` で no-op、`useTouchPageTurn` 側で `onClickCapture` から 1 回 click 抑制
+
+### モバイル時のレイアウト変更
+
+- **DirectoryTree** (BrowsePage): `lg:` 未満で `fixed` overlay ドロワー化、ハンバーガーでトグル、route 遷移で auto-close
+- **ヘッダー**: `flex-col lg:flex-row` で縦積み、SearchBar は `w-full lg:w-80`
+- **タブ**: `overflow-x-auto whitespace-nowrap` で横スクロール許容
+- **ツールバー**: モバイル時に優先度低要素を `hidden lg:flex` で隠し、`details/summary` ベースの「⋯」popover に格納
+
+### 禁止事項
+
+- 横スクロールをレイアウトで発生させない (画像/PDF 原寸表示時のコンテンツ overflow は例外)
+- ライトテーマ化 (ダーク固定維持)
+- PWA `manifest` 有効化 (現状の `manifest: false` を維持)
+- 新規 npm 依存追加
+
+---
+
 ## 7. frontend-design プラグインとの使い分け
 
 ### 役割分担
