@@ -155,13 +155,14 @@ export function CgViewer({
   const imageAreaRef = useRef<HTMLDivElement>(null);
   const { resetCursorTimer } = useCursorAutoHide(imageAreaRef);
 
-  // 画像クリックでページ送り（画面中央分割: 右半分→次、左半分→前）
-  // - touch device では useTouchPageTurn と二重発火しないよう no-op 化
-  const handleImageClick = useClickToTurnPage(handleGoNext, handleGoPrev, !isTouch);
+  // 画像クリック/タップでページ送り（画面中央分割: 右半分→次、左半分→前）
+  // - touch 端末でもタップは click として発火するため常時有効
+  // - swipe 成立時は useTouchPageTurn の onClickCapture が合成 click を抑制するので
+  //   二重発火しない (タップ → 通常 click、スワイプ → handler のみ)
+  const handleImageClick = useClickToTurnPage(handleGoNext, handleGoPrev);
 
   // タッチ水平スワイプでページ送り (左→次、右→前)
   // - touch 以外の pointerType は internally に無視されるため、デスクトップ影響なし
-  // - swipe 後の合成 click は onClickCapture で抑制 (useClickToTurnPage と二重発火しない)
   const touchPageTurn = useTouchPageTurn({
     enabled: isTouch,
     onSwipeLeft: handleGoNext,

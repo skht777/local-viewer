@@ -121,8 +121,9 @@ export function PdfCgViewer({
 
   const { containerSize, imageAreaRef, combinedRef } = usePdfContainerSize();
   const { resetCursorTimer } = useCursorAutoHide(imageAreaRef);
-  // クリックでページ送り: touch device では useTouchPageTurn と二重発火しないよう no-op
-  const handleClick = useClickToTurnPage(handleGoNext, handleGoPrev, !isTouch);
+  // クリック/タップでページ送り (touch 端末のタップも通常 click として発火)
+  // - swipe 成立時は useTouchPageTurn の onClickCapture で合成 click を抑制
+  const handleClick = useClickToTurnPage(handleGoNext, handleGoPrev);
   // タッチ水平スワイプでページ送り (左→次、右→前)
   const touchPageTurn = useTouchPageTurn({
     enabled: isTouch,
