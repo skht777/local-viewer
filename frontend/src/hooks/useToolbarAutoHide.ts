@@ -5,18 +5,10 @@
 // - コールバック ref でコンテナ要素の遅延マウントに対応（PDF ローディング等）
 
 import { useCallback, useEffect, useState } from "react";
+import { useIsTouchDevice } from "./useIsTouchDevice";
 
 // 上端からの近接閾値（px）
 const PROXIMITY_THRESHOLD = 60;
-
-// タッチデバイス判定（呼び出し時に評価）
-function detectTouch(): boolean {
-  return (
-    typeof window !== "undefined" &&
-    typeof window.matchMedia === "function" &&
-    window.matchMedia("(pointer: coarse)").matches
-  );
-}
 
 interface UseToolbarAutoHideReturn {
   isToolbarVisible: boolean;
@@ -27,7 +19,7 @@ interface UseToolbarAutoHideReturn {
 export function useToolbarAutoHide(): UseToolbarAutoHideReturn {
   const [isNearTop, setIsNearTop] = useState(false);
   const [container, setContainer] = useState<HTMLElement | null>(null);
-  const isTouch = detectTouch();
+  const isTouch = useIsTouchDevice();
 
   // コールバック ref: DOM 要素のマウント/アンマウントを追跡
   const containerCallbackRef = useCallback((node: HTMLElement | null) => {
