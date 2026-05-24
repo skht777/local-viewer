@@ -5,7 +5,7 @@
 // - PDF クリック → openPdfViewer で PDF ビューワーを開く
 // - データ取得・タブ自動切替・ソート操作・フォーカスエリアは個別 hooks へ委譲
 
-import { useCallback, useMemo, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { mountListOptions } from "../hooks/api/mountQueries";
@@ -29,7 +29,19 @@ export default function BrowsePage() {
   const { nodeId } = useParams<{ nodeId: string }>();
   const navigate = useNavigate();
   const isSidebarOpen = useViewerStore((s) => s.isSidebarOpen);
+  const setSidebarOpen = useViewerStore((s) => s.setSidebarOpen);
   const viewerTransitionId = useViewerStore((s) => s.viewerTransitionId);
+
+  // モバイル (lg 未満) ではナビ後に DirectoryTree ドロワーを自動的に閉じる
+  // - 初期マウント時にも mobile なら閉じる (desktop で開→mobile 切替時のフェイルセーフ)
+  useEffect(() => {
+    if (typeof window === "undefined" || typeof window.matchMedia !== "function") {
+      return;
+    }
+    if (window.matchMedia("(max-width: 1023px)").matches) {
+      setSidebarOpen(false);
+    }
+  }, [nodeId, setSidebarOpen]);
   const {
     params,
     setTab,
@@ -177,17 +189,28 @@ export default function BrowsePage() {
         sort={params.sort}
         onSortChange={setSort}
       />
-      <div className="flex flex-1 overflow-hidden">
+      <div className="relative flex flex-1 overflow-hidden">
         {isSidebarOpen && rootEntries.length > 0 && (
-          <DirectoryTree
-            ref={treeRef}
-            rootEntries={rootEntries}
-            activeNodeId={nodeId ?? ""}
-            ancestorNodeIds={ancestorNodeIds}
-            onNavigate={(id) => navigateBrowse(id, buildBrowseSearch())}
-            onFocusBrowser={handleFocusBrowser}
-            keyboardEnabled={focusArea === "tree"}
-          />
+          <>
+            {/* モバイル時の背景オーバーレイ: タップでドロワーを閉じる (lg 以上では非表示) */}
+            <button
+              type="button"
+              aria-label="サイドバーを閉じる"
+              data-testid="sidebar-overlay"
+              onClick={() => setSidebarOpen(false)}
+              className="fixed inset-0 z-30 bg-black/50 lg:hidden"
+            />
+            <DirectoryTree
+              ref={treeRef}
+              rootEntries={rootEntries}
+              activeNodeId={nodeId ?? ""}
+              ancestorNodeIds={ancestorNodeIds}
+              onNavigate={(id) => navigateBrowse(id, buildBrowseSearch())}
+              onFocusBrowser={handleFocusBrowser}
+              keyboardEnabled={focusArea === "tree"}
+              className="fixed inset-y-0 left-0 z-40 w-72 lg:relative lg:z-auto lg:w-64 lg:shrink-0"
+            />
+          </>
         )}
         {params.tab === "videos" ? (
           <VideoFeed videos={videos} />

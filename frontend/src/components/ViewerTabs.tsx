@@ -56,7 +56,7 @@ export function ViewerTabs({
   };
 
   return (
-    <nav className="flex items-center border-b border-white/5 bg-surface-card px-4">
+    <nav className="flex items-center overflow-x-auto border-b border-white/5 bg-surface-card px-4 whitespace-nowrap">
       {TABS.map((tab) => {
         const isDisabled = disabledTabs?.has(tab.key) ?? false;
         return (
@@ -66,7 +66,7 @@ export function ViewerTabs({
             data-testid={`tab-${tab.key}`}
             disabled={isDisabled}
             onClick={() => onTabChange(tab.key)}
-            className={`px-4 py-2 text-sm font-medium transition-colors ${
+            className={`px-4 py-2.5 text-sm font-medium transition-colors ${
               isDisabled
                 ? "cursor-not-allowed text-gray-600"
                 : activeTab === tab.key
@@ -82,12 +82,16 @@ export function ViewerTabs({
       {onSortChange && (
         <>
           <div className="ml-auto" />
-          <div role="group" aria-label="並び替え" className="flex rounded-lg bg-surface-base">
+          <div
+            role="group"
+            aria-label="並び替え"
+            className="flex shrink-0 rounded-lg bg-surface-base"
+          >
             <button
               type="button"
               data-testid="sort-name"
               onClick={() => handleSortClick("name")}
-              className={`rounded-l-lg px-3 py-1.5 text-sm font-medium transition-colors ${
+              className={`rounded-l-lg px-3 py-2 text-sm font-medium transition-colors ${
                 activeKey === "name"
                   ? "bg-blue-600 text-white"
                   : "text-gray-400 hover:bg-surface-raised hover:text-gray-200"
@@ -100,7 +104,7 @@ export function ViewerTabs({
               type="button"
               data-testid="sort-date"
               onClick={() => handleSortClick("date")}
-              className={`rounded-r-lg px-3 py-1.5 text-sm font-medium transition-colors ${
+              className={`rounded-r-lg px-3 py-2 text-sm font-medium transition-colors ${
                 activeKey === "date"
                   ? "bg-blue-600 text-white"
                   : "text-gray-400 hover:bg-surface-raised hover:text-gray-200"

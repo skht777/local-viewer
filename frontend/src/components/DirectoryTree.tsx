@@ -24,6 +24,9 @@ interface DirectoryTreeProps {
   onFocusBrowser?: () => void;
   keyboardEnabled?: boolean;
   ref?: Ref<HTMLElement>;
+  // 外側で sizing / positioning を上書きする (例: mobile ドロワー化)
+  // 既定: `w-64 shrink-0` (デスクトップ固定幅サイドバー)
+  className?: string;
 }
 
 interface TreeNodeProps {
@@ -166,6 +169,7 @@ export function DirectoryTree({
   onFocusBrowser,
   keyboardEnabled = false,
   ref,
+  className = "w-64 shrink-0",
 }: DirectoryTreeProps) {
   const internalRef = useRef<HTMLElement>(null);
   const treeRef = ref ?? internalRef;
@@ -277,7 +281,8 @@ export function DirectoryTree({
   return (
     <aside
       ref={treeRef as Ref<HTMLElement>}
-      className="w-64 shrink-0 overflow-y-auto border-r border-white/5 bg-surface-card"
+      data-testid="directory-tree"
+      className={`overflow-y-auto border-r border-white/5 bg-surface-card ${className}`}
     >
       <div className="p-2 text-xs font-medium uppercase tracking-wider text-gray-500">
         ディレクトリ
