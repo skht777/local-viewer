@@ -1,6 +1,7 @@
 // usePdfPageSizes フックのテスト
-// - 全ページの viewport サイズを事前取得し estimateSize に提供
-// - バッチ処理で getPage burst を抑制
+// - 先頭ページのみサンプリングし、全ページの estimateSize 推定値とする（均一PDF前提）
+// - 実際の表示ページは virtualizer.measureElement が再計測するため、可変サイズPDFでも
+//   スクロール後は補正される。全ページ getPage を避けて初期化を高速化する
 
 import { renderHook, waitFor, act } from "@testing-library/react";
 import { vi, describe, test, expect, beforeEach } from "vitest";
@@ -32,7 +33,7 @@ describe("usePdfPageSizes", () => {
     vi.clearAllMocks();
   });
 
-  test("全ページサイズを取得する", async () => {
+  test("先頭ページのサイズを全ページの推定値として返す", async () => {
     const mockDoc = createMockDocument([
       { width: 612, height: 792 },
       { width: 842, height: 595 },
@@ -45,9 +46,26 @@ describe("usePdfPageSizes", () => {
       expect(result.current.isReady).toBe(true);
     });
 
+    // 全ページ分の長さで、すべて先頭ページ (612x792) のサイズ
     expect(result.current.pageSizes).toHaveLength(3);
     expect(result.current.pageSizes[0]).toEqual({ width: 612, height: 792 });
-    expect(result.current.pageSizes[1]).toEqual({ width: 842, height: 595 });
+    expect(result.current.pageSizes[1]).toEqual({ width: 612, height: 792 });
+    expect(result.current.pageSizes[2]).toEqual({ width: 612, height: 792 });
+  });
+
+  test("getPage は先頭ページのみ呼ぶ（全ページ走査しない）", async () => {
+    const pages = Array.from({ length: 50 }, () => ({ width: 612, height: 792 }));
+    const mockDoc = createMockDocument(pages);
+
+    const { result } = renderHook(() => usePdfPageSizes(mockDoc as never));
+
+    await waitFor(() => {
+      expect(result.current.isReady).toBe(true);
+    });
+
+    expect(mockDoc.getPage).toHaveBeenCalledTimes(1);
+    expect(mockDoc.getPage).toHaveBeenCalledWith(1);
+    expect(result.current.pageSizes).toHaveLength(50);
   });
 
   test("document=nullではisReady=false", () => {
@@ -57,65 +75,28 @@ describe("usePdfPageSizes", () => {
     expect(result.current.pageSizes).toHaveLength(0);
   });
 
-  test("バッチ処理で同時getPage呼び出しがBATCH_SIZE以下に制限される", async () => {
-    // 25 ページのドキュメント (BATCH_SIZE=10 で 3 バッチ)
-    const pages = Array.from({ length: 25 }, () => ({ width: 612, height: 792 }));
-    let concurrentCalls = 0;
-    let maxConcurrentCalls = 0;
-
+  test("アンマウント時にサンプリングが中断される", async () => {
+    const resolver: { fn?: (page: unknown) => void } = {};
     const mockDoc = {
       numPages: 25,
-      getPage: vi.fn((_num: number) => {
-        concurrentCalls++;
-        maxConcurrentCalls = Math.max(maxConcurrentCalls, concurrentCalls);
-        return Promise.resolve({
-          getViewport: ({ scale }: { scale: number }) => ({
-            width: pages[0].width * scale,
-            height: pages[0].height * scale,
+      getPage: vi.fn(
+        () =>
+          new Promise((resolve) => {
+            resolver.fn = resolve;
           }),
-          cleanup: vi.fn(),
-        }).then((result) => {
-          concurrentCalls--;
-          return result;
-        });
-      }),
-      destroy: vi.fn(),
-    };
-
-    const { result } = renderHook(() => usePdfPageSizes(mockDoc as never));
-
-    await waitFor(() => {
-      expect(result.current.isReady).toBe(true);
-    });
-
-    // 同時呼び出し数が BATCH_SIZE (10) 以下であること
-    expect(maxConcurrentCalls).toBeLessThanOrEqual(10);
-    expect(result.current.pageSizes).toHaveLength(25);
-  });
-
-  test("アンマウント時にバッチ処理が中断される", async () => {
-    // getPage をバッチ間のタイミングで resolve する遅延付きモック
-    const pages = Array.from({ length: 25 }, () => ({ width: 612, height: 792 }));
-
-    const mockDoc = {
-      numPages: 25,
-      getPage: vi.fn((_num: number) =>
-        Promise.resolve({
-          getViewport: ({ scale }: { scale: number }) => ({
-            width: pages[0].width * scale,
-            height: pages[0].height * scale,
-          }),
-          cleanup: vi.fn(),
-        }),
       ),
       destroy: vi.fn(),
     };
 
     const { result, unmount } = renderHook(() => usePdfPageSizes(mockDoc as never));
 
-    // 最初のバッチが開始される前にアンマウント
+    // getPage(1) 解決前にアンマウント
     await act(async () => {
       unmount();
+      resolver.fn?.({
+        getViewport: () => ({ width: 612, height: 792 }),
+        cleanup: vi.fn(),
+      });
     });
 
     // アンマウント後は isReady が true にならない

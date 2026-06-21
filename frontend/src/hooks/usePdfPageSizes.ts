@@ -1,7 +1,8 @@
-// PDF 全ページの viewport サイズを事前取得
-// - PdfMangaViewer の estimateSize に正確な高さを提供
-// - バッチ処理で getPage burst を抑制 (大規模 PDF でのメモリスパイク防止)
-// - 全バッチ完了後に一括で状態更新
+// PDF の estimateSize 用ページサイズを軽量に取得
+// - 先頭ページのみ getPage し、そのサイズを全ページの推定値とする（均一PDF前提）
+// - 実際に表示されるページは PdfMangaViewer の virtualizer.measureElement が再計測するため、
+//   可変サイズPDFでもスクロール後はスクロール高さが補正される
+// - disableAutoFetch 環境で全ページ getPage による range リクエスト多発を避け、初期化を高速化
 
 import { useEffect, useRef, useState } from "react";
 import type { PDFDocumentProxy } from "../lib/pdfjs";
@@ -15,9 +16,6 @@ interface UsePdfPageSizesReturn {
   pageSizes: PageSize[];
   isReady: boolean;
 }
-
-// バッチあたりの同時 getPage 呼び出し数
-const BATCH_SIZE = 10;
 
 export function usePdfPageSizes(document: PDFDocumentProxy | null): UsePdfPageSizesReturn {
   const [pageSizes, setPageSizes] = useState<PageSize[]>([]);
@@ -35,40 +33,20 @@ export function usePdfPageSizes(document: PDFDocumentProxy | null): UsePdfPageSi
     const { numPages } = document;
     const pdfDocument = document;
 
-    // バッチ処理で getPage burst を抑制
-    // - BATCH_SIZE ページずつ getPage + getViewport
-    // - バッチ間で setTimeout(_, 0) により UI スレッドに譲る
-    async function loadInBatches() {
-      const sizes: PageSize[] = [];
-      for (let i = 0; i < numPages; i += BATCH_SIZE) {
-        const end = Math.min(i + BATCH_SIZE, numPages);
-        const batch = await Promise.all(
-          Array.from({ length: end - i }, (_, j) =>
-            pdfDocument.getPage(i + j + 1).then((page) => {
-              const vp = page.getViewport({ scale: 1 });
-              page.cleanup();
-              return { width: vp.width, height: vp.height };
-            }),
-          ),
-        );
-        if (cancelledRef.current) {
-          return;
-        }
-        sizes.push(...batch);
-        // UI スレッドに譲る (最終バッチ以外)
-        if (end < numPages) {
-          await new Promise<void>((resolve) => {
-            setTimeout(resolve, 0);
-          });
-        }
+    // 先頭ページのサイズをサンプリングし、全ページの推定値とする
+    async function sampleFirstPage() {
+      const page = await pdfDocument.getPage(1);
+      const vp = page.getViewport({ scale: 1 });
+      page.cleanup();
+      if (cancelledRef.current) {
+        return;
       }
-      if (!cancelledRef.current) {
-        setPageSizes(sizes);
-        setIsReady(true);
-      }
+      const size: PageSize = { width: vp.width, height: vp.height };
+      setPageSizes(Array.from({ length: numPages }, () => size));
+      setIsReady(true);
     }
 
-    loadInBatches();
+    sampleFirstPage();
 
     return () => {
       cancelledRef.current = true;
