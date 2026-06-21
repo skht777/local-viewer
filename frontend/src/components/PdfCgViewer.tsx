@@ -23,6 +23,7 @@ import { useToolbarAutoHide } from "../hooks/useToolbarAutoHide";
 import { usePdfContainerSize } from "../hooks/usePdfContainerSize";
 import { usePdfDocument } from "../hooks/usePdfDocument";
 import { usePdfPageState } from "../hooks/usePdfPageState";
+import { usePdfPagePrefetch } from "../hooks/usePdfPagePrefetch";
 import { usePdfRenderCache } from "../hooks/usePdfRenderCache";
 import { useViewerBoundaryNavigation } from "../hooks/useViewerBoundaryNavigation";
 import { formatPageLabel } from "../utils/formatPageLabel";
@@ -165,6 +166,18 @@ export function PdfCgViewer({
   // 見開き表示用の派生値 (containerWidth / 1-based ページラベル)
   const { displayIndices } = nav;
   const display = getPdfDisplayRange(displayIndices, containerSize.width);
+
+  // 次グループのページを先読みして描画キャッシュへ格納（前送りを即時化）
+  usePdfPagePrefetch({
+    document,
+    currentPage,
+    pageCount,
+    spreadMode,
+    fitMode,
+    pageContainerWidth: display.pageContainerWidth,
+    containerHeight: containerSize.height,
+    renderCache,
+  });
 
   const status = renderPdfStatus({ isLoading, error, document, onClose });
   if (status.shouldEarlyReturn || !document) {

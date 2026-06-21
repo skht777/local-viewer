@@ -11,8 +11,9 @@ import type { PageViewport, PDFDocumentProxy, PDFPageProxy } from "../lib/pdfjs"
 import { TextLayer } from "../lib/pdfjs";
 import type { FitMode } from "../stores/viewerStore";
 import type { PdfRenderCache } from "../hooks/usePdfRenderCache";
+import type { ScaledRender } from "../utils/pdfRender";
+import { computePdfRenderScale } from "../utils/pdfRender";
 
-const MAX_SCALE = 4;
 const RENDER_TIMEOUT_MS = 15_000;
 
 interface PdfCanvasProps {
@@ -32,44 +33,6 @@ function clearChildren(container: HTMLElement): void {
   while (container.firstChild) {
     container.firstChild.remove();
   }
-}
-
-// renderPage で算出する scale 関連の派生値
-interface ScaledRender {
-  scale: number;
-  dpr: number;
-  viewport: PageViewport;
-  cssWidth: number;
-  cssHeight: number;
-  cacheKey: string;
-}
-
-// fitMode + container 寸法 + dpr から render 用の scale / viewport / cacheKey を計算する純粋関数
-function computePdfRenderScale(params: {
-  page: PDFPageProxy;
-  pageNumber: number;
-  fitMode: FitMode;
-  containerWidth: number;
-  containerHeight: number;
-}): ScaledRender {
-  const baseViewport = params.page.getViewport({ scale: 1 });
-  const rawScale =
-    params.fitMode === "width"
-      ? params.containerWidth / baseViewport.width
-      : params.fitMode === "height"
-        ? params.containerHeight / baseViewport.height
-        : 1;
-  const scale = Math.min(rawScale, MAX_SCALE);
-  const dpr = window.devicePixelRatio || 1;
-  const viewport = params.page.getViewport({ scale: scale * dpr });
-  return {
-    scale,
-    dpr,
-    viewport,
-    cssWidth: viewport.width / dpr,
-    cssHeight: viewport.height / dpr,
-    cacheKey: `${params.pageNumber}:${scale * dpr}`,
-  };
 }
 
 // canvas のピクセルサイズと CSS 寸法を一括設定する
