@@ -31,22 +31,21 @@ impl ZipArchiveReader {
         Self { validator }
     }
 
-    /// ZIP エントリを抽出する (サイズ上限付き)
+    /// インデックス指定で ZIP エントリを抽出する (サイズ上限付き)
     ///
     /// `Read::take()` で上限+1 バイトまで読み、超過時はエラーを返す。
-    fn extract_from_zip(
+    /// `entry_name` はサイズ上限判定とエラーメッセージにのみ使用する。
+    fn extract_at_index(
         &self,
         archive: &mut zip::ZipArchive<std::fs::File>,
+        index: usize,
         entry_name: &str,
     ) -> Result<Bytes, AppError> {
         let max_size = self.validator.max_entry_size_for(entry_name);
 
-        let file = archive.by_name(entry_name).map_err(|e| match e {
-            zip::result::ZipError::FileNotFound => {
-                AppError::InvalidArchive(format!("エントリが見つかりません: {entry_name}"))
-            }
-            _ => AppError::InvalidArchive(format!("ZIP エントリ読み取りエラー: {e}")),
-        })?;
+        let file = archive
+            .by_index(index)
+            .map_err(|e| AppError::InvalidArchive(format!("ZIP エントリ読み取りエラー: {e}")))?;
 
         let capacity = (file.size()).min(max_size + 1) as usize;
         let mut buf = Vec::with_capacity(capacity);
@@ -61,6 +60,21 @@ impl ZipArchiveReader {
         }
 
         Ok(Bytes::from(buf))
+    }
+
+    /// `list_entries` と同じ規則で「正規化済みエントリ名 → インデックス」対応表を作る
+    ///
+    /// `zip` クレートの `by_name` は内部マップを生バイトでキーするため、非 UTF-8
+    /// (CP437/Shift-JIS) エントリでは CP437 デコード済みの名前と一致せず
+    /// `FileNotFound` になる。`list_entries` が返す名前 (CP437 デコード +
+    /// バックスラッシュ正規化) でインデックスを引けるよう対応表を構築し、
+    /// 抽出はインデックス経由 (`by_index`) で行う。
+    fn build_name_index_map(archive: &zip::ZipArchive<std::fs::File>) -> HashMap<String, usize> {
+        archive
+            .file_names()
+            .enumerate()
+            .map(|(index, name)| (name.replace('\\', "/"), index))
+            .collect()
     }
 }
 
@@ -150,9 +164,15 @@ impl ArchiveReader for ZipArchiveReader {
         let mut archive = zip::ZipArchive::new(file)
             .map_err(|e| AppError::InvalidArchive(format!("ZIP を読み取れません: {e}")))?;
 
+        // 非 UTF-8 エントリ対応のため名前→インデックス対応表を一度だけ構築する
+        let index_map = Self::build_name_index_map(&archive);
+
         let mut results = HashMap::with_capacity(entry_names.len());
         for name in entry_names {
-            let data = self.extract_from_zip(&mut archive, name)?;
+            let index = index_map.get(name).copied().ok_or_else(|| {
+                AppError::InvalidArchive(format!("エントリが見つかりません: {name}"))
+            })?;
+            let data = self.extract_at_index(&mut archive, index, name)?;
             results.insert(name.clone(), data);
         }
         Ok(results)
@@ -171,12 +191,16 @@ impl ArchiveReader for ZipArchiveReader {
         let mut archive = zip::ZipArchive::new(file)
             .map_err(|e| AppError::InvalidArchive(format!("ZIP を読み取れません: {e}")))?;
 
-        let mut entry = archive.by_name(entry_name).map_err(|e| match e {
-            zip::result::ZipError::FileNotFound => {
+        // 非 UTF-8 エントリ対応のためインデックス経由で抽出する
+        let index = Self::build_name_index_map(&archive)
+            .get(entry_name)
+            .copied()
+            .ok_or_else(|| {
                 AppError::InvalidArchive(format!("エントリが見つかりません: {entry_name}"))
-            }
-            _ => AppError::InvalidArchive(format!("ZIP エントリ読み取りエラー: {e}")),
-        })?;
+            })?;
+        let mut entry = archive
+            .by_index(index)
+            .map_err(|e| AppError::InvalidArchive(format!("ZIP エントリ読み取りエラー: {e}")))?;
 
         let mut dest_file = std::fs::File::create(dest)
             .map_err(|e| AppError::InvalidArchive(format!("ファイル作成エラー: {e}")))?;
@@ -282,6 +306,84 @@ mod tests {
             writer.write_all(data).unwrap();
         }
         writer.finish().unwrap();
+        tmp
+    }
+
+    /// CRC32 (IEEE) を計算する (手組み ZIP フィクスチャ用)
+    fn crc32_ieee(data: &[u8]) -> u32 {
+        let mut crc: u32 = 0xFFFF_FFFF;
+        for &byte in data {
+            crc ^= u32::from(byte);
+            for _ in 0..8 {
+                let mask = (crc & 1).wrapping_neg();
+                crc = (crc >> 1) ^ (0xEDB8_8320 & mask);
+            }
+        }
+        !crc
+    }
+
+    /// 生バイトのエントリ名 (UTF-8 フラグ無し) を持つ STORED ZIP を手組みする
+    ///
+    /// `zip` クレートの writer は非 ASCII 名に必ず UTF-8 フラグを立てるため、
+    /// 日本の Windows が生成する Shift-JIS (UTF-8 フラグ無し) ZIP を writer では
+    /// 再現できない。最小限の ZIP 構造を直接書き出してフィクスチャを作る。
+    fn create_raw_name_zip(raw_name: &[u8], data: &[u8]) -> tempfile::NamedTempFile {
+        let crc = crc32_ieee(data);
+        let name_len = u16::try_from(raw_name.len()).unwrap();
+        let size = u32::try_from(data.len()).unwrap();
+        let mut bytes = Vec::new();
+
+        // ローカルファイルヘッダ
+        bytes.extend_from_slice(&0x0403_4b50u32.to_le_bytes()); // signature
+        bytes.extend_from_slice(&20u16.to_le_bytes()); // version needed
+        bytes.extend_from_slice(&0u16.to_le_bytes()); // flags (UTF-8 フラグ無し)
+        bytes.extend_from_slice(&0u16.to_le_bytes()); // compression: stored
+        bytes.extend_from_slice(&0u16.to_le_bytes()); // mod time
+        bytes.extend_from_slice(&0u16.to_le_bytes()); // mod date
+        bytes.extend_from_slice(&crc.to_le_bytes());
+        bytes.extend_from_slice(&size.to_le_bytes()); // compressed size
+        bytes.extend_from_slice(&size.to_le_bytes()); // uncompressed size
+        bytes.extend_from_slice(&name_len.to_le_bytes());
+        bytes.extend_from_slice(&0u16.to_le_bytes()); // extra length
+        bytes.extend_from_slice(raw_name);
+        bytes.extend_from_slice(data);
+
+        let cd_offset = u32::try_from(bytes.len()).unwrap();
+
+        // セントラルディレクトリヘッダ
+        bytes.extend_from_slice(&0x0201_4b50u32.to_le_bytes()); // signature
+        bytes.extend_from_slice(&20u16.to_le_bytes()); // version made by
+        bytes.extend_from_slice(&20u16.to_le_bytes()); // version needed
+        bytes.extend_from_slice(&0u16.to_le_bytes()); // flags (UTF-8 フラグ無し)
+        bytes.extend_from_slice(&0u16.to_le_bytes()); // compression
+        bytes.extend_from_slice(&0u16.to_le_bytes()); // mod time
+        bytes.extend_from_slice(&0u16.to_le_bytes()); // mod date
+        bytes.extend_from_slice(&crc.to_le_bytes());
+        bytes.extend_from_slice(&size.to_le_bytes());
+        bytes.extend_from_slice(&size.to_le_bytes());
+        bytes.extend_from_slice(&name_len.to_le_bytes());
+        bytes.extend_from_slice(&0u16.to_le_bytes()); // extra length
+        bytes.extend_from_slice(&0u16.to_le_bytes()); // comment length
+        bytes.extend_from_slice(&0u16.to_le_bytes()); // disk number start
+        bytes.extend_from_slice(&0u16.to_le_bytes()); // internal attrs
+        bytes.extend_from_slice(&0u32.to_le_bytes()); // external attrs
+        bytes.extend_from_slice(&0u32.to_le_bytes()); // local header offset
+        bytes.extend_from_slice(raw_name);
+
+        let cd_size = u32::try_from(bytes.len()).unwrap() - cd_offset;
+
+        // End of Central Directory
+        bytes.extend_from_slice(&0x0605_4b50u32.to_le_bytes()); // signature
+        bytes.extend_from_slice(&0u16.to_le_bytes()); // disk number
+        bytes.extend_from_slice(&0u16.to_le_bytes()); // cd start disk
+        bytes.extend_from_slice(&1u16.to_le_bytes()); // entries on this disk
+        bytes.extend_from_slice(&1u16.to_le_bytes()); // total entries
+        bytes.extend_from_slice(&cd_size.to_le_bytes());
+        bytes.extend_from_slice(&cd_offset.to_le_bytes());
+        bytes.extend_from_slice(&0u16.to_le_bytes()); // comment length
+
+        let tmp = tempfile::NamedTempFile::with_suffix(".zip").unwrap();
+        std::fs::write(tmp.path(), &bytes).unwrap();
         tmp
     }
 
@@ -409,6 +511,43 @@ mod tests {
         assert_eq!(results.len(), 2);
         assert_eq!(&results["a.jpg"][..], b"data_a");
         assert_eq!(&results["b.png"][..], b"data_b");
+    }
+
+    // --- 非 UTF-8 (Shift-JIS) エントリ名 ---
+
+    #[test]
+    fn shift_jis名の非utf8エントリを抽出できる() {
+        // 日本の Windows 製 ZIP を再現:
+        // "その他/img.jpg" を Shift-JIS で格納し UTF-8 フラグ無し
+        // その他 = 0x82bb 0x82cc 0x91bc (0x5C を含まない)
+        let raw_name: &[u8] = b"\x82\xbb\x82\xcc\x91\xbc/img.jpg";
+        let data = b"jpeg image bytes";
+        let zip = create_raw_name_zip(raw_name, data);
+        let reader = ZipArchiveReader::new(test_validator());
+
+        // list_entries が返す名前 (zip クレートは非 UTF-8 名を CP437 でデコードする)
+        let entries = reader.list_entries(zip.path()).unwrap();
+        assert_eq!(entries.len(), 1);
+        let listed_name = entries[0].name.clone();
+
+        // list_entries と同じ名前で抽出できること
+        // (修正前は by_name が生バイトと突き合わせるため FileNotFound で失敗する)
+        let extracted = reader.extract_entry(zip.path(), &listed_name).unwrap();
+        assert_eq!(&extracted[..], data);
+    }
+
+    #[test]
+    fn shift_jis名のエントリをバッチ抽出できる() {
+        let raw_name: &[u8] = b"\x82\xbb\x82\xcc\x91\xbc/img.jpg";
+        let data = b"batch jpeg bytes";
+        let zip = create_raw_name_zip(raw_name, data);
+        let reader = ZipArchiveReader::new(test_validator());
+
+        let listed_name = reader.list_entries(zip.path()).unwrap()[0].name.clone();
+        let results = reader
+            .extract_entries(zip.path(), std::slice::from_ref(&listed_name))
+            .unwrap();
+        assert_eq!(&results[&listed_name][..], data);
     }
 
     // --- supports ---
