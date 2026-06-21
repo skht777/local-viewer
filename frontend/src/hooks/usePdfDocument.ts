@@ -6,6 +6,7 @@
 import { useEffect, useRef, useState } from "react";
 import { getDocument } from "../lib/pdfjs";
 import type { PDFDocumentProxy } from "../lib/pdfjs";
+import { PDF_LOAD_OPTIONS } from "../lib/pdfLoadOptions";
 
 interface UsePdfDocumentReturn {
   document: PDFDocumentProxy | null;
@@ -35,7 +36,7 @@ export function usePdfDocument(fileUrl: string): UsePdfDocumentReturn {
     setIsLoading(true);
     setError(null);
 
-    const loadingTask = getDocument(fileUrl);
+    const loadingTask = getDocument({ url: fileUrl, ...PDF_LOAD_OPTIONS });
 
     async function load() {
       try {

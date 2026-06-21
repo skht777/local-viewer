@@ -7,6 +7,7 @@ import { useEffect, useRef, useState } from "react";
 import type { MutableRefObject } from "react";
 import type { PDFDocumentProxy, PDFPageProxy } from "../lib/pdfjs";
 import { getDocument } from "../lib/pdfjs";
+import { PDF_LOAD_OPTIONS } from "../lib/pdfLoadOptions";
 
 const THUMB_WIDTH = 300;
 
@@ -20,7 +21,7 @@ interface PdfThumbnailResult {
 async function loadPdfThumbnailPage(
   nodeId: string,
 ): Promise<{ pdfDoc: PDFDocumentProxy; page: PDFPageProxy }> {
-  const pdfDoc = await getDocument({ url: `/api/file/${nodeId}` }).promise;
+  const pdfDoc = await getDocument({ url: `/api/file/${nodeId}`, ...PDF_LOAD_OPTIONS }).promise;
   const page = await pdfDoc.getPage(1);
   return { pdfDoc, page };
 }

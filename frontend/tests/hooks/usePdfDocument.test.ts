@@ -60,6 +60,18 @@ describe("usePdfDocument", () => {
     expect(result.current.error).toBeNull();
   });
 
+  test("getDocument に url と disableAutoFetch:true を渡す（Range 経由の遅延取得）", () => {
+    const { loadingTask } = createMockLoadingTask();
+    mockGetDocument.mockReturnValue(loadingTask as unknown as ReturnType<typeof getDocument>);
+
+    renderHook(() => usePdfDocument("/api/file/abc123"));
+
+    // バックエンドが Range(206) 対応のため、全体先読みを止めて表示中ページのみ取得する
+    expect(mockGetDocument).toHaveBeenCalledWith(
+      expect.objectContaining({ url: "/api/file/abc123", disableAutoFetch: true }),
+    );
+  });
+
   test("読み込み完了後にpageCountを返す", async () => {
     const { loadingTask, mockDocument, resolve } = createMockLoadingTask(10);
     mockGetDocument.mockReturnValue(loadingTask as unknown as ReturnType<typeof getDocument>);

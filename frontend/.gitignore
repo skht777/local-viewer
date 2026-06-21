@@ -1,0 +1,2 @@
+# pdfjs アセット (vite.config.ts の copyPdfAssets が node_modules から複製)
+public/pdfjs/
