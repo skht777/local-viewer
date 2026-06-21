@@ -60,16 +60,21 @@ describe("usePdfDocument", () => {
     expect(result.current.error).toBeNull();
   });
 
-  test("getDocument に url と disableAutoFetch:true を渡す（Range 経由の遅延取得）", () => {
+  test("getDocument に url と cMap/フォントオプションを渡す", () => {
     const { loadingTask } = createMockLoadingTask();
     mockGetDocument.mockReturnValue(loadingTask as unknown as ReturnType<typeof getDocument>);
 
     renderHook(() => usePdfDocument("/api/file/abc123"));
 
-    // バックエンドが Range(206) 対応のため、全体先読みを止めて表示中ページのみ取得する
-    expect(mockGetDocument).toHaveBeenCalledWith(
-      expect.objectContaining({ url: "/api/file/abc123", disableAutoFetch: true }),
-    );
+    const call = mockGetDocument.mock.calls[0][0] as Record<string, unknown>;
+    expect(call).toMatchObject({
+      url: "/api/file/abc123",
+      cMapUrl: "/pdfjs/cmaps/",
+      cMapPacked: true,
+      standardFontDataUrl: "/pdfjs/standard_fonts/",
+    });
+    // disableAutoFetch は撤回済み（既定の全取得に戻す）
+    expect(call.disableAutoFetch).toBeUndefined();
   });
 
   test("読み込み完了後にpageCountを返す", async () => {
