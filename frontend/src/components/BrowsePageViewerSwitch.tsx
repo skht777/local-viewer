@@ -90,10 +90,13 @@ export function BrowsePageViewerSwitch({
       onPageChange: setPdfPage,
       onClose: closePdfViewer,
     };
+    // key={pdfNodeId}: セット間ジャンプで別 PDF に変わった時に remount させ、
+    // initialPage（非制御の内部 state）を確実にリセットする。
+    // 同一 PDF 内のページ移動では pdfNodeId 不変のため remount しない。
     if (mode === "manga") {
-      return <PdfMangaViewer {...commonProps} />;
+      return <PdfMangaViewer key={pdfNodeId} {...commonProps} />;
     }
-    return <PdfCgViewer {...commonProps} />;
+    return <PdfCgViewer key={pdfNodeId} {...commonProps} />;
   }
 
   // セットジャンプのトランジション中: ローディングオーバーレイを表示
