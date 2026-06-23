@@ -2,6 +2,7 @@
 //!
 //! - `image` + `fast_image_resize` で 300px JPEG リサイズ
 //! - PDF は `pdftoppm` (poppler-utils) subprocess で先頭ページをラスタライズ
+//! - AVIF は `image` クレート非対応のため `ffmpeg` subprocess で PNG 化してから処理
 //! - `TempFileCache` でディスクキャッシュ
 //! - CPU バウンド処理のため `spawn_blocking` 内から呼ぶこと
 
@@ -235,8 +236,7 @@ impl ThumbnailService {
 /// - アルファチャネルがある場合は白背景で合成
 /// - `max_dim` 以下ならリサイズせず JPEG エンコードのみ
 fn resize_to_jpeg(source: &[u8], max_dim: u32, quality: u8) -> Result<Vec<u8>, AppError> {
-    let img = image::load_from_memory(source)
-        .map_err(|e| AppError::InvalidImage(format!("画像デコード失敗: {e}")))?;
+    let img = decode_image(source)?;
 
     let (orig_w, orig_h) = img.dimensions();
 
@@ -278,6 +278,86 @@ fn resize_to_jpeg(source: &[u8], max_dim: u32, quality: u8) -> Result<Vec<u8>, A
     })?;
 
     encode_jpeg(&resized_rgb, quality)
+}
+
+/// AVIF デコードの ffmpeg タイムアウト (秒)
+const AVIF_DECODE_TIMEOUT_SECS: u64 = 15;
+
+/// 画像バイト列をデコードする
+///
+/// `image` クレートで直接デコードを試み、失敗かつ AVIF の場合のみ
+/// `ffmpeg` で PNG 化してから再デコードする (image クレートは AVIF 非対応)。
+fn decode_image(source: &[u8]) -> Result<DynamicImage, AppError> {
+    match image::load_from_memory(source) {
+        Ok(img) => Ok(img),
+        Err(orig_err) => {
+            if is_avif(source) {
+                let png = decode_avif_via_ffmpeg(source)?;
+                image::load_from_memory(&png).map_err(|e| {
+                    AppError::InvalidImage(format!("AVIF デコード結果の読み込み失敗: {e}"))
+                })
+            } else {
+                Err(AppError::InvalidImage(format!(
+                    "画像デコード失敗: {orig_err}"
+                )))
+            }
+        }
+    }
+}
+
+/// AVIF (ISOBMFF/HEIF, `ftyp` ボックスのブランドに `avif`/`avis`) を magic bytes で判定する
+fn is_avif(source: &[u8]) -> bool {
+    // 先頭 [4..8] が "ftyp" かつ ftyp ボックス内のブランド列に "avif"/"avis" を含む
+    source.len() >= 12
+        && &source[4..8] == b"ftyp"
+        && source[8..source.len().min(64)]
+            .windows(4)
+            .any(|w| w == b"avif" || w == b"avis")
+}
+
+/// `ffmpeg` subprocess で AVIF を PNG にデコードする
+///
+/// AVIF (HEIF コンテナ) は seek が必要なため一時ファイル経由で ffmpeg に渡し、
+/// 先頭 1 フレームを PNG として一時ファイルに出力させて読み戻す。
+fn decode_avif_via_ffmpeg(source: &[u8]) -> Result<Vec<u8>, AppError> {
+    let tmp_dir = tempfile::TempDir::new()
+        .map_err(|e| AppError::InvalidImage(format!("一時ディレクトリ作成失敗: {e}")))?;
+    let input_path = tmp_dir.path().join("input.avif");
+    let output_path = tmp_dir.path().join("frame.png");
+    std::fs::write(&input_path, source)
+        .map_err(|e| AppError::InvalidImage(format!("AVIF 一時書き込み失敗: {e}")))?;
+
+    // ffmpeg -v error -y -i input.avif -frames:v 1 frame.png
+    let output = std::process::Command::new("ffmpeg")
+        .args([
+            "-v",
+            "error",
+            "-y",
+            "-i",
+            &input_path.to_string_lossy(),
+            "-frames:v",
+            "1",
+            &output_path.to_string_lossy(),
+        ])
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .and_then(|child| {
+            wait_with_timeout(
+                child,
+                std::time::Duration::from_secs(AVIF_DECODE_TIMEOUT_SECS),
+            )
+        })
+        .map_err(|e| AppError::InvalidImage(format!("ffmpeg 実行失敗: {e}")))?;
+
+    if !output.status.success() {
+        return Err(AppError::InvalidImage(
+            "AVIF サムネイル生成に失敗しました".to_string(),
+        ));
+    }
+
+    std::fs::read(&output_path)
+        .map_err(|e| AppError::InvalidImage(format!("AVIF デコード結果読み込み失敗: {e}")))
 }
 
 /// RGBA 画像を白背景で合成して RGB に変換する
@@ -601,5 +681,87 @@ mod tests {
             (1..=2).contains(&calls),
             "generator calls = {calls} (expected 1..=2)"
         );
+    }
+
+    #[test]
+    fn is_avifがavifブランドを判定する() {
+        // ftyp + 静止画ブランド avif
+        let mut avif = vec![0, 0, 0, 0x20];
+        avif.extend_from_slice(b"ftypavif");
+        avif.extend_from_slice(b"\0\0\0\0mif1miafMA1B");
+        assert!(is_avif(&avif));
+
+        // ftyp + シーケンスブランド avis (互換ブランド側に出現)
+        let mut seq_brand = vec![0, 0, 0, 0x18];
+        seq_brand.extend_from_slice(b"ftypmif1");
+        seq_brand.extend_from_slice(b"\0\0\0\0avis");
+        assert!(is_avif(&seq_brand));
+    }
+
+    #[test]
+    fn is_avifが非avifを弾く() {
+        assert!(!is_avif(&minimal_jpeg()));
+        assert!(!is_avif(&png_with_alpha()));
+        // ftyp だが mp4 (isom/mp41) ブランド
+        let mut mp4 = vec![0, 0, 0, 0x18];
+        mp4.extend_from_slice(b"ftypisom");
+        mp4.extend_from_slice(b"\0\0\0\0isommp41");
+        assert!(!is_avif(&mp4));
+        // 短すぎるバイト列
+        assert!(!is_avif(b"ftyp"));
+    }
+
+    /// ffmpeg が利用可能か (AVIF round-trip テストの gate)
+    fn ffmpeg_available() -> bool {
+        std::process::Command::new("ffmpeg")
+            .arg("-version")
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false)
+    }
+
+    /// ffmpeg で PNG → AVIF を生成する (テスト用フィクスチャ)
+    fn make_avif() -> Option<Vec<u8>> {
+        let dir = tempfile::TempDir::new().ok()?;
+        let png_path = dir.path().join("src.png");
+        let avif_path = dir.path().join("out.avif");
+        RgbImage::from_pixel(64, 48, image::Rgb([10, 200, 80]))
+            .save(&png_path)
+            .ok()?;
+        let status = std::process::Command::new("ffmpeg")
+            .args([
+                "-v",
+                "error",
+                "-y",
+                "-i",
+                &png_path.to_string_lossy(),
+                "-frames:v",
+                "1",
+                &avif_path.to_string_lossy(),
+            ])
+            .status()
+            .ok()?;
+        if !status.success() {
+            return None;
+        }
+        std::fs::read(&avif_path).ok()
+    }
+
+    #[test]
+    fn avifバイト列からサムネイルを生成できる() {
+        // ffmpeg / AVIF エンコード非対応環境ではスキップ
+        if !ffmpeg_available() {
+            return;
+        }
+        let Some(avif) = make_avif() else {
+            return;
+        };
+        assert!(is_avif(&avif), "生成物が AVIF として判定されること");
+
+        let thumb = resize_to_jpeg(&avif, 300, 80).expect("AVIF サムネイル生成");
+        // JPEG マジックナンバー (SOI マーカー)
+        assert_eq!(&thumb[..2], &[0xFF, 0xD8]);
     }
 }

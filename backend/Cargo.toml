@@ -50,7 +50,7 @@ base64 = "0.22"
 zip = { version = "8", default-features = false, features = ["deflate"] }
 
 # 画像処理 (サムネイル)
-# image: JPEG/PNG/GIF/WebP/BMP デコード (AVIF デコードは avif-native feature で別途対応可)
+# image: JPEG/PNG/GIF/WebP/BMP デコード (AVIF は thumbnail_service が ffmpeg で PNG 化して対応)
 # fast_image_resize: AVX2 SIMD 高速リサイズ (libvips より 35% 速い)
 image = { version = "0.25", default-features = false, features = [
     "jpeg",
