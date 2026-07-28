@@ -89,6 +89,29 @@ describe("NavigationPrompt", () => {
     expect(onConfirm).not.toHaveBeenCalled();
   });
 
+  test("Shift 併用の extraConfirmKeys では onConfirm が呼ばれない", async () => {
+    // Shift+X は「確認なしで次のセットへ」の別ショートカット。
+    // 修飾キー付きを確定として扱うとジャンプと確定の二重遷移になる
+    const onConfirm = vi.fn();
+    render(
+      <NavigationPrompt
+        message="test"
+        onConfirm={onConfirm}
+        onCancel={() => {}}
+        extraConfirmKeys={["x"]}
+      />,
+    );
+    await userEvent.keyboard("{Shift>}x{/Shift}");
+    expect(onConfirm).not.toHaveBeenCalled();
+  });
+
+  test("Ctrl 併用の Enter では onConfirm が呼ばれない", async () => {
+    const onConfirm = vi.fn();
+    render(<NavigationPrompt message="test" onConfirm={onConfirm} onCancel={() => {}} />);
+    await userEvent.keyboard("{Control>}{Enter}{/Control}");
+    expect(onConfirm).not.toHaveBeenCalled();
+  });
+
   test("extraConfirmKeys 指定時にヒントテキストにキーが含まれる", () => {
     render(
       <NavigationPrompt

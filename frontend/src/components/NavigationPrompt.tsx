@@ -44,6 +44,10 @@ export function NavigationPrompt({
   // Escape は CgViewer/MangaViewer の handleEscape チェーンに任せる（二重呼び出し回避）
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
+      // 修飾キー付きは別ショートカット (Shift+X の親ジャンプ等) — 確定/キャンセルとして扱わない
+      if (e.shiftKey || e.ctrlKey || e.altKey || e.metaKey) {
+        return;
+      }
       const key = e.key.toLowerCase();
       if (key === "y" || e.key === "Enter" || extraConfirmKeys?.includes(key)) {
         e.preventDefault();

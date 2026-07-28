@@ -132,8 +132,8 @@ export function CgViewer({
     scrollDown: () => imageAreaRef.current?.scrollBy({ top: 100, behavior: "instant" }),
     goNextSet: setJump.prompt ? undefined : setJump.goNextSet,
     goPrevSet: setJump.prompt ? undefined : setJump.goPrevSet,
-    goNextSetParent: setJump.goNextSetParent,
-    goPrevSetParent: setJump.goPrevSetParent,
+    goNextSetParent: setJump.prompt ? undefined : setJump.goNextSetParent,
+    goPrevSetParent: setJump.prompt ? undefined : setJump.goPrevSetParent,
     toggleHelp: () => setIsHelpOpen((prev) => !prev),
     // タイトル + ページ番号を 3 秒トースト表示（見開き時は "3-4 / 12" 形式）
     showTitle: () => {
