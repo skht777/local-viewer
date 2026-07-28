@@ -105,7 +105,13 @@ pub(crate) fn decode_cursor(
     cursor_str: &str,
     expected_sort: SortOrder,
 ) -> Result<CursorData, AppError> {
-    let cursor_head = &cursor_str[..cursor_str.len().min(24)];
+    // ログ用の先頭断片: 24 バイト以内で最も近い UTF-8 文字境界まで切り出す
+    // (バイト固定スライスはマルチバイト入力で panic するため境界安全に丸める)
+    let mut head_end = cursor_str.len().min(24);
+    while !cursor_str.is_char_boundary(head_end) {
+        head_end -= 1;
+    }
+    let cursor_head = &cursor_str[..head_end];
     let secret = get_secret();
 
     // "." で分割: base64_payload + sig
@@ -254,6 +260,25 @@ mod tests {
     #[test]
     fn 不正なbase64でエラー() {
         let err = decode_cursor("!!!.invalid", SortOrder::NameAsc).unwrap_err();
+        assert!(err.to_string().contains("署名が不正"));
+    }
+
+    #[test]
+    fn マルチバイト文字を含むカーソルでpanicせずエラーを返す() {
+        // 25 バイトで 24 バイト目が「あ」(3 バイト) の内部 → バイト境界スライスだと panic する入力
+        let cursor = "aああああああああ";
+        assert_eq!(cursor.len(), 25);
+        assert!(!cursor.is_char_boundary(24));
+        let err = decode_cursor(cursor, SortOrder::NameAsc).unwrap_err();
+        assert!(err.to_string().contains("不正なカーソルフォーマット"));
+    }
+
+    #[test]
+    fn マルチバイト文字とドットを含むカーソルでpanicせずエラーを返す() {
+        // ドットあり (sig_mismatch 経路) でもログ用 head の切り出しで panic しないこと
+        let cursor = "aああああああああ.0123456789abcdef";
+        assert!(!cursor.is_char_boundary(24));
+        let err = decode_cursor(cursor, SortOrder::NameAsc).unwrap_err();
         assert!(err.to_string().contains("署名が不正"));
     }
 

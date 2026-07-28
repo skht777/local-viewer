@@ -333,6 +333,32 @@ async fn cursorのbase64がクエリパラメータで正しくデコードさ�
 }
 
 #[tokio::test]
+async fn マルチバイト文字のcursorで400を返し後続リクエストも処理できる() {
+    let dir = TempDir::new().unwrap();
+    let root = fs::canonicalize(dir.path()).unwrap();
+    fs::write(root.join("a.jpg"), "1").unwrap();
+
+    let state = test_state(&root, HashMap::new());
+    let node_id = register_node_id(&state, &root);
+
+    // 「あ」(%E3%81%82) x 8 + 先頭 "a" = 25 バイト、24 バイト目が文字境界でない
+    // 従来はログ用 head のバイトスライスで panic → NodeRegistry Mutex が poison していた
+    let encoded_cursor = format!("a{}", "%E3%81%82".repeat(8));
+    let (status, json) = get_json(
+        app(Arc::clone(&state)),
+        &format!("/api/browse/{node_id}?limit=1&sort=name-asc&cursor={encoded_cursor}"),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(json["code"], "INVALID_CURSOR");
+
+    // Mutex が poison していないこと: 後続の正常リクエストが 200 で処理される
+    let (status2, json2) = get_json(app(state), &format!("/api/browse/{node_id}?limit=1")).await;
+    assert_eq!(status2, StatusCode::OK);
+    assert_eq!(json2["entries"].as_array().unwrap().len(), 1);
+}
+
+#[tokio::test]
 async fn limitが0で400エラー() {
     let (_dir, root) = create_test_dir();
     let state = test_state(&root, HashMap::new());
