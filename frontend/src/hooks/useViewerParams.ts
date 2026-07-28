@@ -103,11 +103,17 @@ export function useViewerParams(): UseViewerParamsReturn {
   const buildBrowseSearch = (overrides?: { tab?: string; index?: number }): string =>
     buildBrowseSearchPure(searchParams, overrides);
 
+  // tab は browse スコープの表示状態: setMode / setSort と同じく replace で更新する
+  // - タブ自動切替 (useBrowseTabAutoSwitch) が階層進入直後に発火するため、
+  //   push だと「バック → tab なし URL → 自動切替が再 push」のループで
+  //   ブラウザバックによる前階層への復帰が阻害される
   const setTab = (newTab: ViewerTab) => {
-    setSearchParams((prev) =>
-      updateSearchParams(prev, (next) => {
-        next.set("tab", newTab);
-      }),
+    setSearchParams(
+      (prev) =>
+        updateSearchParams(prev, (next) => {
+          next.set("tab", newTab);
+        }),
+      { replace: true },
     );
   };
 

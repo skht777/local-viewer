@@ -1,5 +1,5 @@
 import { renderHook, act } from "@testing-library/react";
-import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
+import { MemoryRouter, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { useViewerParams } from "../../src/hooks/useViewerParams";
 import { useViewerStore } from "../../src/stores/viewerStore";
 import type { ReactNode } from "react";
@@ -45,6 +45,50 @@ describe("useViewerParams", () => {
       result.current.setTab("videos");
     });
     expect(result.current.params.tab).toBe("videos");
+  });
+
+  // 履歴汚染バグ回帰: タブ自動切替 (useBrowseTabAutoSwitch) が進入直後に setTab を
+  // 発火するため、push だと「バック → tab なし URL → 自動切替が再 push」のループで
+  // 前の階層に戻れなくなる。setMode / setSort と同じく replace で履歴を積まないこと
+  test("setTabは履歴を積まずreplaceで更新しブラウザバックで前の階層に戻れる", () => {
+    let currentPath = "";
+    let currentSearch = "";
+    function Wrapper({ children }: { children: ReactNode }) {
+      return (
+        <MemoryRouter initialEntries={["/browse/parent", "/browse/child"]} initialIndex={1}>
+          <Routes>
+            <Route
+              path="/browse/:nodeId"
+              element={
+                <>
+                  <LocationProbe
+                    onChange={(p, s) => {
+                      currentPath = p;
+                      currentSearch = s;
+                    }}
+                  />
+                  {children}
+                </>
+              }
+            />
+          </Routes>
+        </MemoryRouter>
+      );
+    }
+
+    const { result } = renderHook(() => ({ viewer: useViewerParams(), navigate: useNavigate() }), {
+      wrapper: Wrapper,
+    });
+    act(() => {
+      result.current.viewer.setTab("images");
+    });
+    expect(currentSearch).toContain("tab=images");
+
+    // ブラウザバック相当: setTab が履歴を積んでいなければ前の階層に戻れる
+    act(() => {
+      result.current.navigate(-1);
+    });
+    expect(currentPath).toBe("/browse/parent");
   });
 
   // --- Phase 2: ビューワー開閉ヘルパー ---
