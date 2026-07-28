@@ -330,3 +330,67 @@ fn pending溢れの整合回復で全ディレクトリがdirty化されpending�
         "pending は drain されるべき"
     );
 }
+
+// --- start / stop と is_running の整合 ---
+
+fn build_watcher(mounts: Vec<(String, PathBuf)>, root: &Path) -> super::FileWatcher {
+    use std::sync::Arc;
+
+    use crate::services::dir_index::DirIndex;
+    use crate::services::indexer::Indexer;
+    use crate::services::path_security::PathSecurity;
+    use crate::services::rebuild_guard::RebuildGuard;
+
+    let ps = Arc::new(PathSecurity::new(vec![root.to_path_buf()], false).unwrap());
+    super::FileWatcher::new(
+        Arc::new(Indexer::new(":memory:")),
+        ps,
+        Arc::new(DirIndex::new(":memory:")),
+        mounts,
+        Arc::new(RebuildGuard::new()),
+    )
+}
+
+#[tokio::test]
+async fn startで監視が開始されstopで停止する() {
+    let dir = tempfile::TempDir::new().unwrap();
+    let root = std::fs::canonicalize(dir.path()).unwrap();
+    let fw = build_watcher(vec![("m".to_string(), root.clone())], &root);
+
+    assert!(!fw.is_running(), "起動前は is_running が false");
+    fw.start().unwrap();
+    assert!(fw.is_running(), "起動後は is_running が true");
+    fw.stop();
+    assert!(!fw.is_running(), "停止後は is_running が false");
+}
+
+#[tokio::test]
+async fn watch失敗時はis_runningがfalseのまま() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let dir = tempfile::TempDir::new().unwrap();
+    let root = std::fs::canonicalize(dir.path()).unwrap();
+    let denied = root.join("denied");
+    std::fs::create_dir(&denied).unwrap();
+    std::fs::set_permissions(&denied, std::fs::Permissions::from_mode(0o000)).unwrap();
+    // root 実行等で権限制限が効かない環境ではスキップ
+    if std::fs::read_dir(&denied).is_ok() {
+        std::fs::set_permissions(&denied, std::fs::Permissions::from_mode(0o755)).unwrap();
+        return;
+    }
+
+    let fw = build_watcher(vec![("m".to_string(), denied.clone())], &root);
+    let result = fw.start();
+
+    // TempDir 削除が失敗しないよう後始末
+    std::fs::set_permissions(&denied, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+    assert!(
+        result.is_err(),
+        "読み取り権限のないディレクトリでは start が失敗するはず"
+    );
+    assert!(
+        !fw.is_running(),
+        "start 失敗時に is_running が立っていてはならない (稼働中と誤認され誰も気付けない)"
+    );
+}

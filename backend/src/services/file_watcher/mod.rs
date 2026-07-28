@@ -91,11 +91,14 @@ impl FileWatcher {
     }
 
     /// 監視を開始する (watcher + flush worker を起動)
+    ///
+    /// `is_running` は全マウントの watch 登録と flush worker 起動が成功した後に
+    /// 立てる。途中失敗 (`?` return) 時に「稼働中」と誤認されると、変更検知が
+    /// 死んだまま誰も気付けないため。
     pub(crate) fn start(&self) -> Result<(), FileWatcherError> {
         if self.is_running.load(Ordering::Acquire) {
             return Ok(());
         }
-        self.is_running.store(true, Ordering::Release);
 
         // notify イベントコールバック用の参照
         let pending_for_cb = Arc::clone(&self.pending);
@@ -179,6 +182,7 @@ impl FileWatcher {
             *guard = Some(handle);
         }
 
+        self.is_running.store(true, Ordering::Release);
         Ok(())
     }
 

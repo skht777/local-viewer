@@ -55,6 +55,8 @@ pub(crate) struct HealthResponseWithStats {
     pub registry_populate: RegistryPopulateStats,
     /// 起動時スキャン診断。完了前 / panic / `RwLock` poison 時は `None`
     pub last_scan: Option<ScanDiagnostics>,
+    /// `FileWatcher` の稼働状態。false のままなら変更検知が機能していない
+    pub file_watcher_running: bool,
 }
 
 /// `/api/health` — liveness + populate 統計 + 起動時スキャン診断
@@ -70,10 +72,21 @@ pub(crate) async fn health(State(state): State<Arc<AppState>>) -> Json<HealthRes
         }
     }; // ← ここで read guard を drop
     let last_scan = last_scan_arc.map(|arc| (*arc).clone());
+    // FileWatcher の稼働状態 (slot 未設定 / 起動失敗 / poison はすべて false = 非稼働)
+    let file_watcher_running = state
+        .file_watcher
+        .lock()
+        .map(|guard| {
+            guard
+                .as_ref()
+                .is_some_and(crate::services::file_watcher::FileWatcher::is_running)
+        })
+        .unwrap_or(false);
     Json(HealthResponseWithStats {
         status: "ok".to_string(),
         registry_populate: RegistryPopulateStats::from(state.registry_populate_stats.as_ref()),
         last_scan,
+        file_watcher_running,
     })
 }
 
