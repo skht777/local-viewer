@@ -13,6 +13,7 @@ import { useBrowseInfiniteData } from "../hooks/useBrowseInfiniteData";
 import { useBrowseSortHandlers } from "../hooks/useBrowseSortHandlers";
 import { useBrowseTabAutoSwitch } from "../hooks/useBrowseTabAutoSwitch";
 import { useBrowseTabAvailability } from "../hooks/useBrowseTabAvailability";
+import { useEnsureAllBrowsePages } from "../hooks/useEnsureAllBrowsePages";
 import { useFocusAreaSwitcher } from "../hooks/useFocusAreaSwitcher";
 import { useOpenViewerFromEntry } from "../hooks/useOpenViewerFromEntry";
 import { useViewerImages } from "../hooks/useViewerImages";
@@ -79,6 +80,15 @@ export default function BrowsePage() {
   // 現在のディレクトリのデータ (ページネーション対応 + viewerTransitionId 終了)
   const { data, isLoading, hasNextPage, fetchNextPage, isFetchingNextPage, isError } =
     useBrowseInfiniteData(nodeId, params.sort);
+
+  // ビューワー表示中は FileBrowser (無限スクロール) がアンマウントされるため、
+  // リロード/ディープリンク起動でも兄弟一覧が 100 件で打ち切られないよう全ページ取得
+  useEnsureAllBrowsePages({
+    enabled: isViewerOpen,
+    nodeId,
+    sort: params.sort,
+    hasNextPage,
+  });
 
   // マウントポイント一覧 (ツリー用)
   const { data: mountData } = useQuery(mountListOptions());

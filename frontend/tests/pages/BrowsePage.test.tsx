@@ -368,6 +368,66 @@ describe("BrowsePage", () => {
     expect(screen.queryByText("subfolder")).toBeNull();
   });
 
+  // 100 件打ち切りバグ回帰: ビューワー表示中は FileBrowser (無限スクロール) が
+  // アンマウントされるため、リロード/ディープリンク起動では 2 ページ目以降を
+  // 取得する主体が必要 (useEnsureAllBrowsePages)
+  test("ビューワーURLへのディープリンクで2ページ目以降も取得される", async () => {
+    const page1: BrowseResponse = {
+      current_node_id: "node-big",
+      current_name: "big-dir",
+      parent_node_id: "node-parent",
+      ancestors: [],
+      entries: [
+        {
+          node_id: "img1",
+          name: "a.jpg",
+          kind: "image",
+          size_bytes: 100,
+          mime_type: "image/jpeg",
+          child_count: null,
+          modified_at: null,
+          preview_node_ids: null,
+        },
+      ],
+      next_cursor: "cursor-2",
+      total_count: null,
+    };
+    const page2: BrowseResponse = {
+      ...page1,
+      entries: [
+        {
+          node_id: "img2",
+          name: "b.jpg",
+          kind: "image",
+          size_bytes: 100,
+          mime_type: "image/jpeg",
+          child_count: null,
+          modified_at: null,
+          preview_node_ids: null,
+        },
+      ],
+      next_cursor: null,
+    };
+    const fetchMock = vi.fn((url: string | URL | Request) => {
+      const urlStr = typeof url === "string" ? url : url.toString();
+      if (urlStr.startsWith("/api/browse/")) {
+        return Promise.resolve(Response.json(urlStr.includes("cursor=") ? page2 : page1));
+      }
+      return Promise.resolve(new Response("{}", { status: 404 }));
+    });
+    globalThis.fetch = fetchMock as typeof fetch;
+
+    renderBrowsePage("/browse/node-big?tab=images&index=0");
+
+    // 1 ページ目 (next_cursor あり) の後、cursor 付きで残ページが取得されること
+    await waitFor(() => {
+      const requested = fetchMock.mock.calls.map((c) =>
+        typeof c[0] === "string" ? c[0] : String(c[0]),
+      );
+      expect(requested.some((u) => u.includes("cursor=cursor-2"))).toBe(true);
+    });
+  });
+
   test("すべて空のディレクトリでは filesets タブのまま", async () => {
     const emptyData: BrowseResponse = {
       current_node_id: "node-empty",
