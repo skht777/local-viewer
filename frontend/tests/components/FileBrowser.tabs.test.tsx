@@ -64,6 +64,23 @@ describe("FileBrowser タブ切替", () => {
     expect(screen.queryByText("image.jpg")).not.toBeInTheDocument();
   });
 
+  test("allタブで全kindが表示される", () => {
+    // 検索の「すべて」で画像・動画がフィルタされて消えないこと
+    renderFileBrowser(
+      <FileBrowser
+        entries={mockEntries}
+        isLoading={false}
+        onNavigate={() => {}}
+        tab="all"
+        sort="name-asc"
+      />,
+    );
+    expect(screen.getByText("photos")).toBeInTheDocument();
+    expect(screen.getByText("doc.pdf")).toBeInTheDocument();
+    expect(screen.getByText("image.jpg")).toBeInTheDocument();
+    expect(screen.getByText("movie.mp4")).toBeInTheDocument();
+  });
+
   test("ローディング中にメッセージが表示される", () => {
     renderFileBrowser(
       <FileBrowser

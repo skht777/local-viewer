@@ -9,7 +9,7 @@ import type { ViewerTab } from "./useViewerParams";
 import type { BrowseEntry } from "../types/api";
 
 interface UseFileBrowserActionsParams {
-  indexMap: Map<string, number>;
+  imageIndexMap: Map<string, number>;
   onNavigate: (nodeId: string, options?: { tab?: ViewerTab }) => void;
   onImageClick?: (imageIndex: number) => void;
   onPdfClick?: (nodeId: string) => void;
@@ -27,7 +27,7 @@ interface UseFileBrowserActionsResult {
 }
 
 export function useFileBrowserActions({
-  indexMap,
+  imageIndexMap,
   onNavigate,
   onImageClick,
   onPdfClick,
@@ -43,13 +43,13 @@ export function useFileBrowserActions({
       } else if (entry.kind === "pdf") {
         onPdfClick?.(entry.node_id);
       } else if (entry.kind === "image" && onImageClick) {
-        const imageIndex = indexMap.get(entry.node_id) ?? -1;
+        const imageIndex = imageIndexMap.get(entry.node_id) ?? -1;
         if (imageIndex >= 0) {
           onImageClick(imageIndex);
         }
       }
     },
-    [indexMap, onNavigate, onPdfClick, onImageClick],
+    [imageIndexMap, onNavigate, onPdfClick, onImageClick],
   );
 
   // オーバーレイ「▶ 開く」/ Space
@@ -58,7 +58,7 @@ export function useFileBrowserActions({
       if (entry.kind === "directory" || entry.kind === "archive") {
         onOpenViewer?.(entry.node_id);
       } else if (entry.kind === "image" && onImageClick) {
-        const imageIndex = indexMap.get(entry.node_id) ?? -1;
+        const imageIndex = imageIndexMap.get(entry.node_id) ?? -1;
         if (imageIndex >= 0) {
           onImageClick(imageIndex);
         }
@@ -66,7 +66,7 @@ export function useFileBrowserActions({
         onPdfClick?.(entry.node_id);
       }
     },
-    [indexMap, onOpenViewer, onImageClick, onPdfClick],
+    [imageIndexMap, onOpenViewer, onImageClick, onPdfClick],
   );
 
   // オーバーレイ「→ 進入」: directory/archive のナビゲーション

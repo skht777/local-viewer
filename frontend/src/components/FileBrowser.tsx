@@ -30,7 +30,8 @@ interface FileBrowserProps {
   onToggleMode?: () => void;
   onSortName?: () => void;
   onSortDate?: () => void;
-  tab: ViewerTab;
+  // "all" は検索の「すべて」用: フィルタせず全 kind を表示する
+  tab: ViewerTab | "all";
   sort: SortOrder;
   selectedNodeId?: string;
   keyboardEnabled?: boolean;
@@ -42,8 +43,15 @@ interface FileBrowserProps {
 
 // タブに応じて表示する kind をフィルタ
 // filesets: name ソート時は archive/PDF を先、directory を後にサブソート
-function filterByTab(entries: BrowseEntry[], tab: ViewerTab, sort: SortOrder): BrowseEntry[] {
+function filterByTab(
+  entries: BrowseEntry[],
+  tab: ViewerTab | "all",
+  sort: SortOrder,
+): BrowseEntry[] {
   switch (tab) {
+    case "all":
+      // 検索の「すべて」: フィルタせず与えられた順序を維持
+      return entries;
     case "filesets": {
       const filesets = entries.filter(
         (e) => e.kind === "directory" || e.kind === "archive" || e.kind === "pdf",
@@ -117,6 +125,21 @@ export function FileBrowser({
     return map;
   }, [filtered]);
 
+  // 画像のみで数えた index マップ
+  // onImageClick の契約は「画像配列内の位置」— all タブでは他 kind が混在するため
+  // 全体 index (indexMap) を渡すと呼び出し側が別の画像を開いてしまう
+  const imageIndexMap = useMemo(() => {
+    const map = new Map<string, number>();
+    let imageIdx = 0;
+    for (const e of filtered) {
+      if (e.kind === "image") {
+        map.set(e.node_id, imageIdx);
+        imageIdx += 1;
+      }
+    }
+    return map;
+  }, [filtered]);
+
   const thumbnailNodeIds = useMemo(() => buildThumbnailNodeIds(filtered), [filtered]);
 
   // 無限スクロール: センチネル要素の IntersectionObserver
@@ -150,7 +173,7 @@ export function FileBrowser({
   } = useFileBrowserSelection({ filtered, selectedNodeId });
 
   const { handleAction, getOpenHandler, getEnterHandler, handleOpen } = useFileBrowserActions({
-    indexMap,
+    imageIndexMap,
     onNavigate,
     onImageClick,
     onPdfClick,

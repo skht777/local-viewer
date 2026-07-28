@@ -7,6 +7,8 @@ import type { BrowseEntry } from "../../src/types/api";
 import {
   installMockIntersectionObserver,
   makeArchiveEntry,
+  makeDirectoryEntry,
+  makeImageEntry,
   mockEntries,
   renderFileBrowser,
 } from "./__helpers__/fileBrowserTestHelpers";
@@ -60,6 +62,30 @@ describe("FileBrowser 選択・ダブルクリック・オーバーレイ", () =
     );
     await userEvent.dblClick(screen.getByTestId("file-card-file1"));
     expect(onImageClick).toHaveBeenCalledWith(0);
+  });
+
+  test("allタブの画像ダブルクリックで画像のみ配列のindexが渡る", async () => {
+    // onImageClick の index 契約は「画像のみ配列の位置」。
+    // all タブでは他 kind が混在するため、全体位置 (この例では 2) を渡すと
+    // 呼び出し側 (検索結果の filteredImages) が別の画像を開いてしまう
+    const entries: BrowseEntry[] = [
+      makeDirectoryEntry({ node_id: "d1", name: "dir1" }),
+      makeImageEntry({ node_id: "i1", name: "a.jpg" }),
+      makeImageEntry({ node_id: "i2", name: "b.jpg" }),
+    ];
+    const onImageClick = vi.fn();
+    renderFileBrowser(
+      <FileBrowser
+        entries={entries}
+        isLoading={false}
+        onNavigate={() => {}}
+        onImageClick={onImageClick}
+        tab="all"
+        sort="name-asc"
+      />,
+    );
+    await userEvent.dblClick(screen.getByTestId("file-card-i2"));
+    expect(onImageClick).toHaveBeenCalledWith(1);
   });
 
   test("選択中にEscapeで選択解除される", async () => {

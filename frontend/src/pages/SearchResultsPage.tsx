@@ -220,7 +220,15 @@ export default function SearchResultsPage() {
           onImageClick={handleImageClick}
           onPdfClick={handlePdfClick}
           onOpenViewer={openViewerFromEntry}
-          tab={kind === "image" ? "images" : kind === "video" ? "videos" : "filesets"}
+          tab={
+            kind === "image"
+              ? "images"
+              : kind === "video"
+                ? "videos"
+                : kind === null
+                  ? "all" // 「すべて」: 画像・動画を含む全ヒットを表示
+                  : "filesets"
+          }
           sort="name-asc"
           hasMore={hasNextPage}
           isLoadingMore={isFetchingNextPage}

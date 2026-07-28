@@ -21,14 +21,14 @@ function makeEntry(kind: BrowseEntry["kind"], id: string = kind): BrowseEntry {
   };
 }
 
-function setup(opts: { indexMap?: Map<string, number> } = {}) {
-  const indexMap = opts.indexMap ?? new Map<string, number>();
+function setup(opts: { imageIndexMap?: Map<string, number> } = {}) {
+  const imageIndexMap = opts.imageIndexMap ?? new Map<string, number>();
   const onNavigate = vi.fn();
   const onImageClick = vi.fn();
   const onPdfClick = vi.fn();
   const onOpenViewer = vi.fn();
   const { result } = renderHook(() =>
-    useFileBrowserActions({ indexMap, onNavigate, onImageClick, onPdfClick, onOpenViewer }),
+    useFileBrowserActions({ imageIndexMap, onNavigate, onImageClick, onPdfClick, onOpenViewer }),
   );
   return { result, onNavigate, onImageClick, onPdfClick, onOpenViewer };
 }
@@ -53,14 +53,14 @@ describe("useFileBrowserActions", () => {
       expect(onPdfClick).toHaveBeenCalledWith("p1");
     });
 
-    test("image は indexMap で解決した index で onImageClick を呼ぶ", () => {
-      const indexMap = new Map([["i1", 5]]);
-      const { result, onImageClick } = setup({ indexMap });
+    test("image は imageIndexMap で解決した index で onImageClick を呼ぶ", () => {
+      const imageIndexMap = new Map([["i1", 5]]);
+      const { result, onImageClick } = setup({ imageIndexMap });
       result.current.handleAction(makeEntry("image", "i1"));
       expect(onImageClick).toHaveBeenCalledWith(5);
     });
 
-    test("image で indexMap に未登録のときは onImageClick を呼ばない", () => {
+    test("image で imageIndexMap に未登録のときは onImageClick を呼ばない", () => {
       const { result, onImageClick } = setup();
       result.current.handleAction(makeEntry("image", "missing"));
       expect(onImageClick).not.toHaveBeenCalled();
@@ -90,8 +90,8 @@ describe("useFileBrowserActions", () => {
     });
 
     test("image は onImageClick(index) を呼ぶ", () => {
-      const indexMap = new Map([["i1", 2]]);
-      const { result, onImageClick } = setup({ indexMap });
+      const imageIndexMap = new Map([["i1", 2]]);
+      const { result, onImageClick } = setup({ imageIndexMap });
       result.current.handleOpen(makeEntry("image", "i1"));
       expect(onImageClick).toHaveBeenCalledWith(2);
     });
