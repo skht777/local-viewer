@@ -93,8 +93,15 @@ export default function BrowsePage() {
   // マウントポイント一覧 (ツリー用)
   const { data: mountData } = useQuery(mountListOptions());
 
-  // タブ自動切替
-  useBrowseTabAutoSwitch({ data, isLoading, currentTab: params.tab, setTab });
+  // タブ自動切替（ビューワー表示中・全ページ未確定の間は切替を保留）
+  useBrowseTabAutoSwitch({
+    data,
+    isLoading,
+    hasNextPage,
+    isViewerOpen: isViewerOpen || isPdfViewerOpen,
+    currentTab: params.tab,
+    setTab,
+  });
 
   // MountEntry → BrowseEntry に変換してツリーに渡す
   const rootEntries = useMemo(
@@ -127,8 +134,8 @@ export default function BrowsePage() {
     [data?.entries],
   );
 
-  // タブ可用性（コンテンツのないタブを disabled）
-  const disabledTabs = useBrowseTabAvailability({ data, images, videos });
+  // タブ可用性（コンテンツのないタブを disabled、全ページ確定まで判定保留）
+  const disabledTabs = useBrowseTabAvailability({ data, images, videos, hasNextPage });
 
   // ソート/モードトグル
   const { handleSortName, handleSortDate, handleToggleMode } = useBrowseSortHandlers({

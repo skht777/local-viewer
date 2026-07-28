@@ -2,6 +2,8 @@
 // - 優先順位: filesets > images > videos
 // - 現在タブにコンテンツがあればそのまま
 // - すべて空なら現在タブに留まる
+// - ビューワー表示中は切替しない（tab 変更が isViewerOpen を false 化しビューワーを閉じるため）
+// - 全ページ確定前 (hasNextPage) は切替しない（未取得ページのコンテンツを空と誤検知するため）
 
 import { useEffect } from "react";
 import type { ViewerTab } from "./useViewerParams";
@@ -10,6 +12,8 @@ import type { BrowseResponse } from "../types/api";
 interface UseBrowseTabAutoSwitchParams {
   data: BrowseResponse | undefined;
   isLoading: boolean;
+  hasNextPage: boolean;
+  isViewerOpen: boolean;
   currentTab: ViewerTab;
   setTab: (tab: ViewerTab) => void;
 }
@@ -17,11 +21,13 @@ interface UseBrowseTabAutoSwitchParams {
 export function useBrowseTabAutoSwitch({
   data,
   isLoading,
+  hasNextPage,
+  isViewerOpen,
   currentTab,
   setTab,
 }: UseBrowseTabAutoSwitchParams): void {
   useEffect(() => {
-    if (!data || isLoading) {
+    if (!data || isLoading || hasNextPage || isViewerOpen) {
       return;
     }
 
@@ -50,5 +56,5 @@ export function useBrowseTabAutoSwitch({
     } else if (hasVideos) {
       setTab("videos");
     }
-  }, [data, isLoading, currentTab, setTab]);
+  }, [data, isLoading, hasNextPage, isViewerOpen, currentTab, setTab]);
 }

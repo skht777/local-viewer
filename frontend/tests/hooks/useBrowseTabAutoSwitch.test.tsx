@@ -37,12 +37,22 @@ function makeData(kinds: BrowseEntry["kind"][]): BrowseResponse {
 interface Run {
   data?: BrowseResponse;
   isLoading?: boolean;
+  hasNextPage?: boolean;
+  isViewerOpen?: boolean;
   currentTab: ViewerTab;
 }
 
-function run({ data, isLoading = false, currentTab }: Run) {
+function run({
+  data,
+  isLoading = false,
+  hasNextPage = false,
+  isViewerOpen = false,
+  currentTab,
+}: Run) {
   const setTab = vi.fn();
-  renderHook(() => useBrowseTabAutoSwitch({ data, isLoading, currentTab, setTab }));
+  renderHook(() =>
+    useBrowseTabAutoSwitch({ data, isLoading, hasNextPage, isViewerOpen, currentTab, setTab }),
+  );
   return setTab;
 }
 
@@ -106,5 +116,25 @@ describe("useBrowseTabAutoSwitch", () => {
     expect(archiveTab).toHaveBeenCalledWith("filesets");
     const pdfTab = run({ data: makeData(["pdf"]), currentTab: "videos" });
     expect(pdfTab).toHaveBeenCalledWith("filesets");
+  });
+
+  test("hasNextPage が true の間は空タブでも切替しない（未取得ページに画像があり得る）", () => {
+    // サブディレクトリが 100 件超あると 1 ページ目に画像が入らないため、
+    // 全ページ確定前の「空」判定は誤検知になる
+    const setTab = run({
+      data: makeData(["directory"]),
+      hasNextPage: true,
+      currentTab: "images",
+    });
+    expect(setTab).not.toHaveBeenCalled();
+  });
+
+  test("ビューワー表示中は空タブでも切替しない（切替はビューワーを閉じてしまう）", () => {
+    const setTab = run({
+      data: makeData(["directory"]),
+      isViewerOpen: true,
+      currentTab: "images",
+    });
+    expect(setTab).not.toHaveBeenCalled();
   });
 });

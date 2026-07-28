@@ -36,7 +36,7 @@ function makeData(entries: BrowseEntry[]): BrowseResponse {
 describe("useBrowseTabAvailability", () => {
   test("data が undefined のときは空 set を返す", () => {
     const { result } = renderHook(() =>
-      useBrowseTabAvailability({ data: undefined, images: [], videos: [] }),
+      useBrowseTabAvailability({ data: undefined, images: [], videos: [], hasNextPage: false }),
     );
     expect(result.current.size).toBe(0);
   });
@@ -48,6 +48,7 @@ describe("useBrowseTabAvailability", () => {
         data,
         images: [makeEntry("image", "img")],
         videos: [makeEntry("video", "vid")],
+        hasNextPage: false,
       }),
     );
     expect(result.current.size).toBe(0);
@@ -60,6 +61,7 @@ describe("useBrowseTabAvailability", () => {
         data,
         images: [makeEntry("image", "img")],
         videos: [makeEntry("video", "vid")],
+        hasNextPage: false,
       }),
     );
     expect(result.current.has("filesets")).toBe(true);
@@ -74,6 +76,7 @@ describe("useBrowseTabAvailability", () => {
         data,
         images: [],
         videos: [makeEntry("video", "vid")],
+        hasNextPage: false,
       }),
     );
     expect(result.current.has("images")).toBe(true);
@@ -87,6 +90,7 @@ describe("useBrowseTabAvailability", () => {
         data,
         images: [makeEntry("image", "img")],
         videos: [],
+        hasNextPage: false,
       }),
     );
     expect(result.current.has("videos")).toBe(true);
@@ -94,7 +98,9 @@ describe("useBrowseTabAvailability", () => {
 
   test("すべて空なら filesets だけは残す（disabled が 3 → filesets を delete）", () => {
     const data = makeData([]);
-    const { result } = renderHook(() => useBrowseTabAvailability({ data, images: [], videos: [] }));
+    const { result } = renderHook(() =>
+      useBrowseTabAvailability({ data, images: [], videos: [], hasNextPage: false }),
+    );
     // filesets は残す
     expect(result.current.has("filesets")).toBe(false);
     // images / videos は disabled
@@ -104,7 +110,9 @@ describe("useBrowseTabAvailability", () => {
 
   test("archive のみのときは filesets が有効、images/videos は disabled", () => {
     const data = makeData([makeEntry("archive")]);
-    const { result } = renderHook(() => useBrowseTabAvailability({ data, images: [], videos: [] }));
+    const { result } = renderHook(() =>
+      useBrowseTabAvailability({ data, images: [], videos: [], hasNextPage: false }),
+    );
     expect(result.current.has("filesets")).toBe(false);
     expect(result.current.has("images")).toBe(true);
     expect(result.current.has("videos")).toBe(true);
@@ -112,7 +120,19 @@ describe("useBrowseTabAvailability", () => {
 
   test("pdf も filesets 候補として扱われる", () => {
     const data = makeData([makeEntry("pdf")]);
-    const { result } = renderHook(() => useBrowseTabAvailability({ data, images: [], videos: [] }));
+    const { result } = renderHook(() =>
+      useBrowseTabAvailability({ data, images: [], videos: [], hasNextPage: false }),
+    );
     expect(result.current.has("filesets")).toBe(false);
+  });
+
+  test("hasNextPage が true の間はどのタブも disabled にしない", () => {
+    // 1 ページ目にディレクトリしか無くても、未取得ページに画像/動画があり得るため
+    // 全ページ確定までタブ操作を奪わない
+    const data = makeData([makeEntry("directory")]);
+    const { result } = renderHook(() =>
+      useBrowseTabAvailability({ data, images: [], videos: [], hasNextPage: true }),
+    );
+    expect(result.current.size).toBe(0);
   });
 });
