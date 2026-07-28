@@ -96,4 +96,22 @@ describe("usePdfRenderCache", () => {
     expect(result.current.get("1:1.0")).toBeUndefined();
     expect(bitmap.close).toHaveBeenCalledOnce();
   });
+
+  test("unmount時にキャッシュ内の全ImageBitmapがcloseされる", () => {
+    // ビューワーを閉じる/別 PDF への切替 (remount) のたびに最大 256MB の
+    // デコード済みビットマップが GC 任せで残留しないこと
+    const { result, unmount } = renderHook(() => usePdfRenderCache());
+    const b1 = createMockBitmap();
+    const b2 = createMockBitmap();
+
+    act(() => {
+      result.current.put("1:1.0", b1);
+      result.current.put("2:1.0", b2);
+    });
+
+    unmount();
+
+    expect(b1.close).toHaveBeenCalled();
+    expect(b2.close).toHaveBeenCalled();
+  });
 });

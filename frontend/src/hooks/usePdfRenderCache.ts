@@ -3,9 +3,10 @@
 // - 値: ImageBitmap
 // - 概算バイト数 (width * height * 4) で上限管理 (256MB)
 // - evict 時に bitmap.close() でメモリ解放
-// - invalidate() で全破棄 (fitMode 変更時等)
+// - invalidate() で全破棄
+// - unmount 時にも全破棄 (GC 任せだと最大 256MB のビットマップが残留する)
 
-import { useCallback, useRef } from "react";
+import { useCallback, useEffect, useRef } from "react";
 
 // 256MB
 const DEFAULT_MAX_BYTES = 256 * 1024 * 1024;
@@ -96,6 +97,13 @@ export function usePdfRenderCache(maxBytes = DEFAULT_MAX_BYTES): PdfRenderCache 
     entriesRef.current.clear();
     totalBytesRef.current = 0;
   }, []);
+
+  // ビューワーを閉じる / 別 PDF への remount 時にビットマップを即時解放する
+  useEffect(() => {
+    return () => {
+      invalidate();
+    };
+  }, [invalidate]);
 
   return { get, put, invalidate };
 }
