@@ -54,8 +54,14 @@ interface ViewerState {
   // セットジャンプ中のトランジション ID（永続化しない）
   // 0: トランジションなし、>0: トランジション中
   viewerTransitionId: number;
-  startViewerTransition: () => number;
+  // トランジションの遷移先 browse nodeId（永続化しない）
+  // 遷移元の data は常に到着済みのため、「遷移先の data 到着」を判定して
+  // 解除するために遷移先を記録する。null はトランジションなし
+  viewerTransitionTarget: string | null;
+  startViewerTransition: (targetNodeId: string) => number;
   endViewerTransition: (id: number) => void;
+  // エラー・フォールバック経路用の無条件リセット（遷移先に着地しない場合の固着防止）
+  cancelViewerTransition: () => void;
 
   // セット間ジャンプの範囲リスト（永続化しない）
   // - null: 既存 FS sibling 経路（マウントルートまで再帰）
@@ -86,13 +92,15 @@ export const useViewerStore = create<ViewerState>()(
           return { spreadMode: SPREAD_CYCLE[(idx + 1) % SPREAD_CYCLE.length] };
         }),
 
+      cancelViewerTransition: () => set({ viewerTransitionId: 0, viewerTransitionTarget: null }),
+
       endViewerTransition: (id) =>
         set((state) => {
           // stale な遷移完了は無視
           if (state.viewerTransitionId !== id) {
             return state;
           }
-          return { viewerTransitionId: 0 };
+          return { viewerTransitionId: 0, viewerTransitionTarget: null };
         }),
 
       expandedNodeIds: new Set<string>(),
@@ -143,11 +151,11 @@ export const useViewerStore = create<ViewerState>()(
 
       spreadMode: "single",
 
-      startViewerTransition: () => {
+      startViewerTransition: (targetNodeId) => {
         let newId = 0;
         set((state) => {
           newId = state.viewerTransitionId + 1;
-          return { viewerTransitionId: newId };
+          return { viewerTransitionId: newId, viewerTransitionTarget: targetNodeId };
         });
         return newId;
       },
@@ -172,6 +180,8 @@ export const useViewerStore = create<ViewerState>()(
       viewerOrigin: null,
 
       viewerTransitionId: 0,
+
+      viewerTransitionTarget: null,
 
       zoomIn: () => set((state) => ({ zoomLevel: Math.min(300, state.zoomLevel + 25) })),
 

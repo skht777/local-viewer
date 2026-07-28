@@ -96,12 +96,12 @@ describe("useBrowseInfiniteData", () => {
     expect(result.current.hasNextPage).toBe(false);
   });
 
-  test("data 到着 + viewerTransitionId>0 で endViewerTransition が呼ばれる", async () => {
+  test("遷移先 nodeId の data 到着 + viewerTransitionId>0 で endViewerTransition が呼ばれる", async () => {
     const page = makeResponse({ entries: [makeEntry("a")] });
     const client = createSeededClient("n", "name-asc", [page]);
 
-    // transition を開始してから render
-    const transitionId = useViewerStore.getState().startViewerTransition();
+    // 遷移先 "n" への transition を開始してから render
+    const transitionId = useViewerStore.getState().startViewerTransition("n");
     expect(useViewerStore.getState().viewerTransitionId).toBe(transitionId);
 
     renderHook(() => useBrowseInfiniteData("n", "name-asc"), {
@@ -110,6 +110,38 @@ describe("useBrowseInfiniteData", () => {
     await waitFor(() => {
       expect(useViewerStore.getState().viewerTransitionId).toBe(0);
     });
+  });
+
+  test("遷移先と異なる nodeId の data では endViewerTransition が呼ばれない", async () => {
+    // セットジャンプ開始直後は「遷移元」の data が既に到着済みのため、
+    // nodeId 判定が無いと transition が即解除され連打ガードが無効化される
+    const page = makeResponse({ entries: [makeEntry("a")] });
+    const client = createSeededClient("n", "name-asc", [page]);
+
+    const transitionId = useViewerStore.getState().startViewerTransition("jump-target");
+
+    renderHook(() => useBrowseInfiniteData("n", "name-asc"), {
+      wrapper: createWrapper(client),
+    });
+    // 遷移元 "n" の data 到着では解除されない
+    await new Promise((r) => setTimeout(r, 50));
+    expect(useViewerStore.getState().viewerTransitionId).toBe(transitionId);
+  });
+
+  test("遷移先の取得エラーでもトランジションが解除される（固まらない）", async () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("network down")));
+    try {
+      useViewerStore.getState().startViewerTransition("n");
+      renderHook(() => useBrowseInfiniteData("n", "name-asc"), {
+        wrapper: createWrapper(client),
+      });
+      await waitFor(() => {
+        expect(useViewerStore.getState().viewerTransitionId).toBe(0);
+      });
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   test("transition なし（id=0）のとき endViewerTransition は呼ばれない", () => {

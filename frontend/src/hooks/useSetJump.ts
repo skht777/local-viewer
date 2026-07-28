@@ -86,6 +86,7 @@ export function useSetJump({
   const queryClient = useQueryClient();
   const [prompt, setPrompt] = useState<Prompt | null>(null);
   const startViewerTransition = useViewerStore((s) => s.startViewerTransition);
+  const cancelViewerTransition = useViewerStore((s) => s.cancelViewerTransition);
   const viewerTransitionId = useViewerStore((s) => s.viewerTransitionId);
 
   const dismissPrompt = useCallback(() => setPrompt(null), []);
@@ -108,7 +109,8 @@ export function useSetJump({
   // PDF 用: 1 ページだけプリフェッチして navigate (replace で履歴汚染回避)
   const prefetchFirstPageAndNavigate = useCallback(
     async (nodeId: string, search: string) => {
-      startViewerTransition();
+      // 遷移先 nodeId を記録し、遷移先の data 到着まで transition を維持する
+      startViewerTransition(nodeId);
       await queryClient.prefetchInfiniteQuery(browseInfiniteOptions(nodeId, sort));
       navigate(`/browse/${nodeId}${search}`, { replace: true });
     },
@@ -118,7 +120,7 @@ export function useSetJump({
   // image / archive 用: 全ページをプリフェッチして navigate (replace、100 件超対応)
   const prefetchAllAndNavigate = useCallback(
     async (nodeId: string, search: string) => {
-      startViewerTransition();
+      startViewerTransition(nodeId);
       await fetchAllBrowsePages(queryClient, nodeId, sort);
       navigate(`/browse/${nodeId}${search}`, { replace: true });
     },
@@ -157,7 +159,7 @@ export function useSetJump({
         } else if (resolved.entry.kind === "image") {
           // 画像: 親ディレクトリの全ページをプリフェッチしてから navigate
           // 100 件超の兄弟画像が viewer に渡るよう保証する
-          startViewerTransition();
+          startViewerTransition(resolved.parentNodeId);
           await fetchAllBrowsePages(queryClient, resolved.parentNodeId, sort);
           navigate(
             `/browse/${resolved.parentNodeId}${buildSearch({ tab: "images", index: "0" })}`,
@@ -172,6 +174,8 @@ export function useSetJump({
         }
       } catch {
         // エラー時も index なしで遷移 → ブラウザーモードでコンテンツを確認
+        // 開始済み transition は遷移先に着地しないため固着防止でリセット
+        cancelViewerTransition();
         navigate(`/browse/${target.node_id}${buildSearch({ tab: "images" })}`, { replace: true });
       }
     },
@@ -183,6 +187,7 @@ export function useSetJump({
       sort,
       queryClient,
       startViewerTransition,
+      cancelViewerTransition,
     ],
   );
 

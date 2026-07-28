@@ -224,29 +224,44 @@ describe("viewerStore", () => {
   });
 
   test("startViewerTransition で ID がインクリメントされ返値と一致する", () => {
-    const id = useViewerStore.getState().startViewerTransition();
+    const id = useViewerStore.getState().startViewerTransition("target-node");
     expect(id).toBeGreaterThan(0);
     expect(useViewerStore.getState().viewerTransitionId).toBe(id);
   });
 
-  test("endViewerTransition で ID 一致時のみ 0 にリセットされる", () => {
-    const id = useViewerStore.getState().startViewerTransition();
+  test("startViewerTransition で遷移先 nodeId が記録される", () => {
+    useViewerStore.getState().startViewerTransition("target-node");
+    expect(useViewerStore.getState().viewerTransitionTarget).toBe("target-node");
+  });
+
+  test("endViewerTransition で ID 一致時のみ 0 にリセットされ target もクリアされる", () => {
+    const id = useViewerStore.getState().startViewerTransition("target-node");
     useViewerStore.getState().endViewerTransition(id);
     expect(useViewerStore.getState().viewerTransitionId).toBe(0);
+    expect(useViewerStore.getState().viewerTransitionTarget).toBeNull();
   });
 
   test("endViewerTransition で stale な ID は無視される", () => {
-    const id = useViewerStore.getState().startViewerTransition();
-    const newerId = useViewerStore.getState().startViewerTransition();
+    const id = useViewerStore.getState().startViewerTransition("t1");
+    const newerId = useViewerStore.getState().startViewerTransition("t2");
     // 古い id を渡しても現在のトランジションはクリアされない
     useViewerStore.getState().endViewerTransition(id);
     expect(useViewerStore.getState().viewerTransitionId).toBe(newerId);
+    expect(useViewerStore.getState().viewerTransitionTarget).toBe("t2");
+  });
+
+  test("cancelViewerTransition で無条件にリセットされる", () => {
+    useViewerStore.getState().startViewerTransition("target-node");
+    useViewerStore.getState().cancelViewerTransition();
+    expect(useViewerStore.getState().viewerTransitionId).toBe(0);
+    expect(useViewerStore.getState().viewerTransitionTarget).toBeNull();
   });
 
   test("viewerTransitionId は localStorage に永続化されない", () => {
-    useViewerStore.getState().startViewerTransition();
+    useViewerStore.getState().startViewerTransition("target-node");
     const stored = JSON.parse(localStorage.getItem("viewer-store") ?? "{}");
     expect(stored.state?.viewerTransitionId).toBeUndefined();
+    expect(stored.state?.viewerTransitionTarget).toBeUndefined();
   });
 
   // --- viewerJumpList (persist 除外) ---

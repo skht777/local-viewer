@@ -47,6 +47,7 @@ export function useOpenViewerFromEntry({
   const setViewerOrigin = useViewerStore((s) => s.setViewerOrigin);
   const setViewerJumpList = useViewerStore((s) => s.setViewerJumpList);
   const startViewerTransition = useViewerStore((s) => s.startViewerTransition);
+  const cancelViewerTransition = useViewerStore((s) => s.cancelViewerTransition);
 
   return useCallback(
     async (entryNodeId: string) => {
@@ -73,7 +74,11 @@ export function useOpenViewerFromEntry({
           setViewerOrigin(origin);
         }
         // トランジション開始（ブラウズ画面の不要レンダリング抑制）
-        startViewerTransition();
+        // 遷移先の browse nodeId を記録し、遷移先 data 到着時のみ解除させる
+        // (pdf/image は親ディレクトリへ、archive はアーカイブ自身へ遷移する)
+        const targetBrowseNodeId =
+          target.entry.kind === "archive" ? target.entry.node_id : target.parentNodeId;
+        startViewerTransition(targetBrowseNodeId);
 
         if (target.entry.kind === "pdf") {
           // PDF: プリフェッチ → 親ディレクトリで PDF ビューワーを開く
@@ -102,6 +107,8 @@ export function useOpenViewerFromEntry({
         }
       } catch {
         // エラー時は進入にフォールバック
+        // 開始済み transition は遷移先に着地しないため固着防止でリセット
+        cancelViewerTransition();
         navigate(`/browse/${entryNodeId}${buildBrowseSearch()}`);
       }
     },
@@ -115,6 +122,7 @@ export function useOpenViewerFromEntry({
       setViewerOrigin,
       setViewerJumpList,
       startViewerTransition,
+      cancelViewerTransition,
     ],
   );
 }
