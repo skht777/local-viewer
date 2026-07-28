@@ -145,6 +145,12 @@ fn try_sibling_from_index(
     sort: SortOrder,
 ) -> Option<SiblingResponse> {
     let parent_key = reg.compute_parent_path_key(parent_path)?;
+
+    // FileWatcher が dirty 化した親は fallback で自己修復させる (browse fast_path と同じガード)
+    if dir_index.is_dir_dirty(&parent_key) {
+        return None;
+    }
+
     let root = reg.path_security().find_root_for(parent_path)?;
 
     // current node_id からファイル名と is_dir を取得
@@ -186,6 +192,12 @@ fn try_siblings_from_index(
     sort: SortOrder,
 ) -> Option<SiblingsResponse> {
     let parent_key = reg.compute_parent_path_key(parent_path)?;
+
+    // FileWatcher が dirty 化した親は fallback で自己修復させる (browse fast_path と同じガード)
+    if dir_index.is_dir_dirty(&parent_key) {
+        return None;
+    }
+
     let root = reg.path_security().find_root_for(parent_path)?;
 
     let current_path = reg.resolve(current_node_id).ok()?;

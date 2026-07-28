@@ -195,6 +195,12 @@ fn try_first_viewable_from_index(
     current_id: &str,
 ) -> Option<FirstViewableResponse> {
     let parent_key = reg.compute_parent_path_key(path)?;
+
+    // FileWatcher が dirty 化した親は fallback で自己修復させる (browse fast_path と同じガード)
+    if dir_index.is_dir_dirty(&parent_key) {
+        return None;
+    }
+
     let root = reg.path_security().find_root_for(path)?;
 
     for kind in ["archive", "pdf", "image"] {

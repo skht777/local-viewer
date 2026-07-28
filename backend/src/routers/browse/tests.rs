@@ -1529,3 +1529,111 @@ async fn siblingsで索引がcurrentを知らないときfsフォールバック
     assert_eq!(json["prev"]["name"], "set_a");
     assert_eq!(json["next"]["name"], "set_c");
 }
+
+// --- dirty な親の sibling / first-viewable 高速パスガード ---
+
+#[tokio::test]
+async fn siblingでdirtyな親はfsフォールバックで新規セットを見逃さない() {
+    // DirIndex は [set_a, set_c] を知っているが FS には set_b が追加済み (親 dirty)。
+    // browse fast_path と同じ dirty ガードが無いと next=set_c が返り set_b がスキップされる
+    let dir = TempDir::new().unwrap();
+    let root = fs::canonicalize(dir.path()).unwrap();
+    fs::create_dir_all(root.join("set_a")).unwrap();
+    fs::create_dir_all(root.join("set_b")).unwrap();
+    fs::create_dir_all(root.join("set_c")).unwrap();
+
+    let mount_id = "aaaaaaaaaaaaaaaa".to_string();
+    let (state, _dir_index_db_path) = test_state_persistent_dir_index(&root, HashMap::new());
+    {
+        #[allow(clippy::expect_used, reason = "テストコード")]
+        let mut reg = state.node_registry.lock().expect("lock");
+        let mut map = HashMap::new();
+        map.insert(mount_id.clone(), root.clone());
+        reg.set_mount_id_map(map);
+    }
+    state
+        .dir_index
+        .ingest_walk_entry(&crate::services::indexer::WalkCallbackArgs {
+            walk_entry_path: root.to_string_lossy().into_owned(),
+            root_dir: root.to_string_lossy().into_owned(),
+            mount_id: mount_id.clone(),
+            dir_mtime_ns: 1,
+            subdirs: vec![("set_a".to_string(), 1), ("set_c".to_string(), 3)],
+            files: vec![],
+            is_complete: true,
+        })
+        .unwrap();
+    state.dir_index.mark_ready();
+    state.dir_index.mark_dir_dirty(&mount_id);
+
+    let root_id = register_node_id(&state, &root);
+    let set_a_id = register_node_id(&state, &root.join("set_a"));
+
+    let (status, json) = get_json(
+        app(Arc::clone(&state)),
+        &format!("/api/browse/{root_id}/sibling?current={set_a_id}&direction=next"),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        json["entry"]["name"], "set_b",
+        "dirty な親では FS フォールバックで新規セットを返すべき"
+    );
+
+    let (status2, json2) = get_json(
+        app(state),
+        &format!("/api/browse/{root_id}/siblings?current={set_a_id}"),
+    )
+    .await;
+    assert_eq!(status2, StatusCode::OK);
+    assert_eq!(
+        json2["next"]["name"], "set_b",
+        "siblings も dirty な親では FS フォールバックすべき"
+    );
+}
+
+#[tokio::test]
+async fn first_viewableでdirtyな親はfsフォールバックで新規ファイルを見逃さない() {
+    // DirIndex は b.jpg のみ知っているが FS には a.jpg が追加済み (親 dirty)。
+    // dirty ガードが無いと名前順先頭の a.jpg ではなく b.jpg が返る
+    let dir = TempDir::new().unwrap();
+    let root = fs::canonicalize(dir.path()).unwrap();
+    let sub = root.join("album");
+    fs::create_dir_all(&sub).unwrap();
+    fs::write(sub.join("a.jpg"), "new").unwrap();
+    fs::write(sub.join("b.jpg"), "old").unwrap();
+
+    let mount_id = "aaaaaaaaaaaaaaaa".to_string();
+    let (state, _dir_index_db_path) = test_state_persistent_dir_index(&root, HashMap::new());
+    {
+        #[allow(clippy::expect_used, reason = "テストコード")]
+        let mut reg = state.node_registry.lock().expect("lock");
+        let mut map = HashMap::new();
+        map.insert(mount_id.clone(), root.clone());
+        reg.set_mount_id_map(map);
+    }
+    state
+        .dir_index
+        .ingest_walk_entry(&crate::services::indexer::WalkCallbackArgs {
+            walk_entry_path: sub.to_string_lossy().into_owned(),
+            root_dir: root.to_string_lossy().into_owned(),
+            mount_id: mount_id.clone(),
+            dir_mtime_ns: 1,
+            subdirs: vec![],
+            files: vec![("b.jpg".to_string(), 100, 1)],
+            is_complete: true,
+        })
+        .unwrap();
+    state.dir_index.mark_ready();
+    state.dir_index.mark_dir_dirty(&format!("{mount_id}/album"));
+
+    let sub_id = register_node_id(&state, &sub);
+
+    let (status, json) =
+        get_json(app(state), &format!("/api/browse/{sub_id}/first-viewable")).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        json["entry"]["name"], "a.jpg",
+        "dirty な親では FS フォールバックで名前順先頭の新規ファイルを返すべき"
+    );
+}
