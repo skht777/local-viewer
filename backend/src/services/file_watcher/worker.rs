@@ -33,7 +33,7 @@ pub(super) async fn flush_worker_loop(
         tokio::time::sleep(Duration::from_secs(1)).await;
 
         // rebuild / mount reload 中は flush を延期。ただし pending 蓄積が soft cap を
-        // 超えたら DirIndex を stale 化して drain、メモリ footgun を防ぐ
+        // 超えたら全ディレクトリを dirty 化して drain、メモリ footgun を防ぐ
         if rebuild_guard.is_held() {
             let pending_len = pending
                 .lock()
@@ -43,13 +43,14 @@ pub(super) async fn flush_worker_loop(
                 warn!(
                     pending = pending_len,
                     cap = WATCHER_PENDING_SOFT_CAP,
-                    "FileWatcher: rebuild 中の pending が soft cap 超過、DirIndex 整合回復を予約して drain"
+                    "FileWatcher: rebuild 中の pending が soft cap 超過、全ディレクトリを dirty 化して drain"
                 );
-                dir_index.mark_warm_start();
-                let mut guard = pending
-                    .lock()
-                    .unwrap_or_else(std::sync::PoisonError::into_inner);
-                guard.clear();
+                let di = Arc::clone(&dir_index);
+                let pending_c = Arc::clone(&pending);
+                let _ = tokio::task::spawn_blocking(move || {
+                    recover_from_pending_overflow(&di, &pending_c);
+                })
+                .await;
             }
             continue;
         }
@@ -81,6 +82,27 @@ pub(super) async fn flush_worker_loop(
         })
         .await;
     }
+}
+
+/// pending 溢れ / inotify overflow 時の整合回復
+///
+/// - DB 記録済みの全ディレクトリを dirty 化し、以後の browse fallback による
+///   自己修復 (writeback) を予約する
+/// - FTS 側は warm-start 扱いのまま (検索 API の `is_stale` で観測可能)
+/// - pending は drain する (個別イベントの適用はあきらめる)
+pub(super) fn recover_from_pending_overflow(
+    dir_index: &DirIndex,
+    pending: &std::sync::Mutex<HashMap<String, String>>,
+) {
+    dir_index.mark_warm_start();
+    match dir_index.mark_all_known_dirs_dirty() {
+        Ok(count) => debug!("FileWatcher 整合回復: {count} ディレクトリを dirty 化"),
+        Err(e) => warn!("FileWatcher 整合回復の dirty 化に失敗: {e}"),
+    }
+    let mut guard = pending
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    guard.clear();
 }
 
 /// 1 件のイベントを処理してインデックスに反映し、DirIndex の親ディレクトリを dirty 化する

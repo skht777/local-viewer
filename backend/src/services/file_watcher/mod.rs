@@ -107,10 +107,17 @@ impl FileWatcher {
             move |res: Result<notify::Event, notify::Error>| match res {
                 Ok(event) => {
                     // inotify Q_OVERFLOW 等で need_rescan が立つ場合、
-                    // DirIndex を stale 化してイベント取りこぼしを補償する
+                    // 全ディレクトリを dirty 化してイベント取りこぼしを補償する
+                    // (browse fallback の writeback で自己修復させる)
                     if event.need_rescan() {
-                        warn!("notify: need_rescan 検知、DirIndex を stale 化");
+                        warn!("notify: need_rescan 検知、全ディレクトリを dirty 化して整合回復");
                         dir_index_for_cb.mark_warm_start();
+                        match dir_index_for_cb.mark_all_known_dirs_dirty() {
+                            Ok(count) => {
+                                tracing::debug!("整合回復: {count} ディレクトリを dirty 化");
+                            }
+                            Err(e) => warn!("整合回復の dirty 化に失敗: {e}"),
+                        }
                     }
                     events::handle_notify_event(&pending_for_cb, &event, &mounts_for_cb);
                 }

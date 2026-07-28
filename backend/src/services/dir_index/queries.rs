@@ -125,6 +125,16 @@ impl DirIndexReader<'_> {
         }
     }
 
+    /// DB に記録済みの全 `parent_path` を返す (overflow 時の整合回復用)
+    pub(crate) fn all_parent_paths(&self) -> Result<Vec<String>, DirIndexError> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT DISTINCT parent_path FROM dir_entries")?;
+        let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
+        rows.collect::<Result<Vec<_>, _>>()
+            .map_err(DirIndexError::from)
+    }
+
     /// DB 内の全エントリ数を返す
     #[allow(clippy::cast_sign_loss, reason = "COUNT(*) は非負")]
     pub(crate) fn entry_count(&self) -> Result<usize, DirIndexError> {

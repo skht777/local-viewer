@@ -208,6 +208,17 @@ impl DirIndex {
             .mark_all_dirty(parent_keys);
     }
 
+    /// DB に記録済みの全ディレクトリを dirty 化し、件数を返す
+    ///
+    /// inotify overflow / pending 溢れで個別イベントを失った際の整合回復。
+    /// 以後の browse fast-path が fallback に落ち、writeback で自己修復される。
+    pub(crate) fn mark_all_known_dirs_dirty(&self) -> Result<usize, DirIndexError> {
+        let keys = self.reader()?.all_parent_paths()?;
+        let count = keys.len();
+        self.mark_all_dirs_dirty(keys);
+        Ok(count)
+    }
+
     /// 読み取りセッションを開く (1リクエスト内で Connection を再利用)
     pub(crate) fn reader(&self) -> Result<DirIndexReader<'_>, DirIndexError> {
         Ok(DirIndexReader {

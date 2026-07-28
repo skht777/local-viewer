@@ -125,3 +125,34 @@ fn batch_dir_infoが空スライスで空hash_mapを返す() {
     let info = reader.batch_dir_info(&[], 3).unwrap();
     assert!(info.is_empty());
 }
+
+#[test]
+fn mark_all_known_dirs_dirtyで登録済みの全ディレクトリがdirtyになる() {
+    // inotify overflow / pending 溢れ時の整合回復:
+    // DB 記録済みの全 parent_path を dirty 化し、browse 経由の自己修復を予約する
+    let (idx, _tmp) = setup();
+    idx.ingest_walk_entry(&make_args(
+        "/data/a",
+        "/data",
+        "m",
+        vec![],
+        vec![("x.jpg", 100, 1_000_000)],
+    ))
+    .unwrap();
+    idx.ingest_walk_entry(&make_args(
+        "/data/a/b",
+        "/data",
+        "m",
+        vec![],
+        vec![("y.jpg", 100, 2_000_000)],
+    ))
+    .unwrap();
+
+    assert!(!idx.is_dir_dirty("m/a"));
+    assert!(!idx.is_dir_dirty("m/a/b"));
+
+    let count = idx.mark_all_known_dirs_dirty().unwrap();
+    assert_eq!(count, 2);
+    assert!(idx.is_dir_dirty("m/a"));
+    assert!(idx.is_dir_dirty("m/a/b"));
+}

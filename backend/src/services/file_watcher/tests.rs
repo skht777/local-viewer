@@ -293,3 +293,40 @@ fn FileWatcherはslotにtakeとreplaceで出し入れできる() {
     slot.lock().unwrap().replace(fw2);
     assert!(slot.lock().unwrap().is_some());
 }
+
+// --- pending 溢れの整合回復 ---
+
+#[test]
+fn pending溢れの整合回復で全ディレクトリがdirty化されpendingがdrainされる() {
+    let (_dir, root, _ps, _indexer, dir_index, _db1, _db2) = worker_fixture();
+    let _ = root;
+    // DirIndex に 1 ディレクトリ分のデータを投入
+    dir_index
+        .ingest_walk_entry(&crate::services::indexer::WalkCallbackArgs {
+            walk_entry_path: "/data/album".to_string(),
+            root_dir: "/data".to_string(),
+            mount_id: "pics".to_string(),
+            dir_mtime_ns: 1,
+            subdirs: vec![],
+            files: vec![("a.jpg".to_string(), 100, 1)],
+            is_complete: true,
+        })
+        .unwrap();
+
+    let pending = empty_pending();
+    pending
+        .lock()
+        .unwrap()
+        .insert("/data/album/a.jpg".to_string(), "add".to_string());
+
+    super::worker::recover_from_pending_overflow(&dir_index, &pending);
+
+    assert!(
+        dir_index.is_dir_dirty("pics/album"),
+        "整合回復で既知ディレクトリが dirty 化されるべき"
+    );
+    assert!(
+        pending.lock().unwrap().is_empty(),
+        "pending は drain されるべき"
+    );
+}
