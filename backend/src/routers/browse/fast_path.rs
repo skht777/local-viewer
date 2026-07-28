@@ -41,6 +41,14 @@ pub(super) fn try_dir_index_browse_split(
     let _enter = span.enter();
     let started = std::time::Instant::now();
 
+    // ユーザー入力 (cursor) のデコードはロック取得前に行う
+    // (デコード処理の欠陥が NodeRegistry Mutex の poison に波及しないよう隔離する)
+    let cursor_node_id = cursor.and_then(|c| {
+        browse_cursor::decode_cursor(c, sort)
+            .ok()
+            .map(|d| d.node_id)
+    });
+
     // --- Phase 0 (短ロック): NodeRegistry から必要なキーを取得 ---
     #[allow(
         clippy::expect_used,
@@ -52,12 +60,9 @@ pub(super) fn try_dir_index_browse_split(
         let parent_key = reg.compute_parent_path_key(path)?;
         let root = ps.find_root_for(path)?;
         let allow_symlinks = ps.is_allow_symlinks();
-        let cursor_path = cursor.and_then(|c| {
-            let decoded = browse_cursor::decode_cursor(c, sort).ok()?;
-            reg.resolve(&decoded.node_id)
-                .ok()
-                .map(std::path::Path::to_path_buf)
-        });
+        let cursor_path = cursor_node_id
+            .as_deref()
+            .and_then(|id| reg.resolve(id).ok().map(std::path::Path::to_path_buf));
         (parent_key, root, cursor_path, allow_symlinks, ps)
     }; // ロック解放
 
