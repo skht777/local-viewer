@@ -1,13 +1,14 @@
-//! pending への enqueue と隠し/拡張子フィルタ
+//! pending への enqueue と隠しフィルタ
 
 use std::collections::HashMap;
 use std::path::{Component, Path, PathBuf};
 
-use crate::services::extensions::{
-    ARCHIVE_EXTENSIONS, PDF_EXTENSIONS, VIDEO_EXTENSIONS, extract_extension,
-};
-
-/// 対象パスを pending に追加する (隠しファイル・非対象拡張子をスキップ)
+/// 対象パスを pending に追加する (隠しファイル/ディレクトリのみスキップ)
+///
+/// 拡張子では絞らない: `DirIndex` は画像を含む全エントリを保持するため、
+/// どのファイルの追加/削除でも親ディレクトリの dirty 化が必要。
+/// FTS インデックスへの反映可否は `worker::process_event` の
+/// `classify_for_index` が判定する。
 pub(super) fn enqueue(
     pending: &std::sync::Mutex<HashMap<String, String>>,
     path: &Path,
@@ -16,21 +17,6 @@ pub(super) fn enqueue(
 ) {
     // 隠しファイル/ディレクトリをスキップ (full scan の parallel_walk と同じ判定基準)
     if is_hidden_under_mounts(path, mounts) {
-        return;
-    }
-
-    // ファイルの場合: 拡張子チェック (ディレクトリは常に通過)
-    // Remove イベントでは path.is_file() が false になるため、
-    // ディレクトリ判定には is_dir() ではなく拡張子の有無で判断
-    let Some(file_name) = path.file_name() else {
-        return;
-    };
-    let name = file_name.to_string_lossy();
-    let ext = extract_extension(&name).to_lowercase();
-
-    // 拡張子がない → ディレクトリとみなして通過
-    // 拡張子がある → インデックス対象かチェック
-    if !ext.is_empty() && !is_indexable_extension(&ext) {
         return;
     }
 
@@ -61,13 +47,4 @@ pub(super) fn is_hidden_under_mounts(path: &Path, mounts: &[(String, PathBuf)]) 
         }
     }
     true
-}
-
-/// 拡張子がインデックス対象 (動画/アーカイブ/PDF) か判定する
-///
-/// 画像はファイル数が膨大になるため除外 (`classify_for_index` と同じ方針)
-pub(super) fn is_indexable_extension(ext: &str) -> bool {
-    VIDEO_EXTENSIONS.contains(&ext)
-        || ARCHIVE_EXTENSIONS.contains(&ext)
-        || PDF_EXTENSIONS.contains(&ext)
 }

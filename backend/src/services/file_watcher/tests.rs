@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 
 use rstest::rstest;
 
-use super::filter::{is_hidden_under_mounts, is_indexable_extension};
+use super::filter::is_hidden_under_mounts;
 use super::path_utils::compute_relative_path;
 
 // --- is_hidden_under_mounts ---
@@ -101,23 +101,145 @@ fn compute_relative_pathが空mount_idで正しく動作する() {
     );
 }
 
-// --- is_indexable_extension ---
+// --- enqueue (dirty 化の入口) ---
+
+fn empty_pending() -> std::sync::Mutex<std::collections::HashMap<String, String>> {
+    std::sync::Mutex::new(std::collections::HashMap::new())
+}
 
 #[rstest]
-#[case(".mp4", true)]
-#[case(".mkv", true)]
-#[case(".zip", true)]
-#[case(".rar", true)]
-#[case(".7z", true)]
-#[case(".cbz", true)]
-#[case(".pdf", true)]
-#[case(".jpg", false)]
-#[case(".png", false)]
-#[case(".txt", false)]
-#[case(".exe", false)]
-#[case("", false)]
-fn is_indexable_extensionが正しく判定する(#[case] ext: &str, #[case] expected: bool) {
-    assert_eq!(is_indexable_extension(ext), expected);
+// 画像: FTS 対象外だが DirIndex の自己修復 (dirty 化) に必須
+#[case("photo.jpg")]
+#[case("cover.png")]
+// FTS 対象 (従来から通過)
+#[case("video.mp4")]
+#[case("book.zip")]
+// DirIndex は全エントリを保持するため対象外拡張子も通す
+#[case("notes.txt")]
+// 拡張子なし (ディレクトリ想定、従来から通過)
+#[case("album")]
+fn enqueueは隠しでないパスをすべてpendingに追加する(#[case] name: &str) {
+    let pending = empty_pending();
+    let path = format!("/data/pictures/album/{name}");
+    super::filter::enqueue(&pending, Path::new(&path), "add", &pictures_mount());
+    assert_eq!(
+        pending.lock().unwrap().len(),
+        1,
+        "{name} は pending に追加されるべき"
+    );
+}
+
+#[test]
+fn enqueueは隠しファイルをpendingに追加しない() {
+    let pending = empty_pending();
+    super::filter::enqueue(
+        &pending,
+        Path::new("/data/pictures/.hidden.jpg"),
+        "add",
+        &pictures_mount(),
+    );
+    assert!(pending.lock().unwrap().is_empty());
+}
+
+// --- process_event (FTS 反映と dirty 化の分離) ---
+
+/// `process_event` 用の最小フィクスチャ (実ファイルシステム + 一時 DB)
+fn worker_fixture() -> (
+    tempfile::TempDir,
+    PathBuf,
+    crate::services::path_security::PathSecurity,
+    crate::services::indexer::Indexer,
+    crate::services::dir_index::DirIndex,
+    tempfile::NamedTempFile,
+    tempfile::NamedTempFile,
+) {
+    let dir = tempfile::TempDir::new().unwrap();
+    let root = std::fs::canonicalize(dir.path()).unwrap();
+    let ps = crate::services::path_security::PathSecurity::new(vec![root.clone()], false).unwrap();
+    let indexer_db = tempfile::NamedTempFile::new().unwrap();
+    let indexer = crate::services::indexer::Indexer::new(indexer_db.path().to_str().unwrap());
+    indexer.init_db().unwrap();
+    let dir_index_db = tempfile::NamedTempFile::new().unwrap();
+    let dir_index =
+        crate::services::dir_index::DirIndex::new(dir_index_db.path().to_str().unwrap());
+    dir_index.init_db().unwrap();
+    (dir, root, ps, indexer, dir_index, indexer_db, dir_index_db)
+}
+
+#[test]
+fn 画像ファイルの追加イベントで親がdirty化されFTSには追加されない() {
+    let (_dir, root, ps, indexer, dir_index, _db1, _db2) = worker_fixture();
+    std::fs::create_dir(root.join("album")).unwrap();
+    let img = root.join("album/photo.jpg");
+    std::fs::write(&img, b"x").unwrap();
+    let mounts = vec![("pics".to_string(), root.clone())];
+
+    super::worker::process_event(
+        &indexer,
+        &ps,
+        &dir_index,
+        &mounts,
+        &img.to_string_lossy(),
+        "add",
+    );
+
+    assert!(
+        dir_index.is_dir_dirty("pics/album"),
+        "画像追加で親ディレクトリが dirty 化されるべき"
+    );
+    assert_eq!(
+        indexer.entry_count().unwrap(),
+        0,
+        "画像は FTS インデックス対象外のまま"
+    );
+}
+
+#[test]
+fn 画像ファイルの削除イベントでも親がdirty化される() {
+    let (_dir, root, ps, indexer, dir_index, _db1, _db2) = worker_fixture();
+    std::fs::create_dir(root.join("album")).unwrap();
+    // remove イベントでは対象パスは既に存在しない
+    let img = root.join("album/photo.jpg");
+    let mounts = vec![("pics".to_string(), root.clone())];
+
+    super::worker::process_event(
+        &indexer,
+        &ps,
+        &dir_index,
+        &mounts,
+        &img.to_string_lossy(),
+        "remove",
+    );
+
+    assert!(
+        dir_index.is_dir_dirty("pics/album"),
+        "画像削除で親ディレクトリが dirty 化されるべき"
+    );
+}
+
+#[test]
+fn 動画ファイルの追加イベントで親のdirty化とFTS追加が両方行われる() {
+    let (_dir, root, ps, indexer, dir_index, _db1, _db2) = worker_fixture();
+    std::fs::create_dir(root.join("movies")).unwrap();
+    let video = root.join("movies/clip.mp4");
+    std::fs::write(&video, b"x").unwrap();
+    let mounts = vec![("vids".to_string(), root.clone())];
+
+    super::worker::process_event(
+        &indexer,
+        &ps,
+        &dir_index,
+        &mounts,
+        &video.to_string_lossy(),
+        "add",
+    );
+
+    assert!(dir_index.is_dir_dirty("vids/movies"));
+    assert_eq!(
+        indexer.entry_count().unwrap(),
+        1,
+        "動画は FTS インデックスに追加されるべき"
+    );
 }
 
 // --- AppState.file_watcher slot の所有権 (Phase D0) ---
