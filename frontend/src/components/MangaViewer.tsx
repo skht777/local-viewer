@@ -8,6 +8,7 @@
 
 import { useCallback, useRef, useState } from "react";
 import type { AncestorEntry, BrowseEntry } from "../types/api";
+import { fileUrl } from "../utils/fileUrl";
 import { useViewerStore } from "../stores/viewerStore";
 import { useCursorAutoHide } from "../hooks/useCursorAutoHide";
 import { useFullscreen } from "../hooks/useFullscreen";
@@ -222,7 +223,7 @@ export function MangaViewer({
                   style={{ top: `${virtualRow.start}px`, minHeight: `${virtualRow.size}px` }}
                 >
                   <img
-                    src={`/api/file/${entry.node_id}`}
+                    src={fileUrl(entry.node_id, entry.modified_at)}
                     alt={entry.name}
                     className="w-full"
                     loading="lazy"

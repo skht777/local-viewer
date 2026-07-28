@@ -8,6 +8,7 @@
 
 import { useCallback, useRef, useState } from "react";
 import type { AncestorEntry, BrowseEntry } from "../types/api";
+import { fileUrl } from "../utils/fileUrl";
 import { useViewerStore } from "../stores/viewerStore";
 import { useClickToTurnPage } from "../hooks/useClickToTurnPage";
 import { useTouchPageTurn } from "../hooks/useTouchPageTurn";
@@ -251,7 +252,7 @@ export function CgViewer({
                 }
               >
                 <img
-                  src={`/api/file/${img.node_id}`}
+                  src={fileUrl(img.node_id, img.modified_at)}
                   alt={img.name}
                   className={fitClass(fitMode)}
                   draggable={false}

@@ -11,6 +11,7 @@ import { browseInfiniteOptions } from "./api/browseQueries";
 import { fetchSiblingPair, resolveInitialParent, walkUpToParent } from "../lib/siblingNavigation";
 import type { SortOrder } from "./useViewerParams";
 import type { AncestorEntry, BrowseEntry } from "../types/api";
+import { fileUrl } from "../utils/fileUrl";
 
 interface UseSiblingPrefetchProps {
   currentNodeId: string | null;
@@ -56,7 +57,7 @@ async function prefetchSiblingTarget(
     const count = Math.min(IMAGE_PRELOAD_COUNT, images.length);
     for (let i = 0; i < count; i++) {
       const img = new Image();
-      img.src = `/api/file/${images[i].node_id}`;
+      img.src = fileUrl(images[i].node_id, images[i].modified_at);
     }
   } catch {
     // ベストエフォート — エラー無視

@@ -6,6 +6,7 @@
 
 import { useRef, useState } from "react";
 import type { BrowseEntry } from "../types/api";
+import { fileUrl } from "../utils/fileUrl";
 import { formatFileSize } from "../utils/format";
 
 interface VideoCardProps {
@@ -67,7 +68,7 @@ export function VideoCard({ entry, initialTime, onTimeUpdate }: VideoCardProps) 
             controls
             preload="none"
             className="max-h-[85vh] w-full rounded object-contain"
-            src={`/api/file/${entry.node_id}`}
+            src={fileUrl(entry.node_id, entry.modified_at)}
             onError={() => setHasError(true)}
             onLoadedMetadata={handleLoadedMetadata}
             onTimeUpdate={handleTimeUpdate}

@@ -4,6 +4,7 @@
 
 import { useEffect } from "react";
 import type { BrowseEntry } from "../types/api";
+import { fileUrl } from "../utils/fileUrl";
 
 export function useImagePreload(images: BrowseEntry[], currentIndex: number, range = 2): void {
   useEffect(() => {
@@ -11,7 +12,7 @@ export function useImagePreload(images: BrowseEntry[], currentIndex: number, ran
       const idx = currentIndex + offset;
       if (offset !== 0 && idx >= 0 && idx < images.length) {
         const img = new Image();
-        img.src = `/api/file/${images[idx].node_id}`;
+        img.src = fileUrl(images[idx].node_id, images[idx].modified_at);
       }
     }
   }, [images, currentIndex, range]);

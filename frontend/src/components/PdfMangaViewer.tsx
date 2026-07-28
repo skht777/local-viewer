@@ -19,6 +19,7 @@ import { useToolbarAutoHide } from "../hooks/useToolbarAutoHide";
 import { usePdfDocument } from "../hooks/usePdfDocument";
 import { usePdfPageSizes } from "../hooks/usePdfPageSizes";
 import { useUrlIndexSync } from "../hooks/useUrlIndexSync";
+import { fileUrl } from "../utils/fileUrl";
 import { formatPageLabel } from "../utils/formatPageLabel";
 import { PdfCanvas } from "./PdfCanvas";
 import { PdfMangaViewerOverlays } from "./PdfMangaViewerOverlays";
@@ -28,6 +29,8 @@ import { VerticalPageSlider } from "./VerticalPageSlider";
 
 interface PdfMangaViewerProps {
   pdfNodeId: string;
+  // ファイル URL の版数 (?v=) 用。null はバージョンなし (ETag フォールバック)
+  pdfModifiedAt?: number | null;
   pdfName: string;
   parentNodeId: string | null;
   ancestors?: AncestorEntry[];
@@ -40,6 +43,7 @@ interface PdfMangaViewerProps {
 
 export function PdfMangaViewer({
   pdfNodeId,
+  pdfModifiedAt = null,
   pdfName,
   parentNodeId,
   ancestors,
@@ -58,7 +62,9 @@ export function PdfMangaViewer({
   const viewerTransitionId = useViewerStore((s) => s.viewerTransitionId);
   const { toggleFullscreen } = useFullscreen();
 
-  const { document, pageCount, isLoading, error } = usePdfDocument(`/api/file/${pdfNodeId}`);
+  const { document, pageCount, isLoading, error } = usePdfDocument(
+    fileUrl(pdfNodeId, pdfModifiedAt),
+  );
   const { pageSizes, isReady: pageSizesReady } = usePdfPageSizes(document);
 
   const anchorIndexRef = useRef(0);

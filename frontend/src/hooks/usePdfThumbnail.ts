@@ -8,6 +8,7 @@ import type { MutableRefObject } from "react";
 import type { PDFDocumentProxy, PDFPageProxy } from "../lib/pdfjs";
 import { getDocument } from "../lib/pdfjs";
 import { PDF_LOAD_OPTIONS } from "../lib/pdfLoadOptions";
+import { fileUrl } from "../utils/fileUrl";
 
 const THUMB_WIDTH = 300;
 
@@ -20,8 +21,10 @@ interface PdfThumbnailResult {
 // PDF の先頭ページを取得する。pdfDoc は呼び出し側が destroy する責務を持つ
 async function loadPdfThumbnailPage(
   nodeId: string,
+  modifiedAt: number | null,
 ): Promise<{ pdfDoc: PDFDocumentProxy; page: PDFPageProxy }> {
-  const pdfDoc = await getDocument({ url: `/api/file/${nodeId}`, ...PDF_LOAD_OPTIONS }).promise;
+  const pdfDoc = await getDocument({ url: fileUrl(nodeId, modifiedAt), ...PDF_LOAD_OPTIONS })
+    .promise;
   const page = await pdfDoc.getPage(1);
   return { pdfDoc, page };
 }
@@ -55,7 +58,11 @@ function publishBlobUrl(
   setUrl(blobUrl);
 }
 
-export function usePdfThumbnail(nodeId: string, enabled: boolean): PdfThumbnailResult {
+export function usePdfThumbnail(
+  nodeId: string,
+  enabled: boolean,
+  modifiedAt: number | null = null,
+): PdfThumbnailResult {
   const [url, setUrl] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [hasError, setHasError] = useState(false);
@@ -73,7 +80,7 @@ export function usePdfThumbnail(nodeId: string, enabled: boolean): PdfThumbnailR
       setIsLoading(true);
       setHasError(false);
       try {
-        const loaded = await loadPdfThumbnailPage(nodeId);
+        const loaded = await loadPdfThumbnailPage(nodeId, modifiedAt);
         if (cancelled) {
           return;
         }
@@ -105,7 +112,7 @@ export function usePdfThumbnail(nodeId: string, enabled: boolean): PdfThumbnailR
         urlRef.current = null;
       }
     };
-  }, [nodeId, enabled]);
+  }, [nodeId, enabled, modifiedAt]);
 
   return { url, isLoading, hasError };
 }

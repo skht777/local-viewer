@@ -77,7 +77,11 @@ export const FileCard = memo(function FileCard({
   const hasVideoPreview = entry.kind === "video" && !hasPreviewError;
 
   // PDF: pdfjs-dist で先頭ページをサムネイル表示
-  const pdfThumbnail = usePdfThumbnail(entry.node_id, entry.kind === "pdf" && !hasPreviewError);
+  const pdfThumbnail = usePdfThumbnail(
+    entry.node_id,
+    entry.kind === "pdf" && !hasPreviewError,
+    entry.modified_at,
+  );
   const hasPdfPreview = entry.kind === "pdf" && pdfThumbnail.url != null && !hasPreviewError;
 
   // Enter: アクション実行（進入/ビューワー起動）

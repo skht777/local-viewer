@@ -26,6 +26,7 @@ import { usePdfPageState } from "../hooks/usePdfPageState";
 import { usePdfPagePrefetch } from "../hooks/usePdfPagePrefetch";
 import { usePdfRenderCache } from "../hooks/usePdfRenderCache";
 import { useViewerBoundaryNavigation } from "../hooks/useViewerBoundaryNavigation";
+import { fileUrl } from "../utils/fileUrl";
 import { formatPageLabel } from "../utils/formatPageLabel";
 import { PdfCanvas } from "./PdfCanvas";
 import { PageSlider } from "./PageSlider";
@@ -35,6 +36,8 @@ import { renderPdfStatus } from "./PdfViewerStatus";
 
 interface PdfCgViewerProps {
   pdfNodeId: string;
+  // ファイル URL の版数 (?v=) 用。null はバージョンなし (ETag フォールバック)
+  pdfModifiedAt?: number | null;
   pdfName: string;
   parentNodeId: string | null;
   ancestors?: AncestorEntry[];
@@ -66,6 +69,7 @@ function getPdfDisplayRange(
 
 export function PdfCgViewer({
   pdfNodeId,
+  pdfModifiedAt = null,
   pdfName,
   parentNodeId,
   ancestors,
@@ -82,7 +86,9 @@ export function PdfCgViewer({
   const viewerTransitionId = useViewerStore((s) => s.viewerTransitionId);
   const { toggleFullscreen } = useFullscreen();
 
-  const { document, pageCount, isLoading, error } = usePdfDocument(`/api/file/${pdfNodeId}`);
+  const { document, pageCount, isLoading, error } = usePdfDocument(
+    fileUrl(pdfNodeId, pdfModifiedAt),
+  );
   // 描画キャッシュ (PdfCgViewer のみ適用 — PdfMangaViewer には渡さない)
   const renderCache = usePdfRenderCache();
   const { currentPage, handlePageChange } = usePdfPageState(initialPage, onPageChange);

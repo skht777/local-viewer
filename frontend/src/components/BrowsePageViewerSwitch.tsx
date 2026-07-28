@@ -81,6 +81,8 @@ export function BrowsePageViewerSwitch({
     const pdfName = pdfEntry?.name ?? "";
     const commonProps = {
       pdfNodeId,
+      // ファイル URL の版数 (?v=)。entries に無い場合 (deep link 直後等) は ETag フォールバック
+      pdfModifiedAt: pdfEntry?.modified_at ?? null,
       pdfName,
       parentNodeId: data?.current_node_id ?? nodeId ?? null,
       ancestors: data?.ancestors,
