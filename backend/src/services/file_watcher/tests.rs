@@ -92,6 +92,41 @@ fn compute_relative_pathが正しくパスを解決する() {
 }
 
 #[test]
+fn compute_relative_pathはマウントルート自身をmount_id単体で返す() {
+    // ルート直下ファイルの親 = マウントルート自身。
+    // browse 側 compute_parent_path_key / build_parent_path の書式
+    // ("{mount_id}" 単体、末尾スラッシュなし) と一致しないと、
+    // ルート直下ファイルの dirty 化が照会キーに一致せず自己修復されない
+    let mounts = vec![("pictures".to_string(), PathBuf::from("/data/pictures"))];
+    assert_eq!(
+        compute_relative_path(Path::new("/data/pictures"), &mounts),
+        Some("pictures".to_string()),
+    );
+}
+
+#[test]
+fn マウントルート直下のファイルイベントでmount_id単体キーがdirty化される() {
+    let (_dir, root, ps, indexer, dir_index, _db1, _db2) = worker_fixture();
+    let img = root.join("photo.jpg");
+    std::fs::write(&img, b"x").unwrap();
+    let mounts = vec![("pics".to_string(), root.clone())];
+
+    super::worker::process_event(
+        &indexer,
+        &ps,
+        &dir_index,
+        &mounts,
+        &img.to_string_lossy(),
+        "add",
+    );
+
+    assert!(
+        dir_index.is_dir_dirty("pics"),
+        "ルート直下ファイルの変更は mount_id 単体キーで dirty 化されるべき"
+    );
+}
+
+#[test]
 fn compute_relative_pathが空mount_idで正しく動作する() {
     let mounts = vec![(String::new(), PathBuf::from("/data"))];
 
