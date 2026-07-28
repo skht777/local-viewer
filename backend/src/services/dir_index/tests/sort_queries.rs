@@ -70,7 +70,7 @@ fn query_pageでカーソルページネーションが動作する() {
 
     // カーソルを使って 2 件目を取得
     // kind_flag=1 (non-directory) + sort_key
-    let cursor = format!("1\x00{}", page1[0].sort_key);
+    let cursor = format!("1\x00{}", page1[0].name);
     let page2 = idx
         .query_page("m", "name-asc", Some(1), Some(&cursor))
         .unwrap();
@@ -78,7 +78,7 @@ fn query_pageでカーソルページネーションが動作する() {
     assert_eq!(page2[0].name, "b.jpg");
 
     // 3 件目
-    let cursor2 = format!("1\x00{}", page2[0].sort_key);
+    let cursor2 = format!("1\x00{}", page2[0].name);
     let page3 = idx
         .query_page("m", "name-asc", Some(1), Some(&cursor2))
         .unwrap();
@@ -86,11 +86,119 @@ fn query_pageでカーソルページネーションが動作する() {
     assert_eq!(page3[0].name, "c.jpg");
 
     // 4 件目は空
-    let cursor3 = format!("1\x00{}", page3[0].sort_key);
+    let cursor3 = format!("1\x00{}", page3[0].name);
     let page4 = idx
         .query_page("m", "name-asc", Some(1), Some(&cursor3))
         .unwrap();
     assert!(page4.is_empty());
+}
+
+#[test]
+fn sort_key衝突エントリがカーソルページ境界で欠落しない() {
+    // "img01.jpg" と "img1.jpg" は encode_sort_key (小文字化 + 数値ゼロ埋め) が
+    // 同一キーになる。カーソルに name タイブレーカが無いと後続が恒久欠落する
+    let (idx, _tmp) = setup();
+    let args = make_args(
+        "/data",
+        "/data",
+        "m",
+        vec![],
+        vec![
+            ("img01.jpg", 100, 1_000_000),
+            ("img1.jpg", 100, 2_000_000),
+            ("img2.jpg", 100, 3_000_000),
+        ],
+    );
+    idx.ingest_walk_entry(&args).unwrap();
+
+    // 同一 sort_key 内は name (BINARY) 昇順で決定的に並ぶ
+    let page1 = idx.query_page("m", "name-asc", Some(1), None).unwrap();
+    assert_eq!(page1[0].name, "img01.jpg");
+
+    // カーソル形式: "{kind_flag}\x00{name}" (name から sort_key を導出)
+    let cursor = format!("1\x00{}", page1[0].name);
+    let page2 = idx
+        .query_page("m", "name-asc", Some(1), Some(&cursor))
+        .unwrap();
+    assert_eq!(
+        page2.len(),
+        1,
+        "同一 sort_key の後続エントリが欠落してはならない"
+    );
+    assert_eq!(page2[0].name, "img1.jpg");
+
+    let cursor2 = format!("1\x00{}", page2[0].name);
+    let page3 = idx
+        .query_page("m", "name-asc", Some(1), Some(&cursor2))
+        .unwrap();
+    assert_eq!(page3.len(), 1);
+    assert_eq!(page3[0].name, "img2.jpg");
+}
+
+#[test]
+fn sort_key衝突エントリがname_descのカーソルでも欠落しない() {
+    let (idx, _tmp) = setup();
+    let args = make_args(
+        "/data",
+        "/data",
+        "m",
+        vec![],
+        vec![
+            ("img01.jpg", 100, 1_000_000),
+            ("img1.jpg", 100, 2_000_000),
+            ("img2.jpg", 100, 3_000_000),
+        ],
+    );
+    idx.ingest_walk_entry(&args).unwrap();
+
+    // name-desc: img2 → img1 → img01 (同一 sort_key 内は name 降順)
+    let page1 = idx.query_page("m", "name-desc", Some(2), None).unwrap();
+    assert_eq!(page1.len(), 2);
+    assert_eq!(page1[0].name, "img2.jpg");
+    assert_eq!(page1[1].name, "img1.jpg");
+
+    let cursor = format!("1\x00{}", page1[1].name);
+    let page2 = idx
+        .query_page("m", "name-desc", Some(2), Some(&cursor))
+        .unwrap();
+    assert_eq!(
+        page2.len(),
+        1,
+        "同一 sort_key の後続エントリが欠落してはならない"
+    );
+    assert_eq!(page2[0].name, "img01.jpg");
+}
+
+#[test]
+fn sort_key衝突する隣接エントリがsiblingでスキップされない() {
+    // "vol01" と "vol1" は sort_key が同一のディレクトリ
+    let (idx, _tmp) = setup();
+    let args = make_args(
+        "/data",
+        "/data",
+        "m",
+        vec![
+            ("vol01", 1_000_000),
+            ("vol1", 2_000_000),
+            ("vol2", 3_000_000),
+        ],
+        vec![],
+    );
+    idx.ingest_walk_entry(&args).unwrap();
+
+    let next = idx
+        .query_sibling("m", "vol01", true, "next", "name-asc", &["directory"])
+        .unwrap();
+    assert_eq!(
+        next.map(|de| de.name).as_deref(),
+        Some("vol1"),
+        "同一 sort_key の隣接セットがスキップされてはならない"
+    );
+
+    let prev = idx
+        .query_sibling("m", "vol1", true, "prev", "name-asc", &["directory"])
+        .unwrap();
+    assert_eq!(prev.map(|de| de.name).as_deref(), Some("vol01"));
 }
 
 #[test]

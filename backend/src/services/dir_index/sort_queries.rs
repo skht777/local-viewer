@@ -6,6 +6,7 @@ use rusqlite::{Connection, params};
 
 use crate::services::extensions::{EntryKind, extract_extension};
 use crate::services::indexer::WalkCallbackArgs;
+use crate::services::natural_sort::encode_sort_key;
 
 use super::{DirEntry, DirIndexError};
 
@@ -52,17 +53,20 @@ pub(super) fn map_dir_entry(row: &rusqlite::Row<'_>) -> rusqlite::Result<DirEntr
     })
 }
 
-/// name-asc カーソルから `(kind_flag, sort_key)` を分離する
+/// name 系カーソルから `(kind_flag, name)` を分離する
 ///
-/// カーソル形式: `"{kind_flag}\x00{sort_key}"` (`kind_flag`: "0"=directory, "1"=other)
+/// カーソル形式: `"{kind_flag}\x00{name}"` (`kind_flag`: "0"=directory, "1"=other)
+/// - `sort_key` は小文字化 + ゼロ埋めで別名と衝突し得るため、カーソルには
+///   一意な `name` を持たせ、比較用の `sort_key` はクエリ側で導出する
+/// - `name` はファイル名由来で NUL を含まないため、最初の区切りで一意に分割できる
 pub(super) fn parse_name_cursor(cursor: &str) -> (i64, &str) {
     if let Some(pos) = cursor.find('\x00') {
         let flag_str = &cursor[..pos];
-        let sort_key = &cursor[pos + 1..];
+        let name = &cursor[pos + 1..];
         let flag: i64 = flag_str.parse().unwrap_or(1);
-        (flag, sort_key)
+        (flag, name)
     } else {
-        // フォールバック: カーソル全体を sort_key として扱う
+        // フォールバック: カーソル全体を name として扱う
         (1, cursor)
     }
 }
@@ -104,17 +108,19 @@ pub(super) fn query_name_asc(
 ) -> Result<Vec<DirEntry>, DirIndexError> {
     let sql_limit: i64 = limit.map_or(-1, |n| n as i64);
     let rows = if let Some(c) = cursor {
-        let (kind_flag, sort_key) = parse_name_cursor(c);
+        let (kind_flag, cur_name) = parse_name_cursor(c);
+        // sort_key は同名衝突 (大小文字/ゼロ埋め) があるため name を最終タイブレーカにする
+        let cur_sort_key = encode_sort_key(cur_name);
         let mut stmt = conn.prepare(
             "SELECT parent_path, name, kind, sort_key, size_bytes, mtime_ns \
              FROM dir_entries \
              WHERE parent_path = ?1 \
-               AND (CASE WHEN kind = 'directory' THEN 0 ELSE 1 END, sort_key) > (?2, ?3) \
-             ORDER BY CASE WHEN kind = 'directory' THEN 0 ELSE 1 END, sort_key ASC \
-             LIMIT ?4",
+               AND (CASE WHEN kind = 'directory' THEN 0 ELSE 1 END, sort_key, name) > (?2, ?3, ?4) \
+             ORDER BY CASE WHEN kind = 'directory' THEN 0 ELSE 1 END, sort_key ASC, name ASC \
+             LIMIT ?5",
         )?;
         stmt.query_map(
-            params![parent_path, kind_flag, sort_key, sql_limit],
+            params![parent_path, kind_flag, cur_sort_key, cur_name, sql_limit],
             map_dir_entry,
         )?
         .collect::<Result<Vec<_>, _>>()?
@@ -123,7 +129,7 @@ pub(super) fn query_name_asc(
             "SELECT parent_path, name, kind, sort_key, size_bytes, mtime_ns \
              FROM dir_entries \
              WHERE parent_path = ?1 \
-             ORDER BY CASE WHEN kind = 'directory' THEN 0 ELSE 1 END, sort_key ASC \
+             ORDER BY CASE WHEN kind = 'directory' THEN 0 ELSE 1 END, sort_key ASC, name ASC \
              LIMIT ?2",
         )?;
         stmt.query_map(params![parent_path, sql_limit], map_dir_entry)?
@@ -144,17 +150,19 @@ pub(super) fn query_name_desc(
 ) -> Result<Vec<DirEntry>, DirIndexError> {
     let sql_limit: i64 = limit.map_or(-1, |n| n as i64);
     let rows = if let Some(c) = cursor {
-        let (kind_flag, sort_key) = parse_name_cursor(c);
+        let (kind_flag, cur_name) = parse_name_cursor(c);
+        // sort_key は同名衝突 (大小文字/ゼロ埋め) があるため name を最終タイブレーカにする
+        let cur_sort_key = encode_sort_key(cur_name);
         let mut stmt = conn.prepare(
             "SELECT parent_path, name, kind, sort_key, size_bytes, mtime_ns \
              FROM dir_entries \
              WHERE parent_path = ?1 \
-               AND (CASE WHEN kind = 'directory' THEN 0 ELSE 1 END, sort_key) < (?2, ?3) \
-             ORDER BY CASE WHEN kind = 'directory' THEN 0 ELSE 1 END ASC, sort_key DESC \
-             LIMIT ?4",
+               AND (CASE WHEN kind = 'directory' THEN 0 ELSE 1 END, sort_key, name) < (?2, ?3, ?4) \
+             ORDER BY CASE WHEN kind = 'directory' THEN 0 ELSE 1 END ASC, sort_key DESC, name DESC \
+             LIMIT ?5",
         )?;
         stmt.query_map(
-            params![parent_path, kind_flag, sort_key, sql_limit],
+            params![parent_path, kind_flag, cur_sort_key, cur_name, sql_limit],
             map_dir_entry,
         )?
         .collect::<Result<Vec<_>, _>>()?
@@ -163,7 +171,7 @@ pub(super) fn query_name_desc(
             "SELECT parent_path, name, kind, sort_key, size_bytes, mtime_ns \
              FROM dir_entries \
              WHERE parent_path = ?1 \
-             ORDER BY CASE WHEN kind = 'directory' THEN 0 ELSE 1 END ASC, sort_key DESC \
+             ORDER BY CASE WHEN kind = 'directory' THEN 0 ELSE 1 END ASC, sort_key DESC, name DESC \
              LIMIT ?2",
         )?;
         stmt.query_map(params![parent_path, sql_limit], map_dir_entry)?
@@ -280,42 +288,49 @@ pub(super) fn query_date_asc(
 
 /// name 系ソートでの sibling クエリ
 ///
-/// browse クエリと同じ複合ソート `(kind != 'directory', sort_key)` で比較する。
+/// browse クエリと同じ複合ソート `(kind != 'directory', sort_key, name)` で比較する。
+/// `sort_key` は大小文字/ゼロ埋め違いで別名と衝突するため、一意な `name` を
+/// 最終タイブレーカにして隣接エントリの取りこぼしを防ぐ。
 /// 混合方向のため、明示的 OR 条件でタプル比較を表現。
 #[allow(clippy::too_many_arguments, reason = "sort 分岐に必要なパラメータ群")]
 pub(super) fn query_sibling_name(
     conn: &Connection,
     parent_path: &str,
-    current_sort_key: &str,
+    current_name: &str,
     current_is_dir: bool,
     direction: &str,
     sort: &str,
     kinds: &[&str],
 ) -> Result<Option<DirEntry>, DirIndexError> {
-    let placeholders: Vec<String> = (0..kinds.len()).map(|i| format!("?{}", i + 4)).collect();
+    let placeholders: Vec<String> = (0..kinds.len()).map(|i| format!("?{}", i + 5)).collect();
     let in_clause = placeholders.join(", ");
 
     let current_kind_flag: i64 = i64::from(!current_is_dir);
+    let current_sort_key = encode_sort_key(current_name);
     let is_asc = sort == "name-asc";
     let is_next = direction == "next";
 
-    // browse クエリの複合ソート: (kind != 'directory') ASC, sort_key ASC/DESC
+    // browse クエリの複合ソート: (kind != 'directory') ASC, sort_key ASC/DESC, name ASC/DESC
     let (cmp, order) = match (is_asc, is_next) {
         (true, true) => (
-            "((kind != 'directory') > ?2 OR ((kind != 'directory') = ?2 AND sort_key > ?3))",
-            "(kind != 'directory') ASC, sort_key ASC",
+            "((kind != 'directory') > ?2 OR ((kind != 'directory') = ?2 \
+              AND (sort_key > ?3 OR (sort_key = ?3 AND name > ?4))))",
+            "(kind != 'directory') ASC, sort_key ASC, name ASC",
         ),
         (true, false) => (
-            "((kind != 'directory') < ?2 OR ((kind != 'directory') = ?2 AND sort_key < ?3))",
-            "(kind != 'directory') DESC, sort_key DESC",
+            "((kind != 'directory') < ?2 OR ((kind != 'directory') = ?2 \
+              AND (sort_key < ?3 OR (sort_key = ?3 AND name < ?4))))",
+            "(kind != 'directory') DESC, sort_key DESC, name DESC",
         ),
         (false, true) => (
-            "((kind != 'directory') > ?2 OR ((kind != 'directory') = ?2 AND sort_key < ?3))",
-            "(kind != 'directory') ASC, sort_key DESC",
+            "((kind != 'directory') > ?2 OR ((kind != 'directory') = ?2 \
+              AND (sort_key < ?3 OR (sort_key = ?3 AND name < ?4))))",
+            "(kind != 'directory') ASC, sort_key DESC, name DESC",
         ),
         (false, false) => (
-            "((kind != 'directory') < ?2 OR ((kind != 'directory') = ?2 AND sort_key > ?3))",
-            "(kind != 'directory') DESC, sort_key ASC",
+            "((kind != 'directory') < ?2 OR ((kind != 'directory') = ?2 \
+              AND (sort_key > ?3 OR (sort_key = ?3 AND name > ?4))))",
+            "(kind != 'directory') DESC, sort_key ASC, name ASC",
         ),
     };
 
@@ -328,10 +343,12 @@ pub(super) fn query_sibling_name(
     );
 
     let mut stmt = conn.prepare(&sql)?;
-    let mut params_vec: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
-    params_vec.push(Box::new(parent_path.to_string()));
-    params_vec.push(Box::new(current_kind_flag));
-    params_vec.push(Box::new(current_sort_key.to_string()));
+    let mut params_vec: Vec<Box<dyn rusqlite::types::ToSql>> = vec![
+        Box::new(parent_path.to_string()),
+        Box::new(current_kind_flag),
+        Box::new(current_sort_key),
+        Box::new(current_name.to_string()),
+    ];
     for kind in kinds {
         params_vec.push(Box::new(kind.to_string()));
     }

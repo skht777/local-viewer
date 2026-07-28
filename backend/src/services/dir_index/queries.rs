@@ -8,8 +8,6 @@
 
 use rusqlite::params;
 
-use crate::services::natural_sort::encode_sort_key;
-
 use super::sort_queries::{
     map_dir_entry, query_date_asc, query_date_desc, query_name_asc, query_name_desc,
     query_sibling_date, query_sibling_name,
@@ -97,13 +95,11 @@ impl DirIndexReader<'_> {
         sort: &str,
         kinds: &[&str],
     ) -> Result<Option<DirEntry>, DirIndexError> {
-        let current_sort_key = encode_sort_key(current_name);
-
         match sort {
             "name-asc" | "name-desc" => query_sibling_name(
                 &self.conn,
                 parent_path,
-                &current_sort_key,
+                current_name,
                 current_is_dir,
                 direction,
                 sort,
@@ -120,7 +116,7 @@ impl DirIndexReader<'_> {
             _ => query_sibling_name(
                 &self.conn,
                 parent_path,
-                &current_sort_key,
+                current_name,
                 current_is_dir,
                 direction,
                 "name-asc",

@@ -109,10 +109,10 @@ pub(super) fn try_dir_index_browse_split(
     let dir_index_cursor = cursor_entry_path.and_then(|entry_path| {
         let name = entry_path.file_name()?.to_string_lossy().into_owned();
         if matches!(sort, SortOrder::NameAsc | SortOrder::NameDesc) {
-            let entry_sort_key = encode_sort_key(&name);
+            // カーソルは "{kind_flag}\x00{name}" 形式 (sort_key はクエリ側で name から導出)
             let is_dir = entry_path.is_dir();
             let kind_flag = if is_dir { "0" } else { "1" };
-            Some(format!("{kind_flag}\x00{entry_sort_key}"))
+            Some(format!("{kind_flag}\x00{name}"))
         } else {
             let mtime_ns = std::fs::metadata(&entry_path)
                 .ok()?
