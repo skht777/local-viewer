@@ -10,6 +10,7 @@ import { useCallback, useMemo } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useViewerParams } from "../hooks/useViewerParams";
 import { useViewerStore } from "../stores/viewerStore";
+import { useEnsureAllPages } from "../hooks/useEnsureAllPages";
 import { useOpenViewerFromEntry } from "../hooks/useOpenViewerFromEntry";
 import { useSearchResultsData } from "../hooks/useSearchResultsData";
 import { useSearchResultsCallbacks } from "../hooks/useSearchResultsCallbacks";
@@ -60,6 +61,15 @@ export default function SearchResultsPage() {
     allRawResults,
     scopeName,
   } = useSearchResultsData();
+
+  // ビューワー表示中は FileBrowser がアンマウントされ無限スクロールが止まるため、
+  // 残りの検索結果ページを能動取得する (D 送りが読み込み済み 50 件で打ち切られる問題の防止)
+  useEnsureAllPages({
+    enabled: isViewerOpen || isPdfViewerOpen,
+    hasNextPage,
+    isFetchingNextPage,
+    fetchNextPage,
+  });
 
   // ビューワー画像セット: 画像のみ + 名前昇順固定
   const viewerImages = useMemo(
