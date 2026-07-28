@@ -148,6 +148,13 @@ export function PdfMangaViewer({
 
   const { resetCursorTimer } = useCursorAutoHide(scrollRef);
 
+  // canvas の描画解像度をズームに追従させる
+  // (外側コンテナの幅 % だけでは canvas サイズが変わらず、拡大しても空白が広がるだけになる)
+  // scrollElement は effect で確定する state なので、レンダー中の ref 読みと違い実測値で再レンダーされる
+  const baseWidth = scrollElement?.clientWidth || 800;
+  const baseHeight = scrollElement?.clientHeight || 600;
+  const zoomedWidth = (baseWidth * zoomLevel) / 100;
+
   const status = renderPdfStatus({ isLoading, error, document, onClose });
   if (status.shouldEarlyReturn || !document) {
     return status.element;
@@ -203,8 +210,8 @@ export function PdfMangaViewer({
                   document={document}
                   pageNumber={virtualRow.index + 1}
                   fitMode="width"
-                  containerWidth={scrollRef.current?.clientWidth ?? 800}
-                  containerHeight={scrollRef.current?.clientHeight ?? 600}
+                  containerWidth={zoomedWidth}
+                  containerHeight={baseHeight}
                   enableTextLayer={true}
                 />
               </div>

@@ -40,6 +40,7 @@ vi.mock("@tanstack/react-virtual", () => ({
 
 import { getDocument } from "../../src/lib/pdfjs";
 import { PdfMangaViewer } from "../../src/components/PdfMangaViewer";
+import { useViewerStore } from "../../src/stores/viewerStore";
 
 const mockGetDocument = vi.mocked(getDocument);
 
@@ -100,6 +101,7 @@ describe("PdfMangaViewer", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockPdfCanvasProps.length = 0;
+    useViewerStore.setState({ zoomLevel: 100 });
     HTMLCanvasElement.prototype.getContext = vi.fn(() => ({
       clearRect: vi.fn(),
       drawImage: vi.fn(),
@@ -125,6 +127,22 @@ describe("PdfMangaViewer", () => {
     await waitFor(() => {
       expect(screen.getByTestId("pdf-manga-scroll-area")).toBeTruthy();
     });
+  });
+
+  test("ズームレベルがPdfCanvasのcontainerWidthに反映される", async () => {
+    // 外側コンテナの幅 % だけでなく、canvas の描画解像度自体が zoom に追従すること
+    // (追従しないと拡大時にページサイズ不変のまま右に空白だけが広がる)
+    useViewerStore.setState({ zoomLevel: 200 });
+    const { loadingTask } = createMockLoadingTask();
+    mockGetDocument.mockReturnValue(loadingTask as unknown as ReturnType<typeof getDocument>);
+
+    renderWithProviders(<PdfMangaViewer {...defaultProps()} />);
+
+    await waitFor(() => {
+      expect(mockPdfCanvasProps.length).toBeGreaterThan(0);
+    });
+    // jsdom ではスクロール要素の clientWidth が 0 → フォールバック 800 に 200% を乗算
+    expect(mockPdfCanvasProps[0].containerWidth).toBe(1600);
   });
 
   test("読み込みエラー時にエラーメッセージを表示", async () => {
