@@ -256,12 +256,18 @@ impl Indexer {
         Ok(())
     }
 
-    /// エントリを削除する
+    /// エントリを削除する (ディレクトリの場合は配下も cascade 削除)
+    ///
+    /// inotify はディレクトリ move/delete で配下の子イベントを発行しないため、
+    /// プレフィックス `{path}/` の一括削除で FTS への残留を防ぐ。
+    /// 単一ファイルでは `{path}/%` に一致する行が存在せず無害。
     pub(crate) fn remove_entry(&self, relative_path: &str) -> Result<(), IndexerError> {
         let conn = self.connect()?;
+        let escaped = helpers::escape_like_pattern(relative_path);
         conn.execute(
-            "DELETE FROM entries WHERE relative_path = ?1",
-            params![relative_path],
+            "DELETE FROM entries WHERE relative_path = ?1 \
+             OR relative_path LIKE ?2 ESCAPE '\\'",
+            params![relative_path, format!("{escaped}/%")],
         )?;
         Ok(())
     }

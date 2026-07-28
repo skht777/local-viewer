@@ -1570,3 +1570,69 @@ fn search_hitにmtime_nsが含まれる() {
     assert_eq!(hits.len(), 1);
     assert_eq!(hits[0].mtime_ns, 1_700_000_000_000_000_000);
 }
+
+// --- remove_entry の cascade 削除 (ディレクトリ move/delete 対応) ---
+
+#[test]
+fn ディレクトリ削除で全文検索から配下エントリもcascade削除される() {
+    // inotify はディレクトリ move/delete で配下の子イベントを発行しないため、
+    // remove_entry がディレクトリ行 1 件だけ消すと配下が FTS に残留し
+    // 存在しないパスが検索にヒットし続ける
+    let (indexer, _tmp) = setup_indexer();
+    indexer
+        .add_entry(&make_entry("photos/vol1", "vol1", "directory"))
+        .unwrap();
+    indexer
+        .add_entry(&make_entry("photos/vol1/a.mp4", "a.mp4", "video"))
+        .unwrap();
+    indexer
+        .add_entry(&make_entry("photos/vol1/sub/b.zip", "b.zip", "archive"))
+        .unwrap();
+    // 名前が前方一致する兄弟ディレクトリは巻き込まない
+    indexer
+        .add_entry(&make_entry("photos/vol10/c.mp4", "c.mp4", "video"))
+        .unwrap();
+
+    indexer.remove_entry("photos/vol1").unwrap();
+
+    assert_eq!(
+        indexer.entry_count().unwrap(),
+        1,
+        "vol1 と配下は削除、vol10 配下は残るべき"
+    );
+}
+
+#[test]
+fn ファイル削除で名前が前方一致する別エントリを巻き込まない() {
+    let (indexer, _tmp) = setup_indexer();
+    indexer
+        .add_entry(&make_entry("photos/a.zip", "a.zip", "archive"))
+        .unwrap();
+    indexer
+        .add_entry(&make_entry("photos/a.zip2", "a.zip2", "archive"))
+        .unwrap();
+
+    indexer.remove_entry("photos/a.zip").unwrap();
+
+    assert_eq!(indexer.entry_count().unwrap(), 1, "a.zip2 は残るべき");
+}
+
+#[test]
+fn likeメタ文字を含むディレクトリ削除で別エントリを巻き込まない() {
+    // "%" や "_" を含むパスの cascade 削除でエスケープが効くこと
+    let (indexer, _tmp) = setup_indexer();
+    indexer
+        .add_entry(&make_entry("photos/100%/a.mp4", "a.mp4", "video"))
+        .unwrap();
+    indexer
+        .add_entry(&make_entry("photos/100x/b.mp4", "b.mp4", "video"))
+        .unwrap();
+
+    indexer.remove_entry("photos/100%").unwrap();
+
+    assert_eq!(
+        indexer.entry_count().unwrap(),
+        1,
+        "エスケープにより 100x 配下は残るべき"
+    );
+}
