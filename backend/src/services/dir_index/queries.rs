@@ -125,6 +125,16 @@ impl DirIndexReader<'_> {
         }
     }
 
+    /// 指定親の直下に `name` のエントリが存在するか (`sibling` 高速パスの前提確認用)
+    pub(crate) fn has_entry(&self, parent_path: &str, name: &str) -> Result<bool, DirIndexError> {
+        let count: i64 = self.conn.query_row(
+            "SELECT COUNT(*) FROM dir_entries WHERE parent_path = ?1 AND name = ?2",
+            params![parent_path, name],
+            |row| row.get(0),
+        )?;
+        Ok(count > 0)
+    }
+
     /// DB に記録済みの全 `parent_path` を返す (overflow 時の整合回復用)
     pub(crate) fn all_parent_paths(&self) -> Result<Vec<String>, DirIndexError> {
         let mut stmt = self

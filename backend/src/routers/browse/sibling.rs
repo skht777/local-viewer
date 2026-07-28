@@ -201,6 +201,12 @@ fn try_siblings_from_index(
 
     let kinds = &["directory", "archive", "pdf"];
 
+    // DirIndex が current を知らない場合は隣接の有無を判断できないため FS フォールバックへ
+    // (未スキャンの親で「隣接なし」と誤答すると新規セットがジャンプからスキップされる)
+    if !dir_index.has_entry(&parent_key, &current_name).ok()? {
+        return None;
+    }
+
     // prev / next を個別の SQL クエリで取得（軽量）
     let prev_de = dir_index
         .query_sibling(
@@ -223,8 +229,16 @@ fn try_siblings_from_index(
         )
         .ok()?;
 
-    let prev = prev_de.and_then(|de| dir_entry_to_entry_meta(&de, &root, &parent_key, reg));
-    let next = next_de.and_then(|de| dir_entry_to_entry_meta(&de, &root, &parent_key, reg));
+    // DirIndex が隣接ありと答えたのに meta 化に失敗した場合 (実ファイル消失等の stale) は、
+    // 単方向 /sibling と同様に FS フォールバックで自己修復する
+    let prev = match prev_de {
+        Some(de) => Some(dir_entry_to_entry_meta(&de, &root, &parent_key, reg)?),
+        None => None,
+    };
+    let next = match next_de {
+        Some(de) => Some(dir_entry_to_entry_meta(&de, &root, &parent_key, reg)?),
+        None => None,
+    };
 
     Some(SiblingsResponse { prev, next })
 }

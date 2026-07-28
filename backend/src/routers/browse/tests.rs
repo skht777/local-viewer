@@ -1438,3 +1438,94 @@ async fn fast_path_dirty化された子ディレクトリのpreviewはFSから�
     // クリーンアップ
     let _ = std::fs::remove_file(&dir_index_db_path);
 }
+
+// --- find_siblings の stale DirIndex フォールバック (単方向 /sibling との対称性) ---
+
+#[tokio::test]
+async fn siblingsで索引がstaleな隣接を返すときfsフォールバックで自己修復する() {
+    // DirIndex は [set_a, set_b, set_c] を知っているが FS では set_b が消えている。
+    // 旧実装は実在しない set_b の meta 化失敗を next: null として返し、
+    // 実在する次セット set_c がスキップされていた
+    let dir = TempDir::new().unwrap();
+    let root = fs::canonicalize(dir.path()).unwrap();
+    fs::create_dir_all(root.join("set_a")).unwrap();
+    fs::create_dir_all(root.join("set_c")).unwrap();
+
+    let mount_id = "aaaaaaaaaaaaaaaa".to_string();
+    let (state, _dir_index_db_path) = test_state_persistent_dir_index(&root, HashMap::new());
+    {
+        #[allow(clippy::expect_used, reason = "テストコード")]
+        let mut reg = state.node_registry.lock().expect("lock");
+        let mut map = HashMap::new();
+        map.insert(mount_id.clone(), root.clone());
+        reg.set_mount_id_map(map);
+    }
+    state
+        .dir_index
+        .ingest_walk_entry(&crate::services::indexer::WalkCallbackArgs {
+            walk_entry_path: root.to_string_lossy().into_owned(),
+            root_dir: root.to_string_lossy().into_owned(),
+            mount_id: mount_id.clone(),
+            dir_mtime_ns: 1,
+            subdirs: vec![
+                ("set_a".to_string(), 1),
+                ("set_b".to_string(), 2),
+                ("set_c".to_string(), 3),
+            ],
+            files: vec![],
+            is_complete: true,
+        })
+        .unwrap();
+    state.dir_index.mark_ready();
+
+    let root_id = register_node_id(&state, &root);
+    let set_a_id = register_node_id(&state, &root.join("set_a"));
+
+    let (status, json) = get_json(
+        app(state),
+        &format!("/api/browse/{root_id}/siblings?current={set_a_id}"),
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::OK);
+    assert!(json["prev"].is_null());
+    assert_eq!(
+        json["next"]["name"], "set_c",
+        "stale な set_b をスキップして実在する次セットを返すべき"
+    );
+}
+
+#[tokio::test]
+async fn siblingsで索引がcurrentを知らないときfsフォールバックする() {
+    // DirIndex は ready だが親の行を持たない (未スキャン)。
+    // 隣接の有無を判断できないため「隣接なし」と誤答せず FS スキャンで解決すべき
+    let dir = TempDir::new().unwrap();
+    let root = fs::canonicalize(dir.path()).unwrap();
+    fs::create_dir_all(root.join("set_a")).unwrap();
+    fs::create_dir_all(root.join("set_b")).unwrap();
+    fs::create_dir_all(root.join("set_c")).unwrap();
+
+    let mount_id = "aaaaaaaaaaaaaaaa".to_string();
+    let (state, _dir_index_db_path) = test_state_persistent_dir_index(&root, HashMap::new());
+    {
+        #[allow(clippy::expect_used, reason = "テストコード")]
+        let mut reg = state.node_registry.lock().expect("lock");
+        let mut map = HashMap::new();
+        map.insert(mount_id.clone(), root.clone());
+        reg.set_mount_id_map(map);
+    }
+    state.dir_index.mark_ready();
+
+    let root_id = register_node_id(&state, &root);
+    let set_b_id = register_node_id(&state, &root.join("set_b"));
+
+    let (status, json) = get_json(
+        app(state),
+        &format!("/api/browse/{root_id}/siblings?current={set_b_id}"),
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(json["prev"]["name"], "set_a");
+    assert_eq!(json["next"]["name"], "set_c");
+}

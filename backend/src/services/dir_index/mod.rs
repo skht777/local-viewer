@@ -208,6 +208,11 @@ impl DirIndex {
             .mark_all_dirty(parent_keys);
     }
 
+    /// 指定親の直下に `name` のエントリが存在するか
+    pub(crate) fn has_entry(&self, parent_path: &str, name: &str) -> Result<bool, DirIndexError> {
+        self.reader()?.has_entry(parent_path, name)
+    }
+
     /// DB に記録済みの全ディレクトリを dirty 化し、件数を返す
     ///
     /// inotify overflow / pending 溢れで個別イベントを失った際の整合回復。
