@@ -40,7 +40,9 @@ paths:
 - Dark theme fixed (bg-surface-base, text-white base, @theme tokens)
 - 例外: ランタイム計算値（仮想化の座標計算 `translateY` / `height` / grid 列数、スタガーアニメーションの CSS 変数注入 `--stagger-delay` など）は inline style を許容する。Tailwind 任意値で表現できる静的値には適用しない
 
-## PWA
-- vite-plugin-pwa でオフラインキャッシュ
-- サムネイル: CacheFirst (30日)
-- API: NetworkFirst (5分)
+## キャッシュ戦略
+- PWA (Service Worker) は撤去済み — 導入しない
+  - 旧 runtimeCaching は urlPattern が絶対 URL に一致せず一度も発火していなかった
+  - main.tsx が残存 SW を unregister する (再導入時はこの処理と衝突しないこと)
+- キャッシュは HTTP キャッシュに一本化: ETag + `?v={modified_at}` 版数付き URL (`fileUrl` / `thumbnailUrl`)
+- フォーカス復帰時は `refetchOnWindowFocus: true` で stale なクエリを再取得 (バックエンド自己修復の反映経路)

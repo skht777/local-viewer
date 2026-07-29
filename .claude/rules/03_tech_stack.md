@@ -25,7 +25,6 @@
 - @tanstack/react-virtual (仮想スクロール)
 - pdfjs-dist (PDF描画)
 - react-router-dom (ルーティング)
-- vite-plugin-pwa (PWA キャッシュ: サムネイル CacheFirst, API NetworkFirst)
 
 ## 開発ツール
 - clippy (Rust lint)
