@@ -1,7 +1,10 @@
 // UI ローカル状態の管理 (zustand)
 // - サーバー状態は TanStack Query に任せる
 // - ここでは純粋な UI 状態のみ管理
-// - fitMode, spreadMode は persist middleware で localStorage に永続化
+// - persist middleware で localStorage に永続化する恒久 UI 状態（partialize 参照）:
+//   expandedNodeIds, fitMode, scrollSpeed, spreadMode, zoomLevel
+// - 一時的なナビ状態（viewerOrigin / viewerTransition* / viewerJumpList*）は
+//   partialize から除外する。リロード後に復元されると恒久状態化してバグになるため
 
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
@@ -25,7 +28,9 @@ interface ViewerState {
   toggleSidebar: () => void;
   setSidebarOpen: (isOpen: boolean) => void;
 
-  // ディレクトリツリーの展開状態（永続化しない）
+  // ディレクトリツリーの展開状態（永続化する）
+  // リロード後もツリーの開閉を維持したい恒久 UI 状態のため partialize に含める。
+  // viewerOrigin 等の一時ナビ状態とは扱いが異なる（Set ↔ Array 変換は merge が担当）
   expandedNodeIds: Set<string>;
   toggleExpanded: (nodeId: string) => void;
 
