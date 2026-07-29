@@ -84,8 +84,13 @@ export function useSearchNavigation({
 
       if (result.kind === "pdf") {
         // PDF viewer 起動: ブラウザバックで呼び出し元に戻れるよう push 化
+        // viewer 起動経路は必ず origin を更新する
+        // (更新しないと以前ブラウザバックで残った stale origin に B キーで飛ばされる)
         if (scope) {
           setViewerOrigin({ pathname: `/browse/${scope}`, search: location.search });
+        } else {
+          // TopPage 等 scope なし: 現在地を起点として保存
+          setViewerOrigin({ pathname: location.pathname, search: location.search });
         }
         navigate(url);
       } else if (scope) {
@@ -97,7 +102,7 @@ export function useSearchNavigation({
         navigate(url);
       }
     },
-    [navigate, setQuery, setIsOpen, location.search, scope, setViewerOrigin],
+    [navigate, setQuery, setIsOpen, location.pathname, location.search, scope, setViewerOrigin],
   );
 
   // 検索結果一覧ページへの遷移

@@ -159,7 +159,9 @@ describe("SearchBar 履歴モデル", () => {
     expect(useViewerStore.getState().viewerOrigin).toBeNull();
   });
 
-  test("scope 未指定（TopPage 文脈）では viewer 起動でも viewerOrigin を設定しない", async () => {
+  test("scope 未指定（TopPage 文脈）の PDF 起動は現在地を viewerOrigin として保存する", async () => {
+    // viewer 起動経路は必ず origin を更新する
+    // (更新しないと以前ブラウザバックで残った stale origin に B キーで飛ばされる)
     const user = userEvent.setup();
     mockState.results = [
       makeResult({ kind: "pdf", node_id: "pdf1", parent_node_id: "dir1", name: "doc.pdf" }),
@@ -172,9 +174,9 @@ describe("SearchBar 履歴モデル", () => {
     await user.click(await screen.findByTestId("search-result-0"));
 
     const [[, options]] = mockNavigate.mock.calls;
-    // viewer 起動でも scope 無しなら replace せず push、origin も未設定
+    // viewer 起動でも scope 無しなら replace せず push
     expect(options).toBeUndefined();
-    expect(useViewerStore.getState().viewerOrigin).toBeNull();
+    expect(useViewerStore.getState().viewerOrigin).toEqual({ pathname: "/", search: "" });
   });
 
   test("scope 有りかつトグル OFF 時も viewerOrigin は設定される", async () => {

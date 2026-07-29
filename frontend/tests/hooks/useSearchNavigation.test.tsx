@@ -98,12 +98,14 @@ describe("useSearchNavigation - handleSelect", () => {
     expect(lastCall.length).toBe(1);
   });
 
-  test("PDF + scope なし: viewerOrigin 設定なし + push 遷移", () => {
-    const { result, navigate, setViewerOrigin } = setup();
+  test("PDF + scope なし: 現在地を viewerOrigin として保存し push 遷移", () => {
+    // viewer 起動経路は必ず origin を更新する。
+    // 更新しないと以前ブラウザバックで残った stale origin に B キーで飛ばされる
+    const { result, navigate, setViewerOrigin } = setup({ search: "?q=foo" });
     result.current.handleSelect(
       makeResult({ kind: "pdf", node_id: "p1", parent_node_id: "parent-1" }),
     );
-    expect(setViewerOrigin).not.toHaveBeenCalled();
+    expect(setViewerOrigin).toHaveBeenCalledWith({ pathname: "/browse/x", search: "?q=foo" });
     expect(navigate).toHaveBeenCalledWith(expect.stringContaining("pdf=p1"));
   });
 
