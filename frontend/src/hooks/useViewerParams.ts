@@ -50,6 +50,17 @@ interface UseViewerParamsReturn {
   buildBrowseSearch: (overrides?: { tab?: string; index?: number }) => string;
 }
 
+// index パラメータの不正値ガード
+// - "abc" / "" / "Infinity" / 負数 / 小数 はすべて 0 (先頭画像) にフォールバックする
+// - NaN を素通りさせると viewerImages[NaN] が undefined になり黒画面のまま固まる
+function normalizeIndexParam(raw: string): number {
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed) || !Number.isInteger(parsed) || parsed < 0) {
+    return 0;
+  }
+  return parsed;
+}
+
 export function useViewerParams(): UseViewerParamsReturn {
   const { nodeId } = useParams<{ nodeId: string }>();
   const navigate = useNavigate();
@@ -82,7 +93,8 @@ export function useViewerParams(): UseViewerParamsReturn {
 
   const tab = (searchParams.get("tab") ?? "filesets") as ViewerTab;
   const indexParam = searchParams.get("index");
-  const index = indexParam === null ? -1 : parseInt(indexParam, 10);
+  // 不正値ガード: パラメータ未設定は -1 (ビューワー未起動)、不正値は 0 に正規化
+  const index = indexParam === null ? -1 : normalizeIndexParam(indexParam);
   // 不正値ガード: "manga" 以外はすべて "cg" に正規化
   const rawMode = searchParams.get("mode");
   const mode: ViewerMode = rawMode === "manga" ? "manga" : "cg";

@@ -301,6 +301,52 @@ describe("useViewerParams", () => {
     expect(result.current.params.mode).toBe("cg");
   });
 
+  // --- index 正規化 (V10 回帰) ---
+  // 不正な index が NaN のまま流れると viewerImages[NaN] が undefined になり黒画面になる
+
+  test("数値でないindex値は0に正規化される", () => {
+    const { result } = renderHook(() => useViewerParams(), {
+      wrapper: createWrapper(["/?tab=images&index=abc&mode=cg"]),
+    });
+    expect(result.current.params.index).toBe(0);
+    expect(result.current.isViewerOpen).toBe(true);
+  });
+
+  test("負のindex値は0に正規化される", () => {
+    const { result } = renderHook(() => useViewerParams(), {
+      wrapper: createWrapper(["/?tab=images&index=-5&mode=cg"]),
+    });
+    expect(result.current.params.index).toBe(0);
+  });
+
+  test("小数のindex値は0に正規化される", () => {
+    const { result } = renderHook(() => useViewerParams(), {
+      wrapper: createWrapper(["/?tab=images&index=1.5&mode=cg"]),
+    });
+    expect(result.current.params.index).toBe(0);
+  });
+
+  test("空文字のindex値は0に正規化される", () => {
+    const { result } = renderHook(() => useViewerParams(), {
+      wrapper: createWrapper(["/?tab=images&index=&mode=cg"]),
+    });
+    expect(result.current.params.index).toBe(0);
+  });
+
+  test("Infinityのindex値は0に正規化される", () => {
+    const { result } = renderHook(() => useViewerParams(), {
+      wrapper: createWrapper(["/?tab=images&index=Infinity&mode=cg"]),
+    });
+    expect(result.current.params.index).toBe(0);
+  });
+
+  test("正当なindex値はそのまま数値として返る", () => {
+    const { result } = renderHook(() => useViewerParams(), {
+      wrapper: createWrapper(["/?tab=images&index=12&mode=cg"]),
+    });
+    expect(result.current.params.index).toBe(12);
+  });
+
   test("不正なmode値はcgに正規化される", () => {
     const { result } = renderHook(() => useViewerParams(), {
       wrapper: createWrapper(["/?mode=invalid"]),
