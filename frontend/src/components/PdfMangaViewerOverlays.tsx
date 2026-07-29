@@ -11,8 +11,6 @@ interface PdfMangaViewerOverlaysProps {
   isHelpOpen: boolean;
   onHelpClose: () => void;
   toastMessage: string | null;
-  toastDuration: number;
-  onToastDismiss: () => void;
   prompt: {
     message: string;
     onConfirm: () => void;
@@ -25,16 +23,12 @@ export function PdfMangaViewerOverlays({
   isHelpOpen,
   onHelpClose,
   toastMessage,
-  toastDuration,
-  onToastDismiss,
   prompt,
 }: PdfMangaViewerOverlaysProps) {
   return (
     <>
       {isHelpOpen && <KeyboardHelp shortcuts={MANGA_SHORTCUTS} onClose={onHelpClose} />}
-      {toastMessage && (
-        <Toast message={toastMessage} onDismiss={onToastDismiss} duration={toastDuration} />
-      )}
+      {toastMessage && <Toast message={toastMessage} />}
       {prompt && (
         <NavigationPrompt
           message={prompt.message}

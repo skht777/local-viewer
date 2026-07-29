@@ -100,8 +100,8 @@ export function MangaViewer({
   // キーボードヘルプ
   const [isHelpOpen, setIsHelpOpen] = useState(false);
 
-  // セット境界トースト（duration は useToast 内部 timer と Toast 側を同期）
-  const { toastMessage, toastDuration, showToast, dismissToast } = useToast();
+  // セット境界トースト（表示時間の管理は useToast が単独で担う）
+  const { toastMessage, showToast } = useToast();
 
   // セット間ジャンプ + バックグラウンドプリフェッチ
   const setJump = useSetJump({
@@ -251,9 +251,7 @@ export function MangaViewer({
 
         {/* セット間ジャンプの確認プロンプト */}
         {/* セット境界トースト */}
-        {toastMessage && (
-          <Toast message={toastMessage} onDismiss={dismissToast} duration={toastDuration} />
-        )}
+        {toastMessage && <Toast message={toastMessage} />}
 
         {setJump.prompt && (
           <NavigationPrompt

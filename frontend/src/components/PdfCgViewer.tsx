@@ -95,7 +95,7 @@ export function PdfCgViewer({
   const nav = useCgNavigation(pageCount, currentPage, handlePageChange, spreadMode);
 
   const { isToolbarVisible, isTouch, containerCallbackRef } = useToolbarAutoHide();
-  const { toastMessage, toastDuration, showToast, dismissToast } = useToast();
+  const { toastMessage, showToast } = useToast();
   const { handleGoNext, handleGoPrev } = useViewerBoundaryNavigation({
     nav,
     showToast,
@@ -256,8 +256,6 @@ export function PdfCgViewer({
         />
         <PdfCgViewerOverlays
           toastMessage={toastMessage}
-          toastDuration={toastDuration}
-          onToastDismiss={dismissToast}
           isHelpOpen={isHelpOpen}
           onHelpClose={() => setIsHelpOpen(false)}
           prompt={setJump.prompt}

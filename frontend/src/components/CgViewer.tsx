@@ -85,8 +85,8 @@ export function CgViewer({
   const preloadRange = spreadMode === "single" ? 2 : 4;
   useImagePreload(images, currentIndex, preloadRange);
 
-  // 画像境界トースト（duration は useToast 内部 timer と Toast 側を同期）
-  const { toastMessage, toastDuration, showToast, dismissToast } = useToast();
+  // 画像境界トースト（表示時間の管理は useToast が単独で担う）
+  const { toastMessage, showToast } = useToast();
 
   // 境界チェック付きナビゲーション（境界到達時は toast を出して停止）
   const { handleGoNext, handleGoPrev } = useViewerBoundaryNavigation({ nav, showToast });
@@ -272,9 +272,7 @@ export function CgViewer({
         />
 
         {/* 画像境界トースト */}
-        {toastMessage && (
-          <Toast message={toastMessage} onDismiss={dismissToast} duration={toastDuration} />
-        )}
+        {toastMessage && <Toast message={toastMessage} />}
 
         {/* キーボードヘルプ */}
         {isHelpOpen && (

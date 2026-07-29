@@ -9,8 +9,6 @@ import { Toast } from "./Toast";
 
 interface PdfCgViewerOverlaysProps {
   toastMessage: string | null;
-  toastDuration: number;
-  onToastDismiss: () => void;
   isHelpOpen: boolean;
   onHelpClose: () => void;
   prompt: {
@@ -23,17 +21,13 @@ interface PdfCgViewerOverlaysProps {
 
 export function PdfCgViewerOverlays({
   toastMessage,
-  toastDuration,
-  onToastDismiss,
   isHelpOpen,
   onHelpClose,
   prompt,
 }: PdfCgViewerOverlaysProps) {
   return (
     <>
-      {toastMessage && (
-        <Toast message={toastMessage} onDismiss={onToastDismiss} duration={toastDuration} />
-      )}
+      {toastMessage && <Toast message={toastMessage} />}
       {isHelpOpen && <KeyboardHelp shortcuts={CG_SHORTCUTS} onClose={onHelpClose} />}
       {prompt && (
         <NavigationPrompt

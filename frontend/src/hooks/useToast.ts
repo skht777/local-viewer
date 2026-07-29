@@ -2,22 +2,20 @@
 // - showToast(message) で表示、デフォルト2秒後に自動消去
 // - showToast(message, durationOverride) で個別に表示時間を指定可能
 //   （タイトルポップアップなど少し長く出したい用途）
-// - toastDuration は現在表示中メッセージの実効 duration を返す。
-//   <Toast duration={toastDuration} /> に渡して二重タイマーを同期させる
+// - 表示時間のタイマーは本フックが単独で管理する。<Toast> は純粋な表示専用で、
+//   タイマーを二重に持つと同一メッセージの再表示で旧タイマーが生き残り早期に消える
 // - 連続呼び出しでタイマーリセット
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 interface UseToastReturn {
   toastMessage: string | null;
-  toastDuration: number;
   showToast: (message: string, durationOverride?: number) => void;
   dismissToast: () => void;
 }
 
 export function useToast(duration = 2000): UseToastReturn {
   const [toastMessage, setToastMessage] = useState<string | null>(null);
-  const [toastDuration, setToastDuration] = useState<number>(duration);
   const timerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
 
   const dismissToast = useCallback(() => {
@@ -30,7 +28,6 @@ export function useToast(duration = 2000): UseToastReturn {
       const effectiveDuration = durationOverride ?? duration;
       clearTimeout(timerRef.current);
       setToastMessage(message);
-      setToastDuration(effectiveDuration);
       timerRef.current = setTimeout(() => {
         setToastMessage(null);
       }, effectiveDuration);
@@ -38,5 +35,9 @@ export function useToast(duration = 2000): UseToastReturn {
     [duration],
   );
 
-  return { toastMessage, toastDuration, showToast, dismissToast };
+  // アンマウント時に自動消去タイマーを破棄する
+  // （残存タイマーが unmount 後に発火して不要な setState を起こすのを防ぐ）
+  useEffect(() => () => clearTimeout(timerRef.current), []);
+
+  return { toastMessage, showToast, dismissToast };
 }

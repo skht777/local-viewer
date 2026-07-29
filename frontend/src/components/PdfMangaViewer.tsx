@@ -103,7 +103,7 @@ export function PdfMangaViewer({
 
   const { isToolbarVisible, isTouch, containerCallbackRef } = useToolbarAutoHide();
   const [isHelpOpen, setIsHelpOpen] = useState(false);
-  const { toastMessage, toastDuration, showToast, dismissToast } = useToast();
+  const { toastMessage, showToast } = useToast();
 
   const setJump = useSetJump({
     currentNodeId: pdfNodeId,
@@ -229,8 +229,6 @@ export function PdfMangaViewer({
           isHelpOpen={isHelpOpen}
           onHelpClose={() => setIsHelpOpen(false)}
           toastMessage={toastMessage}
-          toastDuration={toastDuration}
-          onToastDismiss={dismissToast}
           prompt={setJump.prompt}
         />
       </div>
