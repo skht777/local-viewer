@@ -6,7 +6,7 @@ use axum::Json;
 use axum::extract::{Path, Query, State};
 
 use crate::errors::AppError;
-use crate::services::browse_cursor::{self};
+use crate::services::browse_cursor::{self, SortOrder};
 use crate::services::dir_index::DirIndex;
 use crate::services::extensions::{self, EntryKind};
 use crate::services::models::EntryMeta;
@@ -107,10 +107,15 @@ pub(crate) async fn first_viewable(
                             parent_node_id: Some(current_id),
                         });
                     }
-                    Err(_) => {
-                        return Ok(FirstViewableResponse {
-                            entry: None,
-                            parent_node_id: None,
+                    // 破損アーカイブは browse (`browse_archive`) と同じく 422 に統一する。
+                    // アーカイブ分岐に入るのはリクエストされた node_id 自身のときだけで
+                    // (再帰降下は directory エントリに対してのみ行われる)、
+                    // 「探索途中で壊れたアーカイブに当たる」経路は存在しない。
+                    // よって「スキップして探索継続」の余地はなく、エラーを隠さず返すのが正しい
+                    Err(e) => {
+                        return Err(match e {
+                            AppError::ArchiveSecurity(_) | AppError::ArchivePassword(_) => e,
+                            _ => AppError::InvalidArchive(e.to_string()),
                         });
                     }
                 }
@@ -128,7 +133,7 @@ pub(crate) async fn first_viewable(
                 )]
                 let mut reg = registry.lock().expect("NodeRegistry Mutex poisoned");
                 if let Some(result) =
-                    try_first_viewable_from_index(&dir_index, &mut reg, &path, &current_id)
+                    try_first_viewable_from_index(&dir_index, &mut reg, &path, &current_id, sort)
                 {
                     return Ok(result);
                 }
@@ -188,11 +193,14 @@ pub(crate) async fn first_viewable(
 ///
 /// archive > pdf > image の順に `first_entry_by_kind` を試行。
 /// ヒットすればパス解決 + `NodeRegistry` 登録して返す。
+/// `sort` はリクエストのソート順で、fallback (`sort_entries` + `select_first_viewable`)
+/// と同じ並びから 1 件目を選ぶために `first_entry_by_kind` へ渡す。
 fn try_first_viewable_from_index(
     dir_index: &DirIndex,
     reg: &mut NodeRegistry,
     path: &std::path::Path,
     current_id: &str,
+    sort: SortOrder,
 ) -> Option<FirstViewableResponse> {
     let parent_key = reg.compute_parent_path_key(path)?;
 
@@ -202,9 +210,10 @@ fn try_first_viewable_from_index(
     }
 
     let root = reg.path_security().find_root_for(path)?;
+    let sort_str = sort.as_wire_str();
 
     for kind in ["archive", "pdf", "image"] {
-        if let Ok(Some(de)) = dir_index.first_entry_by_kind(&parent_key, kind)
+        if let Ok(Some(de)) = dir_index.first_entry_by_kind(&parent_key, kind, sort_str)
             && let Some(meta) = dir_entry_to_entry_meta(&de, &root, &parent_key, reg)
         {
             return Some(FirstViewableResponse {

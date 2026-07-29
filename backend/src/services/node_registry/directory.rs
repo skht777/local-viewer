@@ -180,9 +180,23 @@ impl NodeRegistry {
 
         for entry in entries {
             let Ok(entry) = entry else { continue };
+            // 隠しエントリ / path_security が reject する子 (symlink 等) は数えない。
+            // browse 側 (`scan::scan_child_meta`) および DirIndex の COUNT(*) と
+            // 同一ポリシーにして child_count の食い違いを防ぐ
+            if entry.file_name().to_string_lossy().starts_with('.') {
+                continue;
+            }
             let Ok(ft) = entry.file_type() else {
                 continue;
             };
+            if ft.is_symlink()
+                && self
+                    .path_security
+                    .validate_child(&entry.path(), true)
+                    .is_err()
+            {
+                continue;
+            }
             // ディレクトリはカウントするがプレビュー対象外
             if ft.is_dir() {
                 count += 1;

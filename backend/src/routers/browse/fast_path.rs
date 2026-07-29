@@ -8,7 +8,6 @@ use crate::services::browse_cursor::{self, SortOrder};
 use crate::services::dir_index::{DirChildInfo, DirEntry, DirIndex};
 use crate::services::extensions::{self, EntryKind};
 use crate::services::models::{AncestorEntry, BrowseResponse};
-use crate::services::natural_sort::encode_sort_key;
 use crate::services::node_registry::{NodeRegistry, ScannedEntry, scan_child_meta};
 use crate::services::path_security::PathSecurity;
 
@@ -98,35 +97,25 @@ pub(super) fn try_dir_index_browse_split(
         return None;
     }
 
-    let sort_str = match sort {
-        SortOrder::NameAsc => "name-asc",
-        SortOrder::NameDesc => "name-desc",
-        SortOrder::DateAsc => "date-asc",
-        SortOrder::DateDesc => "date-desc",
-    };
+    let sort_str = sort.as_wire_str();
 
     // DirIndex カーソルデコード
+    //
+    // kind / mtime_ns はファイルシステムではなく DirIndex の行から取る。
+    // 比較対象 (SQL の dir_entries) とカーソル値のソースが食い違うと、
+    // 子ファイルの in-place 更新等で FS と DB の mtime が乖離した瞬間に
+    // date ソートのページ境界でエントリの欠落・重複が発生する。
+    // DirIndex に該当行が無い場合はカーソル位置を決められないため fallback に落とす。
     let dir_index_cursor = cursor_entry_path.and_then(|entry_path| {
         let name = entry_path.file_name()?.to_string_lossy().into_owned();
+        let de = reader.entry_by_name(&parent_key, &name).ok()??;
         if matches!(sort, SortOrder::NameAsc | SortOrder::NameDesc) {
             // カーソルは "{kind_flag}\x00{name}" 形式 (sort_key はクエリ側で name から導出)
-            let is_dir = entry_path.is_dir();
-            let kind_flag = if is_dir { "0" } else { "1" };
+            let kind_flag = if de.kind == "directory" { "0" } else { "1" };
             Some(format!("{kind_flag}\x00{name}"))
         } else {
-            let mtime_ns = std::fs::metadata(&entry_path)
-                .ok()?
-                .modified()
-                .ok()?
-                .duration_since(std::time::UNIX_EPOCH)
-                .ok()?;
-            #[allow(
-                clippy::cast_possible_wrap,
-                reason = "UNIX タイムスタンプは i64 範囲内"
-            )]
-            let ns = mtime_ns.as_nanos() as i64;
-            let entry_sort_key = encode_sort_key(&name);
-            Some(format!("{ns}\x00{entry_sort_key}"))
+            // カーソルは "{mtime_ns}\x00{name}" 形式 (sort_key はクエリ側で name から導出)
+            Some(format!("{}\x00{name}", de.mtime_ns))
         }
     });
 

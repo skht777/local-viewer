@@ -268,12 +268,15 @@ impl DirIndex {
     }
 
     /// 指定 kind の最初のエントリを返す (`first-viewable` 高速パス用)
+    ///
+    /// `sort` は `query_page` と同じ値 (`"name-asc"` 等) を渡す。
     pub(crate) fn first_entry_by_kind(
         &self,
         parent_path: &str,
         kind: &str,
+        sort: &str,
     ) -> Result<Option<DirEntry>, DirIndexError> {
-        self.reader()?.first_entry_by_kind(parent_path, kind)
+        self.reader()?.first_entry_by_kind(parent_path, kind, sort)
     }
 
     /// 次/前の兄弟エントリを返す (`sibling` 高速パス用)

@@ -14,6 +14,19 @@ use super::sort_queries::{
 };
 use super::{DirChildInfo, DirEntry, DirIndexError, DirIndexReader};
 
+/// `first_entry_by_kind` の `ORDER BY` 句を sort から決める
+///
+/// `query_page` (`sort_queries.rs`) の並び順と一致させること。
+/// 戻り値は固定文字列のみで、ユーザー入力は含まない (SQL 埋め込み安全)。
+fn first_entry_order_by(sort: &str) -> &'static str {
+    match sort {
+        "name-desc" => "sort_key DESC, name DESC",
+        "date-asc" => "mtime_ns ASC, sort_key ASC, name ASC",
+        "date-desc" => "mtime_ns DESC, sort_key ASC, name ASC",
+        _ => "sort_key ASC, name ASC",
+    }
+}
+
 impl DirIndexReader<'_> {
     /// ソート + カーソルベースページネーション付きでエントリを返す
     ///
@@ -64,18 +77,25 @@ impl DirIndexReader<'_> {
     }
 
     /// 指定 kind の最初のエントリを返す (`first-viewable` 高速パス用)
+    ///
+    /// `sort` は `query_page` と同じ並び順を用いる。fallback (`sort_entries` +
+    /// `select_first_viewable`) がリクエストの sort でソートしてから先頭を選ぶため、
+    /// 高速パスも同じ順序で 1 件目を取らないと経路依存で結果が変わる。
     pub(crate) fn first_entry_by_kind(
         &self,
         parent_path: &str,
         kind: &str,
+        sort: &str,
     ) -> Result<Option<DirEntry>, DirIndexError> {
-        let mut stmt = self.conn.prepare(
+        let sql = format!(
             "SELECT parent_path, name, kind, sort_key, size_bytes, mtime_ns \
              FROM dir_entries \
              WHERE parent_path = ?1 AND kind = ?2 \
-             ORDER BY sort_key ASC \
+             ORDER BY {} \
              LIMIT 1",
-        )?;
+            first_entry_order_by(sort)
+        );
+        let mut stmt = self.conn.prepare(&sql)?;
         let mut rows = stmt.query_map(params![parent_path, kind], map_dir_entry)?;
         match rows.next() {
             Some(Ok(entry)) => Ok(Some(entry)),
@@ -122,6 +142,31 @@ impl DirIndexReader<'_> {
                 "name-asc",
                 kinds,
             ),
+        }
+    }
+
+    /// 指定親の直下の `name` のエントリを返す (カーソル生成用)
+    ///
+    /// カーソルの `kind` / `mtime_ns` をファイルシステムではなく `DirIndex` から取ることで、
+    /// 比較対象 (DB の行) とカーソル値のソースを一致させる。
+    /// FS と DB が乖離した状態 (子ファイルの in-place 更新等) でカーソル比較が
+    /// 破綻し、エントリの欠落や重複が起きるのを防ぐ。
+    pub(crate) fn entry_by_name(
+        &self,
+        parent_path: &str,
+        name: &str,
+    ) -> Result<Option<DirEntry>, DirIndexError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT parent_path, name, kind, sort_key, size_bytes, mtime_ns \
+             FROM dir_entries \
+             WHERE parent_path = ?1 AND name = ?2 \
+             LIMIT 1",
+        )?;
+        let mut rows = stmt.query_map(params![parent_path, name], map_dir_entry)?;
+        match rows.next() {
+            Some(Ok(entry)) => Ok(Some(entry)),
+            Some(Err(e)) => Err(DirIndexError::from(e)),
+            None => Ok(None),
         }
     }
 

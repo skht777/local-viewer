@@ -277,7 +277,7 @@ fn query_pageのdate_descカーソルで同一mtimeのタプル比較() {
     assert_eq!(page1[1].name, "b.jpg");
 
     // カーソルで次ページ: c.jpg が残る
-    let cursor = format!("{}\x00{}", page1[1].mtime_ns, page1[1].sort_key);
+    let cursor = format!("{}\x00{}", page1[1].mtime_ns, page1[1].name);
     let page2 = idx
         .query_page("m", "date-desc", Some(2), Some(&cursor))
         .unwrap();
@@ -443,4 +443,106 @@ fn query_siblingでname逆引きにより大文字小文字衝突を回避() {
         .unwrap();
     assert!(next.is_some());
     assert_eq!(next.unwrap().name, "file2");
+}
+
+// --- date 系の name タイブレーカー (sort_key 衝突時の欠落防止) ---
+
+#[test]
+fn query_pageのdate_descカーソルはsort_key衝突でもnameタイブレーカで欠落しない() {
+    // "img1.jpg" と "img01.jpg" はゼロ埋めで同一 sort_key になる。
+    // (mtime_ns, sort_key) だけの比較ではページ境界に同キーが跨るとエントリが恒久欠落する
+    let (idx, _tmp) = setup();
+
+    let args = make_args(
+        "/data",
+        "/data",
+        "m",
+        vec![],
+        vec![
+            ("img1.jpg", 100, 2_000_000),
+            ("img01.jpg", 100, 2_000_000), // 同一 mtime かつ同一 sort_key
+            ("old.jpg", 100, 1_000_000),
+        ],
+    );
+    idx.ingest_walk_entry(&args).unwrap();
+
+    let page1 = idx.query_page("m", "date-desc", Some(1), None).unwrap();
+    assert_eq!(
+        page1[0].name, "img01.jpg",
+        "name 昇順タイブレーカで img01 が先"
+    );
+
+    let cursor = format!("{}\x00{}", page1[0].mtime_ns, page1[0].name);
+    let page2 = idx
+        .query_page("m", "date-desc", Some(10), Some(&cursor))
+        .unwrap();
+    let names: Vec<&str> = page2.iter().map(|de| de.name.as_str()).collect();
+    assert_eq!(
+        names,
+        ["img1.jpg", "old.jpg"],
+        "同一 sort_key の img1.jpg が欠落してはならない"
+    );
+}
+
+#[test]
+fn query_pageのdate_ascカーソルはsort_key衝突でもnameタイブレーカで欠落しない() {
+    let (idx, _tmp) = setup();
+
+    let args = make_args(
+        "/data",
+        "/data",
+        "m",
+        vec![],
+        vec![
+            ("img1.jpg", 100, 2_000_000),
+            ("img01.jpg", 100, 2_000_000),
+            ("new.jpg", 100, 3_000_000),
+        ],
+    );
+    idx.ingest_walk_entry(&args).unwrap();
+
+    let page1 = idx.query_page("m", "date-asc", Some(1), None).unwrap();
+    assert_eq!(page1[0].name, "img01.jpg");
+
+    let cursor = format!("{}\x00{}", page1[0].mtime_ns, page1[0].name);
+    let page2 = idx
+        .query_page("m", "date-asc", Some(10), Some(&cursor))
+        .unwrap();
+    let names: Vec<&str> = page2.iter().map(|de| de.name.as_str()).collect();
+    assert_eq!(names, ["img1.jpg", "new.jpg"]);
+}
+
+#[test]
+fn query_siblingのdateソートはsort_key衝突でもnameタイブレーカで隣接を返す() {
+    // "vol1" と "vol01" は同一 sort_key。name タイブレーカが無いと
+    // 同キーの隣接セットが恒久的にスキップされる
+    let (idx, _tmp) = setup();
+
+    let args = make_args(
+        "/data",
+        "/data",
+        "m",
+        vec![
+            ("vol1", 2_000_000),
+            ("vol01", 2_000_000), // 同一 mtime かつ同一 sort_key
+            ("old_vol", 1_000_000),
+        ],
+        vec![],
+    );
+    idx.ingest_walk_entry(&args).unwrap();
+
+    let kinds = &["directory"];
+    let next = idx
+        .query_sibling("m", "vol01", true, "next", "date-desc", kinds)
+        .unwrap();
+    assert_eq!(
+        next.map(|de| de.name).as_deref(),
+        Some("vol1"),
+        "同一 sort_key の隣接 vol1 をスキップしてはならない"
+    );
+
+    let prev = idx
+        .query_sibling("m", "vol1", true, "prev", "date-desc", kinds)
+        .unwrap();
+    assert_eq!(prev.map(|de| de.name).as_deref(), Some("vol01"));
 }

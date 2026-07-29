@@ -71,18 +71,23 @@ pub(super) fn parse_name_cursor(cursor: &str) -> (i64, &str) {
     }
 }
 
-/// date カーソルから `(mtime_ns, sort_key)` を分離する
+/// date カーソルから `(mtime_ns, name)` を分離する
 ///
-/// 新形式: `"{mtime_ns}\x00{sort_key}"` — タイブレーカー付き
-/// 旧形式: `"{mtime_ns}"` — 後方互換 (`sort_key` なし)
+/// 形式: `"{mtime_ns}\x00{name}"` — name タイブレーカー付き
+/// 旧形式: `"{mtime_ns}"` — `mtime_ns` のみ (タイブレーカーなし)
+///
+/// name 系カーソルと同じく、比較用の `sort_key` はクエリ側で `encode_sort_key(name)`
+/// として導出する。`sort_key` は小文字化 + ゼロ埋めで別名と衝突するため、
+/// 一意な `name` を最終タイブレーカにしないと同キーのエントリが恒久欠落する。
+/// `name` はファイル名由来で NUL を含まないため最初の区切りで一意に分割できる。
 pub(super) fn parse_date_cursor(cursor: &str) -> Result<(i64, Option<&str>), DirIndexError> {
     if let Some(pos) = cursor.find('\x00') {
         let mtime_str = &cursor[..pos];
-        let sort_key = &cursor[pos + 1..];
+        let name = &cursor[pos + 1..];
         let mtime: i64 = mtime_str
             .parse()
             .map_err(|e| DirIndexError::Other(format!("無効な date カーソル: {e}")))?;
-        Ok((mtime, Some(sort_key)))
+        Ok((mtime, Some(name)))
     } else {
         // 旧形式: mtime_ns のみ
         let mtime: i64 = cursor
@@ -192,26 +197,31 @@ pub(super) fn query_date_desc(
 ) -> Result<Vec<DirEntry>, DirIndexError> {
     let sql_limit: i64 = limit.map_or(-1, |n| n as i64);
     let rows = if let Some(c) = cursor {
-        let (mtime, sort_key) = parse_date_cursor(c)?;
-        if let Some(sk) = sort_key {
-            // タイブレーカー付きタプル比較: (mtime_ns DESC, sort_key ASC)
+        let (mtime, cur_name) = parse_date_cursor(c)?;
+        if let Some(name) = cur_name {
+            // タイブレーカー付きタプル比較: (mtime_ns DESC, sort_key ASC, name ASC)
+            let cur_sort_key = encode_sort_key(name);
             let mut stmt = conn.prepare(
                 "SELECT parent_path, name, kind, sort_key, size_bytes, mtime_ns \
                  FROM dir_entries \
                  WHERE parent_path = ?1 \
-                   AND (mtime_ns < ?2 OR (mtime_ns = ?2 AND sort_key > ?3)) \
-                 ORDER BY mtime_ns DESC, sort_key ASC \
-                 LIMIT ?4",
+                   AND (mtime_ns < ?2 OR (mtime_ns = ?2 \
+                        AND (sort_key > ?3 OR (sort_key = ?3 AND name > ?4)))) \
+                 ORDER BY mtime_ns DESC, sort_key ASC, name ASC \
+                 LIMIT ?5",
             )?;
-            stmt.query_map(params![parent_path, mtime, sk, sql_limit], map_dir_entry)?
-                .collect::<Result<Vec<_>, _>>()?
+            stmt.query_map(
+                params![parent_path, mtime, cur_sort_key, name, sql_limit],
+                map_dir_entry,
+            )?
+            .collect::<Result<Vec<_>, _>>()?
         } else {
             // 旧形式: mtime_ns のみ比較 (後方互換)
             let mut stmt = conn.prepare(
                 "SELECT parent_path, name, kind, sort_key, size_bytes, mtime_ns \
                  FROM dir_entries \
                  WHERE parent_path = ?1 AND mtime_ns < ?2 \
-                 ORDER BY mtime_ns DESC, sort_key ASC \
+                 ORDER BY mtime_ns DESC, sort_key ASC, name ASC \
                  LIMIT ?3",
             )?;
             stmt.query_map(params![parent_path, mtime, sql_limit], map_dir_entry)?
@@ -222,7 +232,7 @@ pub(super) fn query_date_desc(
             "SELECT parent_path, name, kind, sort_key, size_bytes, mtime_ns \
              FROM dir_entries \
              WHERE parent_path = ?1 \
-             ORDER BY mtime_ns DESC, sort_key ASC \
+             ORDER BY mtime_ns DESC, sort_key ASC, name ASC \
              LIMIT ?2",
         )?;
         stmt.query_map(params![parent_path, sql_limit], map_dir_entry)?
@@ -243,26 +253,31 @@ pub(super) fn query_date_asc(
 ) -> Result<Vec<DirEntry>, DirIndexError> {
     let sql_limit: i64 = limit.map_or(-1, |n| n as i64);
     let rows = if let Some(c) = cursor {
-        let (mtime, sort_key) = parse_date_cursor(c)?;
-        if let Some(sk) = sort_key {
-            // タイブレーカー付きタプル比較: (mtime_ns ASC, sort_key ASC)
+        let (mtime, cur_name) = parse_date_cursor(c)?;
+        if let Some(name) = cur_name {
+            // タイブレーカー付きタプル比較: (mtime_ns ASC, sort_key ASC, name ASC)
+            let cur_sort_key = encode_sort_key(name);
             let mut stmt = conn.prepare(
                 "SELECT parent_path, name, kind, sort_key, size_bytes, mtime_ns \
                  FROM dir_entries \
                  WHERE parent_path = ?1 \
-                   AND (mtime_ns > ?2 OR (mtime_ns = ?2 AND sort_key > ?3)) \
-                 ORDER BY mtime_ns ASC, sort_key ASC \
-                 LIMIT ?4",
+                   AND (mtime_ns > ?2 OR (mtime_ns = ?2 \
+                        AND (sort_key > ?3 OR (sort_key = ?3 AND name > ?4)))) \
+                 ORDER BY mtime_ns ASC, sort_key ASC, name ASC \
+                 LIMIT ?5",
             )?;
-            stmt.query_map(params![parent_path, mtime, sk, sql_limit], map_dir_entry)?
-                .collect::<Result<Vec<_>, _>>()?
+            stmt.query_map(
+                params![parent_path, mtime, cur_sort_key, name, sql_limit],
+                map_dir_entry,
+            )?
+            .collect::<Result<Vec<_>, _>>()?
         } else {
             // 旧形式: mtime_ns のみ比較 (後方互換)
             let mut stmt = conn.prepare(
                 "SELECT parent_path, name, kind, sort_key, size_bytes, mtime_ns \
                  FROM dir_entries \
                  WHERE parent_path = ?1 AND mtime_ns > ?2 \
-                 ORDER BY mtime_ns ASC, sort_key ASC \
+                 ORDER BY mtime_ns ASC, sort_key ASC, name ASC \
                  LIMIT ?3",
             )?;
             stmt.query_map(params![parent_path, mtime, sql_limit], map_dir_entry)?
@@ -273,7 +288,7 @@ pub(super) fn query_date_asc(
             "SELECT parent_path, name, kind, sort_key, size_bytes, mtime_ns \
              FROM dir_entries \
              WHERE parent_path = ?1 \
-             ORDER BY mtime_ns ASC, sort_key ASC \
+             ORDER BY mtime_ns ASC, sort_key ASC, name ASC \
              LIMIT ?2",
         )?;
         stmt.query_map(params![parent_path, sql_limit], map_dir_entry)?
@@ -366,7 +381,9 @@ pub(super) fn query_sibling_name(
 /// date 系ソートでの sibling クエリ
 ///
 /// `name` カラムで逆引き (`UNIQUE(parent_path, name)` が保証)。
-/// Windows Explorer 準拠の正準順序: `(mtime_ns, sort_key ASC)`
+/// Windows Explorer 準拠の正準順序: `(mtime_ns, sort_key ASC, name ASC)`
+/// `sort_key` は大小文字/ゼロ埋め違いで別名と衝突するため、一意な `name` を
+/// 最終タイブレーカにして同キーの隣接エントリの取りこぼしを防ぐ。
 pub(super) fn query_sibling_date(
     conn: &Connection,
     parent_path: &str,
@@ -389,29 +406,33 @@ pub(super) fn query_sibling_date(
         return Ok(None);
     };
 
-    let placeholders: Vec<String> = (0..kinds.len()).map(|i| format!("?{}", i + 4)).collect();
+    let placeholders: Vec<String> = (0..kinds.len()).map(|i| format!("?{}", i + 5)).collect();
     let in_clause = placeholders.join(", ");
 
     let is_asc = sort == "date-asc";
     let is_next = direction == "next";
 
-    // (mtime_ns, sort_key ASC) タプル比較
+    // (mtime_ns, sort_key ASC, name ASC) タプル比較
     let (cmp, order) = match (is_asc, is_next) {
         (true, true) => (
-            "(mtime_ns > ?2 OR (mtime_ns = ?2 AND sort_key > ?3))",
-            "mtime_ns ASC, sort_key ASC",
+            "(mtime_ns > ?2 OR (mtime_ns = ?2 \
+              AND (sort_key > ?3 OR (sort_key = ?3 AND name > ?4))))",
+            "mtime_ns ASC, sort_key ASC, name ASC",
         ),
         (true, false) => (
-            "(mtime_ns < ?2 OR (mtime_ns = ?2 AND sort_key < ?3))",
-            "mtime_ns DESC, sort_key DESC",
+            "(mtime_ns < ?2 OR (mtime_ns = ?2 \
+              AND (sort_key < ?3 OR (sort_key = ?3 AND name < ?4))))",
+            "mtime_ns DESC, sort_key DESC, name DESC",
         ),
         (false, true) => (
-            "(mtime_ns < ?2 OR (mtime_ns = ?2 AND sort_key > ?3))",
-            "mtime_ns DESC, sort_key ASC",
+            "(mtime_ns < ?2 OR (mtime_ns = ?2 \
+              AND (sort_key > ?3 OR (sort_key = ?3 AND name > ?4))))",
+            "mtime_ns DESC, sort_key ASC, name ASC",
         ),
         (false, false) => (
-            "(mtime_ns > ?2 OR (mtime_ns = ?2 AND sort_key < ?3))",
-            "mtime_ns ASC, sort_key DESC",
+            "(mtime_ns > ?2 OR (mtime_ns = ?2 \
+              AND (sort_key < ?3 OR (sort_key = ?3 AND name < ?4))))",
+            "mtime_ns ASC, sort_key DESC, name DESC",
         ),
     };
 
@@ -424,10 +445,12 @@ pub(super) fn query_sibling_date(
     );
 
     let mut stmt = conn.prepare(&sql)?;
-    let mut params_vec: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
-    params_vec.push(Box::new(parent_path.to_string()));
-    params_vec.push(Box::new(current_mtime));
-    params_vec.push(Box::new(current_sort_key));
+    let mut params_vec: Vec<Box<dyn rusqlite::types::ToSql>> = vec![
+        Box::new(parent_path.to_string()),
+        Box::new(current_mtime),
+        Box::new(current_sort_key),
+        Box::new(current_name.to_string()),
+    ];
     for kind in kinds {
         params_vec.push(Box::new(kind.to_string()));
     }

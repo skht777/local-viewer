@@ -630,11 +630,9 @@ fn browse_directory_blocking(
         ancestors,
         entries: page_entries,
         next_cursor,
-        total_count: if limit.is_some() {
-            Some(total_count)
-        } else {
-            None
-        },
+        // limit の有無で Some/None が入れ替わると fast-path (常に Some) と非対称になるため
+        // 常に全件数を返す
+        total_count: Some(total_count),
     };
 
     tracing::info!(

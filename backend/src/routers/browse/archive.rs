@@ -127,7 +127,8 @@ pub(super) async fn browse_archive(
         ancestors,
         entries: page_entries,
         next_cursor,
-        total_count: if limit.is_some() { Some(total) } else { None },
+        // ディレクトリ browse と同じく limit の有無に関わらず全件数を返す
+        total_count: Some(total),
     };
 
     Ok((response, etag))

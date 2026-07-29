@@ -111,6 +111,15 @@ pub(crate) fn scan_child_meta(
             continue;
         }
         let Ok(ft) = entry.file_type() else { continue };
+        // path_security が reject する子 (symlink 等) も数えない。
+        // DirIndex 投入 (parallel_walk) / writeback (scan_full_children_for_writeback) は
+        // validate_child reject を silent skip するため、数え方が食い違うと
+        // dirty 前後で child_count がちらつく。
+        // 非 symlink の子は検証済み親の直下で validate_child が必ず通るため、
+        // PathBuf 生成コストを避けて symlink のときだけ判定する
+        if ft.is_symlink() && path_security.validate_child(&entry.path(), true).is_err() {
+            continue;
+        }
         if ft.is_dir() {
             count += 1;
             continue;

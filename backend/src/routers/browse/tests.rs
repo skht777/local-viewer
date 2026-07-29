@@ -385,7 +385,9 @@ async fn parent_node_idとancestorsが含まれる() {
 }
 
 #[tokio::test]
-async fn limitなしでtotal_countがnull() {
+async fn limitなしでもtotal_countが全件数で返る() {
+    // fast-path (DirIndex) は limit の有無に関わらず total_count を返す。
+    // fallback だけ null を返すと経路依存で値が入れ替わるため Some に統一する
     let (_dir, root) = create_test_dir();
     let state = test_state(&root, HashMap::new());
     let node_id = register_node_id(&state, &root);
@@ -393,7 +395,7 @@ async fn limitなしでtotal_countがnull() {
     let (status, json) = get_json(app(state), &format!("/api/browse/{node_id}")).await;
 
     assert_eq!(status, StatusCode::OK);
-    assert!(json["total_count"].is_null());
+    assert_eq!(json["total_count"], 3, "limit 省略時も全件数を返すべき");
     assert!(json["next_cursor"].is_null());
 }
 
@@ -1721,4 +1723,224 @@ fn scan_full_children_for_writebackはsymlinkをスキップして継続する()
     assert!(names.contains(&"img1.jpg"));
     assert!(names.contains(&"img2.png"));
     assert!(names.contains(&"doc.pdf"));
+}
+
+// --- first-viewable の sort 反映 / 破損アーカイブ (B8 / B11) ---
+
+/// `DirIndex` に ready 状態のエントリを投入した first-viewable 用 state を作る
+fn setup_first_viewable_index(root: &std::path::Path, mount_id: &str) -> Arc<AppState> {
+    let (state, _db) = test_state_persistent_dir_index(root, HashMap::new());
+    {
+        #[allow(clippy::expect_used, reason = "テストコード")]
+        let mut reg = state.node_registry.lock().expect("lock");
+        let mut map = HashMap::new();
+        map.insert(mount_id.to_string(), root.to_path_buf());
+        reg.set_mount_id_map(map);
+    }
+    state
+}
+
+#[tokio::test]
+async fn first_viewableの高速パスがname_descのsortを反映する() {
+    // DirIndex 高速パスは ORDER BY sort_key ASC 固定で sort を無視していたため、
+    // name-desc でも先頭 (a.jpg) が返っていた
+    let dir = TempDir::new().unwrap();
+    let root = fs::canonicalize(dir.path()).unwrap();
+    fs::write(root.join("a.jpg"), "x").unwrap();
+    fs::write(root.join("b.jpg"), "x").unwrap();
+    fs::write(root.join("c.jpg"), "x").unwrap();
+
+    let mount_id = "aaaaaaaaaaaaaaaa";
+    let state = setup_first_viewable_index(&root, mount_id);
+    state
+        .dir_index
+        .ingest_walk_entry(&crate::services::indexer::WalkCallbackArgs {
+            walk_entry_path: root.to_string_lossy().into_owned(),
+            root_dir: root.to_string_lossy().into_owned(),
+            mount_id: mount_id.to_string(),
+            dir_mtime_ns: 1,
+            subdirs: vec![],
+            files: vec![
+                ("a.jpg".to_string(), 1, 3_000_000_000),
+                ("b.jpg".to_string(), 1, 2_000_000_000),
+                ("c.jpg".to_string(), 1, 1_000_000_000),
+            ],
+            is_complete: true,
+        })
+        .unwrap();
+    state.dir_index.mark_ready();
+
+    let root_id = register_node_id(&state, &root);
+    let (status, json) = get_json(
+        app(state),
+        &format!("/api/browse/{root_id}/first-viewable?sort=name-desc"),
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        json["entry"]["name"], "c.jpg",
+        "name-desc では名前降順の先頭を返すべき"
+    );
+}
+
+#[tokio::test]
+async fn first_viewableの高速パスがdate_ascのsortを反映する() {
+    let dir = TempDir::new().unwrap();
+    let root = fs::canonicalize(dir.path()).unwrap();
+    fs::write(root.join("a.jpg"), "x").unwrap();
+    fs::write(root.join("b.jpg"), "x").unwrap();
+
+    let mount_id = "aaaaaaaaaaaaaaaa";
+    let state = setup_first_viewable_index(&root, mount_id);
+    state
+        .dir_index
+        .ingest_walk_entry(&crate::services::indexer::WalkCallbackArgs {
+            walk_entry_path: root.to_string_lossy().into_owned(),
+            root_dir: root.to_string_lossy().into_owned(),
+            mount_id: mount_id.to_string(),
+            dir_mtime_ns: 1,
+            subdirs: vec![],
+            files: vec![
+                ("a.jpg".to_string(), 1, 9_000_000_000),
+                ("b.jpg".to_string(), 1, 1_000_000_000),
+            ],
+            is_complete: true,
+        })
+        .unwrap();
+    state.dir_index.mark_ready();
+
+    let root_id = register_node_id(&state, &root);
+    let (status, json) = get_json(
+        app(state),
+        &format!("/api/browse/{root_id}/first-viewable?sort=date-asc"),
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        json["entry"]["name"], "b.jpg",
+        "date-asc では最も古い mtime のエントリを返すべき"
+    );
+}
+
+#[tokio::test]
+async fn first_viewableは破損アーカイブで422を返す() {
+    // browse (browse_archive) は 422 を返すのに first-viewable だけ 200 + entry:null で
+    // 「閲覧対象なし」と区別できなかった
+    let dir = TempDir::new().unwrap();
+    let root = fs::canonicalize(dir.path()).unwrap();
+    fs::write(root.join("broken.zip"), "this is not a zip").unwrap();
+
+    let state = test_state(&root, HashMap::new());
+    let zip_id = register_node_id(&state, &root.join("broken.zip"));
+
+    let (status, json) =
+        get_json(app(state), &format!("/api/browse/{zip_id}/first-viewable")).await;
+
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert_eq!(json["code"], "INVALID_ARCHIVE");
+}
+
+// --- date ソート fast-path のカーソル mtime ソース一致 (B10) ---
+
+#[tokio::test]
+async fn date_descのfast_pathカーソルはdbのmtimeを基準にする() {
+    // カーソル生成に FS の mtime、比較に DB の mtime を使うと両者が乖離した瞬間に
+    // ページ境界でエントリが重複/欠落する。DB 値に統一されていることを確認する。
+    // DB の mtime は FS の作成順と逆にしてあるため、fallback 経路なら順序が変わる
+    let dir = TempDir::new().unwrap();
+    let root = fs::canonicalize(dir.path()).unwrap();
+    fs::write(root.join("f1.jpg"), "x").unwrap();
+    fs::write(root.join("f2.jpg"), "x").unwrap();
+    fs::write(root.join("f3.jpg"), "x").unwrap();
+
+    let mount_id = "aaaaaaaaaaaaaaaa";
+    let state = setup_first_viewable_index(&root, mount_id);
+
+    // mtime ガードを通すため親ディレクトリの mtime は FS 実値を投入する
+    let dir_mtime_ns = i64::try_from(
+        fs::metadata(&root)
+            .unwrap()
+            .modified()
+            .unwrap()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos(),
+    )
+    .unwrap();
+
+    state
+        .dir_index
+        .ingest_walk_entry(&crate::services::indexer::WalkCallbackArgs {
+            walk_entry_path: root.to_string_lossy().into_owned(),
+            root_dir: root.to_string_lossy().into_owned(),
+            mount_id: mount_id.to_string(),
+            dir_mtime_ns,
+            subdirs: vec![],
+            files: vec![
+                ("f1.jpg".to_string(), 1, 3_000_000_000),
+                ("f2.jpg".to_string(), 1, 2_000_000_000),
+                ("f3.jpg".to_string(), 1, 1_000_000_000),
+            ],
+            is_complete: true,
+        })
+        .unwrap();
+    state.dir_index.mark_ready();
+
+    let root_id = register_node_id(&state, &root);
+
+    let (status, json) = get_json(
+        app(Arc::clone(&state)),
+        &format!("/api/browse/{root_id}?sort=date-desc&limit=1"),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        json["entries"][0]["name"], "f1.jpg",
+        "DirIndex 高速パスが使われ DB の mtime 順で返るべき"
+    );
+    let cursor = json["next_cursor"].as_str().unwrap().to_string();
+
+    let (status2, json2) = get_json(
+        app(state),
+        &format!("/api/browse/{root_id}?sort=date-desc&limit=1&cursor={cursor}"),
+    )
+    .await;
+    assert_eq!(status2, StatusCode::OK);
+    assert_eq!(
+        json2["entries"][0]["name"], "f2.jpg",
+        "FS の mtime を使うと 1 ページ目と同じエントリが再度返る"
+    );
+}
+
+#[tokio::test]
+async fn fallbackのbrowseで子ディレクトリのchild_countがsymlinkを数えない() {
+    // DirIndex 投入 (parallel_walk) / writeback は validate_child reject (symlink) を
+    // skip するのに scan_child_meta だけ数えていたため child_count がちらついていた
+    let dir = TempDir::new().unwrap();
+    let root = fs::canonicalize(dir.path()).unwrap();
+    let sub = root.join("album");
+    fs::create_dir_all(&sub).unwrap();
+    fs::write(sub.join("real.jpg"), "x").unwrap();
+    fs::write(root.join("target.jpg"), "x").unwrap();
+    std::os::unix::fs::symlink(root.join("target.jpg"), sub.join("link.jpg")).unwrap();
+
+    // ALLOW_SYMLINKS=false (test_state の既定)
+    let state = test_state(&root, HashMap::new());
+    let node_id = register_node_id(&state, &root);
+
+    let (status, json) = get_json(app(state), &format!("/api/browse/{node_id}?limit=10")).await;
+
+    assert_eq!(status, StatusCode::OK);
+    let album = json["entries"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|e| e["name"] == "album")
+        .unwrap();
+    assert_eq!(
+        album["child_count"], 1,
+        "symlink は DirIndex の COUNT(*) に含まれないため数えない"
+    );
 }

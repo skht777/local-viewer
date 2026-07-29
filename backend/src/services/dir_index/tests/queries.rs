@@ -61,7 +61,9 @@ fn first_entry_by_kindがarchiveを優先して返す() {
     idx.ingest_walk_entry(&args).unwrap();
 
     // archive が最初に見つかる
-    let entry = idx.first_entry_by_kind("m1/photos", "archive").unwrap();
+    let entry = idx
+        .first_entry_by_kind("m1/photos", "archive", "name-asc")
+        .unwrap();
     assert!(entry.is_some());
     assert_eq!(entry.unwrap().name, "archive.zip");
 }
@@ -79,6 +81,77 @@ fn first_entry_by_kindで該当なしはnoneを返す() {
     );
     idx.ingest_walk_entry(&args).unwrap();
 
-    let entry = idx.first_entry_by_kind("m1/photos", "archive").unwrap();
+    let entry = idx
+        .first_entry_by_kind("m1/photos", "archive", "name-asc")
+        .unwrap();
     assert!(entry.is_none());
+}
+
+#[test]
+fn first_entry_by_kindがname_descで末尾のエントリを返す() {
+    let (idx, _tmp) = setup();
+
+    let args = make_args(
+        "/data/photos",
+        "/data",
+        "m1",
+        vec![],
+        vec![
+            ("a.jpg", 100, 3_000_000_000),
+            ("b.jpg", 100, 2_000_000_000),
+            ("c.jpg", 100, 1_000_000_000),
+        ],
+    );
+    idx.ingest_walk_entry(&args).unwrap();
+
+    let entry = idx
+        .first_entry_by_kind("m1/photos", "image", "name-desc")
+        .unwrap();
+    assert_eq!(entry.map(|de| de.name).as_deref(), Some("c.jpg"));
+}
+
+#[test]
+fn first_entry_by_kindがdate_ascで最古のエントリを返す() {
+    let (idx, _tmp) = setup();
+
+    let args = make_args(
+        "/data/photos",
+        "/data",
+        "m1",
+        vec![],
+        vec![
+            ("a.jpg", 100, 3_000_000_000),
+            ("b.jpg", 100, 2_000_000_000),
+            ("c.jpg", 100, 1_000_000_000),
+        ],
+    );
+    idx.ingest_walk_entry(&args).unwrap();
+
+    let entry = idx
+        .first_entry_by_kind("m1/photos", "image", "date-asc")
+        .unwrap();
+    assert_eq!(entry.map(|de| de.name).as_deref(), Some("c.jpg"));
+}
+
+#[test]
+fn first_entry_by_kindがdate_descで最新のエントリを返す() {
+    let (idx, _tmp) = setup();
+
+    let args = make_args(
+        "/data/photos",
+        "/data",
+        "m1",
+        vec![],
+        vec![
+            ("a.jpg", 100, 3_000_000_000),
+            ("b.jpg", 100, 2_000_000_000),
+            ("c.jpg", 100, 1_000_000_000),
+        ],
+    );
+    idx.ingest_walk_entry(&args).unwrap();
+
+    let entry = idx
+        .first_entry_by_kind("m1/photos", "image", "date-desc")
+        .unwrap();
+    assert_eq!(entry.map(|de| de.name).as_deref(), Some("a.jpg"));
 }
