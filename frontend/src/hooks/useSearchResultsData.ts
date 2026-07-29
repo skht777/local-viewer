@@ -1,13 +1,13 @@
 // 検索結果ページのデータレイヤー
 // - URL searchParams から q / scope / kind / sort を正規化
 // - searchInfiniteOptions で無限スクロールクエリを実行
-// - browseNodeOptions(scope) で scope ディレクトリ名を解決
+// - browseInfiniteOptions(scope) の先頭ページから scope ディレクトリ名を解決
 // - 結果を BrowseEntry[] に変換して返す
 
 import { useMemo } from "react";
-import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
+import { useInfiniteQuery } from "@tanstack/react-query";
 import { useSearchParams } from "react-router-dom";
-import { browseNodeOptions, searchInfiniteOptions } from "./api/browseQueries";
+import { browseInfiniteOptions, searchInfiniteOptions } from "./api/browseQueries";
 import type { SearchSort } from "./api/browseQueries";
 import { searchResultToBrowseEntry } from "../utils/searchResultToBrowseEntry";
 import type { BrowseEntry, SearchResult } from "../types/api";
@@ -48,8 +48,11 @@ export function useSearchResultsData(): SearchResultsData {
   const rawSort = searchParams.get("sort");
   const sort = (rawSort && VALID_SEARCH_SORTS.has(rawSort) ? rawSort : "relevance") as SearchSort;
 
-  // scope 配下の場合、ディレクトリ名を表示するために browseNodeOptions で取得
-  const { data: scopeData } = useQuery(browseNodeOptions(scope ?? undefined));
+  // scope 配下の場合、ディレクトリ名を表示するために先頭ページのメタだけ取得する
+  // (BrowsePage と同じ browse-infinite キーを共有し、限定なしの全件取得を避ける)
+  const { data: scopeData } = useInfiniteQuery(
+    browseInfiniteOptions(scope ?? undefined, "name-asc"),
+  );
 
   // 検索結果（無限スクロール）
   const { data, isLoading, hasNextPage, fetchNextPage, isFetchingNextPage, isError } =
@@ -81,6 +84,6 @@ export function useSearchResultsData(): SearchResultsData {
     isError,
     allEntries,
     allRawResults,
-    scopeName: scopeData?.current_name ?? null,
+    scopeName: scopeData?.pages[0]?.current_name ?? null,
   };
 }

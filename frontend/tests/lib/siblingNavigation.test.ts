@@ -60,7 +60,10 @@ function createSeededClient(data: Record<string, BrowseResponse>): QueryClient {
     defaultOptions: { queries: { retry: false, staleTime: 60_000 } },
   });
   for (const [nodeId, response] of Object.entries(data)) {
-    client.setQueryData(["browse", nodeId, "name-asc"], response);
+    client.setQueryData(["browse-infinite", nodeId, "name-asc"], {
+      pages: [response],
+      pageParams: [undefined],
+    });
   }
   return client;
 }

@@ -5,7 +5,7 @@
 
 import type { QueryClient } from "@tanstack/react-query";
 import { apiFetch } from "../hooks/api/apiClient";
-import { browseNodeOptions } from "../hooks/api/browseQueries";
+import { fetchBrowseAllEntries } from "../hooks/api/browseQueries";
 import { findNextSet, findPrevSet } from "../hooks/useSetNavigation";
 import { sortEntries } from "../utils/sortEntries";
 import type { SortOrder } from "../hooks/useViewerParams";
@@ -82,7 +82,7 @@ export async function fetchSiblingPair({
   let parentData: BrowseResponse | null = null;
   if ((needPrev && !prev) || (needNext && !next)) {
     try {
-      parentData = await queryClient.fetchQuery(browseNodeOptions(parentId, sort));
+      parentData = await fetchBrowseAllEntries(queryClient, parentId, sort);
     } catch {
       return null;
     }
@@ -137,7 +137,7 @@ export async function fetchSiblingOne({
 
   let parentData: BrowseResponse | null = null;
   try {
-    parentData = await queryClient.fetchQuery(browseNodeOptions(parentId, sort));
+    parentData = await fetchBrowseAllEntries(queryClient, parentId, sort);
   } catch {
     return null;
   }
@@ -176,7 +176,7 @@ export async function walkUpToParent({
 }: WalkUpToParentParams): Promise<WalkUpResult | null> {
   let parentData: BrowseResponse | null = null;
   try {
-    parentData = await queryClient.fetchQuery(browseNodeOptions(currentParentId, sort));
+    parentData = await fetchBrowseAllEntries(queryClient, currentParentId, sort);
   } catch {
     return null;
   }

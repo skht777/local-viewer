@@ -4,17 +4,8 @@ import { infiniteQueryOptions, queryOptions } from "@tanstack/react-query";
 import type { QueryClient } from "@tanstack/react-query";
 import type { SortOrder } from "../../hooks/useViewerParams";
 import type { BrowseResponse, SearchResponse } from "../../types/api";
+import { dedupeByNodeId } from "../../utils/dedupeEntries";
 import { apiFetch } from "./apiClient";
-
-// 特定ディレクトリの中身を取得 (後方互換: ページネーションなし)
-export function browseNodeOptions(nodeId: string | undefined, sort?: SortOrder) {
-  const sortParam = sort && sort !== "name-asc" ? `?sort=${sort}` : "";
-  return queryOptions({
-    enabled: Boolean(nodeId),
-    queryFn: () => apiFetch<BrowseResponse>(`/api/browse/${nodeId}${sortParam}`),
-    queryKey: ["browse", nodeId, sort ?? "name-asc"],
-  });
-}
 
 // ページネーション対応の無限スクロールクエリ
 const PAGE_SIZE = 100;
@@ -72,6 +63,28 @@ export async function fetchAllBrowsePages(
       `fetchAllBrowsePages: MAX_PAGES (${MAX_PAGES}) に到達しました。nodeId=${nodeId} の続きのページは取得されていません`,
     );
   }
+}
+
+// 全ページ結合済みの BrowseResponse を返す（クライアント側の全件探索用）
+// - 兄弟セット探索 / first-viewable のフォールバックのように「全エントリ」が要るケース専用
+// - limit 無しの `browse` キーを廃止し、キャッシュを `browse-infinite` に一本化する。
+//   これにより BrowsePage が既に読み込んだページをそのまま再利用できる
+// - 全ページ取得済みのキャッシュがあればリクエストを発行しない
+// - 取得失敗時は例外を送出する（呼び出し側の try/catch に委ねる）
+export async function fetchBrowseAllEntries(
+  queryClient: QueryClient,
+  nodeId: string,
+  sort: SortOrder,
+): Promise<BrowseResponse | null> {
+  await fetchAllBrowsePages(queryClient, nodeId, sort);
+  const cached = queryClient.getQueryData<{ pages: BrowseResponse[] }>(
+    browseInfiniteOptions(nodeId, sort).queryKey,
+  );
+  const first = cached?.pages?.[0];
+  if (!first) {
+    return null;
+  }
+  return { ...first, entries: dedupeByNodeId(cached.pages.flatMap((p) => p.entries)) };
 }
 
 // キーワード検索

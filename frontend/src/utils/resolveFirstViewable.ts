@@ -1,10 +1,10 @@
 // ディレクトリ内の最初の閲覧対象を再帰的に探索する
 // - サーバー側 first-viewable API を優先使用 (DirIndex 対応)
-// - API 失敗時はフォールバック: browseNodeOptions + クライアントサイド探索
+// - API 失敗時はフォールバック: 全ページ取得 (browse-infinite キャッシュ共有) + クライアントサイド探索
 // - 「▶ 開く」アクション・セット間ジャンプで使用
 
 import type { QueryClient } from "@tanstack/react-query";
-import { browseNodeOptions } from "../hooks/api/browseQueries";
+import { fetchBrowseAllEntries } from "../hooks/api/browseQueries";
 import { apiFetch } from "../hooks/api/apiClient";
 import type { SortOrder } from "../hooks/useViewerParams";
 import { selectFirstViewable } from "../hooks/useFirstFile";
@@ -42,7 +42,10 @@ export async function resolveFirstViewable(
   let currentNodeId = nodeId;
 
   for (let depth = 0; depth < MAX_DEPTH; depth++) {
-    const data = await queryClient.fetchQuery(browseNodeOptions(currentNodeId, sort));
+    const data = await fetchBrowseAllEntries(queryClient, currentNodeId, sort);
+    if (!data) {
+      return null;
+    }
     const sorted = sortEntries(data.entries, sort);
     const first = selectFirstViewable(sorted);
     if (!first) {

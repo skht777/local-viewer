@@ -10,11 +10,16 @@
 
 import type { Ref } from "react";
 import { useCallback, useEffect, useRef } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { browseNodeOptions } from "../hooks/api/browseQueries";
+import { useInfiniteQuery, useQueryClient } from "@tanstack/react-query";
+import { browseInfiniteOptions } from "../hooks/api/browseQueries";
 import { useTreeKeyboard } from "../hooks/useTreeKeyboard";
 import { useViewerStore } from "../stores/viewerStore";
+import { dedupeByNodeId } from "../utils/dedupeEntries";
 import type { BrowseEntry } from "../types/api";
+
+// ツリーの表示順はブラウズのソート順と独立に名前昇順で固定する
+// (グリッドのソート切替でサイドバーの並びが変わるのを避けるため)
+const TREE_SORT = "name-asc" as const;
 
 interface DirectoryTreeProps {
   rootEntries: BrowseEntry[];
@@ -55,8 +60,10 @@ function TreeNode({ entry, depth, activeNodeId, ancestorNodeIds, onNavigate }: T
   }, [isActive]);
 
   // 展開中のノードのみ子ノードを取得
-  const { data: childData } = useQuery({
-    ...browseNodeOptions(entry.node_id),
+  // BrowsePage 本体と同じ browse-infinite キーを共有する（二重キャッシュ + 全件取得の回避）。
+  // 読み込み済みページのみを表示するため、100 件を超える子は本体の追加読み込みに追従する
+  const { data: childData } = useInfiniteQuery({
+    ...browseInfiniteOptions(entry.node_id, TREE_SORT),
     enabled: isExpanded,
   });
 
@@ -75,9 +82,10 @@ function TreeNode({ entry, depth, activeNodeId, ancestorNodeIds, onNavigate }: T
   };
 
   // 200ms デバウンス付き hover プリフェッチ (マウスカーソル通過で無駄リクエストを抑制)
+  // 先頭 1 ページのみ温める。巨大ディレクトリで hover のたびに全件スキャンさせない
   const handlePointerEnter = () => {
     hoverTimerRef.current = setTimeout(() => {
-      queryClient.prefetchQuery(browseNodeOptions(entry.node_id));
+      queryClient.prefetchInfiniteQuery(browseInfiniteOptions(entry.node_id, TREE_SORT));
     }, 200);
   };
   const handlePointerLeave = () => {
@@ -97,10 +105,10 @@ function TreeNode({ entry, depth, activeNodeId, ancestorNodeIds, onNavigate }: T
   }, []);
 
   // ディレクトリ/アーカイブ/PDFのみ子ノードを表示
-  const childDirs =
-    childData?.entries.filter(
-      (e) => e.kind === "directory" || e.kind === "archive" || e.kind === "pdf",
-    ) ?? [];
+  // ページ跨ぎの重複は key 衝突を招くため dedup する
+  const childDirs = dedupeByNodeId((childData?.pages ?? []).flatMap((page) => page.entries)).filter(
+    (e) => e.kind === "directory" || e.kind === "archive" || e.kind === "pdf",
+  );
 
   return (
     <div role="treeitem" aria-expanded={isExpanded}>

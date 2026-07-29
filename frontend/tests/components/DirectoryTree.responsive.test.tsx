@@ -9,8 +9,10 @@ import type { BrowseEntry } from "../../src/types/api";
 Element.prototype.scrollIntoView = vi.fn();
 
 vi.mock("../../src/hooks/api/browseQueries", () => ({
-  browseNodeOptions: (nodeId: string) => ({
-    queryKey: ["browse", nodeId],
+  browseInfiniteOptions: (nodeId: string) => ({
+    queryKey: ["browse-infinite", nodeId, "name-asc"],
+    initialPageParam: undefined,
+    getNextPageParam: () => undefined,
     queryFn: () => Promise.resolve({ entries: [] }),
   }),
 }));

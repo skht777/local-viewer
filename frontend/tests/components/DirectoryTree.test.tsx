@@ -16,10 +16,12 @@ import type { BrowseEntry } from "../../src/types/api";
 // jsdom に scrollIntoView がないためモック
 Element.prototype.scrollIntoView = vi.fn();
 
-// browseNodeOptions をモック (lazy loading 用)
+// browseInfiniteOptions をモック (lazy loading 用)
 vi.mock("../../src/hooks/api/browseQueries", () => ({
-  browseNodeOptions: (nodeId: string) => ({
-    queryKey: ["browse", nodeId],
+  browseInfiniteOptions: (nodeId: string) => ({
+    queryKey: ["browse-infinite", nodeId, "name-asc"],
+    initialPageParam: undefined,
+    getNextPageParam: () => undefined,
     queryFn: () =>
       Promise.resolve({
         entries: [

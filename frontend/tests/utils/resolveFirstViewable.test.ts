@@ -32,17 +32,20 @@ function browseResponse(nodeId: string, entries: BrowseEntry[]): BrowseResponse 
   };
 }
 
-// fetchQuery をモックして、nodeId に応じた BrowseResponse を返す
+const SORTS = ["name-asc", "name-desc", "date-asc", "date-desc"];
+
+// browse-infinite キャッシュに全ページ投入済みの QueryClient を作る
+// (fetchBrowseAllEntries は完了済みキャッシュがあればリクエストを発行しない)
 function createMockQueryClient(responses: Record<string, BrowseResponse>): QueryClient {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  vi.spyOn(client, "fetchQuery").mockImplementation(async (opts) => {
-    const [, nodeId] = opts.queryKey as string[];
-    const response = responses[nodeId];
-    if (!response) {
-      throw new Error(`No mock for nodeId: ${nodeId}`);
+  for (const [nodeId, response] of Object.entries(responses)) {
+    for (const sort of SORTS) {
+      client.setQueryData(["browse-infinite", nodeId, sort], {
+        pages: [response],
+        pageParams: [undefined],
+      });
     }
-    return response;
-  });
+  }
   return client;
 }
 

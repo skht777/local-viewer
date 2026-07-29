@@ -39,19 +39,16 @@ vi.mock("../../src/hooks/api/browseQueries", () => ({
     queryKey: ["browse-infinite", nodeId, sort],
     queryFn: () => Promise.resolve({ pages: [], pageParams: [] }),
   }),
-  browseNodeOptions: (nodeId: string, sort: string) => ({
-    queryKey: ["browse", nodeId, sort],
-    queryFn: () =>
-      Promise.resolve({
-        current_node_id: nodeId,
-        current_name: nodeId,
-        parent_node_id: null,
-        ancestors: [],
-        entries: [],
-        next_cursor: null,
-        total_count: null,
-      }),
-  }),
+  fetchBrowseAllEntries: (_client: unknown, nodeId: string) =>
+    Promise.resolve({
+      current_node_id: nodeId,
+      current_name: nodeId,
+      parent_node_id: null,
+      ancestors: [],
+      entries: [],
+      next_cursor: null,
+      total_count: null,
+    }),
   fetchAllBrowsePages: (...args: [unknown, string, string]) => mockFetchAllBrowsePages(...args),
 }));
 

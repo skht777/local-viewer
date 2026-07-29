@@ -79,8 +79,11 @@ function createSeededClient(data: Record<string, BrowseResponse>): QueryClient {
     },
   });
   for (const [nodeId, response] of Object.entries(data)) {
-    // browseNodeOptions のキーは ["browse", nodeId, sort] (sort デフォルト "name-asc")
-    client.setQueryData(["browse", nodeId, "name-asc"], response);
+    // 親ディレクトリの全件取得は browse-infinite キャッシュを共有する
+    client.setQueryData(["browse-infinite", nodeId, "name-asc"], {
+      pages: [response],
+      pageParams: [undefined],
+    });
   }
   return client;
 }
@@ -247,10 +250,10 @@ describe("useSiblingPrefetch", () => {
 
     await waitFor(() => {
       // 親ディレクトリのキャッシュは温まっている
-      expect(client.getQueryData(["browse", "parent", "name-asc"])).toBeDefined();
+      expect(client.getQueryData(["browse-infinite", "parent", "name-asc"])).toBeDefined();
     });
     // PDF の node_id で browse しない（422 になるため）
-    expect(client.getQueryData(["browse", "p1", "name-asc"])).toBeUndefined();
+    expect(client.getQueryData(["browse-infinite", "p1", "name-asc"])).toBeUndefined();
   });
 
   test("currentNodeId が null の場合は何もしない", async () => {
@@ -285,7 +288,10 @@ describe("useSiblingPrefetch", () => {
       entry("directory", "d1"),
       entry("directory", "d2"),
     ]);
-    client.setQueryData(["browse", "parent"], parentData);
+    client.setQueryData(["browse-infinite", "parent", "name-asc"], {
+      pages: [parentData],
+      pageParams: [undefined],
+    });
 
     const wrapper = createWrapper(client);
 
