@@ -42,6 +42,22 @@ impl MountScanOutcome {
     }
 }
 
+/// `mount_id_map` を `mount_id` 昇順の `Vec` に変換する
+///
+/// `HashMap` の反復順は非決定的で、ネストしたマウント (`/a` と `/a/b`) では
+/// スキャン順・監視登録順が実行ごとに変わってしまう。`parent_key` 解決を
+/// 決定的にするため、走査順を `mount_id` 昇順に固定する。
+fn sorted_mounts(
+    mount_id_map: &std::collections::HashMap<String, PathBuf>,
+) -> Vec<(String, PathBuf)> {
+    let mut mounts: Vec<(String, PathBuf)> = mount_id_map
+        .iter()
+        .map(|(id, p)| (id.clone(), p.clone()))
+        .collect();
+    mounts.sort_by(|a, b| a.0.cmp(&b.0));
+    mounts
+}
+
 /// ウォームスタート判定 + バックグラウンドスキャンを起動する
 #[allow(
     clippy::too_many_lines,
@@ -84,11 +100,7 @@ pub(crate) fn spawn_background_tasks(bg: BackgroundContext) -> tokio::task::Join
     }
 
     // マウントごとの逐次バックグラウンドスキャン (SQLite 並行書き込み競合を回避)
-    let scan_mounts: Vec<(String, PathBuf)> = bg
-        .mount_id_map
-        .iter()
-        .map(|(id, p)| (id.clone(), p.clone()))
-        .collect();
+    let scan_mounts: Vec<(String, PathBuf)> = sorted_mounts(&bg.mount_id_map);
     let mount_count = scan_mounts.len().max(1);
     let workers_per_mount = (bg.scan_workers / mount_count).max(2);
 
@@ -105,11 +117,7 @@ pub(crate) fn spawn_background_tasks(bg: BackgroundContext) -> tokio::task::Join
     // shutdown_token を scan_handle 内と install task 内でそれぞれ使うため clone
     let shutdown_token_for_scan = bg.shutdown_token.clone();
     let shutdown_token_for_install = bg.shutdown_token.clone();
-    let watcher_mounts: Vec<(String, PathBuf)> = bg
-        .mount_id_map
-        .iter()
-        .map(|(id, p)| (id.clone(), p.clone()))
-        .collect();
+    let watcher_mounts: Vec<(String, PathBuf)> = sorted_mounts(&bg.mount_id_map);
 
     // マウントごとのスキャンを逐次実行
     // Indexer と DirIndex は同一 SQLite DB を共有するため、並行書き込みで

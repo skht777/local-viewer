@@ -3,19 +3,23 @@
 //! `POST /api/mounts/reload` から呼ばれ、mount 構成の差分を反映する。
 //!
 //! スコープ:
-//! - **削除された mount のみ**サポート（DB 行と `NodeRegistry` / `PathSecurity`
-//!   状態を同期的に取り除く）
-//! - **追加された mount は `tracing::warn!` でスキップ**。`manage_mounts.sh` が
-//!   `docker-compose.override.yml` のバインドマウントも同時編集するため、
-//!   追加はコンテナ再起動（`./start.sh`）が必須。hot reload では受け付けない
+//! - **削除された mount**: DB 行と `NodeRegistry` / `PathSecurity` 状態を
+//!   同期的に取り除く
+//! - **追加された mount**: `NodeRegistry` / `PathSecurity` / `FileWatcher` の
+//!   3 者すべてに反映する。索引 (`Indexer` / `DirIndex`) は以後の browse
+//!   writeback と `FileWatcher` が追従するため、即時のフルスキャンは行わない。
+//!   ホスト側のバインドマウント追加自体は `manage_mounts.sh` +
+//!   コンテナ再起動が前提（`resolve_path` が失敗すれば 400 で弾かれる）
 //!
 //! Lock 順序（deadlock 回避のため固定）:
-//! 1. `state.node_registry.lock()` で旧 `mount_id_map` を取得し、削除対象を列挙
+//! 1. `state.node_registry.lock()` で旧 `mount_id_map` を取得し、差分を列挙
 //! 2. lock 解放
 //! 3. `spawn_blocking` 内で `perform_full_stale_cleanup` を実行（SQLite I/O）
-//! 4. `state.node_registry.lock()` で `remove_mount` + `rebuild_root_entries_cache`
+//! 4. `state.node_registry.lock()` で `remove_mount`
 //! 5. `state.path_security.replace_roots(new_roots)` で内部 `RwLock` 差し替え
-//! 6. `state.file_watcher.lock()` で旧 watcher stop → 新 watcher new/start → replace
+//! 6. `state.node_registry.lock()` で `add_mount` + `rebuild_root_entries_cache`
+//! 7. `state.file_watcher.lock()` で旧 watcher stop → 新 watcher new/start → replace
+//! 8. `dir_index.mark_all_known_dirs_dirty()` で差し替え中の取りこぼしを補償
 //!
 //! `rebuild_guard` の取得と解放は呼び出し側（router）の責務（RAII）。
 
@@ -38,8 +42,10 @@ use crate::state::AppState;
 pub(crate) struct MountReloadResult {
     /// 新 config から消えた `mount_id`（stale cleanup + `NodeRegistry` から除去済み）
     pub removed: Vec<String>,
-    /// 新 config にあり旧にない `mount_id`（docker restart が必要なため警告のみ）
-    pub ignored_additions: Vec<String>,
+    /// 新 config にあり旧にない `mount_id`（`NodeRegistry` / `PathSecurity` /
+    /// `FileWatcher` へ反映済み。インデックスは以後の browse writeback と
+    /// `FileWatcher` で追従する）
+    pub added: Vec<String>,
     /// stale cleanup（`perform_full_stale_cleanup`）が全件成功したか
     pub cleanup_ok: bool,
 }
@@ -75,6 +81,12 @@ pub(crate) async fn reload_mounts(
         .iter()
         .map(|m| Ok((m.mount_id.clone(), m.resolve_path(&base_dir)?)))
         .collect::<Result<HashMap<_, _>, AppError>>()?;
+    // 追加 mount を NodeRegistry に登録する際の表示名
+    let new_names: HashMap<String, String> = new_config
+        .mounts
+        .iter()
+        .map(|m| (m.mount_id.clone(), m.name.clone()))
+        .collect();
 
     // Step 2: 旧 mount_id_map を snapshot（短時間 lock、即解放）
     let old_entries: HashMap<String, PathBuf> = {
@@ -96,15 +108,16 @@ pub(crate) async fn reload_mounts(
         .difference(&new_ids)
         .map(|s| (*s).to_string())
         .collect();
-    let ignored_additions: Vec<String> = new_ids
+    let mut added_ids: Vec<String> = new_ids
         .difference(&old_ids)
         .map(|s| (*s).to_string())
         .collect();
+    added_ids.sort();
 
-    if !ignored_additions.is_empty() {
-        tracing::warn!(
-            mount_ids = ?ignored_additions,
-            "mount 追加は hot reload 非対応（docker-compose 再起動が必要、skip）"
+    if !added_ids.is_empty() {
+        tracing::info!(
+            mount_ids = ?added_ids,
+            "mount 追加を検出（NodeRegistry / PathSecurity / FileWatcher に反映）"
         );
     }
 
@@ -158,7 +171,10 @@ pub(crate) async fn reload_mounts(
     // Step 6: PathSecurity の roots を新構成で差し替え
     //   NodeRegistry / FileWatcher が保持する Arc<PathSecurity> は同一 Arc のまま、
     //   内部 RwLock 越しに新 roots が反映される
-    let new_roots: Vec<PathBuf> = new_entries.values().cloned().collect();
+    //   roots の並びは mount_id 昇順に固定する（HashMap 由来の非決定順を排除）
+    let mut sorted_entries: Vec<(&String, &PathBuf)> = new_entries.iter().collect();
+    sorted_entries.sort_by(|a, b| a.0.cmp(b.0));
+    let new_roots: Vec<PathBuf> = sorted_entries.iter().map(|(_, p)| (*p).clone()).collect();
     if new_roots.is_empty() {
         // 空 roots は PathSecurity::replace_roots が拒否する。新 config が
         // 全マウント削除だった場合はここで早期警告して pathsecurity は触らない
@@ -167,7 +183,10 @@ pub(crate) async fn reload_mounts(
         state.path_security.replace_roots(new_roots.clone())?;
     }
 
-    // Step 7: NodeRegistry 内の root_entries キャッシュを再構築
+    // Step 7: 追加 mount を NodeRegistry に登録 + root_entries キャッシュを再構築
+    //   PathSecurity / FileWatcher にだけ新 root が入り NodeRegistry に入らないと、
+    //   追加 mount 配下は parent_key を解決できず DirIndex 高速パス / writeback /
+    //   scope 検索が動かない（一覧には出るのに索引が付かない片肺状態になる）
     {
         #[allow(
             clippy::expect_used,
@@ -177,6 +196,12 @@ pub(crate) async fn reload_mounts(
             .node_registry
             .lock()
             .expect("NodeRegistry Mutex poisoned");
+        for id in &added_ids {
+            if let Some(root) = new_entries.get(id) {
+                let name = new_names.get(id).cloned().unwrap_or_else(|| id.clone());
+                reg.add_mount(id, root.clone(), name);
+            }
+        }
         reg.rebuild_root_entries_cache();
     }
 
@@ -237,18 +262,36 @@ pub(crate) async fn reload_mounts(
                 .expect("file_watcher Mutex poisoned");
             *slot = Some(new_watcher);
         }
+
+        // 旧 watcher stop → 新 watcher start の隙間に発生したイベントは
+        // どちらの watcher にも届かず失われる。既知ディレクトリを一括 dirty 化して
+        // 以後の browse を fallback + writeback に落とし、取りこぼしを自己修復させる
+        // （inotify overflow 時と同じ整合回復手段を再利用）
+        let heal_dir_index = Arc::clone(&state.dir_index);
+        match tokio::task::spawn_blocking(move || heal_dir_index.mark_all_known_dirs_dirty()).await
+        {
+            Ok(Ok(count)) => {
+                tracing::info!(count, "watcher 差し替え中の取りこぼしを dirty 化で補償");
+            }
+            Ok(Err(e)) => {
+                tracing::warn!(error = %e, "watcher 差し替え後の dirty 化に失敗");
+            }
+            Err(e) => {
+                tracing::warn!(error = %e, "watcher 差し替え後の dirty 化タスクが失敗");
+            }
+        }
     }
 
     tracing::info!(
         removed = ?removed_ids,
-        ignored_additions = ?ignored_additions,
+        added = ?added_ids,
         cleanup_ok,
         "mount hot reload 完了"
     );
 
     Ok(MountReloadResult {
         removed: removed_ids,
-        ignored_additions,
+        added: added_ids,
         cleanup_ok,
     })
 }
@@ -388,7 +431,7 @@ mod tests {
             .await
             .expect("reload_mounts が成功するはず");
         assert_eq!(result.removed, vec![MOUNT_B.to_string()]);
-        assert!(result.ignored_additions.is_empty());
+        assert!(result.added.is_empty());
         assert!(result.cleanup_ok);
         // mount_id_map からも MOUNT_B が消える
         let reg = env.state.node_registry.lock().unwrap();
@@ -397,20 +440,64 @@ mod tests {
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-    async fn reload_mountsは追加mountをignored_additionsに載せてスキップする() {
+    async fn reload_mountsは追加mountをNodeRegistryにも登録する() {
+        // 旧実装は PathSecurity / FileWatcher にだけ新 root を反映し NodeRegistry に
+        // 入れていなかったため、追加 mount 配下は parent_key を解決できず
+        // DirIndex 高速パス / writeback / scope 検索が機能しなかった
         let env = setup_two_mounts();
         std::fs::create_dir_all(env.state.settings.mount_base_dir.join("c")).unwrap();
-        // 新 config は MOUNT_A, MOUNT_B, NEW（追加）
         const NEW: &str = "cccccccccccccccc";
         let new_config = config_with_mounts(&env, &[(MOUNT_A, "a"), (MOUNT_B, "b"), (NEW, "c")]);
         let result = reload_mounts(Arc::clone(&env.state), new_config)
             .await
             .expect("reload_mounts が成功するはず");
         assert!(result.removed.is_empty());
-        assert_eq!(result.ignored_additions, vec![NEW.to_string()]);
-        // 追加 mount は NodeRegistry に反映されない
+        assert_eq!(result.added, vec![NEW.to_string()]);
+
+        let base = env.state.settings.mount_base_dir.clone();
         let reg = env.state.node_registry.lock().unwrap();
-        assert!(!reg.mount_id_map().contains_key(NEW));
+        assert_eq!(
+            reg.mount_id_map().get(NEW),
+            Some(&base.join("c")),
+            "追加 mount が mount_id_map に登録されるべき"
+        );
+        assert_eq!(
+            reg.compute_parent_path_key(&base.join("c").join("album"))
+                .as_deref(),
+            Some("cccccccccccccccc/album"),
+            "追加 mount 配下の parent_key が解決できるべき"
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn reload_mountsはwatcher差し替え後に既知ディレクトリをdirty化する() {
+        // 旧 watcher stop → 新 watcher start の隙間に発生したイベントは失われるため、
+        // 差し替え後に既知ディレクトリを dirty 化して取りこぼしを補償する
+        let env = setup_two_mounts();
+        let base = env.state.settings.mount_base_dir.clone();
+        env.state
+            .dir_index
+            .ingest_walk_entry(&crate::services::indexer::WalkCallbackArgs {
+                walk_entry_path: base.join("a").to_string_lossy().into_owned(),
+                root_dir: base.join("a").to_string_lossy().into_owned(),
+                mount_id: MOUNT_A.to_string(),
+                dir_mtime_ns: 1,
+                subdirs: vec![],
+                files: vec![("x.jpg".to_string(), 1, 1)],
+                is_complete: true,
+            })
+            .unwrap();
+        assert!(!env.state.dir_index.is_dir_dirty(MOUNT_A));
+
+        let new_config = config_with_mounts(&env, &[(MOUNT_A, "a"), (MOUNT_B, "b")]);
+        reload_mounts(Arc::clone(&env.state), new_config)
+            .await
+            .expect("reload_mounts が成功するはず");
+
+        assert!(
+            env.state.dir_index.is_dir_dirty(MOUNT_A),
+            "watcher 差し替え後は既知ディレクトリが dirty 化されるべき"
+        );
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

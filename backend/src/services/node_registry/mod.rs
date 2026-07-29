@@ -94,6 +94,16 @@ impl NodeRegistry {
         &self.mount_id_map
     }
 
+    /// マウントを 1 件追加する（mount hot reload 用）
+    ///
+    /// `mount_id_map` と `mount_names` の両方に登録し、`PathSecurity` /
+    /// `FileWatcher` に反映済みの新 mount と `NodeRegistry` の状態を揃える。
+    /// `root` は `resolve_path` で解決済みの絶対パスであること。
+    pub(crate) fn add_mount(&mut self, mount_id: &str, root: PathBuf, name: String) {
+        self.mount_names.insert(root.clone(), name);
+        self.mount_id_map.insert(mount_id.to_owned(), root);
+    }
+
     /// 指定 `mount_id` 配下の登録を一括削除する（mount hot reload 用）
     ///
     /// - `mount_id_map` から entry を削除
@@ -159,17 +169,36 @@ impl NodeRegistry {
     ///
     /// `"{mount_id}/{relative}"` 形式。ルート直下の場合は `mount_id` のみ。
     /// どのマウントにも属さない場合は `None`。
+    ///
+    /// ネストしたマウント（`/a` と `/a/b`）では**最長一致**のマウントを選ぶ。
+    /// `HashMap` の反復順は非決定的なため先頭一致では毎回異なるキーになり得る。
+    /// 同一深さの衝突（同じディレクトリを 2 つの `mount_id` でマウント）は
+    /// `mount_id` の昇順で決定的に選ぶ。
+    /// `FileWatcher` の `compute_relative_path` と同一規則を維持すること
+    /// （不一致だと dirty 化キーが browse の照会と一致せず自己修復されない）。
     pub(crate) fn compute_parent_path_key(&self, dir_path: &Path) -> Option<String> {
+        let mut best: Option<(&String, &Path)> = None;
+        let mut best_root_len = 0usize;
         for (mount_id, root) in &self.mount_id_map {
-            if let Ok(rel) = dir_path.strip_prefix(root) {
-                let rel_str = rel.to_string_lossy();
-                if rel_str.is_empty() {
-                    return Some(mount_id.clone());
-                }
-                return Some(format!("{mount_id}/{rel_str}"));
+            let Ok(rel) = dir_path.strip_prefix(root) else {
+                continue;
+            };
+            let root_len = root.as_os_str().len();
+            let is_better = best.is_none_or(|(best_id, _)| {
+                root_len > best_root_len || (root_len == best_root_len && mount_id < best_id)
+            });
+            if is_better {
+                best_root_len = root_len;
+                best = Some((mount_id, rel));
             }
         }
-        None
+        let (mount_id, rel) = best?;
+        let rel_str = rel.to_string_lossy();
+        if rel_str.is_empty() {
+            Some(mount_id.clone())
+        } else {
+            Some(format!("{mount_id}/{rel_str}"))
+        }
     }
 
     /// テスト用: secret を明示的に指定して作成
@@ -264,18 +293,20 @@ impl NodeRegistry {
         }
 
         // root ガード: ルート外パスを拒否
+        // ネストしたマウントでは最長一致を採用する (`PathSecurity::find_root_for` と同一規則)。
+        // 先頭一致だと `generate_id` (find_root_for 経由) と結果が食い違い、
+        // 同じパスに対して呼び出し元ごとに異なる node_id が生成される
         let mut root_str = "";
         let mut rel = "";
         for (rs, rp, _) in &self.root_entries {
             if key == *rs {
-                root_str = rs;
-                rel = "";
-                break;
-            }
-            if key.starts_with(rp.as_str()) {
+                if rs.len() > root_str.len() {
+                    root_str = rs;
+                    rel = "";
+                }
+            } else if key.starts_with(rp.as_str()) && rs.len() > root_str.len() {
                 root_str = rs;
                 rel = &key[rp.len()..];
-                break;
             }
         }
         if root_str.is_empty() {

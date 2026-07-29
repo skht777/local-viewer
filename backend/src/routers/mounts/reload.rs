@@ -23,9 +23,9 @@ use crate::state::AppState;
 
 /// `POST /api/mounts/reload`
 ///
-/// `mounts.json` を再読み込みし、削除された mount に対して stale cleanup と
-/// `NodeRegistry` / `PathSecurity` / `FileWatcher` の同期反映を行う。
-/// 追加 mount は `tracing::warn!` でスキップ（docker-compose 再起動が必要）。
+/// `mounts.json` を再読み込みし、削除された mount に対して stale cleanup を、
+/// 追加された mount に対して登録を行い、`NodeRegistry` / `PathSecurity` /
+/// `FileWatcher` へ同期反映する。
 pub(crate) async fn reload_mounts_handler(
     State(state): State<Arc<AppState>>,
     ConnectInfo(remote): ConnectInfo<SocketAddr>,

@@ -133,6 +133,10 @@ impl PathSecurity {
     /// どのルートにも属さなければ `None`。
     /// `resolved` は `canonicalize()` 済みであること。
     ///
+    /// ネストしたマウント（`/a` と `/a/b` を両方マウント）では **最長一致**の
+    /// ルートを返す。登録順の先頭一致だと `/a/b/x.jpg` がどちらに解決されるかが
+    /// 登録順依存になり、`node_id` / `parent_key` が非決定的になる。
+    ///
     /// 戻り値は owned `PathBuf`（内部 `RwLock` の guard を解放してから返すため）。
     pub(crate) fn find_root_for(&self, resolved: &Path) -> Option<PathBuf> {
         let s = resolved.to_string_lossy();
@@ -140,12 +144,15 @@ impl PathSecurity {
             .root_entries
             .read()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        for (root_str, root_prefix, root) in guard.iter() {
-            if *s == *root_str || s.starts_with(root_prefix.as_str()) {
-                return Some(root.clone());
+        let mut best: Option<&RootEntry> = None;
+        for entry in guard.iter() {
+            let (root_str, root_prefix, _) = entry;
+            let is_match = *s == *root_str || s.starts_with(root_prefix.as_str());
+            if is_match && best.is_none_or(|(best_str, _, _)| root_str.len() > best_str.len()) {
+                best = Some(entry);
             }
         }
-        None
+        best.map(|(_, _, root)| root.clone())
     }
 
     /// パスを検証し、解決済みの安全なパスを返す
@@ -664,6 +671,33 @@ mod tests {
         let sec = env.security();
         let result = sec.find_root_for(Path::new("/tmp/outside.txt"));
         assert!(result.is_none());
+    }
+
+    #[test]
+    fn ネストしたマウントでは最長一致のルートを返す() {
+        // /a と /a/b を両方マウントした場合、/a/b/x.txt は登録順に依らず /a/b に解決される
+        let dir = TempDir::new().unwrap();
+        let outer = dir.path().join("outer");
+        let inner = outer.join("inner");
+        fs::create_dir_all(&inner).unwrap();
+        fs::write(inner.join("x.txt"), "x").unwrap();
+        let outer_c = fs::canonicalize(&outer).unwrap();
+        let inner_c = fs::canonicalize(&inner).unwrap();
+        let target = fs::canonicalize(inner.join("x.txt")).unwrap();
+
+        // 登録順を入れ替えても結果は同じ (最長一致)
+        let sec_outer_first =
+            PathSecurity::new(vec![outer_c.clone(), inner_c.clone()], false).unwrap();
+        assert_eq!(sec_outer_first.find_root_for(&target).unwrap(), inner_c);
+
+        let sec_inner_first =
+            PathSecurity::new(vec![inner_c.clone(), outer_c.clone()], false).unwrap();
+        assert_eq!(sec_inner_first.find_root_for(&target).unwrap(), inner_c);
+
+        // ネスト外のパスは外側ルートに解決される
+        fs::write(outer.join("y.txt"), "y").unwrap();
+        let outside = fs::canonicalize(outer.join("y.txt")).unwrap();
+        assert_eq!(sec_inner_first.find_root_for(&outside).unwrap(), outer_c);
     }
 
     #[test]

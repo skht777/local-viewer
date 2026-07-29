@@ -580,3 +580,44 @@ fn NodeRegistryはremove_mount_未登録idでnoop() {
     // 未登録の mount_id を削除しても panic しない
     reg.remove_mount("nonexistent_id");
 }
+
+#[test]
+fn compute_parent_path_keyはネストマウントで最長一致を選ぶ() {
+    // HashMap の反復順は非決定的なため、先頭一致だと同じパスでも毎回異なるキーになり得る
+    let env = TestEnv::new();
+    let mut reg = env.registry();
+    let outer = env.root.clone();
+    let inner = outer.join("inner");
+    std::fs::create_dir_all(&inner).unwrap();
+
+    let mut map = HashMap::new();
+    map.insert("outer_mount".to_string(), outer.clone());
+    map.insert("inner_mount".to_string(), inner.clone());
+    reg.set_mount_id_map(map);
+
+    assert_eq!(
+        reg.compute_parent_path_key(&inner.join("album")).as_deref(),
+        Some("inner_mount/album"),
+        "ネストしたマウントでは最長一致のマウントを選ぶべき"
+    );
+    assert_eq!(
+        reg.compute_parent_path_key(&outer.join("other")).as_deref(),
+        Some("outer_mount/other")
+    );
+}
+
+#[test]
+fn compute_parent_path_keyは同一rootの衝突をmount_id昇順で解決する() {
+    let env = TestEnv::new();
+    let mut reg = env.registry();
+    let mut map = HashMap::new();
+    map.insert("zzzzzzzzzzzzzzzz".to_string(), env.root.clone());
+    map.insert("aaaaaaaaaaaaaaaa".to_string(), env.root.clone());
+    reg.set_mount_id_map(map);
+
+    assert_eq!(
+        reg.compute_parent_path_key(&env.root.join("album"))
+            .as_deref(),
+        Some("aaaaaaaaaaaaaaaa/album")
+    );
+}
