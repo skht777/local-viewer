@@ -163,3 +163,45 @@ describe("PdfCanvas", () => {
     expect(mockRenderTask.cancel).toHaveBeenCalledOnce();
   });
 });
+
+describe("PdfCanvas - document 破棄後の reject 処理", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    HTMLCanvasElement.prototype.getContext = vi.fn(() => ({
+      clearRect: vi.fn(),
+      drawImage: vi.fn(),
+    })) as unknown as typeof HTMLCanvasElement.prototype.getContext;
+  });
+
+  test("getPage の reject が unhandled rejection にならずエラーログされる", async () => {
+    // ビューワーを閉じた直後に usePdfDocument が document.destroy() を呼ぶと、
+    // in-flight の getPage() が reject する。catch されないと unhandled rejection になる
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const mockDocument = {
+        numPages: 5,
+        getPage: vi.fn(() => Promise.reject(new Error("Transport destroyed"))),
+        destroy: vi.fn(),
+      };
+
+      render(
+        <PdfCanvas
+          document={mockDocument as never}
+          pageNumber={1}
+          fitMode="width"
+          containerWidth={800}
+          containerHeight={600}
+        />,
+      );
+
+      await waitFor(() => {
+        expect(mockDocument.getPage).toHaveBeenCalled();
+      });
+      // reject の伝播を待つ (catch されていなければ unhandled rejection でテストが落ちる)
+      await new Promise((r) => setTimeout(r, 20));
+      expect(consoleError).toHaveBeenCalledWith("PDF render error:", expect.any(Error));
+    } finally {
+      consoleError.mockRestore();
+    }
+  });
+});

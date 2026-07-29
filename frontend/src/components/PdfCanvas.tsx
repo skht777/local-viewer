@@ -246,7 +246,16 @@ export function PdfCanvas({
         page.cleanup();
       }
     }
-    renderPage();
+    // getPage / スケール計算 / キャッシュ描画は try の外にあるため、
+    // ビューワーを閉じた直後の document.destroy() による reject 等が
+    // unhandled rejection にならないようここで受ける
+    renderPage().catch((error: unknown) => {
+      const err = error as { name?: string };
+      if (!cancelled && err?.name !== "RenderingCancelledException") {
+        // eslint-disable-next-line no-console
+        console.error("PDF render error:", error);
+      }
+    });
 
     // cleanup 時に参照が変わっている可能性があるためローカルにコピー
     const textLayerEl = textLayerRef.current;
