@@ -87,6 +87,25 @@ describe("useBrowseInfiniteData", () => {
     expect(result.current.data?.entries.map((e) => e.node_id)).toEqual(["a", "b", "c"]);
   });
 
+  test("ページ跨ぎで重複する node_id は初出だけ残る", () => {
+    // バックエンドは cursor 不明時に先頭から返すため、ページ間で同一エントリが重複しうる。
+    // 重複したまま結合すると React の key 重複警告とビューワーの index ずれを招く。
+    const page1 = makeResponse({
+      entries: [makeEntry("a"), makeEntry("b")],
+      next_cursor: "cursor-1",
+    });
+    const page2 = makeResponse({
+      entries: [{ ...makeEntry("b"), name: "b-duplicate" }, makeEntry("c")],
+    });
+    const client = createSeededClient("n", "name-asc", [page1, page2]);
+    const { result } = renderHook(() => useBrowseInfiniteData("n", "name-asc"), {
+      wrapper: createWrapper(client),
+    });
+    expect(result.current.data?.entries.map((e) => e.node_id)).toEqual(["a", "b", "c"]);
+    // 初出優先: 後から来た同 node_id のエントリでは上書きしない
+    expect(result.current.data?.entries[1].name).toBe("b");
+  });
+
   test("hasNextPage が undefined のときも false に正規化される", () => {
     const page = makeResponse({ entries: [makeEntry("a")] });
     const client = createSeededClient("n", "name-asc", [page]);
