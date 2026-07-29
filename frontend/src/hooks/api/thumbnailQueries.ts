@@ -110,30 +110,38 @@ export function useBatchThumbnails(nodeIds: string[]): {
   // 全チャンク結果をマージ: dataUpdatedAt シグナルで memoize する責務は useMergedThumbnailData に委譲
   const rawData = useMergedThumbnailData(chunkResults);
 
-  // Blob URL の差分管理 (共通 ID は再利用、不要分のみ revoke)
-  const prevUrlsRef = useRef(new Map<string, string>());
+  // Blob URL の差分管理 (内容が同じ ID は再利用、変化した/不要な分は revoke)
+  // refetch でサムネイルが更新される (mtime ベースでサーバー側キーが変わる) ため、
+  // node_id だけでなく base64 内容の一致まで見ないと古い画像を返し続けてしまう
+  const prevUrlsRef = useRef(new Map<string, { base64: string; url: string }>());
   const urlMap = useMemo(() => {
     if (rawData.size === 0) {
       return new Map<string, string>();
     }
 
+    const nextEntries = new Map<string, { base64: string; url: string }>();
     const newMap = new Map<string, string>();
-    // rawData にある ID: 既存 URL 再利用 or 新規作成
     for (const [id, base64] of rawData) {
       const existing = prevUrlsRef.current.get(id);
-      if (existing) {
-        newMap.set(id, existing);
+      if (existing && existing.base64 === base64) {
+        nextEntries.set(id, existing);
+        newMap.set(id, existing.url);
       } else {
-        newMap.set(id, base64ToBlobUrl(base64));
+        if (existing) {
+          URL.revokeObjectURL(existing.url);
+        }
+        const url = base64ToBlobUrl(base64);
+        nextEntries.set(id, { base64, url });
+        newMap.set(id, url);
       }
     }
     // 不要な URL のみ revoke
-    for (const [id, url] of prevUrlsRef.current) {
-      if (!newMap.has(id)) {
-        URL.revokeObjectURL(url);
+    for (const [id, entry] of prevUrlsRef.current) {
+      if (!nextEntries.has(id)) {
+        URL.revokeObjectURL(entry.url);
       }
     }
-    prevUrlsRef.current = newMap;
+    prevUrlsRef.current = nextEntries;
     return newMap;
   }, [rawData]);
 
@@ -141,8 +149,8 @@ export function useBatchThumbnails(nodeIds: string[]): {
   // oxlint-disable-next-line arrow-body-style
   useEffect(() => {
     return () => {
-      for (const url of prevUrlsRef.current.values()) {
-        URL.revokeObjectURL(url);
+      for (const entry of prevUrlsRef.current.values()) {
+        URL.revokeObjectURL(entry.url);
       }
     };
   }, []);

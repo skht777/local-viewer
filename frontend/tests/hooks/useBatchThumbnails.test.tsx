@@ -328,3 +328,32 @@ describe("useBatchThumbnails", () => {
     expect(callBody.node_ids).toHaveLength(72);
   });
 });
+
+describe("useBatchThumbnails - データ更新時の再生成", () => {
+  test("同一 node_id でデータが変わったら Blob URL を再生成し古い URL を revoke する", async () => {
+    // サーバー側でサムネイルが再生成された場合 (mtime ベースでキャッシュキーが変わる)、
+    // node_id だけの差分管理では古い Blob URL を返し続けて新画像が反映されない
+    const { apiPost } = await import("../../src/hooks/api/apiClient");
+    vi.mocked(apiPost).mockResolvedValue({
+      thumbnails: { "node-1": { data: btoa("old-jpeg") } },
+    });
+
+    const { result } = renderHook(() => useBatchThumbnails(["node-1"]), { wrapper });
+    await waitFor(() => {
+      expect(result.current.thumbnails.get("node-1")).toMatch(/^blob:/);
+    });
+    const firstUrl = result.current.thumbnails.get("node-1");
+
+    vi.mocked(apiPost).mockResolvedValue({
+      thumbnails: { "node-1": { data: btoa("new-jpeg") } },
+    });
+    await act(async () => {
+      await queryClient.invalidateQueries();
+    });
+
+    await waitFor(() => {
+      expect(result.current.thumbnails.get("node-1")).not.toBe(firstUrl);
+    });
+    expect(revokedUrls).toContain(firstUrl);
+  });
+});
