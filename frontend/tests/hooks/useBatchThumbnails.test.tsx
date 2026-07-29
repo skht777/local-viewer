@@ -6,6 +6,7 @@
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, renderHook, waitFor } from "@testing-library/react";
+import { StrictMode } from "react";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { useBatchThumbnails } from "../../src/hooks/api/thumbnailQueries";
@@ -16,6 +17,14 @@ const queryClient = new QueryClient({
 
 function wrapper({ children }: { children: ReactNode }) {
   return <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>;
+}
+
+function strictWrapper({ children }: { children: ReactNode }) {
+  return (
+    <StrictMode>
+      <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+    </StrictMode>
+  );
 }
 
 // apiPost をモック
@@ -303,6 +312,22 @@ describe("useBatchThumbnails", () => {
     expect(secondCallBody.node_ids).toHaveLength(10);
   });
 
+  test("queryFn の AbortSignal が apiPost に伝搬される", async () => {
+    // signal を渡さないとアンマウント/キー変更時にリクエストを中断できない
+    const { apiPost } = await import("../../src/hooks/api/apiClient");
+    vi.mocked(apiPost).mockResolvedValue({
+      thumbnails: { "node-1": { data: btoa("data1") } },
+    });
+
+    const { result } = renderHook(() => useBatchThumbnails(["node-1"]), { wrapper });
+
+    await waitFor(() => {
+      expect(result.current.thumbnails.size).toBe(1);
+    });
+
+    expect(vi.mocked(apiPost).mock.calls[0][2]).toBeInstanceOf(AbortSignal);
+  });
+
   test("100 件以下は 1 回のバッチリクエストで完結する", async () => {
     const { apiPost } = await import("../../src/hooks/api/apiClient");
 
@@ -326,6 +351,34 @@ describe("useBatchThumbnails", () => {
     expect(vi.mocked(apiPost)).toHaveBeenCalledTimes(1);
     const callBody = vi.mocked(apiPost).mock.calls[0][1] as { node_ids: string[] };
     expect(callBody.node_ids).toHaveLength(72);
+  });
+});
+
+describe("useBatchThumbnails - Blob URL のライフサイクル", () => {
+  test("同一の node_ids で再レンダリングしても Blob URL は作り直されない", async () => {
+    // Blob URL の生成を useEffect に移したため、依存配列が毎レンダリング変化すると
+    // 再レンダリングのたびに createObjectURL/revokeObjectURL が走ってしまう
+    const { apiPost } = await import("../../src/hooks/api/apiClient");
+    vi.mocked(apiPost).mockResolvedValue({
+      thumbnails: { "node-1": { data: btoa("data1") } },
+    });
+
+    const { result, rerender } = renderHook(
+      ({ ids }: { ids: string[] }) => useBatchThumbnails(ids),
+      { initialProps: { ids: ["node-1"] }, wrapper: strictWrapper },
+    );
+
+    await waitFor(() => {
+      expect(result.current.thumbnails.size).toBe(1);
+    });
+    const createdCount = createdUrls.length;
+
+    // 内容が同じ新規配列で再レンダリング (FileBrowser が毎回 map で生成する状況)
+    rerender({ ids: ["node-1"] });
+    rerender({ ids: ["node-1"] });
+
+    expect(createdUrls.length).toBe(createdCount);
+    expect(revokedUrls).not.toContain(result.current.thumbnails.get("node-1"));
   });
 });
 

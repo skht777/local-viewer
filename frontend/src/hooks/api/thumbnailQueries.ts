@@ -4,7 +4,7 @@
 // - Query キャッシュには raw base64 data のみ、Blob URL はローカルで差分管理
 
 import { useQueries } from "@tanstack/react-query";
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { areNodeIdsEqual, useDebouncedValue } from "../useDebouncedValue";
 import { useMergedThumbnailData } from "../useMergedThumbnailData";
 import { apiPost } from "./apiClient";
@@ -15,25 +15,33 @@ export interface ChunkState {
   idSet: Set<string>;
 }
 
-// 安定チャンク分割: 追加のみなら既存チャンクを維持し、新規 ID だけ新チャンクに
-// タブ切替等で ID が削除された場合は全チャンク再構成する
+// 安定チャンク分割: チャンク境界 (= queryKey) を極力変えずに維持する
+// - queryKey はチャンクの ID 集合から導出するため、境界が変わると取得済みサムネイルを
+//   別キーで再取得してしまう。タブ切替 (フィルタで ID が減る) でも境界を変えない
+// - 既存チャンクは「現在必要な ID を 1 つも含まない」場合のみ破棄する
+// - 新規 ID (無限スクロール等) は末尾に新チャンクとして追加する
+// - 既存 ID が 1 つも残らない場合 (= ディレクトリ遷移) だけ全チャンク再構成する
+// - idSet は「いずれかのチャンクに含まれる ID 全体」を表す
 export function computeStableChunks(ids: string[], size: number, prev: ChunkState): ChunkState {
-  const currentSet = new Set(ids);
-
-  // ID が削除された（タブ切替等）or 初回 → 全チャンク再構成
-  const hasRemoved = prev.chunks.length > 0 && [...prev.idSet].some((id) => !currentSet.has(id));
-  if (hasRemoved || prev.chunks.length === 0) {
-    return { chunks: splitIntoChunks(ids, size), idSet: currentSet };
+  // 初回 or 全 ID 入替 → 全チャンク再構成
+  if (prev.chunks.length === 0 || !ids.some((id) => prev.idSet.has(id))) {
+    return { chunks: splitIntoChunks(ids, size), idSet: new Set(ids) };
   }
 
-  // 無限スクロール (追加のみ) → 既存チャンク維持 + 新規チャンク追加
-  const newIds = ids.filter((id) => !prev.idSet.has(id));
-  if (newIds.length === 0) {
+  const currentSet = new Set(ids);
+  const keptChunks = prev.chunks.filter((chunk) => chunk.some((id) => currentSet.has(id)));
+  const knownIds = new Set(keptChunks.flat());
+  const newIds = ids.filter((id) => !knownIds.has(id));
+
+  if (newIds.length === 0 && keptChunks.length === prev.chunks.length) {
     return prev;
   }
+  for (const id of newIds) {
+    knownIds.add(id);
+  }
   return {
-    chunks: [...prev.chunks, ...splitIntoChunks(newIds, size)],
-    idSet: currentSet,
+    chunks: [...keptChunks, ...splitIntoChunks(newIds, size)],
+    idSet: knownIds,
   };
 }
 
@@ -68,6 +76,90 @@ function splitIntoChunks<T>(arr: T[], size: number): T[][] {
   return chunks;
 }
 
+interface BlobUrlEntry {
+  base64: string;
+  url: string;
+}
+
+// 参照安定な空マップ (setState を no-op にして無駄な再レンダリングを避ける)
+const EMPTY_URL_MAP = new Map<string, string>();
+
+// rawData (node_id → base64) を Blob URL マップへ差分反映する純粋ロジック
+// - 内容が同じ ID は既存 URL を再利用し、変化した / 不要になった分だけ revoke する
+//   (refetch でサムネイルが更新されると base64 が変わるため、node_id の一致だけでは
+//    古い画像を返し続けてしまう)
+// - wantedIds に無い ID は表示対象外なので URL を持たない。チャンク境界を安定化した
+//   結果、rawData には現在表示していない ID が残りうるため明示的に除外する
+function syncBlobUrls(
+  rawData: Map<string, string>,
+  wantedIds: Set<string>,
+  prev: Map<string, BlobUrlEntry>,
+): { entries: Map<string, BlobUrlEntry>; urls: Map<string, string> } {
+  const entries = new Map<string, BlobUrlEntry>();
+  const urls = new Map<string, string>();
+  // 表示対象の ID だけを走査する (rawData には表示対象外の ID も含まれうる)
+  for (const id of wantedIds) {
+    const base64 = rawData.get(id);
+    if (base64 !== undefined) {
+      const existing = prev.get(id);
+      if (existing?.base64 === base64) {
+        entries.set(id, existing);
+        urls.set(id, existing.url);
+      } else {
+        if (existing) {
+          URL.revokeObjectURL(existing.url);
+        }
+        const url = base64ToBlobUrl(base64);
+        entries.set(id, { base64, url });
+        urls.set(id, url);
+      }
+    }
+  }
+  // 不要になった URL のみ revoke
+  for (const [id, entry] of prev) {
+    if (!entries.has(id)) {
+      URL.revokeObjectURL(entry.url);
+    }
+  }
+  return { entries, urls };
+}
+
+// Blob URL のライフサイクルを useEffect に閉じ込める
+// - createObjectURL / revokeObjectURL / ref 更新は副作用なので useMemo では扱わない
+//   (レンダリングが破棄されると URL がリークする)
+// - アンマウント時のクリーンアップで ref も空にするため、StrictMode の
+//   マウント → クリーンアップ → 再マウントでも revoke 済み URL を再利用しない
+function useThumbnailBlobUrls(
+  rawData: Map<string, string>,
+  wantedIds: Set<string>,
+): Map<string, string> {
+  const entriesRef = useRef(new Map<string, BlobUrlEntry>());
+  const [urlMap, setUrlMap] = useState<Map<string, string>>(EMPTY_URL_MAP);
+
+  useEffect(() => {
+    if (rawData.size === 0) {
+      setUrlMap(EMPTY_URL_MAP);
+      return;
+    }
+    const { entries, urls } = syncBlobUrls(rawData, wantedIds, entriesRef.current);
+    entriesRef.current = entries;
+    setUrlMap(urls);
+  }, [rawData, wantedIds]);
+
+  // アンマウント時に全 Blob URL を解放
+  // oxlint-disable-next-line arrow-body-style
+  useEffect(() => {
+    return () => {
+      for (const entry of entriesRef.current.values()) {
+        URL.revokeObjectURL(entry.url);
+      }
+      entriesRef.current = new Map();
+    };
+  }, []);
+
+  return urlMap;
+}
+
 /**
  * バッチサムネイル取得フック
  *
@@ -92,14 +184,17 @@ export function useBatchThumbnails(nodeIds: string[]): {
   }, [debouncedIds]);
 
   // useQueries: チャンク別に並列バッチリクエスト
-  // queryKey にはソート済み ID を使用 → タブ切替でチャンク境界が変わってもキャッシュヒット
+  // - queryKey にはソート済み ID を使用 → 表示順が変わってもキャッシュヒット
+  // - signal を apiPost に渡し、キー変更/アンマウント時にリクエストを中断できるようにする
   const chunkResults = useQueries({
     queries: chunks.map((chunk) => ({
       queryKey: ["thumbnails", "batch", chunk.toSorted().join(",")],
-      queryFn: async () => {
-        const resp = await apiPost<BatchResponse>("/api/thumbnails/batch", {
-          node_ids: chunk,
-        });
+      queryFn: async ({ signal }: { signal: AbortSignal }) => {
+        const resp = await apiPost<BatchResponse>(
+          "/api/thumbnails/batch",
+          { node_ids: chunk },
+          signal,
+        );
         return resp;
       },
       enabled: chunk.length > 0,
@@ -110,50 +205,11 @@ export function useBatchThumbnails(nodeIds: string[]): {
   // 全チャンク結果をマージ: dataUpdatedAt シグナルで memoize する責務は useMergedThumbnailData に委譲
   const rawData = useMergedThumbnailData(chunkResults);
 
+  // 表示対象の ID 集合 (チャンクには表示対象外の ID が残りうるため URL 生成前に絞る)
+  const wantedIds = useMemo(() => new Set(debouncedIds), [debouncedIds]);
+
   // Blob URL の差分管理 (内容が同じ ID は再利用、変化した/不要な分は revoke)
-  // refetch でサムネイルが更新される (mtime ベースでサーバー側キーが変わる) ため、
-  // node_id だけでなく base64 内容の一致まで見ないと古い画像を返し続けてしまう
-  const prevUrlsRef = useRef(new Map<string, { base64: string; url: string }>());
-  const urlMap = useMemo(() => {
-    if (rawData.size === 0) {
-      return new Map<string, string>();
-    }
-
-    const nextEntries = new Map<string, { base64: string; url: string }>();
-    const newMap = new Map<string, string>();
-    for (const [id, base64] of rawData) {
-      const existing = prevUrlsRef.current.get(id);
-      if (existing && existing.base64 === base64) {
-        nextEntries.set(id, existing);
-        newMap.set(id, existing.url);
-      } else {
-        if (existing) {
-          URL.revokeObjectURL(existing.url);
-        }
-        const url = base64ToBlobUrl(base64);
-        nextEntries.set(id, { base64, url });
-        newMap.set(id, url);
-      }
-    }
-    // 不要な URL のみ revoke
-    for (const [id, entry] of prevUrlsRef.current) {
-      if (!nextEntries.has(id)) {
-        URL.revokeObjectURL(entry.url);
-      }
-    }
-    prevUrlsRef.current = nextEntries;
-    return newMap;
-  }, [rawData]);
-
-  // アンマウント時に全 Blob URL を解放
-  // oxlint-disable-next-line arrow-body-style
-  useEffect(() => {
-    return () => {
-      for (const entry of prevUrlsRef.current.values()) {
-        URL.revokeObjectURL(entry.url);
-      }
-    };
-  }, []);
+  const urlMap = useThumbnailBlobUrls(rawData, wantedIds);
 
   // ローディング状態: デバウンス待ちまたはチャンク取得中
   const isDebouncing = !areNodeIdsEqual(nodeIds, debouncedIds);

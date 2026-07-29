@@ -29,10 +29,13 @@ export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> 
   return response.json() as Promise<T>;
 }
 
-export function apiPost<T>(path: string, body: unknown): Promise<T> {
+// signal は TanStack Query の queryFn から受け取る AbortSignal を想定する
+// (クエリのキャンセル / アンマウント時にリクエストを中断するため)
+export function apiPost<T>(path: string, body: unknown, signal?: AbortSignal): Promise<T> {
   return apiFetch<T>(path, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
+    signal,
   });
 }
