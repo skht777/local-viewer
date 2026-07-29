@@ -17,7 +17,7 @@ async function openMangaViewer(page: import("@playwright/test").Page) {
   await expect(page).toHaveURL(/\/browse\//);
 
   // ツールバーでマンガモードを選択
-  await page.getByTestId("mode-toggle-manga").click();
+  await page.getByTestId("mode-toggle-manga").locator("visible=true").click();
   await expect(page).toHaveURL(/mode=manga/);
 
   // 画像タブに切り替え

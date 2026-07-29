@@ -16,7 +16,7 @@ test.describe("検索機能 — 拡張", () => {
   test("SE-2: 2文字未満ではドロップダウンが表示されない", async ({ page }) => {
     await page.goto("/");
 
-    const searchInput = page.getByTestId("search-input");
+    const searchInput = page.getByTestId("search-input").locator("visible=true");
     await searchInput.fill("p");
 
     // search-results が表示されないこと
@@ -28,7 +28,7 @@ test.describe("検索機能 — 拡張", () => {
     await page.goto("/");
 
     // ※ 画像はインデックス対象外のため、動画フィルタで検証
-    const searchInput = page.getByTestId("search-input");
+    const searchInput = page.getByTestId("search-input").locator("visible=true");
     await searchInput.fill("clip");
     await expect(page.getByTestId("search-results")).toBeVisible();
 
@@ -46,7 +46,7 @@ test.describe("検索機能 — 拡張", () => {
   test("SE-7: ↓キーで結果が選択される (aria-selected)", async ({ page }) => {
     await page.goto("/");
 
-    const searchInput = page.getByTestId("search-input");
+    const searchInput = page.getByTestId("search-input").locator("visible=true");
     await searchInput.fill("clip");
     await expect(page.getByTestId("search-results")).toBeVisible();
 
@@ -61,7 +61,7 @@ test.describe("検索機能 — 拡張", () => {
     await page.goto("/");
 
     // サブディレクトリ "sub1" を検索 (directory は直接遷移、parent_node_id 不要)
-    const searchInput = page.getByTestId("search-input");
+    const searchInput = page.getByTestId("search-input").locator("visible=true");
     await searchInput.fill("sub1");
     await expect(page.getByTestId("search-results")).toBeVisible();
 
@@ -75,7 +75,7 @@ test.describe("検索機能 — 拡張", () => {
   test("SE-9: Escape でドロップダウンが閉じる", async ({ page }) => {
     await page.goto("/");
 
-    const searchInput = page.getByTestId("search-input");
+    const searchInput = page.getByTestId("search-input").locator("visible=true");
     await searchInput.fill("clip");
     await expect(page.getByTestId("search-results")).toBeVisible();
 
@@ -87,7 +87,7 @@ test.describe("検索機能 — 拡張", () => {
   test("SE-11: 0件で「結果が見つかりません」が表示される", async ({ page }) => {
     await page.goto("/");
 
-    const searchInput = page.getByTestId("search-input");
+    const searchInput = page.getByTestId("search-input").locator("visible=true");
     await searchInput.fill("zzzznotexist");
 
     // 0件メッセージが表示される
@@ -97,7 +97,7 @@ test.describe("検索機能 — 拡張", () => {
   test("SE-12: ドロップダウン外クリックで閉じる", async ({ page }) => {
     await page.goto("/");
 
-    const searchInput = page.getByTestId("search-input");
+    const searchInput = page.getByTestId("search-input").locator("visible=true");
     await searchInput.fill("clip");
     await expect(page.getByTestId("search-results")).toBeVisible();
 
@@ -110,7 +110,7 @@ test.describe("検索機能 — 拡張", () => {
     await page.goto("/");
 
     // サブディレクトリ "sub1" を検索 (directory でインデックス対象)
-    const searchInput = page.getByTestId("search-input");
+    const searchInput = page.getByTestId("search-input").locator("visible=true");
     await searchInput.fill("sub1");
     await expect(page.getByTestId("search-results")).toBeVisible();
 
@@ -123,7 +123,7 @@ test.describe("検索機能 — 拡張", () => {
     await page.goto("/");
 
     // サブディレクトリ "sub1" を検索 (directory は直接遷移)
-    const searchInput = page.getByTestId("search-input");
+    const searchInput = page.getByTestId("search-input").locator("visible=true");
     await searchInput.fill("sub1");
     await expect(page.getByTestId("search-results")).toBeVisible();
 

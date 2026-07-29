@@ -16,7 +16,7 @@ test.describe("検索機能", () => {
     await page.goto("/");
 
     // ※ 画像はインデックス対象外のため、動画ファイル名で検索
-    const searchInput = page.getByTestId("search-input");
+    const searchInput = page.getByTestId("search-input").locator("visible=true");
     await searchInput.fill("clip");
 
     const results = page.getByTestId("search-results");
@@ -28,7 +28,7 @@ test.describe("検索機能", () => {
     await page.goto("/");
 
     // ※ 画像はインデックス対象外のため、動画フィルタで検証
-    const searchInput = page.getByTestId("search-input");
+    const searchInput = page.getByTestId("search-input").locator("visible=true");
     await searchInput.fill("clip");
     await expect(page.getByTestId("search-results")).toBeVisible();
 
@@ -44,7 +44,7 @@ test.describe("検索機能", () => {
     await page.goto("/");
 
     // アーカイブを検索 (archive/zips/ 内にあり、直接ブラウズに遷移可能)
-    const searchInput = page.getByTestId("search-input");
+    const searchInput = page.getByTestId("search-input").locator("visible=true");
     await searchInput.fill("images.zip");
 
     const results = page.getByTestId("search-results");
@@ -59,7 +59,7 @@ test.describe("検索機能", () => {
     await page.goto("/");
 
     // サブディレクトリ "dirs" を検索 (kind=directory でインデックス対象)
-    const searchInput = page.getByTestId("search-input");
+    const searchInput = page.getByTestId("search-input").locator("visible=true");
     await searchInput.fill("dirs");
 
     const results = page.getByTestId("search-results");
@@ -80,7 +80,7 @@ test.describe("検索機能", () => {
     await imagesTab.click();
 
     // 検索バーにフォーカス
-    const searchInput = page.getByTestId("search-input");
+    const searchInput = page.getByTestId("search-input").locator("visible=true");
     await searchInput.focus();
     await searchInput.fill("d");
 

@@ -45,7 +45,7 @@ test.describe("PDF ナビゲーション — P2", () => {
   test("PN-6: B キーでマンガビューワーを閉じる", async ({ page }) => {
     // ツールバーでマンガモードを選択してから PDF を開く
     await navigateToMount(page, "docs");
-    await page.getByTestId("mode-toggle-manga").click();
+    await page.getByTestId("mode-toggle-manga").locator("visible=true").click();
 
     const pdfCard = page.locator("[data-testid^='file-card-']", { hasText: "sample.pdf" });
     await expect(pdfCard).toBeVisible();

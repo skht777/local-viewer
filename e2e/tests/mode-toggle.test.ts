@@ -9,8 +9,8 @@ test.describe("モード切替トグル", () => {
     await navigateToMount(page, "pictures");
 
     // デフォルトは CG がアクティブ
-    const cgBtn = page.getByTestId("mode-toggle-cg");
-    const mangaBtn = page.getByTestId("mode-toggle-manga");
+    const cgBtn = page.getByTestId("mode-toggle-cg").locator("visible=true");
+    const mangaBtn = page.getByTestId("mode-toggle-manga").locator("visible=true");
     await expect(cgBtn).toHaveAttribute("aria-pressed", "true");
     await expect(mangaBtn).toHaveAttribute("aria-pressed", "false");
     await expect(page).not.toHaveURL(/mode=/);
@@ -31,7 +31,7 @@ test.describe("モード切替トグル", () => {
     await navigateToMount(page, "pictures");
 
     // マンガモードを選択
-    await page.getByTestId("mode-toggle-manga").click();
+    await page.getByTestId("mode-toggle-manga").locator("visible=true").click();
     await expect(page).toHaveURL(/mode=manga/);
 
     // 画像タブに切り替えて画像クリック
@@ -47,7 +47,7 @@ test.describe("モード切替トグル", () => {
     await navigateToMount(page, "docs");
 
     // マンガモードを選択
-    await page.getByTestId("mode-toggle-manga").click();
+    await page.getByTestId("mode-toggle-manga").locator("visible=true").click();
 
     // PDF をダブルクリック
     const pdfCard = page.locator("[data-testid^='file-card-']", { hasText: "sample.pdf" });
@@ -62,7 +62,7 @@ test.describe("モード切替トグル", () => {
     await navigateToMount(page, "pictures");
 
     // マンガモードを選択してビューワーを開く
-    await page.getByTestId("mode-toggle-manga").click();
+    await page.getByTestId("mode-toggle-manga").locator("visible=true").click();
     await page.getByTestId("tab-images").click();
     await clickFileCard(page.locator("[data-testid^='file-card-']").first());
     await expect(page.getByTestId("manga-viewer")).toBeVisible();
@@ -74,7 +74,7 @@ test.describe("モード切替トグル", () => {
     // mode=manga が URL に残っている
     await expect(page).toHaveURL(/mode=manga/);
     // トグルもマンガがアクティブ
-    await expect(page.getByTestId("mode-toggle-manga")).toHaveAttribute("aria-pressed", "true");
+    await expect(page.getByTestId("mode-toggle-manga").locator("visible=true")).toHaveAttribute("aria-pressed", "true");
   });
 
   test("MT-5: ディレクトリ遷移で mode が保持される", async ({ page }) => {
@@ -82,7 +82,7 @@ test.describe("モード切替トグル", () => {
     await navigateToMount(page, "nested");
 
     // マンガモードを選択
-    await page.getByTestId("mode-toggle-manga").click();
+    await page.getByTestId("mode-toggle-manga").locator("visible=true").click();
     await expect(page).toHaveURL(/mode=manga/);
 
     // サブディレクトリに遷移（ファイルセットタブでディレクトリをクリック）
@@ -92,6 +92,6 @@ test.describe("モード切替トグル", () => {
 
     // mode=manga が保持されている
     await expect(page).toHaveURL(/mode=manga/);
-    await expect(page.getByTestId("mode-toggle-manga")).toHaveAttribute("aria-pressed", "true");
+    await expect(page.getByTestId("mode-toggle-manga").locator("visible=true")).toHaveAttribute("aria-pressed", "true");
   });
 });

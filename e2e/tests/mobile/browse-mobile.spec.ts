@@ -20,7 +20,9 @@ test.describe("BrowsePage モバイル", () => {
     await expect(page.getByTestId("sidebar-overlay")).toBeVisible();
 
     // 背景オーバーレイクリックで閉じる
-    await page.getByTestId("sidebar-overlay").click();
+    // 要素中央はドロワー (w-72, z-40) に覆われクリックが intercept されるため、
+    // ドロワー外の右端座標を明示する
+    await page.getByTestId("sidebar-overlay").click({ position: { x: 350, y: 400 } });
     await expect(page.getByTestId("sidebar-overlay")).toBeHidden();
   });
 

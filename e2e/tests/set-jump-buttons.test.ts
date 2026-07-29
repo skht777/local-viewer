@@ -50,7 +50,7 @@ async function openMangaInNestedDirs(page: Page, subName: "sub1" | "sub2") {
   await expect(page).toHaveURL(/\/browse\//);
 
   // マンガモードに切替
-  await page.getByTestId("mode-toggle-manga").click();
+  await page.getByTestId("mode-toggle-manga").locator("visible=true").click();
   await expect(page).toHaveURL(/mode=manga/);
 
   const dirsDir = page.locator("[data-testid^='file-card-']", { hasText: "dirs" });
