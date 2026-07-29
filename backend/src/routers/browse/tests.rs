@@ -1696,3 +1696,29 @@ async fn fallbackのbrowseで子ディレクトリのchild_countが隠しを数�
         "child_count は DirIndex の COUNT(*) (隠し除外) と一致すべき"
     );
 }
+
+#[test]
+#[allow(
+    non_snake_case,
+    reason = "日本語テスト名で PascalCase 残存を許容（規約 07_testing.md）"
+)]
+fn scan_full_children_for_writebackはsymlinkをスキップして継続する() {
+    // 旧実装は validate_child reject (symlink 等) で全体 Err になり、
+    // symlink を 1 つ含むディレクトリの dirty が永久に解除されず
+    // 毎リクエストがフル fallback になっていた。
+    // parallel_walk / scan_entries と同じく恒常的除外ポリシーとして skip する
+    let (_dir, root) = create_test_dir();
+    let ps = PathSecurity::new(vec![root.clone()], false).unwrap();
+    std::os::unix::fs::symlink(root.join("readme.txt"), root.join("photos/link.txt")).unwrap();
+
+    let parent = root.join("photos");
+    let result =
+        super::scan_full_children_for_writeback(&parent, &root, "aaaaaaaaaaaaaaaa", &ps).unwrap();
+
+    let args = result.expect("symlink を含んでも writeback は継続すべき");
+    let names: Vec<&str> = args.files.iter().map(|(n, _, _)| n.as_str()).collect();
+    assert!(!names.contains(&"link.txt"), "symlink は除外される");
+    assert!(names.contains(&"img1.jpg"));
+    assert!(names.contains(&"img2.png"));
+    assert!(names.contains(&"doc.pdf"));
+}

@@ -252,15 +252,15 @@ fn scan_full_children_for_writeback(
         let child_path = parent_path.join(&name);
         let file_type = entry.file_type()?; // file_type エラーで fail-closed
         let is_symlink = file_type.is_symlink();
-        // path_security.validate_child で symlink ポリシーと root 配下を検証 (fail-closed)
+        // path_security reject (symlink ポリシー等) は恒常的な除外ポリシーであり
+        // スキャン失敗ではない。parallel_walk / scan_entries と同様に silent skip する
+        // (Err で全体中止すると symlink を 1 つ含むだけで dirty が永久に解除されず
+        //  毎リクエストがフル fallback になる)
         if path_security
             .validate_child(&child_path, is_symlink)
             .is_err()
         {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::PermissionDenied,
-                format!("path_security reject: {}", child_path.display()),
-            ));
+            continue;
         }
         let metadata = entry.metadata()?; // metadata エラーで fail-closed
         let mtime_ns = metadata
