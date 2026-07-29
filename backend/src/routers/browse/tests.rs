@@ -1637,3 +1637,62 @@ async fn first_viewableでdirtyな親はfsフォールバックで新規ファ�
         "dirty な親では FS フォールバックで名前順先頭の新規ファイルを返すべき"
     );
 }
+
+// --- fallback の隠しファイル除外 (fast-path / writeback とのポリシー一致) ---
+
+#[tokio::test]
+async fn fallbackのbrowseで隠しファイルが除外される() {
+    // DirIndex 投入経路 (skip_hidden) と writeback は隠しを除外するのに
+    // fallback の scan_entries に除外が無いと、dirty 前後で一覧と件数がちらつく
+    let dir = TempDir::new().unwrap();
+    let root = fs::canonicalize(dir.path()).unwrap();
+    fs::write(root.join("visible.jpg"), "x").unwrap();
+    fs::write(root.join(".hidden.jpg"), "x").unwrap();
+    fs::create_dir_all(root.join(".hiddendir")).unwrap();
+
+    let state = test_state(&root, HashMap::new());
+    let node_id = register_node_id(&state, &root);
+
+    let (status, json) = get_json(app(state), &format!("/api/browse/{node_id}?limit=10")).await;
+
+    assert_eq!(status, StatusCode::OK);
+    let names: Vec<&str> = json["entries"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|e| e["name"].as_str().unwrap())
+        .collect();
+    assert_eq!(
+        names,
+        ["visible.jpg"],
+        "隠しファイル/ディレクトリは除外されるべき"
+    );
+    assert_eq!(json["total_count"], 1);
+}
+
+#[tokio::test]
+async fn fallbackのbrowseで子ディレクトリのchild_countが隠しを数えない() {
+    let dir = TempDir::new().unwrap();
+    let root = fs::canonicalize(dir.path()).unwrap();
+    let sub = root.join("album");
+    fs::create_dir_all(&sub).unwrap();
+    fs::write(sub.join("visible.jpg"), "x").unwrap();
+    fs::write(sub.join(".hidden.jpg"), "x").unwrap();
+
+    let state = test_state(&root, HashMap::new());
+    let node_id = register_node_id(&state, &root);
+
+    let (status, json) = get_json(app(state), &format!("/api/browse/{node_id}?limit=10")).await;
+
+    assert_eq!(status, StatusCode::OK);
+    let album = json["entries"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|e| e["name"] == "album")
+        .unwrap();
+    assert_eq!(
+        album["child_count"], 1,
+        "child_count は DirIndex の COUNT(*) (隠し除外) と一致すべき"
+    );
+}

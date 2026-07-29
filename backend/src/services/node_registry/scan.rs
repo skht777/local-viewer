@@ -56,6 +56,12 @@ pub(crate) fn scan_entries(
     let mut result = Vec::new();
     for entry in entries {
         let Ok(entry) = entry else { continue };
+        // 隠しエントリ除外: DirIndex 投入 (parallel_walk skip_hidden) /
+        // writeback (scan_full_children_for_writeback) と同一ポリシー。
+        // fallback だけ隠しを返すと dirty 前後で一覧と件数がちらつく
+        if entry.file_name().to_string_lossy().starts_with('.') {
+            continue;
+        }
         let path = entry.path();
         let Ok(file_type) = entry.file_type() else {
             continue;
@@ -100,6 +106,10 @@ pub(crate) fn scan_child_meta(
 
     for entry in entries {
         let Ok(entry) = entry else { continue };
+        // 隠しエントリは数えない (DirIndex の COUNT(*) と一致させる)
+        if entry.file_name().to_string_lossy().starts_with('.') {
+            continue;
+        }
         let Ok(ft) = entry.file_type() else { continue };
         if ft.is_dir() {
             count += 1;
