@@ -89,8 +89,12 @@ export function useSetJump({
   const cancelViewerTransition = useViewerStore((s) => s.cancelViewerTransition);
   const viewerTransitionId = useViewerStore((s) => s.viewerTransitionId);
 
-  // ビューワーを閉じた (unmount) 後に完走した非同期チェーンが navigate して、
-  // 閉じたはずの画面が別ディレクトリへ置き換わる/ビューワーが再オープンするのを防ぐ
+  // ビューワーを閉じた後に完走した非同期チェーンが navigate して、
+  // 閉じたはずの画面が別ディレクトリへ置き換わるのを防ぐ。
+  // 判定は transition id の世代比較で行う: closeViewer / closePdfViewer が
+  // cancelViewerTransition で id を無効化する。
+  // (unmount 検知では、startViewerTransition 直後にトランジションオーバーレイへ
+  //  切り替わるビューワー自身の unmount を「閉じた」と誤認しジャンプが不能になる)
   const isMountedRef = useRef(true);
   useEffect(() => {
     isMountedRef.current = true;
@@ -98,6 +102,17 @@ export function useSetJump({
       isMountedRef.current = false;
     };
   }, []);
+
+  // 開始した transition が今も有効なときだけ navigate する
+  const navigateIfTransitionActive = useCallback(
+    (transitionId: number, url: string) => {
+      if (useViewerStore.getState().viewerTransitionId !== transitionId) {
+        return;
+      }
+      navigate(url, { replace: true });
+    },
+    [navigate],
+  );
 
   const dismissPrompt = useCallback(() => setPrompt(null), []);
 
@@ -120,29 +135,21 @@ export function useSetJump({
   const prefetchFirstPageAndNavigate = useCallback(
     async (nodeId: string, search: string) => {
       // 遷移先 nodeId を記録し、遷移先の data 到着まで transition を維持する
-      startViewerTransition(nodeId);
+      const transitionId = startViewerTransition(nodeId);
       await queryClient.prefetchInfiniteQuery(browseInfiniteOptions(nodeId, sort));
-      if (!isMountedRef.current) {
-        cancelViewerTransition();
-        return;
-      }
-      navigate(`/browse/${nodeId}${search}`, { replace: true });
+      navigateIfTransitionActive(transitionId, `/browse/${nodeId}${search}`);
     },
-    [queryClient, navigate, sort, startViewerTransition, cancelViewerTransition],
+    [queryClient, sort, startViewerTransition, navigateIfTransitionActive],
   );
 
   // image / archive 用: 全ページをプリフェッチして navigate (replace、100 件超対応)
   const prefetchAllAndNavigate = useCallback(
     async (nodeId: string, search: string) => {
-      startViewerTransition(nodeId);
+      const transitionId = startViewerTransition(nodeId);
       await fetchAllBrowsePages(queryClient, nodeId, sort);
-      if (!isMountedRef.current) {
-        cancelViewerTransition();
-        return;
-      }
-      navigate(`/browse/${nodeId}${search}`, { replace: true });
+      navigateIfTransitionActive(transitionId, `/browse/${nodeId}${search}`);
     },
-    [queryClient, navigate, sort, startViewerTransition, cancelViewerTransition],
+    [queryClient, sort, startViewerTransition, navigateIfTransitionActive],
   );
 
   // 遷移先 kind に応じた URL 遷移 (PDF=親dir+?pdf=、archive=進入、directory=first-viewable)
@@ -164,6 +171,8 @@ export function useSetJump({
       // ディレクトリ: 再帰探索して最初の閲覧対象を開く
       try {
         const resolved = await resolveFirstViewable(target.node_id, queryClient, sort);
+        // この時点では transition 未開始 (オーバーレイによる unmount は起きない) ため、
+        // unmount = ユーザーがビューワーを閉じた、と判定できる
         if (!isMountedRef.current) {
           return;
         }
@@ -180,15 +189,11 @@ export function useSetJump({
         } else if (resolved.entry.kind === "image") {
           // 画像: 親ディレクトリの全ページをプリフェッチしてから navigate
           // 100 件超の兄弟画像が viewer に渡るよう保証する
-          startViewerTransition(resolved.parentNodeId);
+          const transitionId = startViewerTransition(resolved.parentNodeId);
           await fetchAllBrowsePages(queryClient, resolved.parentNodeId, sort);
-          if (!isMountedRef.current) {
-            cancelViewerTransition();
-            return;
-          }
-          navigate(
+          navigateIfTransitionActive(
+            transitionId,
             `/browse/${resolved.parentNodeId}${buildSearch({ tab: "images", index: "0" })}`,
-            { replace: true },
           );
         } else {
           // アーカイブ: 全ページをプリフェッチしてから進入
@@ -201,9 +206,6 @@ export function useSetJump({
         // エラー時も index なしで遷移 → ブラウザーモードでコンテンツを確認
         // 開始済み transition は遷移先に着地しないため固着防止でリセット
         cancelViewerTransition();
-        if (!isMountedRef.current) {
-          return;
-        }
         navigate(`/browse/${target.node_id}${buildSearch({ tab: "images" })}`, { replace: true });
       }
     },
@@ -216,6 +218,7 @@ export function useSetJump({
       queryClient,
       startViewerTransition,
       cancelViewerTransition,
+      navigateIfTransitionActive,
     ],
   );
 

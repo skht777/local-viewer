@@ -58,6 +58,7 @@ export function useViewerParams(): UseViewerParamsReturn {
   const setViewerOrigin = useViewerStore((s) => s.setViewerOrigin);
   const viewerOrigin = useViewerStore((s) => s.viewerOrigin);
   const setViewerJumpList = useViewerStore((s) => s.setViewerJumpList);
+  const cancelViewerTransition = useViewerStore((s) => s.cancelViewerTransition);
 
   // viewer 起動時の起点情報を組み立てる
   // - /browse/:nodeId なら pathname=/browse/{nodeId}、search は browse スコープ（mode/tab/sort）
@@ -174,6 +175,8 @@ export function useViewerParams(): UseViewerParamsReturn {
   // 画像ビューワーを閉じる: 起点に戻るか、履歴を1つ戻る
   const closeViewer = () => {
     setViewerJumpList(null, null);
+    // 進行中のセットジャンプを破棄 (useSetJump は transition id の世代比較で navigate を中断する)
+    cancelViewerTransition();
     if (viewerOrigin) {
       const origin = viewerOrigin;
       setViewerOrigin(null);
@@ -200,6 +203,8 @@ export function useViewerParams(): UseViewerParamsReturn {
   // PDF ビューワーを閉じる: 起点に戻るか、現在ディレクトリに留まる
   const closePdfViewer = () => {
     setViewerJumpList(null, null);
+    // 進行中のセットジャンプを破棄 (useSetJump は transition id の世代比較で navigate を中断する)
+    cancelViewerTransition();
     if (viewerOrigin) {
       const origin = viewerOrigin;
       setViewerOrigin(null);

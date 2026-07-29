@@ -365,14 +365,50 @@ describe("useSetJump unmount キャンセル", () => {
     });
   });
 
-  test("unmount 後に完走した非同期チェーンは navigate しない", async () => {
-    // ジャンプの sibling 解決を待っている間に B キーでビューワーを閉じた (unmount)
-    // 状況を再現。旧実装は解決後に navigate が完走し、閉じたはずの画面が
-    // 別ディレクトリへ置き換わり ?tab=images&index=0 でビューワーが再オープンしていた
-    let resolveSibling: ((v: SiblingResponse) => void) | null = null;
-    mockApiFetch.mockReturnValue(
-      new Promise<SiblingResponse>((resolve) => {
-        resolveSibling = resolve;
+  test("ビューワーを閉じた (transition cancel) 後の非同期チェーンは navigate しない", async () => {
+    // ジャンプのプリフェッチを待っている間に B キーでビューワーを閉じた状況を再現。
+    // closeViewer は cancelViewerTransition を呼ぶため、transition id の世代比較で
+    // 古いチェーンの navigate が破棄される
+    let resolveFetch: (() => void) | null = null;
+    mockFetchAllBrowsePages.mockReturnValue(
+      new Promise<void>((resolve) => {
+        resolveFetch = resolve;
+      }),
+    );
+    mockApiFetch.mockResolvedValue({
+      entry: makeEntry({ kind: "archive", node_id: "next-archive" }),
+    } satisfies SiblingResponse);
+
+    const { result } = renderHook(() => useSetJump(defaultProps), {
+      wrapper: createWrapper(),
+    });
+    const jumpPromise = result.current.goNextSetParent();
+
+    // プリフェッチ待ちの間に B キーで閉じる (closeViewer 相当)
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 10));
+      useViewerStore.getState().cancelViewerTransition();
+    });
+    resolveFetch?.();
+    await act(async () => {
+      await jumpPromise;
+      await new Promise((r) => setTimeout(r, 20));
+    });
+
+    expect(mockNavigate).not.toHaveBeenCalled();
+  });
+
+  test("トランジションオーバーレイによる unmount では navigate が完走する", async () => {
+    // startViewerTransition の直後に BrowsePage がオーバーレイへ切り替わり
+    // ビューワー (と useSetJump) が unmount される。これは意図した遷移中であり、
+    // unmount を「閉じた」と誤認して navigate を破棄するとジャンプが不能になる
+    mockApiFetch.mockResolvedValue({
+      entry: makeEntry({ kind: "archive", node_id: "next-archive" }),
+    } satisfies SiblingResponse);
+    let resolveFetch: (() => void) | null = null;
+    mockFetchAllBrowsePages.mockReturnValue(
+      new Promise<void>((resolve) => {
+        resolveFetch = resolve;
       }),
     );
 
@@ -381,19 +417,20 @@ describe("useSetJump unmount キャンセル", () => {
     });
     const jumpPromise = result.current.goNextSetParent();
 
-    // await 中にビューワーを閉じる
+    // startViewerTransition 後のオーバーレイ切替による unmount を再現
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 10));
+    });
     unmount();
-    resolveSibling?.({
-      entry: makeEntry({ kind: "archive", node_id: "next-archive" }),
-    } satisfies SiblingResponse);
+    resolveFetch?.();
     await act(async () => {
       await jumpPromise;
-    });
-    // fire-and-forget の navigateToTarget が完走する猶予を与えてから検証
-    await act(async () => {
       await new Promise((r) => setTimeout(r, 20));
     });
 
-    expect(mockNavigate).not.toHaveBeenCalled();
+    expect(mockNavigate).toHaveBeenCalledWith(
+      expect.stringContaining("/browse/next-archive"),
+      expect.objectContaining({ replace: true }),
+    );
   });
 });
