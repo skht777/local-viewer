@@ -344,6 +344,70 @@ mod tests {
             // skip_serializing_if=Option::is_none で None は省略される
             assert!(json.get("next_offset").is_none() || json["next_offset"].is_null());
         }
+
+        #[tokio::test]
+        async fn 削除済みファイル混在時のnext_offsetで次ページが重複しない() {
+            // FTS には file1..file5 が残っているが FS では file2 が削除済み。
+            // next_offset を「offset + 返却件数」で計算すると DB 行オフセットと
+            // ずれて 2 ページ目が既読の DB 行を再読みし、結果が重複する
+            let (_dir, root, db_dir) = create_test_tree();
+            let state = test_state(&root, db_dir.path());
+
+            for name in ["file1.jpg", "file3.jpg", "file4.jpg", "file5.jpg"] {
+                fs::write(root.join(name), "x").unwrap();
+            }
+            for name in [
+                "file1.jpg",
+                "file2.jpg",
+                "file3.jpg",
+                "file4.jpg",
+                "file5.jpg",
+            ] {
+                state
+                    .indexer
+                    .add_entry(&crate::services::indexer::IndexEntry {
+                        relative_path: format!("testmount/{name}"),
+                        name: name.to_string(),
+                        kind: "image".to_string(),
+                        size_bytes: Some(1),
+                        mtime_ns: 1,
+                    })
+                    .unwrap();
+            }
+
+            let (status, json1) = get_status_and_code(
+                app(Arc::clone(&state)),
+                "/api/search?q=file&limit=2&sort=name-asc",
+            )
+            .await;
+            assert_eq!(status, StatusCode::OK);
+            let names1: Vec<&str> = json1["results"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|r| r["name"].as_str().unwrap())
+                .collect();
+            assert_eq!(names1, ["file1.jpg", "file3.jpg"]);
+            let next = json1["next_offset"].as_u64().unwrap();
+
+            let (status2, json2) = get_status_and_code(
+                app(state),
+                &format!("/api/search?q=file&limit=2&sort=name-asc&offset={next}"),
+            )
+            .await;
+            assert_eq!(status2, StatusCode::OK);
+            let names2: Vec<&str> = json2["results"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|r| r["name"].as_str().unwrap())
+                .collect();
+            assert_eq!(
+                names2,
+                ["file4.jpg", "file5.jpg"],
+                "削除済み FTS 行があってもページが重複・欠落しないこと"
+            );
+        }
     }
 
     // --- POST /api/index/rebuild の排他制御テスト (Phase B) ---

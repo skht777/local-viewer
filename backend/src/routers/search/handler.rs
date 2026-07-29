@@ -103,7 +103,7 @@ pub(crate) async fn search(
     let is_stale = state.indexer.is_stale();
 
     // ブロッキング処理を spawn_blocking で実行
-    let (results, has_more) = tokio::task::spawn_blocking(move || {
+    let (results, has_more, next_db_offset) = tokio::task::spawn_blocking(move || {
         let ctx = ResolveContext {
             indexer: &indexer,
             dir_index: &dir_index,
@@ -121,11 +121,9 @@ pub(crate) async fn search(
     .await
     .map_err(|e| AppError::path_security(format!("タスク実行エラー: {e}")))??;
 
-    let next_offset = if has_more {
-        Some(offset + results.len())
-    } else {
-        None
-    };
+    // 削除済み FTS 行のスキップ分を含む実 DB オフセット
+    // (offset + 返却件数だと既読行を再読みしてページが重複する)
+    let next_offset = if has_more { Some(next_db_offset) } else { None };
 
     Ok(Json(SearchResponse {
         results,

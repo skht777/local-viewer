@@ -62,11 +62,16 @@ pub(crate) struct ResolveContext<'a> {
 }
 
 /// 検索結果を解決する
+///
+/// 戻り値 3 番目の `next_db_offset` は「limit 件目に採用した hit の直後の DB 行位置」。
+/// 削除済みファイルのスキップで消費行数が返却件数を上回るため、次ページの
+/// `offset` にはこの値を使う (`offset + 返却件数` だと既読行を再読みして重複する)。
 pub(crate) fn resolve_search_results(
     ctx: &ResolveContext<'_>,
-) -> Result<(Vec<SearchResultResponse>, bool), AppError> {
+) -> Result<(Vec<SearchResultResponse>, bool, usize), AppError> {
     let mut results = Vec::new();
     let mut db_offset = ctx.offset;
+    let mut next_db_offset = ctx.offset;
     // DB から多めに取得して削除済みファイルのスキップに備える
     let collect_limit = (ctx.limit + 1) * 2;
 
@@ -84,10 +89,16 @@ pub(crate) fn resolve_search_results(
             .map_err(|e| AppError::path_security(format!("検索エラー: {e}")))?;
 
         let hit_count = hits.len();
+        let mut consumed_in_batch = 0usize;
 
         for hit in hits {
+            consumed_in_batch += 1;
             if let Some(resolved) = build_response(hit, ctx) {
                 results.push(resolved);
+                if results.len() == ctx.limit {
+                    // 次ページはこの hit の直後の DB 行から
+                    next_db_offset = db_offset + consumed_in_batch;
+                }
                 // `limit + 1` 件集まったら終了 (`has_more` 判定用)
                 if results.len() > ctx.limit {
                     break;
@@ -115,7 +126,7 @@ pub(crate) fn resolve_search_results(
     // ディレクトリ/アーカイブ結果を `batch_dir_info` で 1 回呼び出して child_count + preview を埋める
     enrich_directory_results(&mut results, ctx)?;
 
-    Ok((results, has_more))
+    Ok((results, has_more, next_db_offset))
 }
 
 /// 1 件の `SearchHit` を解決して `SearchResultResponse` に変換する
