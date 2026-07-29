@@ -17,6 +17,7 @@ import { useEnsureAllBrowsePages } from "../hooks/useEnsureAllBrowsePages";
 import { useFocusAreaSwitcher } from "../hooks/useFocusAreaSwitcher";
 import { useOpenViewerFromEntry } from "../hooks/useOpenViewerFromEntry";
 import { useViewerImages } from "../hooks/useViewerImages";
+import { useViewerIndexRealign } from "../hooks/useViewerIndexRealign";
 import { useViewerParams } from "../hooks/useViewerParams";
 import { useViewerStore } from "../stores/viewerStore";
 import { BrowseHeader } from "../components/BrowseHeader";
@@ -127,6 +128,10 @@ export default function BrowsePage() {
 
   // 画像配列とビューワー起動関連の派生値
   const { images, viewerImages, openViewerNameSorted } = useViewerImages(data?.entries, openViewer);
+
+  // 全ページ後追い到着 (useEnsureAllBrowsePages) による viewerImages 再構築で
+  // 表示中の画像がすり替わるのを防ぐ (URL index を新しい位置へ replace 補正)
+  useViewerIndexRealign({ isViewerOpen, viewerImages, index: params.index, setIndex });
 
   // 動画エントリ（VideoFeed の表示対象）
   const videos = useMemo(

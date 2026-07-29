@@ -11,6 +11,7 @@ import { useSearchParams } from "react-router-dom";
 import { useViewerParams } from "../hooks/useViewerParams";
 import { useViewerStore } from "../stores/viewerStore";
 import { useEnsureAllPages } from "../hooks/useEnsureAllPages";
+import { useViewerIndexRealign } from "../hooks/useViewerIndexRealign";
 import { useOpenViewerFromEntry } from "../hooks/useOpenViewerFromEntry";
 import { useSearchResultsData } from "../hooks/useSearchResultsData";
 import { useSearchResultsCallbacks } from "../hooks/useSearchResultsCallbacks";
@@ -76,6 +77,10 @@ export default function SearchResultsPage() {
     () => allEntries.filter((e) => e.kind === "image").toSorted(compareEntryName),
     [allEntries],
   );
+
+  // 残ページ後追い到着 (useEnsureAllPages) による viewerImages 再構築で
+  // 表示中の画像がすり替わるのを防ぐ
+  useViewerIndexRealign({ isViewerOpen, viewerImages, index: params.index, setIndex });
 
   // FileBrowser の onImageClick は filteredImages (image kind だけのフィルタ) 基準 index を渡す
   const filteredImages = useMemo(() => allEntries.filter((e) => e.kind === "image"), [allEntries]);
