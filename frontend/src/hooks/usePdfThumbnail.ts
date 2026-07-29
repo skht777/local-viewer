@@ -1,16 +1,56 @@
 // PDF の先頭ページを pdfjs-dist でレンダリングし、blob URL として返すフック
 // - getDocument() で PDF をロード → page.render() → canvas.toBlob() → URL.createObjectURL()
-// - unmount 時に URL.revokeObjectURL() でクリーンアップ
+// - 生成結果は node_id + modified_at をキーにモジュールスコープの LRU にキャッシュする。
+//   仮想スクロールでカードが再マウントされるたびに PDF 全体を取り直さないため
+// - blob URL の所有者はキャッシュ。アンマウントでは revoke せず、LRU から溢れた時のみ revoke する
 // - enabled=false の場合はロードしない
 
-import { useEffect, useRef, useState } from "react";
-import type { MutableRefObject } from "react";
+import { useEffect, useState } from "react";
 import type { PDFDocumentProxy, PDFPageProxy } from "../lib/pdfjs";
 import { getDocument } from "../lib/pdfjs";
 import { PDF_LOAD_OPTIONS } from "../lib/pdfLoadOptions";
 import { fileUrl } from "../utils/fileUrl";
 
 const THUMB_WIDTH = 300;
+
+// キャッシュ上限 (JPEG サムネイル ~20KB × 200 ≒ 4MB 程度に収まる想定)
+const CACHE_LIMIT = 200;
+
+// Map は挿入順を保持するため、削除 → 再挿入で LRU として扱える
+const thumbnailCache = new Map<string, string>();
+
+function cacheKey(nodeId: string, modifiedAt: number | null): string {
+  return `${nodeId}:${modifiedAt ?? "none"}`;
+}
+
+// 参照した要素を末尾へ移動しつつ取り出す (LRU)
+function readCache(key: string): string | null {
+  const url = thumbnailCache.get(key);
+  if (url === undefined) {
+    return null;
+  }
+  thumbnailCache.delete(key);
+  thumbnailCache.set(key, url);
+  return url;
+}
+
+// 上限を超えた分は最も古いものから revoke して捨てる
+function writeCache(key: string, url: string): void {
+  thumbnailCache.set(key, url);
+  while (thumbnailCache.size > CACHE_LIMIT) {
+    const [oldestKey, oldestUrl] = thumbnailCache.entries().next().value as [string, string];
+    thumbnailCache.delete(oldestKey);
+    URL.revokeObjectURL(oldestUrl);
+  }
+}
+
+// キャッシュを全解放する (テストおよび明示的なメモリ解放用)
+export function clearPdfThumbnailCache(): void {
+  for (const url of thumbnailCache.values()) {
+    URL.revokeObjectURL(url);
+  }
+  thumbnailCache.clear();
+}
 
 interface PdfThumbnailResult {
   url: string | null;
@@ -47,29 +87,30 @@ async function renderThumbnailToBlob(page: PDFPageProxy, maxWidth: number): Prom
   });
 }
 
-// blob → URL を作成し、ref と state を更新する
-function publishBlobUrl(
-  blob: Blob,
-  urlRef: MutableRefObject<string | null>,
-  setUrl: (url: string) => void,
-): void {
-  const blobUrl = URL.createObjectURL(blob);
-  urlRef.current = blobUrl;
-  setUrl(blobUrl);
-}
-
 export function usePdfThumbnail(
   nodeId: string,
   enabled: boolean,
   modifiedAt: number | null = null,
 ): PdfThumbnailResult {
-  const [url, setUrl] = useState<string | null>(null);
+  const key = cacheKey(nodeId, modifiedAt);
+  // 初期値をキャッシュから引くことで、再マウント時に 1 フレームも空表示にならない
+  // (LRU の参照順更新は副作用なのでレンダー中には行わず effect 側に任せる)
+  const [url, setUrl] = useState<string | null>(
+    () => (enabled ? thumbnailCache.get(key) : undefined) ?? null,
+  );
   const [isLoading, setIsLoading] = useState(false);
   const [hasError, setHasError] = useState(false);
-  const urlRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (!enabled) {
+      return;
+    }
+
+    const cached = readCache(key);
+    if (cached) {
+      setUrl(cached);
+      setIsLoading(false);
+      setHasError(false);
       return;
     }
 
@@ -77,6 +118,8 @@ export function usePdfThumbnail(
     let pdfDoc: PDFDocumentProxy | null = null;
 
     const generate = async () => {
+      // 別 PDF に切り替わった直後に前の画像を見せ続けないよう明示的にリセットする
+      setUrl(null);
       setIsLoading(true);
       setHasError(false);
       try {
@@ -89,7 +132,9 @@ export function usePdfThumbnail(
         if (cancelled || !blob) {
           return;
         }
-        publishBlobUrl(blob, urlRef, setUrl);
+        const blobUrl = URL.createObjectURL(blob);
+        writeCache(key, blobUrl);
+        setUrl(blobUrl);
       } catch {
         if (!cancelled) {
           setHasError(true);
@@ -104,15 +149,11 @@ export function usePdfThumbnail(
 
     generate();
 
+    // blob URL はキャッシュが所有するため、アンマウントでは revoke しない
     return () => {
       cancelled = true;
-      // 古い blob URL をクリーンアップ
-      if (urlRef.current) {
-        URL.revokeObjectURL(urlRef.current);
-        urlRef.current = null;
-      }
     };
-  }, [nodeId, enabled, modifiedAt]);
+  }, [key, nodeId, enabled, modifiedAt]);
 
   return { url, isLoading, hasError };
 }
