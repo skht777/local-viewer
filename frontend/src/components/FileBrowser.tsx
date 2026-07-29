@@ -12,6 +12,7 @@ import { useFileBrowserActions } from "../hooks/useFileBrowserActions";
 import { useFileBrowserInfiniteScroll } from "../hooks/useFileBrowserInfiniteScroll";
 import { useFileBrowserKeyboardBindings } from "../hooks/useFileBrowserKeyboardBindings";
 import { useFileBrowserSelection } from "../hooks/useFileBrowserSelection";
+import { useRevealSelectedEntry } from "../hooks/useRevealSelectedEntry";
 import { useVirtualGrid } from "../hooks/useVirtualGrid";
 import type { SortOrder, ViewerTab } from "../hooks/useViewerParams";
 import type { BrowseEntry } from "../types/api";
@@ -171,6 +172,16 @@ export function FileBrowser({
     handleKeyDown,
     handleMainClick,
   } = useFileBrowserSelection({ filtered, selectedNodeId });
+
+  // ?select= の対象が 1 ページ目の外にあっても追加取得して可視領域へ運ぶ
+  useRevealSelectedEntry({
+    selectedNodeId,
+    indexMap,
+    scrollToItem,
+    hasMore,
+    isLoadingMore,
+    onLoadMore,
+  });
 
   const { handleAction, getOpenHandler, getEnterHandler, handleOpen } = useFileBrowserActions({
     imageIndexMap,
