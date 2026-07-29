@@ -15,8 +15,10 @@ const queryClient = new QueryClient({
       staleTime: 5 * 60 * 1000,
       gcTime: 10 * 60 * 1000,
       retry: 1,
-      // タブ切替での不要な再フェッチを防止
-      refetchOnWindowFocus: false,
+      // フォーカス復帰時に stale なクエリを再取得する (デフォルト true を明示)
+      // 別ウィンドウでのファイル追加/削除をバックエンドの FileWatcher が自己修復した
+      // 結果を、アプリに戻ったタイミングでフロントにも反映させる
+      refetchOnWindowFocus: true,
     },
   },
 });
