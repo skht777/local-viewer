@@ -6,7 +6,7 @@
 // - PDF の場合は ?pdf= 付き URL で遷移 (browse 422 回避)
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { browseInfiniteOptions, fetchAllBrowsePages } from "./api/browseQueries";
 import { resolveTopLevelDir, shouldConfirm } from "./useSetNavigation";
@@ -74,6 +74,77 @@ function useJumpListHandler(
   );
 }
 
+// プリフェッチ + 遷移ガードを担う内部フック
+// - 閉じ検知: transition id の世代比較 (closeViewer / closePdfViewer が
+//   cancelViewerTransition で id を無効化する)。unmount 検知だと
+//   startViewerTransition 直後のオーバーレイ切替によるビューワー自身の
+//   unmount を「閉じた」と誤認しジャンプが不能になる
+// - 同親遷移 (遷移先 = 現在の browse nodeId、同親 PDF 間ジャンプ等) は
+//   data 到着済みで transition が即 end されるため張らずに navigate する。
+//   このケースはオーバーレイ unmount が起きないため unmount = 閉じ、と判定できる
+function useJumpPrefetchNavigate(sort: SortOrder): {
+  prefetchFirstPageAndNavigate: (nodeId: string, search: string) => Promise<void>;
+  prefetchAllAndNavigate: (nodeId: string, search: string) => Promise<void>;
+  isMountedRef: React.RefObject<boolean>;
+} {
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const location = useLocation();
+  const startViewerTransition = useViewerStore((s) => s.startViewerTransition);
+
+  const isMountedRef = useRef(true);
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
+
+  const isCurrentBrowseNode = useCallback(
+    (nodeId: string) => location.pathname === `/browse/${nodeId}`,
+    [location.pathname],
+  );
+
+  // fetchAll: image/archive は全ページ (100 件超対応)、PDF は 1 ページのみ
+  const prefetchAndNavigate = useCallback(
+    async (nodeId: string, search: string, fetchAll: boolean) => {
+      const prefetch = () =>
+        fetchAll
+          ? fetchAllBrowsePages(queryClient, nodeId, sort)
+          : queryClient.prefetchInfiniteQuery(browseInfiniteOptions(nodeId, sort));
+      const url = `/browse/${nodeId}${search}`;
+      if (isCurrentBrowseNode(nodeId)) {
+        await prefetch();
+        if (!isMountedRef.current) {
+          return;
+        }
+        navigate(url, { replace: true });
+        return;
+      }
+      // 遷移先 nodeId を記録し、遷移先の data 到着まで transition を維持する
+      const transitionId = startViewerTransition(nodeId);
+      await prefetch();
+      if (useViewerStore.getState().viewerTransitionId !== transitionId) {
+        return;
+      }
+      navigate(url, { replace: true });
+    },
+    [queryClient, sort, startViewerTransition, isCurrentBrowseNode, navigate],
+  );
+
+  const prefetchFirstPageAndNavigate = useCallback(
+    (nodeId: string, search: string) => prefetchAndNavigate(nodeId, search, false),
+    [prefetchAndNavigate],
+  );
+
+  const prefetchAllAndNavigate = useCallback(
+    (nodeId: string, search: string) => prefetchAndNavigate(nodeId, search, true),
+    [prefetchAndNavigate],
+  );
+
+  return { prefetchFirstPageAndNavigate, prefetchAllAndNavigate, isMountedRef };
+}
+
 export function useSetJump({
   currentNodeId,
   parentNodeId,
@@ -85,34 +156,11 @@ export function useSetJump({
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [prompt, setPrompt] = useState<Prompt | null>(null);
-  const startViewerTransition = useViewerStore((s) => s.startViewerTransition);
   const cancelViewerTransition = useViewerStore((s) => s.cancelViewerTransition);
   const viewerTransitionId = useViewerStore((s) => s.viewerTransitionId);
 
-  // ビューワーを閉じた後に完走した非同期チェーンが navigate して、
-  // 閉じたはずの画面が別ディレクトリへ置き換わるのを防ぐ。
-  // 判定は transition id の世代比較で行う: closeViewer / closePdfViewer が
-  // cancelViewerTransition で id を無効化する。
-  // (unmount 検知では、startViewerTransition 直後にトランジションオーバーレイへ
-  //  切り替わるビューワー自身の unmount を「閉じた」と誤認しジャンプが不能になる)
-  const isMountedRef = useRef(true);
-  useEffect(() => {
-    isMountedRef.current = true;
-    return () => {
-      isMountedRef.current = false;
-    };
-  }, []);
-
-  // 開始した transition が今も有効なときだけ navigate する
-  const navigateIfTransitionActive = useCallback(
-    (transitionId: number, url: string) => {
-      if (useViewerStore.getState().viewerTransitionId !== transitionId) {
-        return;
-      }
-      navigate(url, { replace: true });
-    },
-    [navigate],
-  );
+  const { prefetchFirstPageAndNavigate, prefetchAllAndNavigate, isMountedRef } =
+    useJumpPrefetchNavigate(sort);
 
   const dismissPrompt = useCallback(() => setPrompt(null), []);
 
@@ -129,27 +177,6 @@ export function useSetJump({
       return `?${sp}`;
     },
     [mode, sort],
-  );
-
-  // PDF 用: 1 ページだけプリフェッチして navigate (replace で履歴汚染回避)
-  const prefetchFirstPageAndNavigate = useCallback(
-    async (nodeId: string, search: string) => {
-      // 遷移先 nodeId を記録し、遷移先の data 到着まで transition を維持する
-      const transitionId = startViewerTransition(nodeId);
-      await queryClient.prefetchInfiniteQuery(browseInfiniteOptions(nodeId, sort));
-      navigateIfTransitionActive(transitionId, `/browse/${nodeId}${search}`);
-    },
-    [queryClient, sort, startViewerTransition, navigateIfTransitionActive],
-  );
-
-  // image / archive 用: 全ページをプリフェッチして navigate (replace、100 件超対応)
-  const prefetchAllAndNavigate = useCallback(
-    async (nodeId: string, search: string) => {
-      const transitionId = startViewerTransition(nodeId);
-      await fetchAllBrowsePages(queryClient, nodeId, sort);
-      navigateIfTransitionActive(transitionId, `/browse/${nodeId}${search}`);
-    },
-    [queryClient, sort, startViewerTransition, navigateIfTransitionActive],
   );
 
   // 遷移先 kind に応じた URL 遷移 (PDF=親dir+?pdf=、archive=進入、directory=first-viewable)
@@ -189,11 +216,9 @@ export function useSetJump({
         } else if (resolved.entry.kind === "image") {
           // 画像: 親ディレクトリの全ページをプリフェッチしてから navigate
           // 100 件超の兄弟画像が viewer に渡るよう保証する
-          const transitionId = startViewerTransition(resolved.parentNodeId);
-          await fetchAllBrowsePages(queryClient, resolved.parentNodeId, sort);
-          navigateIfTransitionActive(
-            transitionId,
-            `/browse/${resolved.parentNodeId}${buildSearch({ tab: "images", index: "0" })}`,
+          await prefetchAllAndNavigate(
+            resolved.parentNodeId,
+            buildSearch({ tab: "images", index: "0" }),
           );
         } else {
           // アーカイブ: 全ページをプリフェッチしてから進入
@@ -216,9 +241,8 @@ export function useSetJump({
       buildSearch,
       sort,
       queryClient,
-      startViewerTransition,
       cancelViewerTransition,
-      navigateIfTransitionActive,
+      isMountedRef,
     ],
   );
 

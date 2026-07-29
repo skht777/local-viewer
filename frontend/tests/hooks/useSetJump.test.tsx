@@ -77,14 +77,14 @@ function makeEntry(overrides: Partial<BrowseEntry> & { kind: string }): BrowseEn
 
 let testQueryClient: QueryClient = new QueryClient();
 
-function createWrapper() {
+function createWrapper(initialEntries: string[] = ["/"]) {
   testQueryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
   vi.spyOn(testQueryClient, "prefetchInfiniteQuery").mockResolvedValue(undefined);
   return ({ children }: { children: ReactNode }) => (
     <QueryClientProvider client={testQueryClient}>
-      <MemoryRouter>{children}</MemoryRouter>
+      <MemoryRouter initialEntries={initialEntries}>{children}</MemoryRouter>
     </QueryClientProvider>
   );
 }
@@ -386,13 +386,17 @@ describe("useSetJump unmount キャンセル", () => {
 
     // プリフェッチ待ちの間に B キーで閉じる (closeViewer 相当)
     await act(async () => {
-      await new Promise((r) => setTimeout(r, 10));
+      await new Promise((resolve) => {
+        setTimeout(resolve, 10);
+      });
       useViewerStore.getState().cancelViewerTransition();
     });
     resolveFetch?.();
     await act(async () => {
       await jumpPromise;
-      await new Promise((r) => setTimeout(r, 20));
+      await new Promise((resolve) => {
+        setTimeout(resolve, 20);
+      });
     });
 
     expect(mockNavigate).not.toHaveBeenCalled();
@@ -419,18 +423,72 @@ describe("useSetJump unmount キャンセル", () => {
 
     // startViewerTransition 後のオーバーレイ切替による unmount を再現
     await act(async () => {
-      await new Promise((r) => setTimeout(r, 10));
+      await new Promise((resolve) => {
+        setTimeout(resolve, 10);
+      });
     });
     unmount();
     resolveFetch?.();
     await act(async () => {
       await jumpPromise;
-      await new Promise((r) => setTimeout(r, 20));
+      await new Promise((resolve) => {
+        setTimeout(resolve, 20);
+      });
     });
 
     expect(mockNavigate).toHaveBeenCalledWith(
       expect.stringContaining("/browse/next-archive"),
       expect.objectContaining({ replace: true }),
     );
+  });
+});
+
+describe("useSetJump 同親ジャンプ", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockFetchAllBrowsePages.mockResolvedValue(undefined);
+    useViewerStore.setState({
+      viewerOrigin: null,
+      viewerTransitionId: 0,
+      viewerTransitionTarget: null,
+      viewerJumpList: null,
+      viewerJumpListIndex: null,
+    });
+  });
+
+  test("同親 PDF ジャンプは transition の即時 end に影響されず navigate する", async () => {
+    // 遷移先が現在表示中の browse nodeId と同じ (同親 PDF 間ジャンプ) 場合、
+    // BrowsePage の data は到着済みで transition が開始直後に end される。
+    // これを世代比較が「閉じられた」と誤判定すると同親ジャンプが不能になる
+    mockApiFetch.mockResolvedValue({
+      entry: makeEntry({ kind: "pdf", node_id: "pdf-next" }),
+    } satisfies SiblingResponse);
+
+    // BrowsePage の useBrowseInfiniteData 相当:
+    // 遷移先 = 現在 nodeId のため data が既にあり、transition 開始と同時に end される
+    const unsubscribe = useViewerStore.subscribe((state) => {
+      if (state.viewerTransitionId > 0 && state.viewerTransitionTarget === "parent-1") {
+        const tid = state.viewerTransitionId;
+        queueMicrotask(() => useViewerStore.getState().endViewerTransition(tid));
+      }
+    });
+    try {
+      const { result } = renderHook(() => useSetJump(defaultProps), {
+        wrapper: createWrapper(["/browse/parent-1?pdf=pdf-current"]),
+      });
+      await act(async () => {
+        await result.current.goNextSetParent();
+        await new Promise((resolve) => {
+          setTimeout(resolve, 20);
+        });
+      });
+
+      expect(mockNavigate).toHaveBeenCalledWith(
+        expect.stringMatching(/^\/browse\/parent-1\?.*pdf=pdf-next/),
+        expect.objectContaining({ replace: true }),
+      );
+    } finally {
+      unsubscribe();
+    }
   });
 });
