@@ -5,7 +5,7 @@
 // - CgViewer / MangaViewer / PdfCgViewer / PdfMangaViewer から共通利用
 // - PDF の場合は ?pdf= 付き URL で遷移 (browse 422 回避)
 
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { browseInfiniteOptions, fetchAllBrowsePages } from "./api/browseQueries";
@@ -89,6 +89,16 @@ export function useSetJump({
   const cancelViewerTransition = useViewerStore((s) => s.cancelViewerTransition);
   const viewerTransitionId = useViewerStore((s) => s.viewerTransitionId);
 
+  // ビューワーを閉じた (unmount) 後に完走した非同期チェーンが navigate して、
+  // 閉じたはずの画面が別ディレクトリへ置き換わる/ビューワーが再オープンするのを防ぐ
+  const isMountedRef = useRef(true);
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
+
   const dismissPrompt = useCallback(() => setPrompt(null), []);
 
   // browse スコープ (mode/sort) を含む search 文字列を構築
@@ -112,9 +122,13 @@ export function useSetJump({
       // 遷移先 nodeId を記録し、遷移先の data 到着まで transition を維持する
       startViewerTransition(nodeId);
       await queryClient.prefetchInfiniteQuery(browseInfiniteOptions(nodeId, sort));
+      if (!isMountedRef.current) {
+        cancelViewerTransition();
+        return;
+      }
       navigate(`/browse/${nodeId}${search}`, { replace: true });
     },
-    [queryClient, navigate, sort, startViewerTransition],
+    [queryClient, navigate, sort, startViewerTransition, cancelViewerTransition],
   );
 
   // image / archive 用: 全ページをプリフェッチして navigate (replace、100 件超対応)
@@ -122,9 +136,13 @@ export function useSetJump({
     async (nodeId: string, search: string) => {
       startViewerTransition(nodeId);
       await fetchAllBrowsePages(queryClient, nodeId, sort);
+      if (!isMountedRef.current) {
+        cancelViewerTransition();
+        return;
+      }
       navigate(`/browse/${nodeId}${search}`, { replace: true });
     },
-    [queryClient, navigate, sort, startViewerTransition],
+    [queryClient, navigate, sort, startViewerTransition, cancelViewerTransition],
   );
 
   // 遷移先 kind に応じた URL 遷移 (PDF=親dir+?pdf=、archive=進入、directory=first-viewable)
@@ -146,6 +164,9 @@ export function useSetJump({
       // ディレクトリ: 再帰探索して最初の閲覧対象を開く
       try {
         const resolved = await resolveFirstViewable(target.node_id, queryClient, sort);
+        if (!isMountedRef.current) {
+          return;
+        }
         if (!resolved) {
           // index なしで遷移 → ブラウザーモードでコンテンツを確認（1 ページで十分）
           await prefetchFirstPageAndNavigate(target.node_id, buildSearch({ tab: "images" }));
@@ -161,6 +182,10 @@ export function useSetJump({
           // 100 件超の兄弟画像が viewer に渡るよう保証する
           startViewerTransition(resolved.parentNodeId);
           await fetchAllBrowsePages(queryClient, resolved.parentNodeId, sort);
+          if (!isMountedRef.current) {
+            cancelViewerTransition();
+            return;
+          }
           navigate(
             `/browse/${resolved.parentNodeId}${buildSearch({ tab: "images", index: "0" })}`,
             { replace: true },
@@ -176,6 +201,9 @@ export function useSetJump({
         // エラー時も index なしで遷移 → ブラウザーモードでコンテンツを確認
         // 開始済み transition は遷移先に着地しないため固着防止でリセット
         cancelViewerTransition();
+        if (!isMountedRef.current) {
+          return;
+        }
         navigate(`/browse/${target.node_id}${buildSearch({ tab: "images" })}`, { replace: true });
       }
     },

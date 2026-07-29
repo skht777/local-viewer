@@ -351,3 +351,49 @@ describe("useSetJump jumpList 経路", () => {
     expect(mockApiFetch).not.toHaveBeenCalled();
   });
 });
+
+describe("useSetJump unmount キャンセル", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockFetchAllBrowsePages.mockResolvedValue(undefined);
+    useViewerStore.setState({
+      viewerOrigin: null,
+      viewerTransitionId: 0,
+      viewerTransitionTarget: null,
+      viewerJumpList: null,
+      viewerJumpListIndex: null,
+    });
+  });
+
+  test("unmount 後に完走した非同期チェーンは navigate しない", async () => {
+    // ジャンプの sibling 解決を待っている間に B キーでビューワーを閉じた (unmount)
+    // 状況を再現。旧実装は解決後に navigate が完走し、閉じたはずの画面が
+    // 別ディレクトリへ置き換わり ?tab=images&index=0 でビューワーが再オープンしていた
+    let resolveSibling: ((v: SiblingResponse) => void) | null = null;
+    mockApiFetch.mockReturnValue(
+      new Promise<SiblingResponse>((resolve) => {
+        resolveSibling = resolve;
+      }),
+    );
+
+    const { result, unmount } = renderHook(() => useSetJump(defaultProps), {
+      wrapper: createWrapper(),
+    });
+    const jumpPromise = result.current.goNextSetParent();
+
+    // await 中にビューワーを閉じる
+    unmount();
+    resolveSibling?.({
+      entry: makeEntry({ kind: "archive", node_id: "next-archive" }),
+    } satisfies SiblingResponse);
+    await act(async () => {
+      await jumpPromise;
+    });
+    // fire-and-forget の navigateToTarget が完走する猶予を与えてから検証
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 20));
+    });
+
+    expect(mockNavigate).not.toHaveBeenCalled();
+  });
+});
